@@ -150,6 +150,45 @@ export const WILD_PETS = [
   { id: "p_fin_flame", species: "glowfin", element: "flame", personality: "fierce", cost: 52 },
 ];
 
+/** 待契約佇列上限；滿咗打本唔會再新遇 */
+export const PENDING_BOND_MAX = 5;
+
+/** 性格 → 契約成功率 */
+export const BOND_RATE_BY_PERSONALITY = {
+  gentle: 0.78,
+  steady: 0.68,
+  sly: 0.55,
+  fierce: 0.45,
+  wild: 0.32,
+};
+
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+/** 秘境隨機生成一隻野生靈寵（種類×元素×性格） */
+export function rollWildEncounter(dungeonId = "wild") {
+  const speciesId = pick(Object.keys(SPECIES));
+  const elementId = pick(Object.keys(ELEMENTS));
+  const personalityId = pick(Object.keys(PERSONALITIES));
+  const baseCost = 28 + Math.floor(Math.random() * 30);
+  const pet = buildPetStats({
+    id: `enc-${dungeonId}-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
+    species: speciesId,
+    element: elementId,
+    personality: personalityId,
+    cost: baseCost,
+  });
+  const bondRate = BOND_RATE_BY_PERSONALITY[personalityId] ?? 0.5;
+  return {
+    ...pet,
+    encounterId: pet.templateId,
+    bondRate,
+    metDungeon: dungeonId,
+    status: "pending",
+  };
+}
+
 export const RECRUIT_POOL = [];
 
 export const DUNGEONS = [

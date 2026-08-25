@@ -250,6 +250,21 @@ button.ghost {
 .card-row strong { display: block; font-family: var(--font-display); }
 .muted { display: block; margin-top: 0.15rem; font-size: 0.75rem; color: var(--muted); }
 .empty { color: var(--muted); padding: 0.5rem; font-size: 0.9rem; }
+.row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+.row-actions button { white-space: nowrap; }
+.combat-bar { margin: 0.35rem 0 0.75rem; }
+.combat-bar i {
+  transition: width 0.35s linear;
+  background: linear-gradient(90deg, var(--jade), var(--ember-soft));
+}
+.log-line-in {
+  animation: fadeUp 0.28s ease-out;
+}
 
 .log li, .combat li {
   font-size: 0.86rem;

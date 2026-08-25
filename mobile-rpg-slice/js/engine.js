@@ -5,13 +5,15 @@ import {
   DUNGEONS,
   EVENTS,
   SKILLS,
+  PENDING_BOND_MAX,
   buildPetStats,
   petLabel,
   masterSkillsForStage,
   skillInfo,
+  rollWildEncounter,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v2";
+const SAVE_KEY = "void-tide-pets-v3";
 
 function defaultMaster() {
   return {
@@ -31,7 +33,12 @@ function defaultState() {
     scrap: 0,
     master: defaultMaster(),
     pets: [],
-    log: ["你沿著暗潮抵達荒廢契壇，準備締結第一隻靈寵。"],
+    /** 待契約野生靈寵（秘境遇見） */
+    pending: [],
+    log: [
+      "你沿著暗潮抵達荒廢契壇。",
+      "可先獨自踏入秘境；戰勝後或會遇見願意結契的靈寵。",
+    ],
     lastTick: Date.now(),
     combatsWon: 0,
     breedingUnlocked: false,
@@ -40,7 +47,10 @@ function defaultState() {
 
 export function loadState() {
   try {
-    const raw = localStorage.getItem(SAVE_KEY) || localStorage.getItem("void-tide-pets-v1");
+    const raw =
+      localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v2") ||
+      localStorage.getItem("void-tide-pets-v1");
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw);
     const base = defaultState();
@@ -48,7 +58,6 @@ export function loadState() {
     master.skillIds = masterSkillsForStage(parsed.realm ?? 0);
     const pets = (Array.isArray(parsed.pets) ? parsed.pets : []).map((p) => {
       if (p.skillId) return p;
-      // 舊存檔補技能
       const rebuilt = WILD_PETS.find((t) => t.id === p.templateId);
       if (rebuilt) {
         const fresh = buildPetStats(rebuilt);
@@ -61,6 +70,7 @@ export function loadState() {
       ...parsed,
       master,
       pets,
+      pending: Array.isArray(parsed.pending) ? parsed.pending : [],
     };
   } catch {
     return defaultState();
@@ -117,32 +127,52 @@ function MASTER_UNLOCK_MSG(stage) {
   return null;
 }
 
-export function wildOptions(state) {
-  const owned = new Set(state.pets.map((p) => p.templateId));
-  return WILD_PETS.filter((t) => !owned.has(t.id)).map(buildPetStats);
-}
-
-export function recruitOptions(state) {
-  return wildOptions(state);
-}
-
-export function bondPet(state, templateId) {
-  if (state.pets.length >= 3) return { ok: false, msg: "靈寵欄已滿（最多 3 隻）。" };
-  const tmpl = WILD_PETS.find((t) => t.id === templateId);
-  if (!tmpl) return { ok: false, msg: "找不到這隻靈寵。" };
-  if (state.pets.some((p) => p.templateId === templateId)) {
-    return { ok: false, msg: "已締結此靈。" };
+/** 打本後嘗試遇見野生靈寵 */
+export function maybeEncounterAfterDungeon(state, dungeonId, won) {
+  if (state.pending.length >= PENDING_BOND_MAX) {
+    return { blocked: true, encounter: null };
   }
-  if (state.stones < tmpl.cost) return { ok: false, msg: "靈石不足。" };
-  const pet = buildPetStats(tmpl);
-  state.stones -= tmpl.cost;
-  state.pets.push({ ...pet, uid: `${pet.templateId}-${Date.now()}` });
-  pushLog(state, `締結契約：${petLabel(pet)}｜技能【${pet.skillName}】。`);
-  return { ok: true, msg: `${pet.name}｜${pet.skillName}` };
+  let rate = won ? 0.62 : 0.22;
+  if (state.pets.length === 0) rate = won ? 0.92 : 0.4;
+  if (Math.random() > rate) return { blocked: false, encounter: null };
+
+  const enc = rollWildEncounter(dungeonId);
+  state.pending.push(enc);
+  return { blocked: false, encounter: enc };
 }
 
-export function recruit(state, id) {
-  return bondPet(state, id);
+/** 嘗試契約待契約寵物（機率） */
+export function tryBondPending(state, encounterId) {
+  if (state.pets.length >= 3) return { ok: false, msg: "出戰欄已滿（最多 3 隻）。" };
+  const i = state.pending.findIndex((p) => p.encounterId === encounterId);
+  if (i < 0) return { ok: false, msg: "找不到這隻待契約靈寵。" };
+  const cand = state.pending[i];
+  if (state.stones < cand.cost) return { ok: false, msg: "靈石不足。" };
+
+  state.stones -= cand.cost;
+  const roll = Math.random();
+  if (roll <= cand.bondRate) {
+    state.pending.splice(i, 1);
+    const pet = { ...cand, uid: `${cand.encounterId}-bonded`, status: "bonded" };
+    delete pet.bondRate;
+    delete pet.status;
+    state.pets.push(pet);
+    pushLog(state, `契約成功：${petLabel(pet)}｜技能【${pet.skillName}】。`);
+    return { ok: true, success: true, msg: `契約成功！${pet.name}` };
+  }
+
+  state.pending.splice(i, 1);
+  pushLog(state, `契約失敗——${cand.name} 掙脫契印逃入潮霧。`);
+  return { ok: true, success: false, msg: `${cand.name} 逃脫了` };
+}
+
+/** 放棄待契約（不花靈石） */
+export function dismissPending(state, encounterId) {
+  const i = state.pending.findIndex((p) => p.encounterId === encounterId);
+  if (i < 0) return { ok: false, msg: "找不到。" };
+  const [gone] = state.pending.splice(i, 1);
+  pushLog(state, `你放過了 ${gone.name}。`);
+  return { ok: true, msg: `已放過 ${gone.name}` };
 }
 
 export function releasePet(state, uid) {
@@ -151,10 +181,6 @@ export function releasePet(state, uid) {
   const [gone] = state.pets.splice(i, 1);
   pushLog(state, `放歸 ${gone.name}。`);
   return { ok: true, msg: `${gone.name} 已放歸` };
-}
-
-export function dismiss(state, id) {
-  return releasePet(state, id);
 }
 
 function lowestHp(units) {
@@ -195,9 +221,7 @@ function useSkill(actor, skill, allies, foes, transcript) {
     if (!live.length) return false;
     const targets = skill.id === "tide_spray" ? live.slice(0, 2) : live;
     transcript.push(`${actor.name} 施展【${skill.name}】！`);
-    for (const t of targets) {
-      dealStrike(actor, t, skill.power, transcript, null);
-    }
+    for (const t of targets) dealStrike(actor, t, skill.power, transcript, null);
   } else if (skill.type === "heal") {
     const t = lowestHp(allies);
     if (!t) return false;
@@ -236,19 +260,18 @@ function act(actor, allies, foes, transcript) {
     .filter(Boolean)
     .sort((a, b) => a.cd - b.cd);
 
-  // 冷卻好就優先放技能（約 70%），否則普攻
   const ready = skills.filter((s) => (actor.skillCd[s.id] || 0) <= 0);
   if (ready.length && Math.random() < 0.72) {
     const skill = ready[Math.floor(Math.random() * ready.length)];
     if (useSkill(actor, skill, allies, foes, transcript)) return;
   }
   const targetSide = actor.side === "ally" ? foes : allies;
-  const target = pickFoe(targetSide);
-  dealStrike(actor, target, 1, transcript, null);
+  dealStrike(actor, pickFoe(targetSide), 1, transcript, null);
 }
 
 /**
- * 戰鬥：御靈師 + 靈寵，帶技能冷卻
+ * 戰鬥結算（同步計算）；UI 負責逐條播放戰報。
+ * 可獨自進本（0 靈寵）。
  */
 export function runDungeon(state, dungeonId) {
   const d = DUNGEONS.find((x) => x.id === dungeonId);
@@ -256,7 +279,6 @@ export function runDungeon(state, dungeonId) {
   if (state.realm < d.needRealm) {
     return { ok: false, msg: `需要階段：${STAGES[d.needRealm].name}` };
   }
-  if (state.pets.length === 0) return { ok: false, msg: "請先締結至少一隻靈寵。" };
 
   const stageBonus = state.realm * 2;
   const masterSkills = masterSkillsForStage(state.realm);
@@ -299,11 +321,17 @@ export function runDungeon(state, dungeonId) {
     guardTurns: 0,
   }));
 
-  const transcript = [`御靈師率靈寵進入【${d.name}】。`];
+  const lead =
+    state.pets.length > 0
+      ? `御靈師率靈寵進入【${d.name}】。`
+      : `你獨自踏入【${d.name}】，潮霧裡似有靈息。`;
+  const transcript = [lead];
   let round = 0;
   const maxRounds = 40;
+  let won = false;
+  let ended = false;
 
-  while (round < maxRounds) {
+  while (round < maxRounds && !ended) {
     round += 1;
     const order = [...allies, ...foes]
       .filter((u) => u.hp > 0)
@@ -314,44 +342,56 @@ export function runDungeon(state, dungeonId) {
       if (actor.side === "ally") act(actor, allies, foes, transcript);
       else {
         const target = pickFoe(allies);
-        if (target) {
-          target._lastAttacker = actor.name;
-          dealStrike(actor, target, 1, transcript, null);
-        }
+        if (target) dealStrike(actor, target, 1, transcript, null);
       }
       tickCooldowns(actor);
       if (foes.every((f) => f.hp <= 0) || allies.every((a) => a.hp <= 0)) break;
     }
 
     if (foes.every((f) => f.hp <= 0)) {
+      won = true;
+      ended = true;
       state.stones += d.reward.stones;
       state.scrap += d.reward.scrap;
       state.combatsWon += 1;
-      pushLog(
-        state,
+      transcript.push(
         `攻克【${d.name}】，獲靈石 ${d.reward.stones}、靈晶碎片 ${d.reward.scrap}。`
       );
-      return {
-        ok: true,
-        won: true,
-        rounds: round,
-        transcript: transcript.slice(0, 36),
-        msg: `勝利！+${d.reward.stones} 靈石`,
-      };
-    }
-    if (allies.every((a) => a.hp <= 0)) {
-      pushLog(state, `折戟【${d.name}】……靈寵退回契壇休養。`);
-      return {
-        ok: true,
-        won: false,
-        rounds: round,
-        transcript: transcript.slice(0, 36),
-        msg: "戰敗。強化靈寵或提升階段後再試。",
-      };
+    } else if (allies.every((a) => a.hp <= 0)) {
+      ended = true;
+      transcript.push(`折戟【${d.name}】……退回契壇休養。`);
     }
   }
 
-  return { ok: true, won: false, rounds: round, transcript, msg: "戰鬥逾時，撤退。" };
+  if (!ended) {
+    transcript.push("戰鬥逾時，撤退。");
+  }
+
+  const encResult = maybeEncounterAfterDungeon(state, dungeonId, won);
+  const encounter = encResult.encounter;
+  if (encounter) {
+    transcript.push(
+      `潮霧中浮現野生${encounter.name}（${encounter.kind}·${encounter.elementName}·${encounter.personalityName}），成功率約 ${Math.round(encounter.bondRate * 100)}%——可至靈寵頁嘗試契約。`
+    );
+  } else if (encResult.blocked) {
+    transcript.push(`待契約欄已滿（${PENDING_BOND_MAX}），未再遇見新靈。`);
+  }
+
+  const lines = transcript.slice(0, 48);
+  // 見聞由 UI 戰報播放時逐條寫入
+
+  return {
+    ok: true,
+    won,
+    rounds: round,
+    transcript: lines,
+    encounter,
+    msg: won
+      ? `勝利！+${d.reward.stones} 靈石`
+      : ended
+        ? "戰敗。"
+        : "撤退。",
+  };
 }
 
 export function forgeHint(state) {
@@ -380,6 +420,7 @@ export function tryBreed(_state, _uidA, _uidB) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v2");
   localStorage.removeItem("void-tide-pets-v1");
   localStorage.removeItem("void-tide-v1");
   localStorage.removeItem("void-tide-v2");
@@ -388,7 +429,17 @@ export function resetSave() {
 
 function pushLog(state, line) {
   state.log.unshift(line);
-  if (state.log.length > 40) state.log.length = 40;
+  if (state.log.length > 60) state.log.length = 60;
 }
 
-export { STAGES, REALMS, DUNGEONS, WILD_PETS, SKILLS, petLabel, skillInfo, masterSkillsForStage };
+export {
+  STAGES,
+  REALMS,
+  DUNGEONS,
+  WILD_PETS,
+  SKILLS,
+  PENDING_BOND_MAX,
+  petLabel,
+  skillInfo,
+  masterSkillsForStage,
+};

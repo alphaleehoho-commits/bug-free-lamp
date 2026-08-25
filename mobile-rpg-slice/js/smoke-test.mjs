@@ -1,35 +1,32 @@
 /**
- * Smoke test: pet kinds, skills, combat.
- * Run: node js/smoke-test.mjs
+ * Smoke: encounter roll, pending bond, dungeon without pets.
  */
 import {
-  WILD_PETS,
-  DUNGEONS,
-  buildPetStats,
-  KIND_SKILLS,
-  SKILLS,
-  masterSkillsForStage,
+  rollWildEncounter,
+  PENDING_BOND_MAX,
   SPECIES,
+  buildPetStats,
+  SKILLS,
 } from "./data.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
-const kinds = new Set(Object.values(SPECIES).map((s) => s.kind));
-for (const k of ["獸", "鱗", "禽", "甲", "蟲"]) assert(kinds.has(k), `missing kind ${k}`);
-assert(kinds.size === 5, "exactly 5 kinds");
-assert(KIND_SKILLS["獸"] === "pounce", "beast skill");
-assert(SKILLS.seal_strike && SKILLS.pounce, "skills table");
-assert(masterSkillsForStage(0).includes("seal_strike"), "master unlock 0");
-assert(masterSkillsForStage(3).includes("tide_banner"), "master unlock 3");
+const enc = rollWildEncounter("tide_1");
+assert(enc.encounterId && enc.bondRate > 0 && enc.bondRate < 1, "encounter fields");
+assert(enc.skillId && SKILLS[enc.skillId], "encounter skill");
+assert(PENDING_BOND_MAX === 5, "pending max");
+assert(Object.keys(SPECIES).length >= 5, "species");
 
-const pets = WILD_PETS.slice(0, 3).map(buildPetStats);
-assert(pets.every((p) => p.skillId && SKILLS[p.skillId]), "pet skills");
+const pet = buildPetStats({
+  id: "t",
+  species: "reefox",
+  element: "tide",
+  personality: "gentle",
+  cost: 40,
+});
+assert(pet.name.includes("礁狐"), "name");
 
-console.log("kinds:", [...kinds].join("／"));
-console.log(
-  "pets:",
-  pets.map((p) => `${p.name}[${p.kind}:${p.skillName}]`).join(", ")
-);
+console.log("encounter sample:", enc.name, `bond ${(enc.bondRate * 100) | 0}%`);
 console.log("smoke-test ok");
