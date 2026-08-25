@@ -1,6 +1,5 @@
-/** Data tables — 靈寵修行 vertical slice */
+/** Data tables — 靈寵修行 */
 
-/** 御靈師自身階段（掛機升級） */
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 2.5 },
   { id: 1, name: "通靈初期", need: 40, rate: 3.2 },
@@ -10,10 +9,8 @@ export const STAGES = [
   { id: 5, name: "潮主", need: 1800, rate: 9 },
 ];
 
-/** @deprecated alias */
 export const REALMS = STAGES;
 
-/** 元素：影響攻／血／速微調 */
 export const ELEMENTS = {
   tide: { id: "tide", name: "潮", atk: 1.05, hp: 1.0, spd: 1.05 },
   stone: { id: "stone", name: "岩", atk: 1.0, hp: 1.12, spd: 0.92 },
@@ -22,7 +19,18 @@ export const ELEMENTS = {
   gloom: { id: "gloom", name: "幽", atk: 1.08, hp: 1.0, spd: 1.0 },
 };
 
-/** 種類／種族骨架（後期繁殖會繼承） */
+/**
+ * 種類（kind）：獸／鱗／禽／甲／蟲
+ * 每種綁一隻種族技能；種族另有獨立基礎數值。
+ */
+export const KIND_SKILLS = {
+  獸: "pounce",
+  鱗: "tide_spray",
+  禽: "gale_dive",
+  甲: "shell_guard",
+  蟲: "venom_bite",
+};
+
 export const SPECIES = {
   reefox: { id: "reefox", name: "礁狐", kind: "獸", base: { atk: 13, hp: 85, spd: 11 } },
   tidecarp: { id: "tidecarp", name: "潮鯉", kind: "鱗", base: { atk: 10, hp: 110, spd: 8 } },
@@ -32,7 +40,6 @@ export const SPECIES = {
   glowfin: { id: "glowfin", name: "熒鰭", kind: "鱗", base: { atk: 11, hp: 95, spd: 10 } },
 };
 
-/** 性格：獨立數值加減成 */
 export const PERSONALITIES = {
   fierce: { id: "fierce", name: "烈性", atk: 1.15, hp: 0.92, spd: 1.05 },
   steady: { id: "steady", name: "沉穩", atk: 0.95, hp: 1.18, spd: 0.9 },
@@ -42,9 +49,98 @@ export const PERSONALITIES = {
 };
 
 /**
- * 野外可契約靈寵模板。
- * 每隻有獨立 species / element / personality；實例化時算出最終數值。
+ * 技能定義
+ * type: strike | cleave | heal | guard | debuff
  */
+export const SKILLS = {
+  // —— 人物 ——
+  seal_strike: {
+    id: "seal_strike",
+    name: "契印斬",
+    owner: "master",
+    type: "strike",
+    cd: 2,
+    power: 1.55,
+    desc: "單體高傷害",
+  },
+  mist_ward: {
+    id: "mist_ward",
+    name: "潮霧庇護",
+    owner: "master",
+    type: "heal",
+    cd: 3,
+    power: 0.35,
+    desc: "治療生命最低的友方",
+  },
+  tide_banner: {
+    id: "tide_banner",
+    name: "暗潮令旗",
+    owner: "master",
+    type: "cleave",
+    cd: 4,
+    power: 0.85,
+    desc: "攻擊全體敵人（較低倍率）",
+  },
+  // —— 靈寵（按種類）——
+  pounce: {
+    id: "pounce",
+    name: "撲襲",
+    owner: "pet",
+    kind: "獸",
+    type: "strike",
+    cd: 2,
+    power: 1.7,
+    desc: "獸類：猛撲單體",
+  },
+  tide_spray: {
+    id: "tide_spray",
+    name: "潮濺",
+    owner: "pet",
+    kind: "鱗",
+    type: "cleave",
+    cd: 3,
+    power: 0.75,
+    desc: "鱗類：濺射最多兩名敵人",
+  },
+  gale_dive: {
+    id: "gale_dive",
+    name: "嵐擊",
+    owner: "pet",
+    kind: "禽",
+    type: "strike",
+    cd: 2,
+    power: 1.45,
+    desc: "禽類：高速俯衝（額外＋速判定）",
+  },
+  shell_guard: {
+    id: "shell_guard",
+    name: "甲盾",
+    owner: "pet",
+    kind: "甲",
+    type: "guard",
+    cd: 3,
+    power: 0.4,
+    desc: "甲類：自身減傷並小幅回血",
+  },
+  venom_bite: {
+    id: "venom_bite",
+    name: "蝕咬",
+    owner: "pet",
+    kind: "蟲",
+    type: "debuff",
+    cd: 2,
+    power: 1.2,
+    desc: "蟲類：傷害並使目標攻擊降低",
+  },
+};
+
+/** 人物依階段解鎖技能 */
+export const MASTER_SKILL_UNLOCKS = [
+  { stage: 0, skillId: "seal_strike" },
+  { stage: 1, skillId: "mist_ward" },
+  { stage: 3, skillId: "tide_banner" },
+];
+
 export const WILD_PETS = [
   { id: "p_reefox_tide", species: "reefox", element: "tide", personality: "sly", cost: 40 },
   { id: "p_moss_stone", species: "mossback", element: "stone", personality: "steady", cost: 45 },
@@ -54,7 +150,6 @@ export const WILD_PETS = [
   { id: "p_fin_flame", species: "glowfin", element: "flame", personality: "fierce", cost: 52 },
 ];
 
-/** @deprecated — 舊門徒池；保留空陣列以免舊 import 爆 */
 export const RECRUIT_POOL = [];
 
 export const DUNGEONS = [
@@ -99,12 +194,20 @@ export const EVENTS = [
   "你於靜室中見靈寵倒影多出一雙眼睛，然後消失。",
 ];
 
-/** 由模板算出最終戰鬥數值（種類 × 元素 × 性格） */
+export function skillInfo(id) {
+  return SKILLS[id] || null;
+}
+
+export function masterSkillsForStage(stageId) {
+  return MASTER_SKILL_UNLOCKS.filter((u) => u.stage <= stageId).map((u) => u.skillId);
+}
+
 export function buildPetStats(template) {
   const sp = SPECIES[template.species];
   const el = ELEMENTS[template.element];
   const pe = PERSONALITIES[template.personality];
   if (!sp || !el || !pe) throw new Error("invalid pet template");
+  const skillId = KIND_SKILLS[sp.kind];
   const atk = Math.round(sp.base.atk * el.atk * pe.atk);
   const hp = Math.round(sp.base.hp * el.hp * pe.hp);
   const spd = Math.round(sp.base.spd * el.spd * pe.spd);
@@ -122,7 +225,8 @@ export function buildPetStats(template) {
     hp,
     spd,
     cost: template.cost,
-    // 後期繁殖用：基因位預留
+    skillId,
+    skillName: SKILLS[skillId]?.name || skillId,
     genes: {
       species: sp.id,
       element: el.id,

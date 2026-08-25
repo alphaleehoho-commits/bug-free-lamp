@@ -13,6 +13,8 @@ import {
   realmInfo,
   nextRealm,
   DUNGEONS,
+  SKILLS,
+  masterSkillsForStage,
 } from "./engine.js";
 
 const app = document.querySelector("#app");
@@ -22,13 +24,36 @@ state = tickCultivation(state);
 saveState(state);
 
 let flash = "";
+let flashTimer = 0;
 let combatView = null;
 let tab = "cultivate";
+let shellReady = false;
 
 function setFlash(msg) {
   flash = msg;
-  render();
-  if (msg) setTimeout(() => { flash = ""; render(); }, 2200);
+  const el = document.querySelector("[data-live=flash]");
+  if (el) {
+    if (msg) {
+      el.hidden = false;
+      el.textContent = msg;
+    } else {
+      el.hidden = true;
+      el.textContent = "";
+    }
+  } else {
+    render();
+  }
+  clearTimeout(flashTimer);
+  if (msg) {
+    flashTimer = setTimeout(() => {
+      flash = "";
+      const f = document.querySelector("[data-live=flash]");
+      if (f) {
+        f.hidden = true;
+        f.textContent = "";
+      }
+    }, 2200);
+  }
 }
 
 function switchTab(id) {
@@ -37,13 +62,41 @@ function switchTab(id) {
   render();
 }
 
+/** 只改數字／進度，唔重砌 DOM（避免背景同標題每秒閃） */
+function patchLive() {
+  state = tickCultivation(state);
+  const next = nextRealm(state);
+  const stage = realmInfo(state);
+  const qiPct = next ? Math.min(100, (state.qi / next.need) * 100) : 100;
+
+  const qiText = document.querySelector("[data-live=qi-text]");
+  const qiBar = document.querySelector("[data-live=qi-bar]");
+  const stones = document.querySelector("[data-live=stones]");
+  const scrap = document.querySelector("[data-live=scrap]");
+  const stageEl = document.querySelector("[data-live=stage]");
+  const wins = document.querySelector("[data-live=wins]");
+
+  if (qiText) {
+    qiText.textContent = next
+      ? `靈契 ${Math.floor(state.qi)} / ${next.need}`
+      : `靈契 ${Math.floor(state.qi)}（已滿）`;
+  }
+  if (qiBar) qiBar.style.width = `${qiPct}%`;
+  if (stones) stones.textContent = String(Math.floor(state.stones));
+  if (scrap) scrap.textContent = String(state.scrap);
+  if (stageEl) stageEl.textContent = stage.name;
+  if (wins) wins.textContent = `勝場 ${state.combatsWon}`;
+}
+
 function render() {
   state = tickCultivation(state);
   const stage = realmInfo(state);
   const next = nextRealm(state);
   const qiPct = next ? Math.min(100, (state.qi / next.need) * 100) : 100;
   const m = state.master;
+  const enterClass = shellReady ? "is-settled" : "is-enter";
 
+  app.className = enterClass;
   app.innerHTML = `
     <header class="top">
       <p class="brand">暗潮</p>
@@ -53,12 +106,12 @@ function render() {
     <section class="hero-strip" aria-hidden="true"></section>
 
     <div class="stats">
-      <div><span>階段</span><strong>${stage.name}</strong></div>
-      <div><span>靈石</span><strong>${Math.floor(state.stones)}</strong></div>
-      <div><span>碎片</span><strong>${state.scrap}</strong></div>
+      <div><span>階段</span><strong data-live="stage">${stage.name}</strong></div>
+      <div><span>靈石</span><strong data-live="stones">${Math.floor(state.stones)}</strong></div>
+      <div><span>碎片</span><strong data-live="scrap">${state.scrap}</strong></div>
     </div>
 
-    ${flash ? `<p class="flash">${escapeHtml(flash)}</p>` : ""}
+    <p class="flash" data-live="flash" ${flash ? "" : "hidden"}>${escapeHtml(flash)}</p>
 
     <nav class="tabs" role="tablist">
       ${tabBtn("cultivate", "修行")}
@@ -76,11 +129,13 @@ function render() {
 
     <footer class="foot">
       <button type="button" class="ghost" data-act="reset">重置存檔</button>
-      <span>勝場 ${state.combatsWon}</span>
+      <span data-live="wins">勝場 ${state.combatsWon}</span>
     </footer>
   `;
 
   bind();
+  shellReady = true;
+  saveState(state);
 }
 
 function tabBtn(id, label) {
@@ -88,15 +143,23 @@ function tabBtn(id, label) {
 }
 
 function cultivatePanel(qiPct, next, m) {
+  const skills = masterSkillsForStage(state.realm)
+    .map((id) => SKILLS[id])
+    .filter(Boolean)
+    .map((s) => `<li><strong>${escapeHtml(s.name)}</strong> — ${escapeHtml(s.desc)}（CD${s.cd}）</li>`)
+    .join("");
+
   return `
     <h2>契壇修行</h2>
-    <p class="lead">掛機累積靈契；突破階段時或有靈兆。人物：${escapeHtml(m.name)}（攻${m.atk} 血${m.hp} 速${m.spd}）</p>
-    <div class="bar"><i style="width:${qiPct}%"></i></div>
-    <p class="meta">靈契 ${Math.floor(state.qi)}${next ? ` / ${next.need}` : "（已滿）"}</p>
+    <p class="lead">掛機累積靈契。人物 ${escapeHtml(m.name)}：攻${m.atk} 血${m.hp} 速${m.spd}</p>
+    <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
+    <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)}${next ? ` / ${next.need}` : "（已滿）"}</p>
     <div class="row">
       <button type="button" class="primary" data-act="break">突破階段</button>
       <button type="button" data-act="forge">靈紋鍛造</button>
     </div>
+    <h3>人物技能</h3>
+    <ul class="skill-list">${skills || "<li class='empty'>尚未解鎖</li>"}</ul>
   `;
 }
 
@@ -108,6 +171,7 @@ function petsPanel() {
         <div>
           <strong>${escapeHtml(p.name)}</strong>
           <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)} · 攻${p.atk} 血${p.hp} 速${p.spd}</span>
+          <span class="muted">技能【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】${p.skillId && SKILLS[p.skillId] ? " — " + SKILLS[p.skillId].desc : ""}</span>
         </div>
         <button type="button" data-release="${escapeHtml(p.uid)}">放歸</button>
       </li>`
@@ -120,7 +184,8 @@ function petsPanel() {
       <li class="card-row">
         <div>
           <strong>${escapeHtml(c.name)}</strong>
-          <span class="muted">${escapeHtml(c.kind)}·${escapeHtml(c.elementName)}·${escapeHtml(c.personalityName)} · 攻${c.atk} 血${c.hp} 速${c.spd} · ${c.cost} 靈石</span>
+          <span class="muted">${escapeHtml(c.kind)}·${escapeHtml(c.elementName)}·${escapeHtml(c.personalityName)} · 攻${c.atk} 血${c.hp} 速${c.spd} · ${c.cost} 石</span>
+          <span class="muted">技能【${escapeHtml(c.skillName)}】</span>
         </div>
         <button type="button" class="primary" data-bond="${c.templateId}">契約</button>
       </li>`
@@ -129,7 +194,7 @@ function petsPanel() {
 
   return `
     <h2>靈寵欄</h2>
-    <p class="lead">一人物 + 三靈寵。種類／元素／性格各自影響數值。繁殖後開。</p>
+    <p class="lead">種類：獸／鱗／禽／甲／蟲（各有種族技能）。另有元素與性格改數值。</p>
     <h3>出戰（${state.pets.length}/3）</h3>
     <ul class="list">${roster}</ul>
     <h3>可契約</h3>
@@ -165,7 +230,7 @@ function dungeonPanel() {
 
   return `
     <h2>潮汐秘境</h2>
-    <p class="lead">你與靈寵一齊出戰；勝出得靈石與碎片強化。</p>
+    <p class="lead">人物與靈寵會自動施放技能（有冷卻）。</p>
     <ul class="list">${list}</ul>
   `;
 }
@@ -185,18 +250,21 @@ function bind() {
       if (act === "break") {
         const r = tryBreakthrough(state);
         saveState(state);
+        render();
         setFlash(r.msg);
       } else if (act === "forge") {
         const r = forgeHint(state);
         saveState(state);
+        render();
         setFlash(r.msg);
       } else if (act === "breed") {
-        const r = tryBreed(state);
-        setFlash(r.msg);
+        setFlash(tryBreed(state).msg);
       } else if (act === "reset") {
         if (confirm("確定清除存檔？")) {
           state = resetSave();
           combatView = null;
+          shellReady = false;
+          render();
           setFlash("存檔已重置。");
         }
       } else if (act === "clear-combat") {
@@ -209,6 +277,7 @@ function bind() {
     btn.addEventListener("click", () => {
       const r = bondPet(state, btn.dataset.bond);
       saveState(state);
+      render();
       setFlash(r.msg);
     });
   });
@@ -216,6 +285,7 @@ function bind() {
     btn.addEventListener("click", () => {
       const r = releasePet(state, btn.dataset.release);
       saveState(state);
+      render();
       setFlash(r.msg);
     });
   });
@@ -224,6 +294,7 @@ function bind() {
       const r = runDungeon(state, btn.dataset.dungeon);
       saveState(state);
       if (r.ok && r.transcript) combatView = r;
+      render();
       setFlash(r.msg);
     });
   });
@@ -239,9 +310,9 @@ function escapeHtml(s) {
 
 render();
 setInterval(() => {
-  state = tickCultivation(state);
+  patchLive();
+  // 靜默存檔，唔重繪
   saveState(state);
-  if (tab === "cultivate") render();
 }, 1000);
 
 if ("serviceWorker" in navigator) {
