@@ -1,0 +1,19 @@
+{
+  "name": "暗潮 Void Tide",
+  "short_name": "暗潮",
+  "description": "文字修仙掛機 + 組隊地牢豎屏切片",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0c1218",
+  "theme_color": "#0c1218",
+  "lang": "zh-Hant",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
