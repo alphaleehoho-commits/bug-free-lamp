@@ -1,7 +1,7 @@
 {
-  "name": "暗潮 Void Tide",
+  "name": "暗潮 · 靈寵修行",
   "short_name": "暗潮",
-  "description": "文字修仙掛機 + 組隊地牢豎屏切片",
+  "description": "掛機升階、契約靈寵、秘境掉落",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait",
