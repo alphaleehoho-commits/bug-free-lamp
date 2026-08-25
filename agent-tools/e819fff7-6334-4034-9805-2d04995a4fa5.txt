@@ -1,0 +1,699 @@
+Shattered Pixel Dungeon by Shattered Pixel
+
+# Shattered Pixel Dungeon
+
+A downloadable game for Windows, macOS, Linux, and Android
+
+Get this game and 1 more for $13.49 USD
+
+Shattered Pixel Dungeon + Soundtrack Bundle
+
+Download Now Name your own price
+
+Shattered Pixel Dungeon is a traditional roguelike dungeon crawler RPG that's simple to get into but hard to master! Every game is a unique challenge, with six different heroes, randomized levels and enemies, and hundreds of items to collect and use. ShatteredPD is also updated with new content roughly every three months, so there's always something new.
+
+Each of ShatteredPD's six playable heroes has their own unique mechanics and gameplay style. Cut down foes as the durable Warrior or deadly Duelist, fry your enemies as the arcane Mage or divine Cleric, or use terrain to your advantage as the stealthy Rogue or the markswoman Huntress!
+
+ShatteredPD's dungeon is procedurally generated with random layouts, room types, items, traps, and enemies. In each game you'll find equipment and collect or craft consumable items to power you up or help you out in a pinch. There is a huge variety to what you might see from run to run and region to region.
+
+The Dungeon is filled with enemies, traps, hazards, and bosses intent on ending your run! Battle hostile wildlife in the sewers and caves, mad thieves and guards in the prison, occult servants in the fallen dwarven city, and maybe something even worse further down...
+
+ShatteredPD is based on the open source code of Pixel Dungeon by Watabou(first released in late 2012). It started in 2014 as a project to rebalance Pixel Dungeon but has steadily grown into its own game over the last 10 years!
+
+---
+
+Shattered Pixel Dungeon is available in both free and paid versions on Itch.io. The paid version includes a few cosmetic extras such as the ability to rename heroes and items, and extra pages in the game's rankings screen. Please consider supporting development so that I can keep making games!
+
+Shattered Pixel Dungeon's soundtrack is also available on Itch.io!
+
+## Download
+
+Get this game and 1 more for $13.49 USD
+
+Shattered Pixel Dungeon + Soundtrack Bundle
+
+Download Now Name your own price
+
+Click download now to get access to the following files:
+
+Android 28 MB
+
+Version 3.3.8
+
+Windows 103 MB
+
+Version 3.3.8
+
+macOS 104 MB
+
+Version 3.3.8
+
+Linux 106 MB
+
+Version 3.3.8
+
+Android-BETA 28 MB
+
+Version 4.0.0-BETA-2
+
+Windows-BETA 103 MB
+
+Version 4.0.0-BETA-2
+
+macOS-BETA 104 MB
+
+Version 4.0.0-BETA-2
+
+Linux-BETA 107 MB
+
+Version 4.0.0-BETA-2
+
+Android-Paid 28 MB
+
+if you pay $9.99 USD or more
+
+Version 3.3.8
+
+Windows-Paid 105 MB
+
+if you pay $9.99 USD or more
+
+Version 3.3.8
+
+macOS-Paid 106 MB
+
+if you pay $9.99 USD or more
+
+Version 3.3.8
+
+Linux-Paid 109 MB
+
+if you pay $9.99 USD or more
+
+Version 3.3.8
+
+Android-BETA-Paid 28 MB
+
+if you pay $9.99 USD or more
+
+Version 4.0.0-BETA-2
+
+Windows-BETA-Paid 105 MB
+
+if you pay $9.99 USD or more
+
+Version 4.0.0-BETA-2
+
+macOS-BETA-Paid 106 MB
+
+if you pay $9.99 USD or more
+
+Version 4.0.0-BETA-2
+
+Linux-BETA-Paid 109 MB
+
+if you pay $9.99 USD or more
+
+Version 4.0.0-BETA-2
+
+## Also available on
+
+## Development log
+
+Coming Soon to Shattered: The Vault Quest!
+
+6 days ago
+
+Status Update: v4.0 Beta Soon!
+
+24 days ago
+
+Coming Soon to Shattered: New Enchants and Pixel Art!
+
+81 days ago
+
+Coming Soon to Shattered: A New City Quest!
+
+Mar 05, 2026
+
+Shattered Pixel Dungeon in 2026
+
+Jan 14, 2026
+
+Shattered Pixel Dungeon v3.3.0!
+
+Dec 04, 2025
+
+Coming Soon to Shattered: Imp Quest Tester Area!
+
+Nov 25, 2025
+
+Coming Soon to Shattered: Title Graphics and Mobile Fullscreen!
+
+Sep 11, 2025
+
+Log in with itch.io to leave a comment.
+
+Viewing most recent comments 1 to 40 of 90 · Next page
+
+Vote up Vote down
+
+Lu97Sierra 21 days ago
+
+El juego es hermoso, no me canso de jugarlo :)
+
+Vote up Vote down
+
+Riversphere 36 days ago
+
+I love this game so much, especially after I downloaded it on my 12 year old tablet, where it runs really smooth
+
+Vote up Vote down
+
+brunexaza 54 days ago(+1)
+
+this game is like a drunk dad,it teacehs you on punches
+
+recomended a game very hard but rewarding when u get it
+
+Vote up Vote down
+
+Madsox Games 118 days ago
+
+I'm playing this on a small Android handheld. I know I can zoom the map, but is there any way to zoom the UI elements? I can't see my health for example because it's too small. Thanks.
+
+Vote up Vote down
+
+Shattered Pixel 118 days ago
+
+There should be a UI scale option in the settings, but the values you can set it to will really depend on your specific device. Can you let me know your device model?
+
+Vote up Vote down
+
+Madsox Games 118 days ago
+
+Thanks for the response. It's an RG353M running Android 12 with a 640x480 3.5" screen. Which settings pane is it in?
+
+Vote up Vote down
+
+Shattered Pixel 117 days ago
+
+I can understand why you’d want to try Shattered on a retro handheld like that, but unfortunately it will be pretty heavily limited by that resolution. On landscape mobile devices Shattered runs at an internal resolution of 240x160, which can only be zoomed 2x on your device (to 480x320), that will make the UI look quite small. There won’t be a setting to change this, as 2x is the lowest the UI scale level can go.
+
+Vote up Vote down
+
+Madsox Games 117 days ago
+
+No worries, thanks again. I'll be sure it try it on a different device!
+
+Vote up Vote down
+
+Non-night 122 days ago
+
+I believe the Runic blade is far too weak in the game. As a tier 4 weapon, its base stats are reduced by 5 points of maximum damage compared to the standard benchmark (from 4–25 down to 4–20). Yet in exchange, it only gains an additional +1 maximum damage per upgrade level (from +1–5 per level to +1–6 per level), with no other bonuses whatsoever. This is clearly unreasonable.
+
+Before reaching +5, a tier 4 Longsword will have stats equal to or better than the Runic blade. Even at +6 and beyond, the Runic blade is still not significantly stronger than the Longsword. In the most extreme case, with a +21 upgrade, it only has 16 more maximum damage than a Longsword of the same upgrade level. But even that advantage is hardly meaningful.
+
+If I were to invest those upgrades into a tier 5 weapon instead, I could achieve much better overall stats. If I used them on other tier 4 weapons, such as the Battle Axe, I would gain more accurate attacks; if I used them on the Crossbow, I could build around dart-related playstyles, and so on.
+
+In short, I believe the benefits gained by sacrificing 5 points of base maximum damage are severely insufficient. Therefore, I strongly suggest buffing this weapon.
+
+Love the game!
+
+Vote up Vote down
+
+Non-night 121 days ago
+
+There is also another issue: the Katana’s values seem inconsistent. Since the Quarterstaff, as a tier 2 weapon, provides 0–2 block, then shouldn’t the Katana, as a tier 4 weapon, provide 0–4 block instead? Why does the current version only give 0–3 block?
+
+Vote up Vote down
+
+Shattered Pixel 121 days ago
+
+Weapons are balanced partly based on analytics data, and believe it or not both of those weapons are doing quite well.
+
+Runic’s damage vs. other T4 weapons is only slightly higher once upgraded, but that’s enough to make it one of the strongest T4s. Being able to equip it earlier is a huge benefit vs. other T5 weapons.
+
+The Katana is much more likely to be highly upgraded by the player vs. the quaterstaff, and so it doesn’t need as large of a base defensive benefit to offset its reduction in base damage.
+
+Vote up Vote down
+
+wolfhaley_234895 125 days ago
+
+Used to play it with my brother on androidLove the game !
+
+Vote up Vote down
+
+WhiteZeta 153 days ago
+
+what differences is from the android version and the pc version? and the android version here are different from the playstore one?
+
+Vote up Vote down
+
+Shattered Pixel 153 days ago(1 edit) (+2)
+
+There are no base differences between the Android and Desktop versions of the game, gameplay is exactly the same and the game will pick different UI modes to offer or default to based on the size of the screen its running on.
+
+The Android version here does not include any google-play exclusive features, like Play Games sync or ingame supporter purchases. Instead a paid version is offered which includes many of the supporter purchase features built-in.
+
+Vote up Vote down
+
+alchemyy 183 days ago(+1)
+
+good s
+
+Vote up Vote down
+
+dddfrutoss 219 days ago(+2)
+
+I discovered this game when I was in my second year of high school, and I honestly can’t explain how calming it felt to play it with Spotify in the background. Even when I got stressed over the tiniest things or lost because of something dumb, I was always happy to start again, because every time I felt more confident that I could beat it. I came up with strategies and even made my own little guide for weapons and enchantments each time I played, carefully saving supplies and healing potions and trying not to waste scrolls.
+
+I always played it on my phone, but now I can finally play it on a computer. I thought the Steam version was the only one available in this format, so finding it here genuinely made me smile. I recommended it to most of my friends, and even though I’m pretty sure they never played it or didn’t even check it out on the Play Store, I know that one day it’ll get the recognition this awesome game really deserves.
+
+(Sorry if there are any mistakes—Spanish is my first language, hehe.)
+
+Vote up Vote down
+
+Shattered Pixel 218 days ago(+1)
+
+Thanks so much for the kind words! I’m glad to hear that you’ve enjoyed Shattered for so long, and that it’s been helpful to you in its own little way.
+
+Vote up Vote down
+
+UTO-PIX studio 240 days ago
+
+Years of playing, and I still love it . Thanks for making and keep updating this masterpiece !!
+
+Vote up Vote down
+
+tomss_tj 241 days ago
+
+hey so. ive been trying to play in computer and it doesnt let me play. says "failed to launch JVM" and i cant do anything, i downloaded it from here, reinstalled just in case java 64-bit and nothing. if u know how to fix it pls lmk, thank you
+
+Vote up Vote down
+
+tomss_tj 241 days ago
+
+it happens on every version
+
+Vote up Vote down
+
+Shattered Pixel 241 days ago
+
+Can you tell me any more about your computer? Windows version and processor in particular. Based on that error, Shattered may not be compatible with your computer.
+
+Vote up Vote down
+
+tomss_tj 240 days ago
+
+yeah, its a windows 10 intel celeron N5100. 4gb ram x64 base
+
+Vote up Vote down
+
+Shattered Pixel 240 days ago
+
+Hm okay, assuming that is x64 windows and not x86 then I’m not entirely sure. The two big hurdles on Windows tend to be 64-bit and openGL 2.0 support, both of which your computer should have.
+
+You could try downloading the plain .JAR version from github, and installing your own version of Java separately. https://github.com/00-Evan/shattered-pixel-dungeon/releases
+
+I would recommend Adoptium Temurin JRE, Java 11+ : https://adoptium.net/temurin/releases?version=11&os=windows
+
+Vote up Vote down
+
+tomss_tj 240 days ago
+
+idk man it doesnt let me but its ok, ill keep playing mobile. ty and sorry for bothering
+
+Vote up Vote down
+
+poppy_dash 263 days ago(-3)
+
+you know this has been free for many years on the google play store
+
+Vote up Vote down
+
+Shattered Pixel 262 days ago(+2)
+
+Yes, and it also has optional supporter purchases on Google Play. This is very similar to that system, you can download the base free version or pay $10 to get some extras and support the developer.
+
+Vote up Vote down
+
+minhthanh140 266 days ago
+
+[Critical Bug v3.3.0 Beta] Game initialization failure / Cannot start/load character after exit
+
+Vote up Vote down
+
+Shattered Pixel 266 days ago(+1)
+
+Often this sort of error happens when save files become corrupted, which is generally an error that’s out of Shattered’s hands unfortunately. Is there any more particular info you can give? “Game Initialization failure” isn’t an error message that Shattered gives, any actual error message reported by the game would be helpful.
+
+Vote up Vote down
+
+Nikoichu 267 days ago(+3)
+
+I'm amazed how you've worked on this project for 10+ years at this point and you keep updating and refining it with fresh new ideas and content still. Thank you so much for your work. I wish I had your dedication. Mad respect.
+
+Vote up Vote down
+
+Shattered Pixel 267 days ago(+3)
+
+Thanks so much for the kind words! Continued enthusiasm from players is the biggest reason why I’ve been able to continue working on Shattered for so long.
+
+Vote up Vote down
+
+Bounz_W_22 314 days ago(+1)(-1)
+
+No quiero ser alarmista ni nada, pero tengo la manía de pasar todo lo que pase por mis manos por virus total y al pasar el ejecutable de la versión gratuita me sale que tiene un troyano, quiero pensar que es un falso positivo, entonces voy a hacer como que no he visto nada y voy a esperar que lo arregléis, gracias por leer.
+
+PD: pongan un correo para que la gente se comunique con vosotros, si esta dicho correo perdón por estar ciego.
+
+Vote up Vote down
+
+Shattered Pixel 313 days ago(+2)
+
+It’s fairly common for java-based applications to falsely trigger antivirus software. I can assure you that there’s no malicious code in the game, the code for the free version is actually entirely open source: https://github.com/00-Evan/shattered-pixel-dungeon
+
+Vote up Vote down
+
+ღ༒𝕤𝕖𝕣𝕚𝕒𝕝 𝕕𝕖𝕤𝕚𝕘𝕟𝕒𝕔𝕚𝕠𝕟 V2(Z)༒ღ 316 days ago(1 edit) (+1)
+
+I'm so excited, I just downloaded my first Roguelike and I'm about to try it out. Any advice luds? "^^
+
+Vote up Vote down
+
+Herna.io 330 days ago(+1)
+
+help please, how do i open the game on linux :(
+
+Vote up Vote down
+
+Shattered Pixel 329 days ago(+1)
+
+After decompressing the files into their own folder, execute “bin/Shattered Pixel Dungeon”
+
+Vote up Vote down
+
+Herna.io 329 days ago(+1)
+
+Thank you so much :)
+
+Vote up Vote down
+
+Ludorin 336 days ago(+1)
+
+Sadly, when I try to start the latest version of the game, nothing happens. I had no problems with the version 3.0.0. Any idea what the probleb can be?(I am using Windows 11)
+
+Vote up Vote down
+
+Shattered Pixel 335 days ago(+1)
+
+Sorry to hear the game isn’t working for you. Do you get any response at all or does the game simply not launch?
+
+You can find an archive of old releases on Github here, do either v3.1.1 or v3.0.2 work for you? https://github.com/00-Evan/shattered-pixel-dungeon/releases/
+
+Vote up Vote down
+
+Deleted account 342 days ago
+
+Deleted post
+
+Vote up Vote down
+
+Cormmaculate 1 year ago(+3)
+
+been playing this game since the beginning, didn't even know it had a pc version which is amazing. I for some reason am having problems on the windows version seeing my courser, any possible solutions?
+
+Vote up Vote down
+
+Shattered Pixel 1 year ago(+1)
+
+Hm, is the cursor disappearing or just difficult for you to see? The game uses a custom cursor that changes based on whether you’re using mouse or controller, so if it’s swapping between the two at random it might be because you have a controller connected.
+
+Vote up Vote down
+
+Cormmaculate 1 year ago
+
+weird I had no controller plugged in or anything and was sure there was no cursor but after a few days and a pc reset it showed up. problem solved i guess?
+
+Vote up Vote down
+
+Shattered Pixel 1 year ago
+
+Hm, glad to hear that you got it working regardless!
+
+Vote up Vote down
+
+darkdarkniss001 1 year ago
+
+Man this game was great and im still playing it , bro thank you for creating such a great game i wish you could add more and more to it ❤️
+
+if i could rank it i will give it ⭐⭐🌟⭐⭐
+
+Vote up Vote down
+
+Shattered Pixel 1 year ago
+
+Thanks for the kind words!
+
+Vote up Vote down
+
+Spanks 1 year ago
+
+I've played this game for years, it's good to find it again on itch
+
+Vote up Vote down
+
+dante 1 year ago
+
+I volunteer to translate this game from english to russian, please reply if interested
+
+Vote up Vote down
+
+Shattered Pixel 1 year ago
+
+Thanks for the offer! Shattered has a public translation community here: https://app.transifex.com/shattered-pixel/shattered-pixel-dungeon/
+
+Vote up Vote down
+
+Tripo 3 1 year ago
+
+Hello, do you want to partner? I'm creating a new game and I wanted to know if anyone wants to partner?
+
+Vote up Vote down
+
+Shattered Pixel 1 year ago(+2)
+
+Thanks for the offer, but I’d prefer to keep the core development of Shattered as a solo project.
+
+Vote up Vote down
+
+MihauRit 1 year ago
+
+Good, classic rogue-like. I played for a short time but it seems full of stuff.
+
+Vote up Vote down
+
+Rippi_ 1 year ago
+
+Hello! I love the Pixel Dungeon (and most versions of the game, such as Shattered), and I wished to install this version on my PC. However, after trying to run the .exe , I got the error "Failed to run JVM". Even after I downloaded a 32bit version of jdk, tried running the .jar files, or redownloaded java, I cannot start the game.I'm using a Windows 11 (obviously on x64), and I'm using the "Shattered Pixel Dungeon v3.1.0 windows". Do you have any way to fix/help?
+
+Vote up Vote down
+
+Shattered Pixel 1 year ago
+
+If you’re downloading the game from here then there’s no reason to download a separate version of Java, there’s already one bundled with the game. If you are downloading the .JAR version from github, then it’ll be entirely dependent on which version of Java you use, I’d suggest a modern version built for 64-bit Windows 11.
+
+Vote up Vote down
+
+Dragolord69 1 year ago
+
+Hey hey, been playin this game for years and loving the game and how it has been updated. A few small questions comes in mind when experiencing the game~
+
+•Would there be any plan to update UI for the alchemy pot cooking? Example as adding a new illustration or some sort
+
+•As there's already a few new heroes in the game, how many more roles would be added in the game? The possibility is endless and the knowledge that a new character will be added in every big updates sound so fun!
+
+•Reading the lore has been quite enjoyable. Are there any possibility for the main story to be extended or will it be new side events/story?
+
+Amazing work! Keep it up ❤️
+
+Vote up Vote down
+
+Shattered Pixel 1 year ago
+
+Thanks for the kind words!
+
+I agree that the current alchemy UI background is a bit sparse on larger displays. It’s not a priority currently but it is something I’d like to make a bit more detailed.
+
+I don’t currently have plans to add a 7th+ hero, each new hero is a lot of work and I want to be very confident that they’ll fit well into the game before making them. I would like to expand existing hero options at some point though, such as with more talents or subclasses.
+
+More lore will also hopefully be added at some point in the future. Now that all six of my planned heroes are in the game I would like to add a bit of writing that focuses on them.
+
+Vote up Vote down
+
+lowlybarista 1 year ago(1 edit)
+
+Hey mate. Love the game but using the pickaxe outside the quest area isn't working. I was trying to test it in the beta but kept dying before I got to the mines. Im Using the rouge/assasin. Keep up the good work👍
+
+Vote up Vote down
+
+Shattered Pixel 1 year ago(+1)
+
+Do you mean you’re trying to dig with the pickaxe outside of the quest area? That is correct that mining with the pickaxe only works inside the quest area.
+
+Vote up Vote down
+
+lowlybarista 1 year ago
+
+Yeah i am. I thought it would still work because the description remains the same when your out of the quest area. Ah well still a good game though.
+
+Vote up Vote down
+
+czjc 1 year ago(+2)(-1)
+
+I have never seen the game like this before!It is amazing enough for me because Shattered Pixel Dungeon has various content in such small files.Because of its high difficulty,I will feel really excited if I finish this game.
+
+Thanks for the author creating this wonderful world for us,I wish it will become better and better!
+
+Vote up Vote down
+
+Shattered Pixel 1 year ago(+2)(-1)
+
+Thanks for the kind words, glad to hear that you enjoy the game!
+
+Vote up Vote down
+
+Deleted post 1 year ago
+
+Deleted 1 year ago
+
+Vote up Vote down
+
+Deleted post 1 year ago
+
+Deleted 1 year ago
+
+Vote up Vote down
+
+Deleted post 1 year ago
+
+Deleted 1 year ago
+
+Vote up Vote down
+
+Deleted post 1 year ago
+
+Deleted 1 year ago
+
+Vote up Vote down
+
+hhhwaini 1 year ago(-7)
+
+I waited two days for a reply.
+
+Vote up Vote down
+
+Shattered Pixel 1 year ago(+4)(-1)
+
+Spamming this area with many messages and then complaining when I don’t immediately reply does in fact not make me more inclined to reply to you.
+
+Vote up Vote down
+
+hhhwaini 1 year ago(-5)
+
+I'm just expressing my feelings and suggestions about playing this game. Why do you say these are rubbish? I won't send it again.
+
+Vote up Vote down
+
+hhhwaini 1 year ago(-4)
+
+Why do you say that what I said is rubbish? It really makes me angry and disappointed.
+
+Vote up Vote down
+
+czjc 1 year ago(2 edits) (+3)
+
+I think you are too impolite.Not only is it not a responsibility for anyone to reply others,but it isn't totally good for the development for the community.
+
+The posts all you have sent are meaningless,aren't them?You are so excessive for help and your attitude is so bad that nobody want to accept your advices.
+
+As the saying from Genshin Impact goes," As long as you don't lose your sublimity, the whole world will be open to you."We need to be friendly,and then the world must be more beautiful!
+
+Vote up Vote down
+
+yyyfff 1 year ago(-1)
+
+Do you still play Genshin? Isn't that a Chinese game?
+
+Vote up Vote down
+
+czjc 1 year ago
+
+Because I'm Chinese,haha.It seems that it's very popular across the world for its many advantages.I'm proud of it.:)
+
+I consider that it spreads Chinese culture greatly.Maybe you can give it a try.
+
+Vote up Vote down
+
+hhhwaini 1 year ago
+
+And I think the ultimate demon king of the game is too weak and his skills are not gorgeous enough. For example, the dog of the second demon king will throw fire and bombs, while the ultimate demon king will only flash around.
+
+Vote up Vote down
+
+hhhwaini 1 year ago
+
+I hate that big eye. A laser hit me and I lost half my life.
+
+Vote up Vote down
+
+hhhwaini 1 year ago(-1)
+
+Would you like to consider weakening the big eye, or defeating it to drop items?
+
+Vote up Vote down
+
+fredbezies74 1 year ago
+
+The kind of rogue-like I really enjoy. Can't wait for version 3.1.
+
+Vote up Vote down
+
+hhhwaini 1 year ago
+
+Don't you already have it?
+
+Vote up Vote down
+
+fredbezies74 1 year ago
+
+I grabbed version 3.0.2 if I trust the properties of the executable.
+
+Vote up Vote down
+
+Deleted post 1 year ago
+
+Deleted 1 year ago
+
+Vote up Vote down
+
+Shattered Pixel 1 year ago(+1)(-1)
+
+Very soon actually! If all goes well the beta for v3.1 will be posted today.
+
+Vote up Vote down
+
+Deleted post 1 year ago
+
+Deleted 1 year ago
+
+Vote up Vote down
+
+Deleted post 1 year ago
+
+Deleted 1 year ago
+
+Viewing most recent comments 1 to 40 of 90 · Next page
+
+Updated 4 days ago

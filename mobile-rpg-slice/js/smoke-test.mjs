@@ -1,38 +1,58 @@
 /**
- * Node smoke test for combat/cultivation math (no DOM).
- * Run: node --input-type=module js/smoke-test.mjs
+ * Smoke test for pet stats + combat.
+ * Run: node js/smoke-test.mjs
  */
-import { REALMS, DUNGEONS, RECRUIT_POOL } from "./data.js";
+import { WILD_PETS, DUNGEONS, buildPetStats, ELEMENTS, PERSONALITIES, SPECIES } from "./data.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
-assert(REALMS.length >= 4, "realms");
-assert(DUNGEONS.every((d) => d.enemies.length > 0), "dungeons");
-assert(RECRUIT_POOL.length >= 3, "recruit pool");
+assert(Object.keys(SPECIES).length >= 5, "species");
+assert(Object.keys(ELEMENTS).length >= 5, "elements");
+assert(Object.keys(PERSONALITIES).length >= 5, "personalities");
 
-// Mini combat simulation mirroring engine.js
-function fight(party, enemies) {
-  const allies = party.map((p) => ({ ...p, side: "ally", hp: p.hp }));
-  const foes = enemies.map((e) => ({ ...e, side: "foe", hp: e.hp }));
+const pets = WILD_PETS.slice(0, 3).map(buildPetStats);
+assert(pets.every((p) => p.atk > 0 && p.hp > 0 && p.spd > 0 && p.genes), "pet build");
+
+// 性格應改變數值：烈性礁狐 vs 溫馴同種需不同（用 glowfin flame fierce vs gentle 比對）
+const fierce = buildPetStats({
+  id: "t1",
+  species: "glowfin",
+  element: "flame",
+  personality: "fierce",
+  cost: 1,
+});
+const gentle = buildPetStats({
+  id: "t2",
+  species: "glowfin",
+  element: "flame",
+  personality: "gentle",
+  cost: 1,
+});
+assert(fierce.atk > gentle.atk, "personality should boost atk for fierce");
+
+function fight(allies, enemies) {
+  const a = allies.map((p) => ({ ...p, side: "ally", hp: p.hp }));
+  const f = enemies.map((e) => ({ ...e, side: "foe", hp: e.hp }));
   for (let r = 0; r < 40; r++) {
-    const order = [...allies, ...foes].filter((u) => u.hp > 0).sort((a, b) => b.spd - a.spd);
+    const order = [...a, ...f].filter((u) => u.hp > 0).sort((x, y) => y.spd - x.spd);
     for (const actor of order) {
       if (actor.hp <= 0) continue;
-      const targets = (actor.side === "ally" ? foes : allies).filter((t) => t.hp > 0);
+      const targets = (actor.side === "ally" ? f : a).filter((t) => t.hp > 0);
       if (!targets.length) break;
-      const target = targets[0];
-      target.hp -= Math.max(1, actor.atk);
+      targets[0].hp -= Math.max(1, actor.atk);
     }
-    if (foes.every((f) => f.hp <= 0)) return true;
-    if (allies.every((a) => a.hp <= 0)) return false;
+    if (f.every((x) => x.hp <= 0)) return true;
+    if (a.every((x) => x.hp <= 0)) return false;
   }
   return false;
 }
 
-const party = RECRUIT_POOL.slice(0, 3).map((p) => ({ ...p, atk: p.atk + 6 }));
-const won = fight(party, DUNGEONS[0].enemies);
-assert(won === true, "tier-1 dungeon should be winnable with 3 boosted recruits");
+const party = [
+  { name: "潮行者", atk: 14, hp: 130, spd: 10 },
+  ...pets.map((p) => ({ name: p.name, atk: p.atk + 4, hp: p.hp, spd: p.spd })),
+];
+assert(fight(party, DUNGEONS[0].enemies) === true, "floor1 winnable with master+3 pets");
 
-console.log("smoke-test ok");
+console.log("smoke-test ok", pets.map((p) => p.name).join(", "));
