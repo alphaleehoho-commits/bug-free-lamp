@@ -21,6 +21,11 @@ import {
   partyMeetsTrial,
   countHybridBestiary,
   bestiaryKey,
+  DUNGEONS,
+  dungeonWaves,
+  countDungeonRoles,
+  evaluateDungeonConditions,
+  SKILLS,
 } from "./data.js";
 
 function assert(cond, msg) {
@@ -130,6 +135,26 @@ const keyed = {};
 keyed[bestiaryKey("tideling", "tide")] = true;
 keyed[bestiaryKey("stormmoth", "gale")] = true;
 assert(countHybridBestiary(keyed) === 2, "hybrid dex count");
+
+/* P4: waves / roles / conditions / foe skills */
+assert(SKILLS.abyss_slam && SKILLS.core_roar, "foe skills");
+for (const d of DUNGEONS) {
+  const waves = dungeonWaves(d);
+  assert(waves.length >= 2, `${d.id} waves`);
+  const roles = countDungeonRoles(waves);
+  assert(roles.elite >= 1, `${d.id} elite`);
+  assert((d.conditions || []).length >= 1, `${d.id} conditions`);
+}
+assert(countDungeonRoles(dungeonWaves(DUNGEONS.find((d) => d.id === "tide_2"))).boss >= 1, "t2 boss");
+assert(countDungeonRoles(dungeonWaves(DUNGEONS.find((d) => d.id === "tide_3"))).boss >= 1, "t3 boss");
+
+const flameParty = [{ elementId: "flame", speciesId: "glowfin", generation: 0 }];
+const t1ev = evaluateDungeonConditions(flameParty, DUNGEONS.find((d) => d.id === "tide_1"));
+assert(t1ev.find((c) => c.id === "tide_1_flame")?.ok, "flame condition");
+assert(t1ev.find((c) => c.passive)?.type === "elem_atk", "passive elem");
+
+const flatCompat = dungeonWaves({ name: "x", enemies: [{ name: "a", hp: 1, atk: 1, spd: 1, element: "tide" }] });
+assert(flatCompat.length === 1 && flatCompat[0].enemies.length === 1, "legacy enemies compat");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
