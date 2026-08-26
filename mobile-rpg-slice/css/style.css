@@ -467,6 +467,16 @@ body {
 .combat-scroll .combat {
   margin: 0;
 }
+.tactics-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.35rem 0 0.75rem;
+}
+.tactics-row button {
+  flex: 1 1 auto;
+  min-width: 4.5rem;
+}
 .gear-row input[type="text"] {
   font: inherit;
   color: var(--text);

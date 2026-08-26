@@ -58,6 +58,12 @@ import {
   masterSkillsForStage,
   fusionStoneCost,
   breakthroughView,
+  shopView,
+  buyShopOffer,
+  setTactics,
+  tacticsView,
+  dungeonDailyView,
+  TACTICS,
 } from "./engine.js";
 
 const app = document.querySelector("#app");
@@ -510,6 +516,25 @@ function cultivatePanel(qiPct, next, m) {
         )
         .join("");
 
+  const shopOffers = shopView(state);
+  const pendingFull = (state.pending || []).length >= PENDING_BOND_MAX;
+  const shopRows =
+    shopOffers
+      .map((o) => {
+        const sold = o.bought;
+        return `
+        <li class="card-row">
+          <div>
+            <strong>${escapeHtml(o.speciesName || o.name)}</strong>
+            <span class="muted">${escapeHtml(o.kind)}·${escapeHtml(o.elementName)} · ${sold ? "已售" : `${o.cost} 靈石`}</span>
+          </div>
+          <button type="button" class="primary" data-shop-buy="${escapeHtml(o.offerId)}" ${
+            sold || pendingFull ? "disabled" : ""
+          }>${sold ? "已售" : pendingFull ? "待契滿" : "購入"}</button>
+        </li>`;
+      })
+      .join("") || `<li class="empty">今日商肆無貨。</li>`;
+
   const ranchN = state.ranch?.length || 0;
   const breakLabel = br.maxed
     ? "已滿階"
@@ -530,6 +555,9 @@ function cultivatePanel(qiPct, next, m) {
       <button type="button" class="primary" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
       <button type="button" data-act="forge">靈紋鍛造</button>
     </div>
+    <h3>契壇商肆 · 今日</h3>
+    <p class="meta">每日 3 格；購入入待契約（高成功率）。待契約滿則不可買。</p>
+    <ul class="list">${shopRows}</ul>
     <h3>人物技能</h3>
     <ul class="skill-list">${skills || "<li class='empty'>尚未解鎖</li>"}</ul>
     <h3>人物裝備（三槽）</h3>
@@ -880,6 +908,13 @@ function dungeonPanel() {
                 : ""
             }
             ${
+              bd.daily
+                ? `<li class="cond-item is-met"><span class="cond-badge">今日</span><div class="cond-body"><strong>${escapeHtml(
+                    bd.daily.label || "今日修飾"
+                  )}</strong><span class="muted">+${bd.daily.stones || 0}石／${bd.daily.scrap || 0}碎片</span></div></li>`
+                : ""
+            }
+            ${
               bd.elite
                 ? `<li class="cond-item is-met"><span class="cond-badge">精英</span><div class="cond-body"><strong>擊破精英</strong><span class="muted">+${bd.elite.stones || 0}石</span></div></li>`
                 : ""
@@ -972,9 +1007,31 @@ function dungeonPanel() {
       </li>`;
   }).join("");
 
+  const dailyMod = dungeonDailyView(state);
+  const tactics = tacticsView(state);
+  const tacticBtns = tactics
+    .map(
+      (t) =>
+        `<button type="button" class="${t.selected ? "primary" : ""}" data-set-tactics="${t.id}">${escapeHtml(
+          t.name
+        )}</button>`
+    )
+    .join("");
+  const tacticCur = tactics.find((t) => t.selected);
+
   return `
     <h2>潮汐秘境</h2>
-    <p class="lead">波次：雜兵→精英→BOSS。條件／試煉各自獨立判定與發獎；達成＝綠標，未達成＝灰標。</p>
+    <p class="lead">波次：雜兵→精英→BOSS。條件／試煉分開結算。選戰術後仍自動戰鬥。</p>
+    ${
+      dailyMod
+        ? `<ul class="cond-list"><li class="cond-item is-met"><span class="cond-badge">今日</span><div class="cond-body"><strong>${escapeHtml(
+            dailyMod.label
+          )}</strong><span class="muted">全關共用</span></div></li></ul>`
+        : ""
+    }
+    <h3>戰術偏好</h3>
+    <p class="meta">${escapeHtml(tacticCur?.desc || "")}</p>
+    <div class="row tactics-row">${tacticBtns}</div>
     <ul class="list dungeon-list">${list}</ul>
   `;
 }
@@ -1158,6 +1215,23 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = claimDaily(state, btn.dataset.claimDaily);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-shop-buy]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = buyShopOffer(state, btn.dataset.shopBuy);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-set-tactics]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = setTactics(state, btn.dataset.setTactics);
       saveState(state);
       render();
       setFlash(r.msg);

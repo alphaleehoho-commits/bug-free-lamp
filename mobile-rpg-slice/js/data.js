@@ -49,7 +49,7 @@ export const BREAKTHROUGH_GATES = {
   5: {
     costs: { stones: 400, scrap: 5, dust: 40, feed: 30 },
     checks: [
-      { type: "cleared", dungeonId: "tide_3", label: "通關【心核】" },
+      { type: "cleared", dungeonId: "tide_4", label: "通關【潮汐深層】" },
       { type: "min_gen", gen: 2, label: "擁有 ≥ 2 代寵" },
       { type: "breeds", need: 3, label: "繁殖次數 ≥ 3" },
       { type: "bestiary", need: 10, label: "圖鑑登錄 ≥ 10 格" },
@@ -521,6 +521,61 @@ export const SKILLS = {
     power: 1.65,
     desc: "精英：潮壓重擊",
   },
+  // —— 雜交專屬 ——
+  tide_beast_rush: {
+    id: "tide_beast_rush",
+    name: "潮獸奔襲",
+    owner: "pet",
+    type: "strike",
+    cd: 2,
+    power: 1.85,
+    desc: "潮獸專屬：高倍率單體",
+  },
+  dusk_veil: {
+    id: "dusk_veil",
+    name: "暮紗",
+    owner: "pet",
+    type: "debuff",
+    cd: 2,
+    power: 1.35,
+    desc: "暮翼專屬：傷害並削攻",
+  },
+  iron_bulwark: {
+    id: "iron_bulwark",
+    name: "鐵壁",
+    owner: "pet",
+    type: "guard",
+    cd: 3,
+    power: 0.45,
+    desc: "鐵背專屬：強減傷回血",
+  },
+  mist_surge: {
+    id: "mist_surge",
+    name: "霧湧",
+    owner: "pet",
+    type: "cleave",
+    cd: 3,
+    power: 0.8,
+    desc: "霧鯉專屬：霧浪濺射",
+  },
+  storm_lance: {
+    id: "storm_lance",
+    name: "嵐槍",
+    owner: "pet",
+    type: "strike",
+    cd: 2,
+    power: 1.9,
+    desc: "嵐蛾專屬：嵐刺單體",
+  },
+  reef_dive: {
+    id: "reef_dive",
+    name: "礁襲",
+    owner: "pet",
+    type: "strike",
+    cd: 2,
+    power: 1.7,
+    desc: "礁翼專屬：俯衝（＋速）",
+  },
 };
 
 /** 人物依階段解鎖技能 */
@@ -879,7 +934,102 @@ export function rollWildEncounter(dungeonId = "wild", dungeonDef = null) {
   };
 }
 
-export const RECRUIT_POOL = [];
+export const RECRUIT_POOL = [
+  { species: "reefox", element: "tide", personality: "sly", weight: 4, cost: 55 },
+  { species: "reefox", element: "flame", personality: "fierce", weight: 2, cost: 60 },
+  { species: "tidecarp", element: "tide", personality: "gentle", weight: 4, cost: 58 },
+  { species: "tidecarp", element: "stone", personality: "steady", weight: 2, cost: 62 },
+  { species: "ashwing", element: "gale", personality: "fierce", weight: 3, cost: 60 },
+  { species: "ashwing", element: "flame", personality: "sly", weight: 2, cost: 65 },
+  { species: "mossback", element: "stone", personality: "steady", weight: 3, cost: 58 },
+  { species: "mossback", element: "tide", personality: "gentle", weight: 2, cost: 60 },
+  { species: "nightmoth", element: "gloom", personality: "wild", weight: 3, cost: 72 },
+  { species: "nightmoth", element: "gale", personality: "sly", weight: 2, cost: 75 },
+  { species: "glowfin", element: "flame", personality: "fierce", weight: 3, cost: 68 },
+  { species: "glowfin", element: "tide", personality: "gentle", weight: 2, cost: 70 },
+];
+
+export const SHOP_OFFER_COUNT = 3;
+
+/** 戰術偏好（自動戰鬥） */
+export const TACTICS = {
+  balanced: { id: "balanced", name: "均衡", desc: "預設自動：就緒技隨機，打最低血" },
+  focus_boss: { id: "focus_boss", name: "集火", desc: "優先攻擊 BOSS／精英" },
+  sustain: { id: "sustain", name: "續航", desc: "優先治療／減傷技" },
+};
+
+export const TACTIC_IDS = ["balanced", "focus_boss", "sustain"];
+
+/**
+ * 每日秘境修飾（全關共用；用 todayKey 穩定抽一條）
+ */
+export const DUNGEON_DAILY_MODS = [
+  {
+    id: "elite_bulk",
+    label: "今日：精英血量 +20%",
+    eliteHpMult: 1.2,
+  },
+  {
+    id: "flame_favor",
+    label: "今日：焰屬友方攻擊 +15%",
+    allyElemAtk: { element: "flame", mult: 1.15 },
+  },
+  {
+    id: "scrap_bonus",
+    label: "今日：通關額外 +1 碎片",
+    clearScrapBonus: 1,
+  },
+  {
+    id: "boss_rage",
+    label: "今日：BOSS 攻擊 +12%",
+    bossAtkMult: 1.12,
+  },
+  {
+    id: "gale_favor",
+    label: "今日：嵐屬友方攻擊 +15%",
+    allyElemAtk: { element: "gale", mult: 1.15 },
+  },
+  {
+    id: "stone_bonus",
+    label: "今日：通關額外 +15 靈石",
+    clearStoneBonus: 15,
+  },
+];
+
+function hashDayKey(key) {
+  let h = 0;
+  const s = String(key || "");
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+export function pickDailyDungeonMod(dateKey) {
+  const list = DUNGEON_DAILY_MODS;
+  if (!list.length) return null;
+  const idx = hashDayKey(dateKey) % list.length;
+  return list[idx];
+}
+
+/**
+ * 雜交種專屬第二技（優先於 kind 二技）
+ */
+export const HYBRID_SKILLS = {
+  tideling: "tide_beast_rush",
+  duskfly: "dusk_veil",
+  ironback: "iron_bulwark",
+  mistcarp: "mist_surge",
+  stormmoth: "storm_lance",
+  reefwing: "reef_dive",
+};
+
+/** 代數出戰攻／血倍率 */
+export function genCombatMult(generation) {
+  const g = Math.max(0, Math.min(3, generation | 0));
+  if (g >= 3) return 1.12;
+  if (g >= 2) return 1.08;
+  if (g >= 1) return 1.04;
+  return 1;
+}
 
 /**
  * 秘境表：掉落、首通、遇寵權重、冷卻（毫秒）
@@ -1133,6 +1283,105 @@ export const DUNGEONS = [
     },
     elementWeights: { stone: 3, gloom: 3, gale: 2, flame: 1, tide: 1 },
   },
+  {
+    id: "tide_4",
+    name: "潮汐廢墟 · 深層",
+    needRealm: 4,
+    cooldownMs: 70_000,
+    waves: [
+      {
+        label: "深層前衛",
+        enemies: [
+          { name: "深潮骸兵", hp: 140, atk: 18, spd: 10, element: "tide", role: "normal" },
+          { name: "裂岩影", hp: 150, atk: 16, spd: 7, element: "stone", role: "normal" },
+          { name: "幽霧刺", hp: 120, atk: 20, spd: 12, element: "gloom", role: "normal" },
+        ],
+      },
+      {
+        label: "雙生深衛",
+        enemies: [
+          {
+            name: "血紋潮衛",
+            hp: 200,
+            atk: 22,
+            spd: 11,
+            element: "tide",
+            role: "elite",
+            skills: ["tide_crush", "abyss_slam"],
+          },
+          {
+            name: "心核祭司",
+            hp: 190,
+            atk: 20,
+            spd: 8,
+            element: "gloom",
+            role: "elite",
+            skills: ["shadow_cleave", "core_roar", "mist_ward"],
+          },
+        ],
+      },
+      {
+        label: "深層 BOSS",
+        enemies: [
+          {
+            name: "暗潮心核·真影",
+            hp: 480,
+            atk: 28,
+            spd: 10,
+            element: "gloom",
+            role: "boss",
+            skills: ["abyss_slam", "shadow_cleave", "core_roar", "shell_guard", "tide_crush"],
+            actions: 2,
+          },
+        ],
+      },
+    ],
+    conditions: [
+      {
+        id: "tide_4_blood",
+        type: "min_hybrid",
+        count: 1,
+        label: "條件：出戰含雜交種",
+        bonus: { stones: 45, scrap: 2 },
+      },
+      {
+        id: "tide_4_gen",
+        type: "min_gen",
+        gen: 2,
+        label: "條件：出戰含≥2代寵",
+        bonus: { stones: 40, dust: 10 },
+      },
+      {
+        id: "tide_4_lean",
+        type: "max_pets",
+        max: 2,
+        label: "條件：出戰≤2寵",
+        bonus: { stones: 50, scrap: 1 },
+      },
+    ],
+    passives: [
+      {
+        id: "tide_4_light",
+        type: "elem_atk",
+        element: "flame",
+        mult: 1.12,
+        label: "關卡：焰屬友方攻擊 +12%",
+      },
+    ],
+    reward: { stones: 200, scrap: 6 },
+    firstClearBonus: { stones: 280, scrap: 4 },
+    eliteBonus: { stones: 30, scrap: 2 },
+    bossBonus: { stones: 70, scrap: 3 },
+    encounterWeights: {
+      nightmoth: 3,
+      glowfin: 3,
+      ashwing: 2,
+      mossback: 2,
+      reefox: 2,
+      tidecarp: 2,
+    },
+    elementWeights: { gloom: 3, tide: 2, stone: 2, flame: 2, gale: 2 },
+  },
 ];
 
 /** 兼容：扁平敵人列表（舊資料／測試）→ 單波 */
@@ -1364,8 +1613,11 @@ export function petSkillIds(pet) {
   const unlocked =
     (pet.fusionLevel ?? 0) >= SECOND_SKILL_UNLOCK.fusionLevel ||
     (pet.level ?? 1) >= SECOND_SKILL_UNLOCK.level;
-  const second = KIND_SECOND_SKILLS[pet.kind];
-  if (unlocked && second) ids.push(second);
+  if (unlocked) {
+    const hybridId = HYBRID_SKILLS[pet.speciesId];
+    const second = hybridId || KIND_SECOND_SKILLS[pet.kind];
+    if (second) ids.push(second);
+  }
   return ids;
 }
 
@@ -1490,6 +1742,17 @@ export const DUNGEON_GEAR_DROPS = {
       core_fang: 2,
       abyss_plate: 2,
       gloom_sigil: 3,
+      reef_cleaver: 2,
+      tide_mail: 2,
+      reef_ring: 2,
+    },
+  },
+  tide_4: {
+    chance: 0.72,
+    weights: {
+      core_fang: 4,
+      abyss_plate: 4,
+      gloom_sigil: 4,
       reef_cleaver: 2,
       tide_mail: 2,
       reef_ring: 2,
@@ -1951,6 +2214,14 @@ export const DUNGEON_TRIALS = {
     needGen: 2,
     match: "all",
     bonus: { stones: 40, scrap: 1 },
+  },
+  tide_4: {
+    id: "trial_tide_4",
+    label: "試煉：雜交種且 ≥3 代",
+    needHybrid: true,
+    needGen: 3,
+    match: "all",
+    bonus: { stones: 70, scrap: 2 },
   },
 };
 

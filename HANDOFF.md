@@ -10,7 +10,7 @@ Other agents cannot see those files until the project is on a **private GitHub r
 
 - Path: `mobile-rpg-slice/`
 - Stack: vanilla HTML/CSS/JS PWA (portrait mobile)
-- Save key / SW cache: `void-tide-pets-v13`
+- Save key / SW cache: `void-tide-pets-v14`
 
 **Breed (dino-style):** hybrid species from cross-kind mates + rarity tiers (普通→傳說); fusion stays same-species stages. Bestiary 60 (12 species × 5 elements). Species↔kind 1:1; generations 0–3.
 - Run: `cd mobile-rpg-slice && python3 -m http.server 8765`
@@ -27,6 +27,8 @@ Idle → dungeon → bond → ranch → fuse/breed → element → P1 idle/gear/
 **P4:** dungeon waves (trash→elite→boss) · foe skills / boss double-act · stage conditions + passives · elite/boss clear & drop bonuses.
 
 **P5:** condition met/miss UI + separate reward accounting · combat log scroll box · breakthrough multi-gate checklist (qi/costs/clears/bonds/gear/…).
+
+**P6:** tide_4 deep floor · daily dungeon mod · ranch shop (3 daily offers) · hybrid exclusive skills · gen combat mult · auto tactics (balanced/focus_boss/sustain).
 
 **Balance:** Master from gear; pets from innate (fuse/breed). UI polish / combat animation deferred.
 

@@ -29,6 +29,12 @@ import {
   breakthroughView,
   BREAKTHROUGH_GATES,
   STAGES,
+  pickDailyDungeonMod,
+  RECRUIT_POOL,
+  HYBRID_SKILLS,
+  genCombatMult,
+  TACTICS,
+  petSkillIds,
 } from "./data.js";
 
 function assert(cond, msg) {
@@ -184,6 +190,24 @@ fakeState.stones = 25;
 fakeState.combatsWon = 1;
 const br1 = breakthroughView(fakeState);
 assert(br1.ready && br1.next.id === 1, "break ready to stage1");
+
+/* P6 */
+assert(DUNGEONS.some((d) => d.id === "tide_4"), "tide_4");
+assert(dungeonWaves(DUNGEONS.find((d) => d.id === "tide_4")).length === 3, "t4 3 waves");
+assert(RECRUIT_POOL.length >= 6, "recruit pool");
+assert(Object.keys(HYBRID_SKILLS).length === 6, "hybrid skills");
+assert(SKILLS.tide_beast_rush && SKILLS.storm_lance, "hybrid skill defs");
+assert(
+  petSkillIds({ skillId: "pounce", speciesId: "tideling", kind: "獸", fusionLevel: 1 }).includes(
+    "tide_beast_rush"
+  ),
+  "hybrid second skill"
+);
+assert(genCombatMult(3) === 1.12 && genCombatMult(1) === 1.04, "gen combat");
+assert(pickDailyDungeonMod("2026-08-26")?.label, "daily mod");
+assert(DUNGEON_TRIALS.tide_4?.match === "all", "t4 trial");
+assert(BREAKTHROUGH_GATES[5].checks.some((c) => c.dungeonId === "tide_4"), "break needs t4");
+assert(TACTICS.sustain && TACTICS.focus_boss, "tactics");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

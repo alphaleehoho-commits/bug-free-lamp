@@ -74,9 +74,16 @@ import {
   KINDS,
   breakthroughView,
   BREAKTHROUGH_GATES,
+  pickDailyDungeonMod,
+  RECRUIT_POOL,
+  SHOP_OFFER_COUNT,
+  TACTICS,
+  TACTIC_IDS,
+  HYBRID_SKILLS,
+  genCombatMult,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v13";
+const SAVE_KEY = "void-tide-pets-v14";
 
 function defaultMaster() {
   return {
@@ -123,6 +130,7 @@ function defaultState() {
       "圖鑑、每日任務與成就已開啟——見「圖鑑」頁。",
       "繁殖目標：雜交出潮獸／嵐蛾、升代與稀有——圖鑑或繁殖頁可領獎。",
       "秘境改為波次戰：雜兵→精英→BOSS；滿足關卡條件有額外獎。",
+      "契壇商肆可購待契約靈寵；秘境可選戰術；深層考驗血脈。",
     ],
     lastTick: Date.now(),
     combatsWon: 0,
@@ -138,7 +146,15 @@ function defaultState() {
     /** P3 繁殖目標進度 */
     breedGoals: emptyBreedGoals(),
     offlineHint: null,
+    /** P6 */
+    tactics: "balanced",
+    shop: emptyShop(),
+    dungeonDaily: null,
   };
+}
+
+function emptyShop(now = Date.now()) {
+  return { date: todayKey(now), offers: [] };
 }
 
 function emptyBreedGoals(now = Date.now()) {
@@ -188,6 +204,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v13") ||
       localStorage.getItem("void-tide-pets-v12") ||
       localStorage.getItem("void-tide-pets-v11") ||
       localStorage.getItem("void-tide-pets-v10") ||
@@ -288,6 +305,9 @@ export function loadState() {
       },
       breedGoals: ensureBreedGoalsState(parsed.breedGoals),
       offlineHint: parsed.offlineHint || null,
+      tactics: TACTIC_IDS.includes(parsed.tactics) ? parsed.tactics : "balanced",
+      shop: parsed.shop || emptyShop(),
+      dungeonDaily: parsed.dungeonDaily || null,
     };
   } catch {
     return defaultState();
@@ -679,6 +699,134 @@ function MASTER_UNLOCK_MSG(stage) {
   return null;
 }
 
+/* ─── P6：每日修飾／商肆／戰術 ─── */
+
+export function ensureDungeonDaily(state, now = Date.now()) {
+  const key = todayKey(now);
+  if (!state.dungeonDaily || state.dungeonDaily.date !== key) {
+    const mod = pickDailyDungeonMod(key);
+    state.dungeonDaily = { date: key, modId: mod?.id || null, mod };
+  } else if (state.dungeonDaily.modId && !state.dungeonDaily.mod) {
+    state.dungeonDaily.mod =
+      pickDailyDungeonMod(state.dungeonDaily.date) ||
+      null;
+  }
+  return state.dungeonDaily;
+}
+
+export function dungeonDailyView(state) {
+  const d = ensureDungeonDaily(state);
+  return d?.mod || null;
+}
+
+function rollShopOffer(seedSalt = 0) {
+  const pool = RECRUIT_POOL;
+  if (!pool.length) return null;
+  let total = 0;
+  for (const p of pool) total += p.weight || 1;
+  let r = Math.random() * total;
+  let pick = pool[0];
+  for (const p of pool) {
+    r -= p.weight || 1;
+    if (r <= 0) {
+      pick = p;
+      break;
+    }
+  }
+  const peKeys = Object.keys(
+    // personalities via template
+    { fierce: 1, steady: 1, sly: 1, gentle: 1, wild: 1 }
+  );
+  const personality = pick.personality || peKeys[Math.floor(Math.random() * peKeys.length)];
+  return {
+    offerId: `shop-${Date.now()}-${seedSalt}-${Math.floor(Math.random() * 999)}`,
+    species: pick.species,
+    element: pick.element,
+    personality,
+    cost: pick.cost || 60,
+    name: SPECIES[pick.species]?.name || pick.species,
+    kind: SPECIES[pick.species]?.kind || "?",
+    elementName: { tide: "潮", stone: "岩", flame: "焰", gale: "嵐", gloom: "幽" }[pick.element] || pick.element,
+  };
+}
+
+export function ensureShop(state, now = Date.now()) {
+  const key = todayKey(now);
+  if (!state.shop) state.shop = emptyShop(now);
+  if (state.shop.date !== key || !Array.isArray(state.shop.offers) || state.shop.offers.length === 0) {
+    const offers = [];
+    for (let i = 0; i < SHOP_OFFER_COUNT; i++) {
+      const o = rollShopOffer(i);
+      if (o) offers.push(o);
+    }
+    state.shop = { date: key, offers };
+  }
+  return state.shop;
+}
+
+export function shopView(state) {
+  ensureShop(state);
+  return state.shop.offers.map((o) => ({
+    ...o,
+    speciesName: SPECIES[o.species]?.name || o.name,
+    bought: !!o.bought,
+  }));
+}
+
+export function buyShopOffer(state, offerId) {
+  ensureShop(state);
+  if ((state.pending || []).length >= PENDING_BOND_MAX) {
+    return { ok: false, msg: `待契約已滿（${PENDING_BOND_MAX}），無法購入。` };
+  }
+  const offer = state.shop.offers.find((o) => o.offerId === offerId);
+  if (!offer) return { ok: false, msg: "商品不存在。" };
+  if (offer.bought) return { ok: false, msg: "已售出。" };
+  if (state.stones < offer.cost) return { ok: false, msg: `靈石不足（需 ${offer.cost}）。` };
+
+  const template = {
+    id: `shop-${offer.species}-${offer.element}`,
+    species: offer.species,
+    element: offer.element,
+    personality: offer.personality,
+    cost: Math.max(20, Math.floor(offer.cost * 0.35)),
+  };
+  const pet = buildPetStats(template);
+  const enc = {
+    ...pet,
+    encounterId: `shop-enc-${offer.offerId}`,
+    bondRate: 0.72,
+    metDungeon: "shop",
+    status: "pending",
+    fromShop: true,
+  };
+  state.stones -= offer.cost;
+  offer.bought = true;
+  if (!state.pending) state.pending = [];
+  state.pending.push(enc);
+  pushLog(
+    state,
+    `商肆購入【${enc.name}】（${enc.kind}·${enc.elementName}）入待契約，耗 ${offer.cost} 靈石。`
+  );
+  return { ok: true, msg: `購入 ${enc.name}（待契約）` };
+}
+
+export function setTactics(state, tacticId) {
+  if (!TACTIC_IDS.includes(tacticId)) {
+    return { ok: false, msg: "未知戰術。" };
+  }
+  state.tactics = tacticId;
+  const t = TACTICS[tacticId];
+  return { ok: true, msg: `戰術：${t.name}` };
+}
+
+export function tacticsView(state) {
+  const cur = TACTIC_IDS.includes(state.tactics) ? state.tactics : "balanced";
+  return TACTIC_IDS.map((id) => ({
+    ...TACTICS[id],
+    selected: id === cur,
+  }));
+}
+
 /** 在出戰／牧場中查找靈寵；回傳 { pet, list, index } */
 export function findOwnedPet(state, uid) {
   if (!state.pets) state.pets = [];
@@ -1066,7 +1214,8 @@ export function petDetail(state, uid) {
   const rule = target != null ? FUSION_RULES[target] : null;
   const skillIds = petSkillIds(pet);
   const skillLv = pet.skillLevel ?? 1;
-  const secondId = KIND_SECOND_SKILLS[pet.kind];
+  const secondId =
+    HYBRID_SKILLS[pet.speciesId] || KIND_SECOND_SKILLS[pet.kind];
   const secondUnlocked =
     fusion >= SECOND_SKILL_UNLOCK.fusionLevel || level >= SECOND_SKILL_UNLOCK.level;
   const baseline = petSpeciesBaseline(pet.speciesId, pet.elementId, pet.personalityId);
@@ -1107,9 +1256,23 @@ function lowestHp(units) {
   return units.filter((u) => u.hp > 0).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
 }
 
-function pickFoe(foes) {
+function rolePriority(role) {
+  if (role === "boss") return 0;
+  if (role === "elite") return 1;
+  return 2;
+}
+
+function pickFoe(foes, tactics = "balanced") {
   const live = foes.filter((t) => t.hp > 0);
   if (!live.length) return null;
+  if (tactics === "focus_boss") {
+    live.sort((a, b) => {
+      const rp = rolePriority(a.role) - rolePriority(b.role);
+      if (rp !== 0) return rp;
+      return a.hp - b.hp;
+    });
+    return live[0];
+  }
   return live.reduce((a, b) => (a.hp <= b.hp ? a : b));
 }
 
@@ -1117,7 +1280,9 @@ function dealStrike(actor, target, power, transcript, skillName) {
   if (!target) return;
   const pMult = skillPowerMult(actor.skillLevel || 1);
   let dmg = Math.max(1, Math.floor(actor.atk * power * pMult) + Math.floor(Math.random() * 4) - 1);
-  if (skillName === "嵐擊" || skillName === "穿空") dmg += Math.floor(actor.spd / 4);
+  if (skillName === "嵐擊" || skillName === "穿空" || skillName === "礁襲") {
+    dmg += Math.floor(actor.spd / 4);
+  }
   const { mult, tag } = elementMatchup(actor.elementId, target.elementId);
   dmg = Math.max(1, Math.floor(dmg * mult));
   if (actor.atkBuffTurns > 0) dmg = Math.max(1, Math.floor(dmg * (1 + (actor.atkBuffPct || 0))));
@@ -1133,14 +1298,14 @@ function dealStrike(actor, target, power, transcript, skillName) {
   );
 }
 
-function useSkill(actor, skill, allies, foes, transcript) {
+function useSkill(actor, skill, allies, foes, transcript, tactics = "balanced") {
   const cdMap = actor.skillCd;
   if ((cdMap[skill.id] || 0) > 0) return false;
   const pMult = skillPowerMult(actor.skillLevel || 1);
   const power = skill.power * pMult;
 
   if (skill.type === "strike") {
-    const t = pickFoe(foes);
+    const t = pickFoe(foes, tactics);
     if (!t) return false;
     dealStrike(actor, t, skill.power, transcript, skill.name);
   } else if (skill.type === "cleave") {
@@ -1161,7 +1326,7 @@ function useSkill(actor, skill, allies, foes, transcript) {
     actor.hp = Math.min(actor.maxHp, actor.hp + heal);
     transcript.push(`${actor.name} 施展【${skill.name}】，減傷並回復 ${heal}。`);
   } else if (skill.type === "debuff") {
-    const t = pickFoe(foes);
+    const t = pickFoe(foes, tactics);
     if (!t) return false;
     dealStrike(actor, t, skill.power, transcript, skill.name);
     t.atk = Math.max(1, Math.floor(t.atk * 0.85));
@@ -1191,7 +1356,7 @@ function tickCooldowns(unit) {
   if (unit.atkBuffTurns > 0) unit.atkBuffTurns -= 1;
 }
 
-function act(actor, allies, foes, transcript) {
+function act(actor, allies, foes, transcript, tactics = "balanced") {
   const skills = (actor.skills || [])
     .map((id) => SKILLS[id])
     .filter(Boolean)
@@ -1200,25 +1365,38 @@ function act(actor, allies, foes, transcript) {
   const ready = skills.filter((s) => (actor.skillCd[s.id] || 0) <= 0);
   const skillChance = actor.role === "boss" ? 0.85 : actor.role === "elite" ? 0.78 : 0.72;
   if (ready.length && Math.random() < skillChance) {
-    const skill = ready[Math.floor(Math.random() * ready.length)];
-    if (useSkill(actor, skill, allies, foes, transcript)) return;
+    let skill;
+    if (tactics === "sustain" && actor.side === "ally") {
+      const sustain = ready.filter((s) => s.type === "heal" || s.type === "guard");
+      skill = sustain.length
+        ? sustain[Math.floor(Math.random() * sustain.length)]
+        : ready[Math.floor(Math.random() * ready.length)];
+    } else {
+      skill = ready[Math.floor(Math.random() * ready.length)];
+    }
+    if (useSkill(actor, skill, allies, foes, transcript, tactics)) return;
   }
-  // allies／foes 已按行動者視角傳入（敵方行動時已對調）
-  dealStrike(actor, pickFoe(foes), 1, transcript, null);
+  dealStrike(actor, pickFoe(foes, tactics), 1, transcript, null);
 }
 
-function spawnCombatFoe(e) {
+function spawnCombatFoe(e, dailyMod = null) {
   const role = e.role || "normal";
   const skills = Array.isArray(e.skills) ? e.skills.filter((id) => SKILLS[id]) : [];
   const tag = role === "boss" ? "【BOSS】" : role === "elite" ? "【精英】" : "";
   const actions = e.actions != null ? e.actions : role === "boss" ? 2 : 1;
+  let hp = e.hp;
+  let atk = e.atk;
+  if (dailyMod) {
+    if (role === "elite" && dailyMod.eliteHpMult) hp = Math.round(hp * dailyMod.eliteHpMult);
+    if (role === "boss" && dailyMod.bossAtkMult) atk = Math.round(atk * dailyMod.bossAtkMult);
+  }
   return {
     side: "foe",
     name: `${tag}${e.name}`,
     rawName: e.name,
-    hp: e.hp,
-    maxHp: e.hp,
-    atk: e.atk,
+    hp,
+    maxHp: hp,
+    atk,
     spd: e.spd,
     elementId: e.element,
     role,
@@ -1232,8 +1410,8 @@ function spawnCombatFoe(e) {
   };
 }
 
-function spawnWaveFoes(wave) {
-  return (wave?.enemies || []).map(spawnCombatFoe);
+function spawnWaveFoes(wave, dailyMod = null) {
+  return (wave?.enemies || []).map((e) => spawnCombatFoe(e, dailyMod));
 }
 
 /**
@@ -1259,6 +1437,10 @@ export function runDungeon(state, dungeonId) {
   const waves = dungeonWaves(d);
   if (!waves.length) return { ok: false, msg: "此秘境無敵人。" };
 
+  const dailyPack = ensureDungeonDaily(state);
+  const dailyMod = dailyPack?.mod || null;
+  const tactics = TACTIC_IDS.includes(state.tactics) ? state.tactics : "balanced";
+
   const stageBonus = state.realm * 2;
   const masterSkills = masterSkillsForStage(state.realm);
   const mGear = masterGearBonus(state);
@@ -1269,6 +1451,18 @@ export function runDungeon(state, dungeonId) {
   const condEval = evaluateDungeonConditions(state.pets, d);
   const passives = condEval.filter((c) => c.passive);
   const challenges = condEval.filter((c) => !c.passive);
+
+  // merge daily elem atk into passives list for mult helper
+  const combatPassives = [...passives];
+  if (dailyMod?.allyElemAtk) {
+    combatPassives.push({
+      type: "elem_atk",
+      element: dailyMod.allyElemAtk.element,
+      mult: dailyMod.allyElemAtk.mult,
+      passive: true,
+      label: dailyMod.label,
+    });
+  }
 
   const allies = [
     {
@@ -1289,13 +1483,15 @@ export function runDungeon(state, dungeonId) {
     },
     ...state.pets.map((p) => {
       const skills = petSkillIds(p);
-      const elemMult = dungeonElemAtkMult(passives, p.elementId);
+      const elemMult = dungeonElemAtkMult(combatPassives, p.elementId);
+      const gen = petGeneration(p);
+      const gMult = genCombatMult(gen);
       return {
         side: "ally",
         name: displayPetName(p),
-        hp: Math.round((p.hp + stageBonus * 2) * hpMult),
-        maxHp: Math.round((p.hp + stageBonus * 2) * hpMult),
-        atk: Math.round((p.atk + stageBonus) * atkMult * elemMult),
+        hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult),
+        maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult),
+        atk: Math.round((p.atk + stageBonus) * atkMult * elemMult * gMult),
         spd: Math.round(p.spd * synergy.spdMult),
         isMaster: false,
         elementId: p.elementId,
@@ -1305,18 +1501,19 @@ export function runDungeon(state, dungeonId) {
         guardTurns: 0,
         atkBuffTurns: 0,
         atkBuffPct: 0,
+        generation: gen,
       };
     }),
   ];
 
   // Also apply passive to master if matching
-  const masterElemMult = dungeonElemAtkMult(passives, "tide");
+  const masterElemMult = dungeonElemAtkMult(combatPassives, "tide");
   if (masterElemMult !== 1) {
     allies[0].atk = Math.round(allies[0].atk * masterElemMult);
   }
 
   let waveIndex = 0;
-  let foes = spawnWaveFoes(waves[0]);
+  let foes = spawnWaveFoes(waves[0], dailyMod);
   const roles = countDungeonRoles(waves);
 
   const lead =
@@ -1327,6 +1524,16 @@ export function runDungeon(state, dungeonId) {
   transcript.push(
     `本關 ${waves.length} 波 · ${roles.total} 敵（普通${roles.normal}／精英${roles.elite}／BOSS${roles.boss}）。`
   );
+  transcript.push(`戰術【${TACTICS[tactics]?.name || tactics}】· 自動戰鬥。`);
+  if (dailyMod?.label) transcript.push(dailyMod.label);
+  const genNotes = state.pets
+    .map((p) => {
+      const g = petGeneration(p);
+      const m = genCombatMult(g);
+      return m > 1 ? `${displayPetName(p)}${genLabel(g)}攻血×${m.toFixed(2)}` : null;
+    })
+    .filter(Boolean);
+  if (genNotes.length) transcript.push(`血脈代數加成：${genNotes.join("、")}。`);
   transcript.push(`—— 第 1 波・${waves[0].label} ——`);
   if (synergy.labels.length) {
     transcript.push(`陣容羈絆發動：${synergy.labels.join("、")}。`);
@@ -1368,6 +1575,8 @@ export function runDungeon(state, dungeonId) {
   let roleScrap = 0;
   let eliteCleared = roles.elite > 0;
   let bossCleared = roles.boss > 0;
+  let dailyStoneBonus = 0;
+  let dailyScrapBonus = 0;
   /** @type {{ id: string, label: string, ok: boolean, reward: object, bits: string }[]} */
   let conditionResults = [];
 
@@ -1380,7 +1589,7 @@ export function runDungeon(state, dungeonId) {
   const advanceOrWin = () => {
     if (waveIndex + 1 < waves.length) {
       waveIndex += 1;
-      foes = spawnWaveFoes(waves[waveIndex]);
+      foes = spawnWaveFoes(waves[waveIndex], dailyMod);
       transcript.push(`—— 第 ${waveIndex + 1} 波・${waves[waveIndex].label} 湧出！——`);
       return false;
     }
@@ -1400,8 +1609,8 @@ export function runDungeon(state, dungeonId) {
         if (actor.hp <= 0) break;
         const down = checkSideDown();
         if (down) break;
-        if (actor.side === "ally") act(actor, allies, foes, transcript);
-        else act(actor, foes, allies, transcript);
+        if (actor.side === "ally") act(actor, allies, foes, transcript, tactics);
+        else act(actor, foes, allies, transcript, "balanced");
       }
       tickCooldowns(actor);
 
@@ -1425,6 +1634,21 @@ export function runDungeon(state, dungeonId) {
       state.stones += d.reward.stones;
       state.scrap += d.reward.scrap;
       state.combatsWon += 1;
+      dailyStoneBonus = 0;
+      dailyScrapBonus = 0;
+      if (dailyMod?.clearStoneBonus) {
+        dailyStoneBonus = dailyMod.clearStoneBonus;
+        state.stones += dailyStoneBonus;
+      }
+      if (dailyMod?.clearScrapBonus) {
+        dailyScrapBonus = dailyMod.clearScrapBonus;
+        state.scrap += dailyScrapBonus;
+      }
+      if (dailyStoneBonus || dailyScrapBonus) {
+        transcript.push(
+          `今日修飾結算：+${dailyStoneBonus}石／+${dailyScrapBonus}碎片。`
+        );
+      }
       const first = !state.clearedDungeons[dungeonId];
       if (first && d.firstClearBonus) {
         bonusStones = d.firstClearBonus.stones || 0;
@@ -1539,12 +1763,15 @@ export function runDungeon(state, dungeonId) {
   const lines = transcript.slice(0, 80);
   const baseStones = won ? d.reward.stones : 0;
   const totalStones = won
-    ? baseStones + bonusStones + trialStones + condStones + roleStones
+    ? baseStones + bonusStones + trialStones + condStones + roleStones + dailyStoneBonus
     : 0;
 
   const rewardBreakdown = {
     base: { stones: baseStones, scrap: won ? d.reward.scrap : 0 },
     firstClear: { stones: bonusStones, scrap: bonusScrap },
+    daily: dailyStoneBonus || dailyScrapBonus
+      ? { stones: dailyStoneBonus, scrap: dailyScrapBonus, label: dailyMod?.label || "今日修飾" }
+      : null,
     elite: eliteCleared && d.eliteBonus ? { ...d.eliteBonus } : null,
     boss: bossCleared && d.bossBonus ? { ...d.bossBonus } : null,
     conditions: conditionResults,
@@ -1563,6 +1790,9 @@ export function runDungeon(state, dungeonId) {
   if (won) {
     const parts = [`基礎+${baseStones}石`];
     if (bonusStones) parts.push(`首通+${bonusStones}`);
+    if (dailyStoneBonus || dailyScrapBonus) {
+      parts.push(`今日+${dailyStoneBonus}石/${dailyScrapBonus}碎`);
+    }
     if (roleStones) parts.push(`精／Boss+${roleStones}`);
     for (const c of conditionResults) {
       const short = c.label.replace(/^條件[:：]?\s*/, "");
@@ -1602,6 +1832,7 @@ export function dungeonStatus(state, dungeonId) {
   const waves = dungeonWaves(d);
   const roles = countDungeonRoles(waves);
   const condEval = evaluateDungeonConditions(state.pets, d);
+  const daily = dungeonDailyView(state);
   return {
     cleared: !!(state.clearedDungeons || {})[dungeonId],
     cooldownLeftMs: Math.max(0, readyAt - now),
@@ -1614,6 +1845,7 @@ export function dungeonStatus(state, dungeonId) {
     conditions: condEval,
     eliteBonus: d.eliteBonus || null,
     bossBonus: d.bossBonus || null,
+    dailyMod: daily,
   };
 }
 
@@ -1808,6 +2040,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v13");
   localStorage.removeItem("void-tide-pets-v12");
   localStorage.removeItem("void-tide-pets-v11");
   localStorage.removeItem("void-tide-pets-v10");
@@ -1884,4 +2117,6 @@ export {
   countDungeonRoles,
   evaluateDungeonConditions,
   breakthroughView,
+  TACTICS,
+  TACTIC_IDS,
 };
