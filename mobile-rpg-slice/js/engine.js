@@ -54,11 +54,15 @@ import {
   OFFLINE_HINT_SEC,
   rarityInfo,
   RARITY_MAX,
-  HYBRID_RECIPES,
   SPECIES,
+  petGeneration,
+  genLabel,
+  childGenerationOdds,
+  hybridRecipeForKinds,
+  genPowerMult,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v9";
+const SAVE_KEY = "void-tide-pets-v10";
 
 function defaultMaster() {
   return {
@@ -131,6 +135,15 @@ function normalizePet(p) {
   if (next.rarity == null) next.rarity = 0;
   if (next.rarity > RARITY_MAX) next.rarity = RARITY_MAX;
   if (!next.rarityName) next.rarityName = rarityInfo(next.rarity).name;
+  next.generation = petGeneration(next);
+  // 種族↔種類同步：舊熒鰭可能仍標鱗
+  if (next.speciesId === "glowfin") {
+    next.kind = "光";
+    if (!next.skillId || next.skillId === "tide_spray") {
+      next.skillId = "glow_lance";
+      next.skillName = SKILLS.glow_lance?.name || "熒槍";
+    }
+  }
   // 寵物不再穿裝備
   if (next.equip) delete next.equip;
   return next;
@@ -148,6 +161,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v9") ||
       localStorage.getItem("void-tide-pets-v8") ||
       localStorage.getItem("void-tide-pets-v7") ||
       localStorage.getItem("void-tide-pets-v6") ||
@@ -1312,7 +1326,7 @@ export function tryBreed(state, uidA, uidB) {
   child.spd += born.spd;
   child.uid = `${child.templateId}-born`;
   child.bornFrom = [a.uid, b.uid];
-  child.generation = Math.max(a.generation ?? 1, b.generation ?? 1) + 1;
+  child.generation = genes.generation;
   state.ranch.push(child);
 
   if (!state.stats) {
@@ -1332,6 +1346,7 @@ export function tryBreed(state, uidA, uidB) {
   registerBestiary(state, child);
 
   const tags = [];
+  tags.push(genLabel(genes.generation));
   if (genes.hybrid) tags.push("雜交新種！");
   if (genes.rarityUp) tags.push(`${child.rarityName}升階！`);
   else if (genes.rarity > 0) tags.push(child.rarityName);
@@ -1354,36 +1369,53 @@ export function tryBreed(state, uidA, uidB) {
     hybrid: genes.hybrid,
     rarity: genes.rarity,
     rarityUp: genes.rarityUp,
+    generation: genes.generation,
   };
 }
 
-/** UI：雙親雜交提示 */
+/** UI：雙親雜交／代數提示 */
 export function breedPairHint(petA, petB) {
   if (!petA || !petB) return null;
   const same = petA.speciesId === petB.speciesId;
   const kindA = petA.kind;
   const kindB = petB.kind;
+  const genA = petGeneration(petA);
+  const genB = petGeneration(petB);
+  const genMult = genPowerMult(genA, genB);
+  const odds = childGenerationOdds(genA, genB);
+  const genOddsText = odds.map((o) => `${genLabel(o.gen)} ${o.pct}%`).join("／");
+
   let hybridName = null;
   let hybridChance = 0;
+  let tier = null;
   if (!same && kindA !== kindB) {
-    const key = [kindA, kindB].sort().join("|");
-    const recipe = HYBRID_RECIPES.find(
-      (r) => r.chance > 0 && [r.kinds[0], r.kinds[1]].sort().join("|") === key
-    );
+    const recipe = hybridRecipeForKinds(kindA, kindB);
     if (recipe && SPECIES[recipe.species]) {
       hybridName = SPECIES[recipe.species].name;
-      hybridChance = recipe.chance;
+      hybridChance = Math.min(0.85, recipe.chance * genMult);
+      tier = recipe.tier;
     }
   }
+
+  let note;
+  if (same) {
+    note = `同種：較易升稀有 · 子代 ${genOddsText}`;
+  } else if (hybridName) {
+    const tierTag = tier === "main" ? "主配方" : "次配方";
+    note = `異種${tierTag}：約 ${Math.round(hybridChance * 100)}% 雜交【${hybridName}】· 子代 ${genOddsText}`;
+  } else {
+    note = `異種無雜交配方（×）· 只遺傳父母 · 子代 ${genOddsText}`;
+  }
+
   return {
     sameSpecies: same,
     hybridName,
     hybridChance,
-    note: same
-      ? "同種繁殖：較易提升稀有度"
-      : hybridName
-        ? `異種：約 ${Math.round(hybridChance * 100)}% 機率雜交出【${hybridName}】`
-        : "異種：遺傳父母種族，並可升稀有度／元素變異",
+    tier,
+    genA,
+    genB,
+    genOddsText,
+    note,
   };
 }
 
@@ -1399,6 +1431,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v9");
   localStorage.removeItem("void-tide-pets-v8");
   localStorage.removeItem("void-tide-pets-v7");
   localStorage.removeItem("void-tide-pets-v6");
@@ -1459,4 +1492,6 @@ export {
   NICK_MAX_LEN,
   rarityInfo,
   RARITY_MAX,
+  genLabel,
+  petGeneration,
 };

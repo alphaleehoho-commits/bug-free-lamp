@@ -45,8 +45,8 @@ export function elementMatchup(atkElementId, defElementId) {
 }
 
 /**
- * 種類（kind）：獸／鱗／禽／甲／蟲
- * 每種綁一隻種族技能；種族另有獨立基礎數值。
+ * 種類（kind）＝野生種族 1:1
+ * 礁狐獸／潮鯉鱗／灰翼禽／苔背甲／夜蛾蟲／熒鰭光
  */
 export const KIND_SKILLS = {
   獸: "pounce",
@@ -54,7 +54,10 @@ export const KIND_SKILLS = {
   禽: "gale_dive",
   甲: "shell_guard",
   蟲: "venom_bite",
+  光: "glow_lance",
 };
+
+export const KINDS = ["獸", "鱗", "禽", "甲", "蟲", "光"];
 
 export const SPECIES = {
   reefox: { id: "reefox", name: "礁狐", kind: "獸", base: { atk: 13, hp: 85, spd: 11 } },
@@ -62,8 +65,8 @@ export const SPECIES = {
   ashwing: { id: "ashwing", name: "灰翼", kind: "禽", base: { atk: 12, hp: 78, spd: 14 } },
   mossback: { id: "mossback", name: "苔背", kind: "甲", base: { atk: 9, hp: 140, spd: 5 } },
   nightmoth: { id: "nightmoth", name: "夜蛾", kind: "蟲", base: { atk: 15, hp: 70, spd: 12 } },
-  glowfin: { id: "glowfin", name: "熒鰭", kind: "鱗", base: { atk: 11, hp: 95, spd: 10 } },
-  // —— 繁殖專屬雜交種（野生秘境唔出）——
+  glowfin: { id: "glowfin", name: "熒鰭", kind: "光", base: { atk: 11, hp: 95, spd: 10 } },
+  // —— 繁殖專屬雜交種（野生秘境唔出；kind 跟主題）——
   tideling: {
     id: "tideling",
     name: "潮獸",
@@ -207,6 +210,16 @@ export const SKILLS = {
     power: 1.2,
     desc: "蟲類：傷害並使目標攻擊降低",
   },
+  glow_lance: {
+    id: "glow_lance",
+    name: "熒槍",
+    owner: "pet",
+    kind: "光",
+    type: "strike",
+    cd: 2,
+    power: 1.6,
+    desc: "光類：熒芒穿刺單體",
+  },
   // —— 第二技能（融階／等級解鎖）——
   pack_howl: {
     id: "pack_howl",
@@ -257,6 +270,16 @@ export const SKILLS = {
     cd: 3,
     power: 0.65,
     desc: "蟲類二技：濺射全體敵人",
+  },
+  prism_burst: {
+    id: "prism_burst",
+    name: "棱爆",
+    owner: "pet",
+    kind: "光",
+    type: "cleave",
+    cd: 3,
+    power: 0.7,
+    desc: "光類二技：棱光濺射全體",
   },
 };
 
@@ -381,18 +404,25 @@ export function rarityInfo(r) {
 }
 
 /**
- * 雜交配方：雙親 kind（無序）→ 新品種 + 基礎機率
- * 同種繁殖唔出雜交，改加稀有度權重
+ * 雜交配方（主／次）：雙親 kind（無序）→ 新品種
+ * 同一格只取最高 chance（主配方覆蓋次配方唔會撞名時分開寫不同產物）
+ * × 無配方：獸×蟲、鱗×禽、甲×蟲
  */
 export const HYBRID_RECIPES = [
-  { kinds: ["獸", "鱗"], species: "tideling", chance: 0.28 },
-  { kinds: ["禽", "蟲"], species: "duskfly", chance: 0.26 },
-  { kinds: ["甲", "獸"], species: "ironback", chance: 0.26 },
-  { kinds: ["鱗", "甲"], species: "mistcarp", chance: 0.26 },
-  { kinds: ["蟲", "禽"], species: "stormmoth", chance: 0.24 },
-  { kinds: ["獸", "禽"], species: "reefwing", chance: 0.26 },
-  { kinds: ["鱗", "蟲"], species: "mistcarp", chance: 0.18 },
-  { kinds: ["甲", "禽"], species: "ironback", chance: 0.16 },
+  // —— 主配方 ——
+  { kinds: ["獸", "鱗"], species: "tideling", chance: 0.28, tier: "main" },
+  { kinds: ["禽", "蟲"], species: "duskfly", chance: 0.26, tier: "main" },
+  { kinds: ["獸", "甲"], species: "ironback", chance: 0.26, tier: "main" },
+  { kinds: ["鱗", "甲"], species: "mistcarp", chance: 0.26, tier: "main" },
+  { kinds: ["獸", "禽"], species: "reefwing", chance: 0.26, tier: "main" },
+  { kinds: ["光", "蟲"], species: "stormmoth", chance: 0.26, tier: "main" },
+  // —— 次配方（較低機率／後門）——
+  { kinds: ["鱗", "蟲"], species: "mistcarp", chance: 0.18, tier: "sub" },
+  { kinds: ["甲", "禽"], species: "ironback", chance: 0.16, tier: "sub" },
+  { kinds: ["光", "獸"], species: "tideling", chance: 0.16, tier: "sub" },
+  { kinds: ["光", "禽"], species: "reefwing", chance: 0.18, tier: "sub" },
+  { kinds: ["光", "鱗"], species: "mistcarp", chance: 0.15, tier: "sub" },
+  { kinds: ["光", "甲"], species: "ironback", chance: 0.14, tier: "sub" },
 ];
 
 function kindPairKey(k1, k2) {
@@ -409,35 +439,100 @@ const HYBRID_BY_KINDS = (() => {
   return map;
 })();
 
-/** 依雙親稀有度 roll 子代稀有度（可升階） */
+export function hybridRecipeForKinds(kindA, kindB) {
+  if (!kindA || !kindB || kindA === kindB) return null;
+  return HYBRID_BY_KINDS[kindPairKey(kindA, kindB)] || null;
+}
+
+/** 繁殖代數：0＝原生（未繁殖），最高 3 */
+export const GEN_MAX = 3;
+
+export function petGeneration(pet) {
+  if (!pet) return 0;
+  if (pet.generation != null && pet.generation !== "") {
+    return Math.max(0, Math.min(GEN_MAX, pet.generation | 0));
+  }
+  // 舊存檔：有 bornFrom 當 1 代，否則原生
+  if (pet.bornFrom) return 1;
+  return 0;
+}
+
+/**
+ * 子代代數（按你嘅規則）
+ * 0+0→1；0+G→G；G+G→G50%/G+1 50%；G<H→G70%/H30%
+ */
+export function rollChildGeneration(genA, genB) {
+  const a = Math.max(0, Math.min(GEN_MAX, genA | 0));
+  const b = Math.max(0, Math.min(GEN_MAX, genB | 0));
+  if (a === 0 && b === 0) return 1;
+  if (a === 0) return b;
+  if (b === 0) return a;
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  if (lo === hi) {
+    if (lo >= GEN_MAX) return GEN_MAX;
+    return Math.random() < 0.5 ? lo : lo + 1;
+  }
+  return Math.random() < 0.7 ? lo : hi;
+}
+
+/** UI／提示用：唔 roll，只描述機率 */
+export function childGenerationOdds(genA, genB) {
+  const a = Math.max(0, Math.min(GEN_MAX, genA | 0));
+  const b = Math.max(0, Math.min(GEN_MAX, genB | 0));
+  if (a === 0 && b === 0) return [{ gen: 1, pct: 100 }];
+  if (a === 0) return [{ gen: b, pct: 100 }];
+  if (b === 0) return [{ gen: a, pct: 100 }];
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  if (lo === hi) {
+    if (lo >= GEN_MAX) return [{ gen: GEN_MAX, pct: 100 }];
+    return [
+      { gen: lo, pct: 50 },
+      { gen: lo + 1, pct: 50 },
+    ];
+  }
+  return [
+    { gen: lo, pct: 70 },
+    { gen: hi, pct: 30 },
+  ];
+}
+
+export function genLabel(gen) {
+  const g = Math.max(0, gen | 0);
+  return g <= 0 ? "原生" : `繁殖${g}代`;
+}
+
+/** 後代愈高：雜交機率／稀有／繼承愈強（用雙親平均代） */
+export function genPowerMult(genA, genB) {
+  const avg = (petGeneration({ generation: genA }) + petGeneration({ generation: genB })) / 2;
+  return 1 + avg * 0.12;
+}
+
+/** 依雙親稀有度 roll 子代稀有度（可升階；受代數加成） */
 export function rollBreedRarity(parentA, parentB, opts = {}) {
   const ra = parentA.rarity ?? 0;
   const rb = parentB.rarity ?? 0;
   const floor = Math.min(ra, rb);
   const ceil = Math.max(ra, rb);
-  // 權重：多数落在 floor～ceil，小機率 +1／+2
+  const genBoost = Math.round(((opts.genMult || 1) - 1) * 20);
   let weights = { 0: 0, 1: 0, 2: 0, 3: 0 };
   weights[floor] += 55;
   weights[ceil] += 30;
   const up1 = Math.min(RARITY_MAX, ceil + 1);
-  weights[up1] += opts.sameSpecies ? 18 : 12;
+  weights[up1] += (opts.sameSpecies ? 18 : 12) + genBoost;
   const up2 = Math.min(RARITY_MAX, ceil + 2);
-  if (up2 > up1) weights[up2] += opts.sameSpecies ? 6 : 3;
+  if (up2 > up1) weights[up2] += (opts.sameSpecies ? 6 : 3) + Math.floor(genBoost / 2);
   if (opts.hybrid) {
     weights[Math.min(RARITY_MAX, ceil + 1)] += 8;
   }
-  // 雙親都高稀有 → 再推
   if (ra + rb >= 4) weights[Math.min(RARITY_MAX, ceil + 1)] += 10;
   const id = Number(pickWeighted(weights) ?? floor);
   return Math.max(0, Math.min(RARITY_MAX, id));
 }
 
 /**
- * 恐龍突變式繁殖：
- * - 基因 50/50 遺傳
- * - 異 kind → 機率雜交新種族
- * - 同種 → 更高稀有度升階
- * - 元素／稀有度變異
+ * 恐龍突變式繁殖 + 代際
  */
 export function rollBreedGenes(parentA, parentB) {
   const ga = parentA.genes || {
@@ -455,6 +550,10 @@ export function rollBreedGenes(parentA, parentB) {
   const kindA = spA?.kind || parentA.kind;
   const kindB = spB?.kind || parentB.kind;
   const sameSpecies = ga.species === gb.species;
+  const genA = petGeneration(parentA);
+  const genB = petGeneration(parentB);
+  const generation = rollChildGeneration(genA, genB);
+  const genMult = genPowerMult(genA, genB);
 
   let species = Math.random() < 0.5 ? ga.species : gb.species;
   let element = Math.random() < 0.5 ? ga.element : gb.element;
@@ -463,10 +562,10 @@ export function rollBreedGenes(parentA, parentB) {
   let hybrid = false;
   let newSpecies = false;
 
-  // 雜交新品種
-  if (!sameSpecies && kindA && kindB && kindA !== kindB) {
-    const recipe = HYBRID_BY_KINDS[kindPairKey(kindA, kindB)];
-    if (recipe && Math.random() < recipe.chance && SPECIES[recipe.species]) {
+  const recipe = !sameSpecies && kindA !== kindB ? hybridRecipeForKinds(kindA, kindB) : null;
+  if (recipe && SPECIES[recipe.species]) {
+    const chance = Math.min(0.85, recipe.chance * genMult);
+    if (Math.random() < chance) {
       species = recipe.species;
       hybrid = true;
       newSpecies = true;
@@ -474,14 +573,14 @@ export function rollBreedGenes(parentA, parentB) {
     }
   }
 
-  // 元素變異
-  if (Math.random() < BREED_ELEMENT_MUTATION_RATE) {
+  const elemRate = Math.min(0.35, BREED_ELEMENT_MUTATION_RATE * genMult);
+  if (Math.random() < elemRate) {
     const others = Object.keys(ELEMENTS).filter((e) => e !== element);
     element = pick(others);
     mutated = true;
   }
 
-  const rarity = rollBreedRarity(parentA, parentB, { sameSpecies, hybrid });
+  const rarity = rollBreedRarity(parentA, parentB, { sameSpecies, hybrid, genMult });
   const parentMax = Math.max(parentA.rarity ?? 0, parentB.rarity ?? 0);
   const rarityUp = rarity > parentMax;
 
@@ -490,11 +589,16 @@ export function rollBreedGenes(parentA, parentB) {
     element,
     personality,
     rarity,
+    generation,
+    genA,
+    genB,
     mutated,
     hybrid,
     newSpecies,
     rarityUp,
     sameSpecies,
+    recipeTier: recipe?.tier || null,
+    hybridChance: recipe ? Math.min(0.85, recipe.chance * genMult) : 0,
   };
 }
 
@@ -724,6 +828,7 @@ export const KIND_SECOND_SKILLS = {
   禽: "sky_pierce",
   甲: "bulwark_pulse",
   蟲: "swarm_haze",
+  光: "prism_burst",
 };
 
 export const SECOND_SKILL_UNLOCK = { fusionLevel: 1, level: 15 };
@@ -934,6 +1039,11 @@ export function breedStatInheritance(parentA, parentB, childGenes) {
   let spd = Math.floor(avg.spd * BREED_INHERIT_RATE);
   // 稀有度額外天生強化
   const r = childGenes?.rarity ?? 0;
+  const gen = childGenes?.generation ?? 1;
+  const genMul = 1 + Math.max(0, gen) * 0.08;
+  atk = Math.floor(atk * genMul);
+  hp = Math.floor(hp * genMul);
+  spd = Math.floor(spd * genMul);
   if (r >= 1) {
     atk += r * 2;
     hp += r * 5;
@@ -944,9 +1054,9 @@ export function breedStatInheritance(parentA, parentB, childGenes) {
     hp += 4;
     spd += 1;
   }
-  if (Math.random() < BREED_MUTATION_STAT_RATE + r * 0.04) {
-    atk += 1 + Math.floor(Math.random() * (2 + r));
-    hp += 2 + Math.floor(Math.random() * (5 + r * 2));
+  if (Math.random() < BREED_MUTATION_STAT_RATE + r * 0.04 + gen * 0.03) {
+    atk += 1 + Math.floor(Math.random() * (2 + r + Math.floor(gen / 2)));
+    hp += 2 + Math.floor(Math.random() * (5 + r * 2 + gen));
     spd += Math.floor(Math.random() * (2 + r));
   }
   return { atk, hp, spd };

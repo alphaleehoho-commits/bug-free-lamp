@@ -35,6 +35,8 @@ import {
   displayPetName,
   breedPairHint,
   rarityInfo,
+  genLabel,
+  petGeneration,
   DUNGEONS,
   SKILLS,
   MASTER_EQUIP_SLOTS,
@@ -387,11 +389,12 @@ function petRow(p, extraBtn = "") {
   const fus = p.fusionLevel ?? 0;
   const title = displayPetName(p);
   const r = rarityInfo(p.rarity ?? 0);
+  const g = petGeneration(p);
   return `
     <li class="card-row">
       <div>
         <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
-        <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}</span>
+        <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(genLabel(g))} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}</span>
         <span class="muted">攻${p.atk} 血${p.hp} 速${p.spd} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
@@ -480,7 +483,7 @@ function petsBreedView() {
         <li class="card-row">
           <div>
             <strong>${escapeHtml(displayPetName(p))}</strong>
-            <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}</span>
+            <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(genLabel(petGeneration(p)))} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}</span>
           </div>
           <button type="button" class="${on ? "primary" : ""}" data-breed-toggle="${escapeHtml(p.uid)}">${on ? "已選" : "選擇"}</button>
         </li>`;
@@ -495,7 +498,7 @@ function petsBreedView() {
   const ready = selected.size === 2 && bs.ready && ranch.length < ranchCap(state);
   return `
     <h2>繁殖 · 突變合配</h2>
-    <p class="lead">揀兩隻牧場靈寵。異種 kind 可雜交新種族；同種較易升稀有度。耗 ${BREED_STONE_COST} 靈石${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}。融合仍負責同種融階。</p>
+    <p class="lead">6 種族＝6 種類（熒鰭＝光）。主／次配方雜交；原生／1–3 代影響升代機率同能力。耗 ${BREED_STONE_COST} 靈石${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}。</p>
     ${hint ? `<p class="meta breed-hint">${escapeHtml(hint.note)}</p>` : ""}
     <ul class="list">${list}</ul>
     <div class="row" style="margin-top:0.85rem">
@@ -534,6 +537,7 @@ function petsDetailView() {
   const lv = pet.level ?? 1;
   const fus = pet.fusionLevel ?? 0;
   const r = rarityInfo(pet.rarity ?? 0);
+  const g = petGeneration(pet);
   const loc = deployed ? "出戰中" : "牧場待命";
   const fuseHint = fuseMaxed
     ? `已達融階上限（${FUSION_MAX_STAGE}）`
@@ -545,7 +549,7 @@ function petsDetailView() {
 
   return `
     <h2>${escapeHtml(displayPetName(pet))}</h2>
-    <p class="lead">${escapeHtml(loc)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE} · 技能 Lv.${skillLevel}${pet.generation ? ` · 第${pet.generation}代` : ""}</p>
+    <p class="lead">${escapeHtml(loc)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(genLabel(g))} · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE} · 技能 Lv.${skillLevel}</p>
     <ul class="skill-list">
       <li><strong>種類</strong> — ${escapeHtml(pet.kind)} · ${escapeHtml(pet.speciesName)}${pet.breedOnly ? "（繁殖專屬）" : ""}</li>
       <li><strong>元素</strong> — ${escapeHtml(pet.elementName)}</li>
