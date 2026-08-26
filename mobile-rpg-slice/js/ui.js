@@ -14,6 +14,8 @@ import {
   runDungeon,
   forgeHint,
   tryBreed,
+  breedStatus,
+  dungeonStatus,
   resetSave,
   realmInfo,
   nextRealm,
@@ -23,6 +25,7 @@ import {
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
   FUSION_MAX_STAGE,
+  BREED_STONE_COST,
   masterSkillsForStage,
   fusionStoneCost,
 } from "./engine.js";
@@ -38,8 +41,8 @@ let flashTimer = 0;
 let tab = "cultivate";
 let shellReady = false;
 
-/** @type {{ mode: 'list' | 'detail' | 'fuse', uid: string | null, fuseBase: string | null, fuseMats: string[] }} */
-let petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [] };
+/** @type {{ mode: 'list' | 'detail' | 'fuse' | 'breed', uid: string | null, fuseBase: string | null, fuseMats: string[], breedParents: string[] }} */
+let petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
 
 /** @type {null | {
  *  lines: string[],

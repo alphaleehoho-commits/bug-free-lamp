@@ -19,9 +19,13 @@ import {
   fusionStoneCost,
   nextFusionStage,
   fusionMaterialNeed,
+  elementMatchup,
+  rollBreedGenes,
+  BREED_STONE_COST,
+  BREED_COOLDOWN_MS,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v4";
+const SAVE_KEY = "void-tide-pets-v5";
 
 function defaultMaster() {
   return {
@@ -53,7 +57,13 @@ function defaultState() {
     ],
     lastTick: Date.now(),
     combatsWon: 0,
-    breedingUnlocked: false,
+    breedingUnlocked: true,
+    /** 首通紀錄 dungeonId → true */
+    clearedDungeons: {},
+    /** dungeonId → 可再挑戰的 timestamp */
+    dungeonReadyAt: {},
+    /** 下次可繁殖時間 */
+    breedReadyAt: 0,
   };
 }
 
@@ -78,6 +88,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v4") ||
       localStorage.getItem("void-tide-pets-v3") ||
       localStorage.getItem("void-tide-pets-v2") ||
       localStorage.getItem("void-tide-pets-v1");
@@ -122,6 +133,10 @@ export function loadState() {
       pets,
       ranch,
       pending: Array.isArray(parsed.pending) ? parsed.pending : [],
+      clearedDungeons: parsed.clearedDungeons || {},
+      dungeonReadyAt: parsed.dungeonReadyAt || {},
+      breedReadyAt: parsed.breedReadyAt || 0,
+      breedingUnlocked: true,
     };
   } catch {
     return defaultState();
@@ -191,7 +206,7 @@ export function findOwnedPet(state, uid) {
   return null;
 }
 
-/** 打本後嘗試遇見野生靈寵 */
+/** 打本後嘗試遇見野生靈寵（用秘境遇寵權重） */
 export function maybeEncounterAfterDungeon(state, dungeonId, won) {
   if (state.pending.length >= PENDING_BOND_MAX) {
     return { blocked: true, encounter: null };
@@ -200,7 +215,8 @@ export function maybeEncounterAfterDungeon(state, dungeonId, won) {
   if (state.pets.length === 0 && (state.ranch?.length || 0) === 0) rate = won ? 0.92 : 0.4;
   if (Math.random() > rate) return { blocked: false, encounter: null };
 
-  const enc = rollWildEncounter(dungeonId);
+  const dungeonDef = DUNGEONS.find((x) => x.id === dungeonId) || null;
+  const enc = rollWildEncounter(dungeonId, dungeonDef);
   state.pending.push(enc);
   return { blocked: false, encounter: enc };
 }
@@ -429,14 +445,17 @@ function dealStrike(actor, target, power, transcript, skillName) {
   if (!target) return;
   let dmg = Math.max(1, Math.floor(actor.atk * power) + Math.floor(Math.random() * 4) - 1);
   if (skillName === "嵐擊") dmg += Math.floor(actor.spd / 4);
+  const { mult, tag } = elementMatchup(actor.elementId, target.elementId);
+  dmg = Math.max(1, Math.floor(dmg * mult));
   const mitigated = target.guardTurns > 0 ? Math.max(1, Math.floor(dmg * 0.55)) : dmg;
   target.hp = Math.max(0, target.hp - mitigated);
   const guardNote = target.guardTurns > 0 ? "（甲盾減傷）" : "";
+  const elemNote = tag ? `（${tag}）` : "";
   let verb = "普通攻擊";
   if (skillName) verb = `施展【${skillName}】`;
   else if (power !== 1) verb = "餘波擊中";
   transcript.push(
-    `${actor.name} ${verb} → ${target.name}，造成 ${mitigated} 傷害${target.hp === 0 ? "（擊破）" : ""}${guardNote}。`
+    `${actor.name} ${verb} → ${target.name}，造成 ${mitigated} 傷害${elemNote}${target.hp === 0 ? "（擊破）" : ""}${guardNote}。`
   );
 }
 
@@ -503,13 +522,21 @@ function act(actor, allies, foes, transcript) {
 
 /**
  * 戰鬥結算（同步計算）；UI 負責逐條播放戰報。
- * 可獨自進本（0 靈寵）。
+ * 可獨自進本（0 靈寵）。含元素克制、首通、冷卻。
  */
 export function runDungeon(state, dungeonId) {
   const d = DUNGEONS.find((x) => x.id === dungeonId);
   if (!d) return { ok: false, msg: "秘境不存在。" };
   if (state.realm < d.needRealm) {
     return { ok: false, msg: `需要階段：${STAGES[d.needRealm].name}` };
+  }
+  if (!state.dungeonReadyAt) state.dungeonReadyAt = {};
+  if (!state.clearedDungeons) state.clearedDungeons = {};
+  const now = Date.now();
+  const readyAt = state.dungeonReadyAt[dungeonId] || 0;
+  if (readyAt > now) {
+    const sec = Math.ceil((readyAt - now) / 1000);
+    return { ok: false, msg: `秘境冷卻中（${sec}s）。` };
   }
 
   const stageBonus = state.realm * 2;
@@ -523,6 +550,7 @@ export function runDungeon(state, dungeonId) {
       atk: state.master.atk + stageBonus,
       spd: state.master.spd + Math.floor(state.realm / 2),
       isMaster: true,
+      elementId: "tide",
       skills: masterSkills,
       skillCd: Object.fromEntries(masterSkills.map((id) => [id, 0])),
       guardTurns: 0,
@@ -535,6 +563,7 @@ export function runDungeon(state, dungeonId) {
       atk: p.atk + stageBonus,
       spd: p.spd,
       isMaster: false,
+      elementId: p.elementId,
       skills: p.skillId ? [p.skillId] : [],
       skillCd: p.skillId ? { [p.skillId]: 0 } : {},
       guardTurns: 0,
@@ -548,6 +577,7 @@ export function runDungeon(state, dungeonId) {
     maxHp: e.hp,
     atk: e.atk,
     spd: e.spd,
+    elementId: e.element,
     skills: [],
     skillCd: {},
     guardTurns: 0,
@@ -555,13 +585,15 @@ export function runDungeon(state, dungeonId) {
 
   const lead =
     state.pets.length > 0
-      ? `御靈師率靈寵進入【${d.name}】。`
+      ? `御靈師率靈寵進入【${d.name}】。（潮克焰→嵐→岩→幽→潮）`
       : `你獨自踏入【${d.name}】，潮霧裡似有靈息。`;
   const transcript = [lead];
   let round = 0;
   const maxRounds = 40;
   let won = false;
   let ended = false;
+  let bonusStones = 0;
+  let bonusScrap = 0;
 
   while (round < maxRounds && !ended) {
     round += 1;
@@ -586,9 +618,21 @@ export function runDungeon(state, dungeonId) {
       state.stones += d.reward.stones;
       state.scrap += d.reward.scrap;
       state.combatsWon += 1;
-      transcript.push(
-        `攻克【${d.name}】，獲靈石 ${d.reward.stones}、靈晶碎片 ${d.reward.scrap}。`
-      );
+      const first = !state.clearedDungeons[dungeonId];
+      if (first && d.firstClearBonus) {
+        bonusStones = d.firstClearBonus.stones || 0;
+        bonusScrap = d.firstClearBonus.scrap || 0;
+        state.stones += bonusStones;
+        state.scrap += bonusScrap;
+        state.clearedDungeons[dungeonId] = true;
+        transcript.push(
+          `攻克【${d.name}】，獲靈石 ${d.reward.stones}、碎片 ${d.reward.scrap}。首通額外 +${bonusStones} 石／+${bonusScrap} 碎片！`
+        );
+      } else {
+        transcript.push(
+          `攻克【${d.name}】，獲靈石 ${d.reward.stones}、靈晶碎片 ${d.reward.scrap}。`
+        );
+      }
     } else if (allies.every((a) => a.hp <= 0)) {
       ended = true;
       transcript.push(`折戟【${d.name}】……退回契壇休養。`);
@@ -598,6 +642,10 @@ export function runDungeon(state, dungeonId) {
   if (!ended) {
     transcript.push("戰鬥逾時，撤退。");
   }
+
+  // 冷卻：無論勝負都進入（防無限刷）
+  const cd = d.cooldownMs || 0;
+  if (cd > 0) state.dungeonReadyAt[dungeonId] = Date.now() + cd;
 
   const encResult = maybeEncounterAfterDungeon(state, dungeonId, won);
   const encounter = encResult.encounter;
@@ -610,7 +658,7 @@ export function runDungeon(state, dungeonId) {
   }
 
   const lines = transcript.slice(0, 48);
-  // 見聞由 UI 戰報播放時逐條寫入
+  const totalStones = won ? d.reward.stones + bonusStones : 0;
 
   return {
     ok: true,
@@ -619,10 +667,22 @@ export function runDungeon(state, dungeonId) {
     transcript: lines,
     encounter,
     msg: won
-      ? `勝利！+${d.reward.stones} 靈石`
+      ? `勝利！+${totalStones} 靈石${bonusStones ? "（含首通）" : ""}`
       : ended
         ? "戰敗。"
         : "撤退。",
+  };
+}
+
+export function dungeonStatus(state, dungeonId) {
+  const d = DUNGEONS.find((x) => x.id === dungeonId);
+  if (!d) return null;
+  const now = Date.now();
+  const readyAt = (state.dungeonReadyAt || {})[dungeonId] || 0;
+  return {
+    cleared: !!(state.clearedDungeons || {})[dungeonId],
+    cooldownLeftMs: Math.max(0, readyAt - now),
+    firstClearBonus: d.firstClearBonus || null,
   };
 }
 
@@ -643,15 +703,74 @@ export function forgeHint(state) {
   return { ok: true, msg: `靈寵強化 +${bonus} 攻` };
 }
 
-export function tryBreed(_state, _uidA, _uidB) {
+/**
+ * 牧場雙親繁殖：任意兩隻均可；子代遺傳 genes，元素低機率變異。
+ */
+export function tryBreed(state, uidA, uidB) {
+  if (!uidA || !uidB || uidA === uidB) {
+    return { ok: false, msg: "請選擇兩隻不同的牧場靈寵。" };
+  }
+  const now = Date.now();
+  if ((state.breedReadyAt || 0) > now) {
+    const sec = Math.ceil((state.breedReadyAt - now) / 1000);
+    return { ok: false, msg: `繁殖冷卻中（${sec}s）。` };
+  }
+  if (!state.ranch) state.ranch = [];
+  const cap = ranchCap(state);
+  if (state.ranch.length >= cap) {
+    return { ok: false, msg: `牧場已滿（${cap}），無法容納子代。` };
+  }
+  if (state.stones < BREED_STONE_COST) {
+    return { ok: false, msg: `靈石不足（需 ${BREED_STONE_COST}）。` };
+  }
+
+  const a = state.ranch.find((p) => p.uid === uidA);
+  const b = state.ranch.find((p) => p.uid === uidB);
+  if (!a || !b) return { ok: false, msg: "雙親必須都在牧場待命。" };
+
+  const genes = rollBreedGenes(a, b);
+  state.stones -= BREED_STONE_COST;
+  state.breedReadyAt = now + BREED_COOLDOWN_MS;
+
+  const child = normalizePet(
+    buildPetStats({
+      id: `breed-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
+      species: genes.species,
+      element: genes.element,
+      personality: genes.personality,
+      cost: 0,
+    })
+  );
+  child.uid = `${child.templateId}-born`;
+  child.bornFrom = [a.uid, b.uid];
+  state.ranch.push(child);
+
+  const mutNote = genes.mutated ? "（元素變異！）" : "";
+  pushLog(
+    state,
+    `繁殖成功：${a.name} × ${b.name} → ${petLabel(child)}${mutNote}｜耗 ${BREED_STONE_COST} 靈石。`
+  );
   return {
-    ok: false,
-    msg: "繁殖／交配系統尚未開放——基因位已預留，下階段再做。",
+    ok: true,
+    msg: `誕生 ${child.name}${mutNote}`,
+    pet: child,
+    mutated: genes.mutated,
+  };
+}
+
+export function breedStatus(state) {
+  const now = Date.now();
+  const readyAt = state.breedReadyAt || 0;
+  return {
+    cost: BREED_STONE_COST,
+    cooldownLeftMs: Math.max(0, readyAt - now),
+    ready: readyAt <= now,
   };
 }
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v4");
   localStorage.removeItem("void-tide-pets-v3");
   localStorage.removeItem("void-tide-pets-v2");
   localStorage.removeItem("void-tide-pets-v1");
@@ -675,6 +794,8 @@ export {
   ACTIVE_PET_MAX,
   FUSION_MAX_STAGE,
   FUSION_RULES,
+  BREED_STONE_COST,
+  BREED_COOLDOWN_MS,
   petLabel,
   skillInfo,
   masterSkillsForStage,
@@ -683,4 +804,5 @@ export {
   fusionStoneCost,
   nextFusionStage,
   fusionMaterialNeed,
+  elementMatchup,
 };

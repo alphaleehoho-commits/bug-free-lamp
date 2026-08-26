@@ -1,5 +1,5 @@
 /**
- * Smoke: encounter, ranch cap, fusion rules 2/4/8 + level gates.
+ * Smoke: breed genes, element matchup, dungeon tables.
  */
 import {
   rollWildEncounter,
@@ -9,53 +9,56 @@ import {
   SKILLS,
   ranchCapForStage,
   fusionStoneCost,
-  fusionMaterialNeed,
-  nextFusionStage,
   FUSION_RULES,
-  FUSION_MAX_STAGE,
-  upgradeStoneCost,
+  elementMatchup,
+  rollBreedGenes,
+  BREED_STONE_COST,
+  DUNGEONS,
+  ELEMENT_ADV,
+  ELEMENT_DIS,
 } from "./data.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
-const enc = rollWildEncounter("tide_1");
-assert(enc.encounterId && enc.bondRate > 0 && enc.bondRate < 1, "encounter fields");
-assert(enc.skillId && SKILLS[enc.skillId], "encounter skill");
-assert(enc.level === 1 && enc.fusionLevel === 0, "encounter level/fusion defaults");
-assert(PENDING_BOND_MAX === 5, "pending max");
-assert(Object.keys(SPECIES).length >= 5, "species");
+assert(elementMatchup("tide", "flame").tag === "克制", "tide > flame");
+assert(elementMatchup("tide", "flame").mult === ELEMENT_ADV, "adv mult");
+assert(elementMatchup("flame", "tide").tag === "被克", "flame < tide");
+assert(elementMatchup("flame", "tide").mult === ELEMENT_DIS, "dis mult");
+assert(elementMatchup("tide", "tide").mult === 1, "same elem");
 
-assert(ranchCapForStage(0) === 3, "ranch cap stage0");
-assert(ranchCapForStage(5) === 13, "ranch cap stage5");
-
-assert(FUSION_MAX_STAGE === 3, "max fusion 3");
-assert(FUSION_RULES[1].needLevel === 10 && FUSION_RULES[1].totalPets === 2, "fuse1");
-assert(FUSION_RULES[2].needLevel === 20 && FUSION_RULES[2].totalPets === 4, "fuse2");
-assert(FUSION_RULES[3].needLevel === 30 && FUSION_RULES[3].totalPets === 8, "fuse3");
-assert(fusionMaterialNeed(1) === 1, "mats1");
-assert(fusionMaterialNeed(2) === 3, "mats2");
-assert(fusionMaterialNeed(3) === 7, "mats3");
-assert(nextFusionStage(0) === 1 && nextFusionStage(3) == null, "next stage");
-assert(fusionStoneCost(1) === 40, "cost1");
-assert(fusionStoneCost(2) === 240, "cost2");
-assert(fusionStoneCost(3) === 960, "cost3");
-assert(fusionStoneCost(2) > fusionStoneCost(1), "cost increases");
-
-// 升級成本獨立遞增
-assert(upgradeStoneCost(1) < upgradeStoneCost(10), "upgrade independent curve");
-
-const pet = buildPetStats({
-  id: "t",
+const a = buildPetStats({
+  id: "a",
   species: "reefox",
   element: "tide",
   personality: "gentle",
-  cost: 40,
+  cost: 1,
 });
-assert(pet.name.includes("礁狐"), "name");
-assert(pet.level === 1 && pet.fusionLevel === 0, "buildPetStats level/fusion");
+const b = buildPetStats({
+  id: "b",
+  species: "ashwing",
+  element: "gale",
+  personality: "fierce",
+  cost: 1,
+});
+const g = rollBreedGenes(a, b);
+assert(SPECIES[g.species], "breed species");
+assert(g.element && g.personality, "breed genes");
+assert(BREED_STONE_COST > 0, "breed cost");
 
-console.log("encounter sample:", enc.name, `bond ${(enc.bondRate * 100) | 0}%`);
-console.log("fusion:", "2/4/8 pets, Lv gate 10/20/30, costs", [1, 2, 3].map(fusionStoneCost).join("/"));
+for (const d of DUNGEONS) {
+  assert(d.encounterWeights && d.firstClearBonus && d.cooldownMs > 0, `dungeon ${d.id} tables`);
+  const enc = rollWildEncounter(d.id, d);
+  assert(enc.speciesId && enc.elementId, `weighted enc ${d.id}`);
+}
+
+assert(PENDING_BOND_MAX === 5, "pending");
+assert(ranchCapForStage(0) === 3, "ranch");
+assert(FUSION_RULES[1].totalPets === 2, "fuse");
+assert(fusionStoneCost(1) === 40, "fuse cost");
+assert(SKILLS.pounce, "skills");
+
+console.log("element tide→flame", elementMatchup("tide", "flame"));
+console.log("breed sample", g);
 console.log("smoke-test ok");

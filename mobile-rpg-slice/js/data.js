@@ -20,6 +20,31 @@ export const ELEMENTS = {
 };
 
 /**
+ * 元素相剋（攻 → 被克方）
+ * 潮克焰、焰克嵐、嵐克岩、岩克幽、幽克潮
+ */
+export const ELEMENT_BEATS = {
+  tide: "flame",
+  flame: "gale",
+  gale: "stone",
+  stone: "gloom",
+  gloom: "tide",
+};
+
+export const ELEMENT_ADV = 1.25;
+export const ELEMENT_DIS = 0.8;
+
+/** @returns {{ mult: number, tag: '' | '克制' | '被克' }} */
+export function elementMatchup(atkElementId, defElementId) {
+  if (!atkElementId || !defElementId || atkElementId === defElementId) {
+    return { mult: 1, tag: "" };
+  }
+  if (ELEMENT_BEATS[atkElementId] === defElementId) return { mult: ELEMENT_ADV, tag: "克制" };
+  if (ELEMENT_BEATS[defElementId] === atkElementId) return { mult: ELEMENT_DIS, tag: "被克" };
+  return { mult: 1, tag: "" };
+}
+
+/**
  * 種類（kind）：獸／鱗／禽／甲／蟲
  * 每種綁一隻種族技能；種族另有獨立基礎數值。
  */
@@ -198,7 +223,7 @@ export function fusionMaterialNeed(targetStage) {
 
 /**
  * 融合耗靈石（隨目標融階＋所需隻數遞增）
- * 階1→40, 階2→160, 階3→480
+ * 階1→40, 階2→240, 階3→960
  */
 export function fusionStoneCost(targetStage) {
   const n = Math.max(1, Math.min(FUSION_MAX_STAGE, targetStage | 0));
@@ -219,10 +244,59 @@ function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-/** 秘境隨機生成一隻野生靈寵（種類×元素×性格） */
-export function rollWildEncounter(dungeonId = "wild") {
-  const speciesId = pick(Object.keys(SPECIES));
-  const elementId = pick(Object.keys(ELEMENTS));
+function pickWeighted(weightMap) {
+  const entries = Object.entries(weightMap).filter(([, w]) => w > 0);
+  if (!entries.length) return null;
+  const total = entries.reduce((s, [, w]) => s + w, 0);
+  let r = Math.random() * total;
+  for (const [id, w] of entries) {
+    r -= w;
+    if (r <= 0) return id;
+  }
+  return entries[entries.length - 1][0];
+}
+
+/** 繁殖：靈石消耗、冷卻、元素變異率 */
+export const BREED_STONE_COST = 55;
+export const BREED_COOLDOWN_MS = 45_000;
+export const BREED_MUTATION_RATE = 0.08;
+
+/**
+ * 由雙親 genes 生成子代模板（種族／元素／性格各 50% 遺傳；元素可變異）
+ */
+export function rollBreedGenes(parentA, parentB) {
+  const ga = parentA.genes || {
+    species: parentA.speciesId,
+    element: parentA.elementId,
+    personality: parentA.personalityId,
+  };
+  const gb = parentB.genes || {
+    species: parentB.speciesId,
+    element: parentB.elementId,
+    personality: parentB.personalityId,
+  };
+  let species = Math.random() < 0.5 ? ga.species : gb.species;
+  let element = Math.random() < 0.5 ? ga.element : gb.element;
+  let personality = Math.random() < 0.5 ? ga.personality : gb.personality;
+  let mutated = false;
+  if (Math.random() < BREED_MUTATION_RATE) {
+    const others = Object.keys(ELEMENTS).filter((e) => e !== element);
+    element = pick(others);
+    mutated = true;
+  }
+  return { species, element, personality, mutated };
+}
+
+/** 秘境隨機生成一隻野生靈寵；可帶分層權重 */
+export function rollWildEncounter(dungeonId = "wild", dungeonDef = null) {
+  const weights = dungeonDef?.encounterWeights;
+  const speciesId = weights
+    ? pickWeighted(weights) || pick(Object.keys(SPECIES))
+    : pick(Object.keys(SPECIES));
+  const elWeights = dungeonDef?.elementWeights;
+  const elementId = elWeights
+    ? pickWeighted(elWeights) || pick(Object.keys(ELEMENTS))
+    : pick(Object.keys(ELEMENTS));
   const personalityId = pick(Object.keys(PERSONALITIES));
   const baseCost = 28 + Math.floor(Math.random() * 30);
   const pet = buildPetStats({
@@ -244,37 +318,73 @@ export function rollWildEncounter(dungeonId = "wild") {
 
 export const RECRUIT_POOL = [];
 
+/**
+ * 秘境表：掉落、首通、遇寵權重、冷卻（毫秒）
+ */
 export const DUNGEONS = [
   {
     id: "tide_1",
     name: "潮汐廢墟 · 一層",
     needRealm: 0,
+    cooldownMs: 20_000,
     enemies: [
       { name: "潮腐鼠", hp: 40, atk: 6, spd: 7, element: "tide" },
       { name: "暗礁妖", hp: 55, atk: 8, spd: 5, element: "stone" },
     ],
     reward: { stones: 25, scrap: 1 },
+    firstClearBonus: { stones: 40, scrap: 1 },
+    encounterWeights: {
+      reefox: 4,
+      tidecarp: 3,
+      mossback: 2,
+      ashwing: 1,
+      nightmoth: 1,
+      glowfin: 1,
+    },
+    elementWeights: { tide: 4, stone: 2, flame: 1, gale: 1, gloom: 1 },
   },
   {
     id: "tide_2",
     name: "潮汐廢墟 · 二層",
     needRealm: 2,
+    cooldownMs: 35_000,
     enemies: [
       { name: "黑潮衛", hp: 80, atk: 12, spd: 8, element: "tide" },
       { name: "深淵蛙", hp: 70, atk: 10, spd: 10, element: "gloom" },
       { name: "暗潮使徒", hp: 110, atk: 15, spd: 7, element: "gloom" },
     ],
     reward: { stones: 55, scrap: 2 },
+    firstClearBonus: { stones: 80, scrap: 2 },
+    encounterWeights: {
+      nightmoth: 4,
+      glowfin: 3,
+      ashwing: 2,
+      tidecarp: 2,
+      reefox: 1,
+      mossback: 1,
+    },
+    elementWeights: { gloom: 4, tide: 2, flame: 2, gale: 1, stone: 1 },
   },
   {
     id: "tide_3",
     name: "潮汐廢墟 · 心核",
     needRealm: 3,
+    cooldownMs: 50_000,
     enemies: [
       { name: "暗潮之影", hp: 160, atk: 18, spd: 9, element: "gloom" },
       { name: "心核看守", hp: 200, atk: 22, spd: 6, element: "stone" },
     ],
     reward: { stones: 120, scrap: 4 },
+    firstClearBonus: { stones: 150, scrap: 3 },
+    encounterWeights: {
+      mossback: 3,
+      nightmoth: 3,
+      ashwing: 2,
+      glowfin: 2,
+      reefox: 2,
+      tidecarp: 1,
+    },
+    elementWeights: { stone: 3, gloom: 3, gale: 2, flame: 1, tide: 1 },
   },
 ];
 
