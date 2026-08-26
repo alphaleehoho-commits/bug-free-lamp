@@ -153,6 +153,32 @@ export const WILD_PETS = [
 /** 待契約佇列上限；滿咗打本唔會再新遇 */
 export const PENDING_BOND_MAX = 5;
 
+/** 出戰欄上限 */
+export const ACTIVE_PET_MAX = 3;
+
+/**
+ * 牧場待命上限：隨人物階段提升
+ * 初契 3 → 通靈初 5 → … → 潮主 13
+ */
+export function ranchCapForStage(stageId) {
+  return 3 + Math.max(0, stageId) * 2;
+}
+
+/** 升級耗靈石（遞增） */
+export function upgradeStoneCost(level) {
+  const lv = Math.max(1, level | 0);
+  return 10 + lv * 12 + lv * lv * 2;
+}
+
+/**
+ * 融合結果等級 n 所需靈石（三角遞增）：n=1→40, 2→120, 3→240…
+ * 「所需合成」體感：越融越貴
+ */
+export function fusionStoneCost(resultFusionLevel) {
+  const n = Math.max(1, resultFusionLevel | 0);
+  return 20 * n * (n + 1);
+}
+
 /** 性格 → 契約成功率 */
 export const BOND_RATE_BY_PERSONALITY = {
   gentle: 0.78,
@@ -266,6 +292,8 @@ export function buildPetStats(template) {
     cost: template.cost,
     skillId,
     skillName: SKILLS[skillId]?.name || skillId,
+    level: 1,
+    fusionLevel: 0,
     genes: {
       species: sp.id,
       element: el.id,

@@ -6,16 +6,24 @@ import {
   tryBondPending,
   dismissPending,
   releasePet,
+  deployPet,
+  undeployPet,
+  upgradePet,
+  fusePets,
+  petDetail,
   runDungeon,
   forgeHint,
   tryBreed,
   resetSave,
   realmInfo,
   nextRealm,
+  ranchCap,
   DUNGEONS,
   SKILLS,
   PENDING_BOND_MAX,
+  ACTIVE_PET_MAX,
   masterSkillsForStage,
+  fusionStoneCost,
 } from "./engine.js";
 
 const app = document.querySelector("#app");
@@ -28,6 +36,9 @@ let flash = "";
 let flashTimer = 0;
 let tab = "cultivate";
 let shellReady = false;
+
+/** @type {{ mode: 'list' | 'detail' | 'fuse', uid: string | null, fuseBase: string | null }} */
+let petView = { mode: "list", uid: null, fuseBase: null };
 
 /** @type {null | {
  *  lines: string[],
@@ -76,6 +87,7 @@ function stopPlayback() {
 function switchTab(id) {
   if (playback && !playback.done) return; // 戰鬥播放中唔切頁
   tab = id;
+  if (id !== "party") petView = { mode: "list", uid: null, fuseBase: null };
   render();
 }
 
@@ -282,20 +294,49 @@ function cultivatePanel(qiPct, next, m) {
   `;
 }
 
-function petsPanel() {
-  const roster = state.pets
-    .map(
-      (p) => `
-      <li class="card-row">
-        <div>
-          <strong>${escapeHtml(p.name)}</strong>
-          <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)} · 攻${p.atk} 血${p.hp} 速${p.spd}</span>
-          <span class="muted">技能【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
-        </div>
-        <button type="button" data-release="${escapeHtml(p.uid)}">放歸</button>
-      </li>`
-    )
-    .join("") || `<li class="empty">出戰欄空。先打秘境遇見野生靈寵，再回來契約。</li>`;
+function petRow(p, extraBtn = "") {
+  const uid = escapeHtml(p.uid || p.templateId);
+  const lv = p.level ?? 1;
+  const fus = p.fusionLevel ?? 0;
+  return `
+    <li class="card-row">
+      <div>
+        <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(p.name)}</strong></button>
+        <span class="muted">Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}</span>
+        <span class="muted">攻${p.atk} 血${p.hp} 速${p.spd} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
+      </div>
+      <div class="row-actions">
+        <button type="button" data-pet-detail="${uid}">詳情</button>
+        ${extraBtn}
+      </div>
+    </li>`;
+}
+
+function petsListView() {
+  const cap = ranchCap(state);
+  const ranch = state.ranch || [];
+
+  const roster =
+    state.pets
+      .map((p) =>
+        petRow(
+          p,
+          `<button type="button" data-undeploy="${escapeHtml(p.uid)}">撤回</button>`
+        )
+      )
+      .join("") ||
+    `<li class="empty">出戰欄空。從牧場派出靈寵（最多 ${ACTIVE_PET_MAX}）。</li>`;
+
+  const ranchList =
+    ranch
+      .map((p) =>
+        petRow(
+          p,
+          `<button type="button" class="primary" data-deploy="${escapeHtml(p.uid)}">出戰</button>`
+        )
+      )
+      .join("") ||
+    `<li class="empty">牧場空。契約成功的靈寵會進入牧場（容量 ${cap}）。</li>`;
 
   const pending = (state.pending || [])
     .map(
@@ -316,16 +357,103 @@ function petsPanel() {
     `<li class="empty">尚無待契約靈寵。去秘境打本，隨機遇見後會出現喺呢度（最多 ${PENDING_BOND_MAX} 隻）。</li>`;
 
   return `
-    <h2>靈寵欄</h2>
-    <p class="lead">出戰最多 3 隻。待契約由秘境遇見累積（${(state.pending || []).length}/${PENDING_BOND_MAX}），滿額唔會再新遇。</p>
-    <h3>出戰（${state.pets.length}/3）</h3>
+    <h2>靈寵</h2>
+    <p class="lead">契約入牧場，再派出戰。牧場 ${ranch.length}/${cap} · 待契約 ${(state.pending || []).length}/${PENDING_BOND_MAX}</p>
+    <h3>出戰（${state.pets.length}/${ACTIVE_PET_MAX}）</h3>
     <ul class="list">${roster}</ul>
+    <h3>牧場（${ranch.length}/${cap}）</h3>
+    <ul class="list">${ranchList}</ul>
     <h3>待契約</h3>
     <ul class="list">${pending}</ul>
     <div class="row" style="margin-top:0.85rem">
       <button type="button" data-act="breed">嘗試繁殖</button>
     </div>
   `;
+}
+
+function petsDetailView() {
+  const detail = petDetail(state, petView.uid);
+  if (!detail) {
+    petView = { mode: "list", uid: null, fuseBase: null };
+    return petsListView();
+  }
+  const { pet, deployed, upgradeCost, fuseCostHint, skill } = detail;
+  const lv = pet.level ?? 1;
+  const fus = pet.fusionLevel ?? 0;
+  const loc = deployed ? "出戰中" : "牧場待命";
+
+  return `
+    <h2>${escapeHtml(pet.name)}</h2>
+    <p class="lead">${escapeHtml(loc)} · Lv.${lv} · 融階 ${fus}</p>
+    <ul class="skill-list">
+      <li><strong>種類</strong> — ${escapeHtml(pet.kind)} · ${escapeHtml(pet.speciesName)}</li>
+      <li><strong>元素</strong> — ${escapeHtml(pet.elementName)}</li>
+      <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}</li>
+      <li><strong>數值</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}</li>
+      <li><strong>技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】${skill ? ` ${escapeHtml(skill.desc)}（CD${skill.cd}）` : ""}</li>
+    </ul>
+    <div class="row">
+      <button type="button" class="primary" data-upgrade="${escapeHtml(pet.uid)}">升級（${upgradeCost} 石）</button>
+      ${
+        deployed
+          ? `<button type="button" data-undeploy="${escapeHtml(pet.uid)}">撤回牧場</button>`
+          : `<button type="button" data-deploy="${escapeHtml(pet.uid)}">派出戰</button>`
+      }
+    </div>
+    <div class="row" style="margin-top:0.5rem">
+      <button type="button" data-start-fuse="${escapeHtml(pet.uid)}">融合（約 ${fuseCostHint}+ 石）</button>
+      <button type="button" data-release="${escapeHtml(pet.uid)}">放歸</button>
+    </div>
+    <div class="row" style="margin-top:0.85rem">
+      <button type="button" data-pet-back>返回列表</button>
+    </div>
+  `;
+}
+
+function petsFuseView() {
+  const baseDetail = petDetail(state, petView.fuseBase);
+  if (!baseDetail) {
+    petView = { mode: "list", uid: null, fuseBase: null };
+    return petsListView();
+  }
+  const base = baseDetail.pet;
+  const owned = [...state.pets, ...(state.ranch || [])].filter(
+    (p) => p.uid !== base.uid && p.speciesId === base.speciesId
+  );
+
+  const mats =
+    owned
+      .map((p) => {
+        const resultFusion = Math.max(base.fusionLevel ?? 0, p.fusionLevel ?? 0) + 1;
+        const cost = fusionStoneCost(resultFusion);
+        return `
+        <li class="card-row">
+          <div>
+            <strong>${escapeHtml(p.name)}</strong>
+            <span class="muted">Lv.${p.level ?? 1} · 融${p.fusionLevel ?? 0} · 攻${p.atk} 血${p.hp} 速${p.spd}</span>
+            <span class="muted">融合後融階 ${resultFusion} · 耗 ${cost} 靈石</span>
+          </div>
+          <button type="button" class="primary" data-fuse-with="${escapeHtml(p.uid)}">確認融合</button>
+        </li>`;
+      })
+      .join("") ||
+    `<li class="empty">沒有同種族（${escapeHtml(base.speciesName)}）可作素材的靈寵。</li>`;
+
+  return `
+    <h2>融合</h2>
+    <p class="lead">本體：${escapeHtml(base.name)}（融${base.fusionLevel ?? 0}）。選同種族素材；素材會消失。</p>
+    <ul class="list">${mats}</ul>
+    <div class="row" style="margin-top:0.85rem">
+      <button type="button" data-pet-detail="${escapeHtml(base.uid)}">返回詳情</button>
+      <button type="button" data-pet-back>返回列表</button>
+    </div>
+  `;
+}
+
+function petsPanel() {
+  if (petView.mode === "detail") return petsDetailView();
+  if (petView.mode === "fuse") return petsFuseView();
+  return petsListView();
 }
 
 function dungeonPanel() {
@@ -406,6 +534,7 @@ function bind() {
         if (confirm("確定清除存檔？")) {
           stopPlayback();
           state = resetSave();
+          petView = { mode: "list", uid: null, fuseBase: null };
           shellReady = false;
           render();
           setFlash("存檔已重置。");
@@ -436,10 +565,83 @@ function bind() {
   });
   app.querySelectorAll("[data-release]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (!confirm("確定放歸這隻靈寵？")) return;
       const r = releasePet(state, btn.dataset.release);
+      saveState(state);
+      petView = { mode: "list", uid: null, fuseBase: null };
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-deploy]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = deployPet(state, btn.dataset.deploy);
       saveState(state);
       render();
       setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-undeploy]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = undeployPet(state, btn.dataset.undeploy);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-upgrade]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = upgradePet(state, btn.dataset.upgrade);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-pet-detail]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      petView = { mode: "detail", uid: btn.dataset.petDetail, fuseBase: null };
+      render();
+    });
+  });
+  app.querySelectorAll("[data-start-fuse]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      petView = { mode: "fuse", uid: null, fuseBase: btn.dataset.startFuse };
+      render();
+    });
+  });
+  app.querySelectorAll("[data-fuse-with]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const matUid = btn.dataset.fuseWith;
+      const baseUid = petView.fuseBase;
+      const baseDetail = petDetail(state, baseUid);
+      const matDetail = petDetail(state, matUid);
+      if (!baseDetail || !matDetail) {
+        setFlash("找不到靈寵。");
+        return;
+      }
+      const resultFusion =
+        Math.max(baseDetail.fusionLevel, matDetail.fusionLevel) + 1;
+      const cost = fusionStoneCost(resultFusion);
+      if (
+        !confirm(
+          `以 ${matDetail.pet.name} 融合進 ${baseDetail.pet.name}？\n耗 ${cost} 靈石，素材消失，融階 → ${resultFusion}`
+        )
+      ) {
+        return;
+      }
+      const r = fusePets(state, baseUid, matUid);
+      saveState(state);
+      if (r.ok) {
+        petView = { mode: "detail", uid: baseUid, fuseBase: null };
+      }
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-pet-back]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      petView = { mode: "list", uid: null, fuseBase: null };
+      render();
     });
   });
   app.querySelectorAll("[data-dungeon]").forEach((btn) => {

@@ -248,6 +248,17 @@ button.ghost {
   background: rgba(0, 0, 0, 0.2);
 }
 .card-row strong { display: block; font-family: var(--font-display); }
+button.linkish {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+button.linkish strong { color: var(--jade, #7ec8a3); }
 .muted { display: block; margin-top: 0.15rem; font-size: 0.75rem; color: var(--muted); }
 .empty { color: var(--muted); padding: 0.5rem; font-size: 0.9rem; }
 .row-actions {

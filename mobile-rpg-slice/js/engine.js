@@ -6,14 +6,19 @@ import {
   EVENTS,
   SKILLS,
   PENDING_BOND_MAX,
+  ACTIVE_PET_MAX,
+  PERSONALITIES,
   buildPetStats,
   petLabel,
   masterSkillsForStage,
   skillInfo,
   rollWildEncounter,
+  ranchCapForStage,
+  upgradeStoneCost,
+  fusionStoneCost,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v3";
+const SAVE_KEY = "void-tide-pets-v4";
 
 function defaultMaster() {
   return {
@@ -32,12 +37,16 @@ function defaultState() {
     stones: 160,
     scrap: 0,
     master: defaultMaster(),
+    /** 出戰欄（最多 ACTIVE_PET_MAX） */
     pets: [],
+    /** 牧場待命 */
+    ranch: [],
     /** 待契約野生靈寵（秘境遇見） */
     pending: [],
     log: [
       "你沿著暗潮抵達荒廢契壇。",
       "可先獨自踏入秘境；戰勝後或會遇見願意結契的靈寵。",
+      "契約成功的靈寵進入牧場；再從牧場派出戰（最多 3 隻）。",
     ],
     lastTick: Date.now(),
     combatsWon: 0,
@@ -45,10 +54,27 @@ function defaultState() {
   };
 }
 
+function normalizePet(p) {
+  if (!p || typeof p !== "object") return p;
+  const next = { ...p };
+  if (next.level == null) next.level = 1;
+  if (next.fusionLevel == null) next.fusionLevel = 0;
+  return next;
+}
+
+function normalizePetList(list) {
+  return (Array.isArray(list) ? list : []).map(normalizePet);
+}
+
+export function ranchCap(state) {
+  return ranchCapForStage(state.realm);
+}
+
 export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v3") ||
       localStorage.getItem("void-tide-pets-v2") ||
       localStorage.getItem("void-tide-pets-v1");
     if (!raw) return defaultState();
@@ -56,20 +82,41 @@ export function loadState() {
     const base = defaultState();
     const master = { ...base.master, ...(parsed.master || {}) };
     master.skillIds = masterSkillsForStage(parsed.realm ?? 0);
-    const pets = (Array.isArray(parsed.pets) ? parsed.pets : []).map((p) => {
+
+    let pets = normalizePetList(parsed.pets).map((p) => {
       if (p.skillId) return p;
       const rebuilt = WILD_PETS.find((t) => t.id === p.templateId);
       if (rebuilt) {
         const fresh = buildPetStats(rebuilt);
-        return { ...fresh, ...p, skillId: fresh.skillId, skillName: fresh.skillName };
+        return {
+          ...fresh,
+          ...p,
+          skillId: fresh.skillId,
+          skillName: fresh.skillName,
+          level: p.level ?? fresh.level,
+          fusionLevel: p.fusionLevel ?? fresh.fusionLevel,
+        };
       }
       return p;
     });
+
+    let ranch = normalizePetList(parsed.ranch);
+
+    // 舊存檔：出戰超過上限且無牧場 → 多餘移入牧場
+    if (!Array.isArray(parsed.ranch) && pets.length > ACTIVE_PET_MAX) {
+      ranch = pets.slice(ACTIVE_PET_MAX);
+      pets = pets.slice(0, ACTIVE_PET_MAX);
+    } else if (pets.length > ACTIVE_PET_MAX) {
+      ranch = [...ranch, ...pets.slice(ACTIVE_PET_MAX)];
+      pets = pets.slice(0, ACTIVE_PET_MAX);
+    }
+
     return {
       ...base,
       ...parsed,
       master,
       pets,
+      ranch,
       pending: Array.isArray(parsed.pending) ? parsed.pending : [],
     };
   } catch {
@@ -91,7 +138,8 @@ export function nextRealm(state) {
 
 export function tickCultivation(state, now = Date.now()) {
   const elapsed = Math.min(Math.max(0, now - state.lastTick) / 1000, 3600 * 8);
-  const bondBonus = 1 + state.pets.length * 0.18;
+  const ranchBonus = (state.ranch?.length || 0) * 0.04;
+  const bondBonus = 1 + state.pets.length * 0.18 + ranchBonus;
   const rate = realmInfo(state).rate * bondBonus;
   state.qi += rate * elapsed;
   state.lastTick = now;
@@ -111,6 +159,7 @@ export function tryBreakthrough(state) {
   state.master.spd += 1;
   state.master.skillIds = masterSkillsForStage(state.realm);
   pushLog(state, `階段突破——晉升【${next.name}】。御靈之力加深。`);
+  pushLog(state, `牧場容量擴展至 ${ranchCap(state)}。`);
   const unlocked = MASTER_UNLOCK_MSG(state.realm);
   if (unlocked) pushLog(state, unlocked);
   if (Math.random() < 0.55) {
@@ -127,13 +176,24 @@ function MASTER_UNLOCK_MSG(stage) {
   return null;
 }
 
+/** 在出戰／牧場中查找靈寵；回傳 { pet, list, index } */
+export function findOwnedPet(state, uid) {
+  if (!state.pets) state.pets = [];
+  if (!state.ranch) state.ranch = [];
+  let i = state.pets.findIndex((p) => p.uid === uid || p.templateId === uid);
+  if (i >= 0) return { pet: state.pets[i], list: "pets", index: i };
+  i = state.ranch.findIndex((p) => p.uid === uid || p.templateId === uid);
+  if (i >= 0) return { pet: state.ranch[i], list: "ranch", index: i };
+  return null;
+}
+
 /** 打本後嘗試遇見野生靈寵 */
 export function maybeEncounterAfterDungeon(state, dungeonId, won) {
   if (state.pending.length >= PENDING_BOND_MAX) {
     return { blocked: true, encounter: null };
   }
   let rate = won ? 0.62 : 0.22;
-  if (state.pets.length === 0) rate = won ? 0.92 : 0.4;
+  if (state.pets.length === 0 && (state.ranch?.length || 0) === 0) rate = won ? 0.92 : 0.4;
   if (Math.random() > rate) return { blocked: false, encounter: null };
 
   const enc = rollWildEncounter(dungeonId);
@@ -141,9 +201,13 @@ export function maybeEncounterAfterDungeon(state, dungeonId, won) {
   return { blocked: false, encounter: enc };
 }
 
-/** 嘗試契約待契約寵物（機率） */
+/** 嘗試契約待契約寵物（成功進入牧場） */
 export function tryBondPending(state, encounterId) {
-  if (state.pets.length >= 3) return { ok: false, msg: "出戰欄已滿（最多 3 隻）。" };
+  if (!state.ranch) state.ranch = [];
+  const cap = ranchCap(state);
+  if (state.ranch.length >= cap) {
+    return { ok: false, msg: `牧場已滿（${cap}）。可先放歸或升階擴容。` };
+  }
   const i = state.pending.findIndex((p) => p.encounterId === encounterId);
   if (i < 0) return { ok: false, msg: "找不到這隻待契約靈寵。" };
   const cand = state.pending[i];
@@ -153,12 +217,16 @@ export function tryBondPending(state, encounterId) {
   const roll = Math.random();
   if (roll <= cand.bondRate) {
     state.pending.splice(i, 1);
-    const pet = { ...cand, uid: `${cand.encounterId}-bonded`, status: "bonded" };
+    const pet = normalizePet({
+      ...cand,
+      uid: `${cand.encounterId}-bonded`,
+      status: "bonded",
+    });
     delete pet.bondRate;
     delete pet.status;
-    state.pets.push(pet);
-    pushLog(state, `契約成功：${petLabel(pet)}｜技能【${pet.skillName}】。`);
-    return { ok: true, success: true, msg: `契約成功！${pet.name}` };
+    state.ranch.push(pet);
+    pushLog(state, `契約成功：${petLabel(pet)} 進入牧場｜技能【${pet.skillName}】。`);
+    return { ok: true, success: true, msg: `契約成功！${pet.name} 已入牧場` };
   }
 
   state.pending.splice(i, 1);
@@ -175,12 +243,141 @@ export function dismissPending(state, encounterId) {
   return { ok: true, msg: `已放過 ${gone.name}` };
 }
 
-export function releasePet(state, uid) {
+/** 牧場 → 出戰 */
+export function deployPet(state, uid) {
+  if (!state.ranch) state.ranch = [];
+  if (state.pets.length >= ACTIVE_PET_MAX) {
+    return { ok: false, msg: `出戰欄已滿（最多 ${ACTIVE_PET_MAX} 隻）。` };
+  }
+  const i = state.ranch.findIndex((p) => p.uid === uid || p.templateId === uid);
+  if (i < 0) return { ok: false, msg: "牧場中找不到這隻靈寵。" };
+  const [pet] = state.ranch.splice(i, 1);
+  state.pets.push(pet);
+  pushLog(state, `派出 ${pet.name} 出戰。`);
+  return { ok: true, msg: `${pet.name} 已出戰` };
+}
+
+/** 出戰 → 牧場 */
+export function undeployPet(state, uid) {
+  if (!state.ranch) state.ranch = [];
+  const cap = ranchCap(state);
+  if (state.ranch.length >= cap) {
+    return { ok: false, msg: `牧場已滿（${cap}），無法撤回。` };
+  }
   const i = state.pets.findIndex((p) => p.uid === uid || p.templateId === uid);
-  if (i < 0) return { ok: false, msg: "不在靈寵欄。" };
-  const [gone] = state.pets.splice(i, 1);
+  if (i < 0) return { ok: false, msg: "出戰欄找不到這隻靈寵。" };
+  const [pet] = state.pets.splice(i, 1);
+  state.ranch.push(pet);
+  pushLog(state, `${pet.name} 撤回牧場。`);
+  return { ok: true, msg: `${pet.name} 已回牧場` };
+}
+
+export function releasePet(state, uid) {
+  if (!state.ranch) state.ranch = [];
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "不在靈寵欄／牧場。" };
+  const list = found.list === "pets" ? state.pets : state.ranch;
+  const [gone] = list.splice(found.index, 1);
   pushLog(state, `放歸 ${gone.name}。`);
   return { ok: true, msg: `${gone.name} 已放歸` };
+}
+
+/** 升級靈寵（出戰或牧場） */
+export function upgradePet(state, uid) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  const pet = found.pet;
+  const level = pet.level ?? 1;
+  const cost = upgradeStoneCost(level);
+  if (state.stones < cost) return { ok: false, msg: `靈石不足（需 ${cost}）。` };
+  state.stones -= cost;
+  pet.atk += 2;
+  pet.hp += 6;
+  pet.spd += 1;
+  pet.level = level + 1;
+  pushLog(state, `${pet.name} 升級至 Lv.${pet.level}（攻+2 血+6 速+1）。`);
+  return { ok: true, msg: `${pet.name} → Lv.${pet.level}` };
+}
+
+/**
+ * 融合：同種族；結果 fusionLevel = max+1；保留本體，消耗素材。
+ * 性格：預設保留本體；若素材 fusion 更高，35% 繼承素材性格。
+ */
+export function fusePets(state, baseUid, matUid) {
+  if (baseUid === matUid) return { ok: false, msg: "不能與自己融合。" };
+  const baseFound = findOwnedPet(state, baseUid);
+  const matFound = findOwnedPet(state, matUid);
+  if (!baseFound || !matFound) return { ok: false, msg: "找不到靈寵。" };
+  const base = baseFound.pet;
+  const mat = matFound.pet;
+  if (base.speciesId !== mat.speciesId) {
+    return { ok: false, msg: "只能融合同種族靈寵。" };
+  }
+
+  const baseFusion = base.fusionLevel ?? 0;
+  const matFusion = mat.fusionLevel ?? 0;
+  const resultFusion = Math.max(baseFusion, matFusion) + 1;
+  const cost = fusionStoneCost(resultFusion);
+  if (state.stones < cost) return { ok: false, msg: `靈石不足（需 ${cost}）。` };
+
+  state.stones -= cost;
+
+  // 吸收素材數值
+  base.atk += Math.max(1, Math.floor(mat.atk * 0.2)) + resultFusion;
+  base.hp += Math.max(2, Math.floor(mat.hp * 0.15)) + resultFusion * 3;
+  base.spd += Math.max(0, Math.floor(mat.spd * 0.1));
+  if (resultFusion >= 2) base.spd += 1;
+  base.fusionLevel = resultFusion;
+
+  if (matFusion > baseFusion && Math.random() < 0.35) {
+    const pe = PERSONALITIES[mat.personalityId];
+    if (pe) {
+      base.personalityId = pe.id;
+      base.personalityName = pe.name;
+      if (base.genes) base.genes.personality = pe.id;
+      pushLog(state, `${base.name} 融合後性格傾向【${pe.name}】。`);
+    }
+  }
+
+  // 移除素材
+  const matList = matFound.list === "pets" ? state.pets : state.ranch;
+  matList.splice(matFound.index, 1);
+
+  // 若 base 與 mat 同 list 且 mat index < base index，base 索引可能錯位——已用物件引用改 stats，無需再找
+
+  pushLog(
+    state,
+    `融合完成：${base.name} 融階 ${resultFusion}（耗 ${cost} 靈石）。`
+  );
+  return {
+    ok: true,
+    msg: `${base.name} 融階 ${resultFusion}`,
+    pet: base,
+    cost,
+  };
+}
+
+/** UI 用詳情彙總 */
+export function petDetail(state, uid) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return null;
+  const pet = found.pet;
+  const level = pet.level ?? 1;
+  const fusion = pet.fusionLevel ?? 0;
+  const nextFusion = fusion + 1;
+  return {
+    pet,
+    location: found.list,
+    deployed: found.list === "pets",
+    level,
+    fusionLevel: fusion,
+    upgradeCost: upgradeStoneCost(level),
+    /** 與同階素材融合時的預估最低花費（結果 = fusion+1） */
+    fuseCostHint: fusionStoneCost(nextFusion),
+    skill: skillInfo(pet.skillId),
+    ranchFull: (state.ranch?.length || 0) >= ranchCap(state),
+    partyFull: state.pets.length >= ACTIVE_PET_MAX,
+  };
 }
 
 function lowestHp(units) {
@@ -407,7 +604,7 @@ export function forgeHint(state) {
     p.atk += bonus;
     p.hp += bonus * 3;
   });
-  pushLog(state, `靈紋鍛造：全靈寵攻擊 +${bonus}，生命 +${bonus * 3}。`);
+  pushLog(state, `靈紋鍛造：出戰靈寵攻擊 +${bonus}，生命 +${bonus * 3}。`);
   return { ok: true, msg: `靈寵強化 +${bonus} 攻` };
 }
 
@@ -420,6 +617,7 @@ export function tryBreed(_state, _uidA, _uidB) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v3");
   localStorage.removeItem("void-tide-pets-v2");
   localStorage.removeItem("void-tide-pets-v1");
   localStorage.removeItem("void-tide-v1");
@@ -439,7 +637,11 @@ export {
   WILD_PETS,
   SKILLS,
   PENDING_BOND_MAX,
+  ACTIVE_PET_MAX,
   petLabel,
   skillInfo,
   masterSkillsForStage,
+  ranchCapForStage,
+  upgradeStoneCost,
+  fusionStoneCost,
 };
