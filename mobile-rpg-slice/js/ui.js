@@ -22,6 +22,7 @@ import {
   SKILLS,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
+  FUSION_MAX_STAGE,
   masterSkillsForStage,
   fusionStoneCost,
 } from "./engine.js";
@@ -37,8 +38,8 @@ let flashTimer = 0;
 let tab = "cultivate";
 let shellReady = false;
 
-/** @type {{ mode: 'list' | 'detail' | 'fuse', uid: string | null, fuseBase: string | null }} */
-let petView = { mode: "list", uid: null, fuseBase: null };
+/** @type {{ mode: 'list' | 'detail' | 'fuse', uid: string | null, fuseBase: string | null, fuseMats: string[] }} */
+let petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [] };
 
 /** @type {null | {
  *  lines: string[],
@@ -87,7 +88,7 @@ function stopPlayback() {
 function switchTab(id) {
   if (playback && !playback.done) return; // 戰鬥播放中唔切頁
   tab = id;
-  if (id !== "party") petView = { mode: "list", uid: null, fuseBase: null };
+  if (id !== "party") petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [] };
   render();
 }
 
@@ -374,23 +375,29 @@ function petsListView() {
 function petsDetailView() {
   const detail = petDetail(state, petView.uid);
   if (!detail) {
-    petView = { mode: "list", uid: null, fuseBase: null };
+    petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [] };
     return petsListView();
   }
-  const { pet, deployed, upgradeCost, fuseCostHint, skill } = detail;
+  const { pet, deployed, upgradeCost, fuseCostHint, skill, fuseMaxed, fuseNeedLevel, fuseTotalPets, fuseMatNeed, nextFusionStage } =
+    detail;
   const lv = pet.level ?? 1;
   const fus = pet.fusionLevel ?? 0;
   const loc = deployed ? "出戰中" : "牧場待命";
+  const fuseHint = fuseMaxed
+    ? `已達融階上限（${FUSION_MAX_STAGE}）`
+    : `下一融階 ${nextFusionStage}：主體≥Lv.${fuseNeedLevel}、共 ${fuseTotalPets} 隻（${fuseMatNeed} 素材）· ${fuseCostHint} 石`;
 
   return `
     <h2>${escapeHtml(pet.name)}</h2>
-    <p class="lead">${escapeHtml(loc)} · Lv.${lv} · 融階 ${fus}</p>
+    <p class="lead">${escapeHtml(loc)} · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE}</p>
     <ul class="skill-list">
       <li><strong>種類</strong> — ${escapeHtml(pet.kind)} · ${escapeHtml(pet.speciesName)}</li>
       <li><strong>元素</strong> — ${escapeHtml(pet.elementName)}</li>
       <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}</li>
       <li><strong>數值</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}</li>
       <li><strong>技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】${skill ? ` ${escapeHtml(skill.desc)}（CD${skill.cd}）` : ""}</li>
+      <li><strong>升級</strong> — 獨立計算，耗石只跟自身等級</li>
+      <li><strong>融合</strong> — ${escapeHtml(fuseHint)}</li>
     </ul>
     <div class="row">
       <button type="button" class="primary" data-upgrade="${escapeHtml(pet.uid)}">升級（${upgradeCost} 石）</button>
@@ -401,7 +408,7 @@ function petsDetailView() {
       }
     </div>
     <div class="row" style="margin-top:0.5rem">
-      <button type="button" data-start-fuse="${escapeHtml(pet.uid)}">融合（約 ${fuseCostHint}+ 石）</button>
+      <button type="button" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>
       <button type="button" data-release="${escapeHtml(pet.uid)}">放歸</button>
     </div>
     <div class="row" style="margin-top:0.85rem">
@@ -412,11 +419,19 @@ function petsDetailView() {
 
 function petsFuseView() {
   const baseDetail = petDetail(state, petView.fuseBase);
-  if (!baseDetail) {
-    petView = { mode: "list", uid: null, fuseBase: null };
+  if (!baseDetail || baseDetail.fuseMaxed) {
+    petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [] };
     return petsListView();
   }
   const base = baseDetail.pet;
+  const target = baseDetail.nextFusionStage;
+  const needMats = baseDetail.fuseMatNeed;
+  const needLv = baseDetail.fuseNeedLevel;
+  const cost = baseDetail.fuseCostHint;
+  const selected = new Set(petView.fuseMats || []);
+  const baseLv = base.level ?? 1;
+  const lvOk = baseLv >= needLv;
+
   const owned = [...state.pets, ...(state.ranch || [])].filter(
     (p) => p.uid !== base.uid && p.speciesId === base.speciesId
   );
@@ -424,26 +439,26 @@ function petsFuseView() {
   const mats =
     owned
       .map((p) => {
-        const resultFusion = Math.max(base.fusionLevel ?? 0, p.fusionLevel ?? 0) + 1;
-        const cost = fusionStoneCost(resultFusion);
+        const on = selected.has(p.uid);
         return `
         <li class="card-row">
           <div>
             <strong>${escapeHtml(p.name)}</strong>
-            <span class="muted">Lv.${p.level ?? 1} · 融${p.fusionLevel ?? 0} · 攻${p.atk} 血${p.hp} 速${p.spd}</span>
-            <span class="muted">融合後融階 ${resultFusion} · 耗 ${cost} 靈石</span>
+            <span class="muted">素材（等級不計）· 融${p.fusionLevel ?? 0} · 攻${p.atk} 血${p.hp} 速${p.spd}</span>
           </div>
-          <button type="button" class="primary" data-fuse-with="${escapeHtml(p.uid)}">確認融合</button>
+          <button type="button" class="${on ? "primary" : ""}" data-fuse-toggle="${escapeHtml(p.uid)}">${on ? "已選" : "選擇"}</button>
         </li>`;
       })
       .join("") ||
-    `<li class="empty">沒有同種族（${escapeHtml(base.speciesName)}）可作素材的靈寵。</li>`;
+    `<li class="empty">沒有同種族（${escapeHtml(base.speciesName)}）可作素材。</li>`;
 
+  const ready = lvOk && selected.size === needMats;
   return `
-    <h2>融合</h2>
-    <p class="lead">本體：${escapeHtml(base.name)}（融${base.fusionLevel ?? 0}）。選同種族素材；素材會消失。</p>
+    <h2>融合 · 融階 ${target}</h2>
+    <p class="lead">主體 ${escapeHtml(base.name)} Lv.${baseLv}${lvOk ? "" : `（需 ≥${needLv}）`} · 已選素材 ${selected.size}/${needMats} · 耗 ${cost} 靈石 · 結果繼承主體等級</p>
     <ul class="list">${mats}</ul>
     <div class="row" style="margin-top:0.85rem">
+      <button type="button" class="primary" data-fuse-confirm ${ready ? "" : "disabled"}>確認融合</button>
       <button type="button" data-pet-detail="${escapeHtml(base.uid)}">返回詳情</button>
       <button type="button" data-pet-back>返回列表</button>
     </div>
@@ -568,7 +583,7 @@ function bind() {
       if (!confirm("確定放歸這隻靈寵？")) return;
       const r = releasePet(state, btn.dataset.release);
       saveState(state);
-      petView = { mode: "list", uid: null, fuseBase: null };
+      petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [] };
       render();
       setFlash(r.msg);
     });
@@ -599,40 +614,55 @@ function bind() {
   });
   app.querySelectorAll("[data-pet-detail]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      petView = { mode: "detail", uid: btn.dataset.petDetail, fuseBase: null };
+      petView = { mode: "detail", uid: btn.dataset.petDetail, fuseBase: null, fuseMats: [] };
       render();
     });
   });
   app.querySelectorAll("[data-start-fuse]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      petView = { mode: "fuse", uid: null, fuseBase: btn.dataset.startFuse };
+      petView = { mode: "fuse", uid: null, fuseBase: btn.dataset.startFuse, fuseMats: [] };
       render();
     });
   });
-  app.querySelectorAll("[data-fuse-with]").forEach((btn) => {
+  app.querySelectorAll("[data-fuse-toggle]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const matUid = btn.dataset.fuseWith;
+      const uid = btn.dataset.fuseToggle;
+      const detail = petDetail(state, petView.fuseBase);
+      const need = detail?.fuseMatNeed ?? 0;
+      const set = new Set(petView.fuseMats || []);
+      if (set.has(uid)) set.delete(uid);
+      else {
+        if (set.size >= need) {
+          setFlash(`最多選 ${need} 隻素材。`);
+          return;
+        }
+        set.add(uid);
+      }
+      petView = { ...petView, fuseMats: [...set] };
+      render();
+    });
+  });
+  app.querySelectorAll("[data-fuse-confirm]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
       const baseUid = petView.fuseBase;
-      const baseDetail = petDetail(state, baseUid);
-      const matDetail = petDetail(state, matUid);
-      if (!baseDetail || !matDetail) {
-        setFlash("找不到靈寵。");
+      const mats = petView.fuseMats || [];
+      const d = petDetail(state, baseUid);
+      if (!d || d.fuseMaxed) {
+        setFlash("無法融合。");
         return;
       }
-      const resultFusion =
-        Math.max(baseDetail.fusionLevel, matDetail.fusionLevel) + 1;
-      const cost = fusionStoneCost(resultFusion);
       if (
         !confirm(
-          `以 ${matDetail.pet.name} 融合進 ${baseDetail.pet.name}？\n耗 ${cost} 靈石，素材消失，融階 → ${resultFusion}`
+          `將 ${mats.length} 隻素材融入 ${d.pet.name}？\n目標融階 ${d.nextFusionStage}｜繼承 Lv.${d.level}｜耗 ${d.fuseCostHint} 靈石`
         )
       ) {
         return;
       }
-      const r = fusePets(state, baseUid, matUid);
+      const r = fusePets(state, baseUid, mats);
       saveState(state);
       if (r.ok) {
-        petView = { mode: "detail", uid: baseUid, fuseBase: null };
+        petView = { mode: "detail", uid: baseUid, fuseBase: null, fuseMats: [] };
       }
       render();
       setFlash(r.msg);
@@ -640,7 +670,7 @@ function bind() {
   });
   app.querySelectorAll("[data-pet-back]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      petView = { mode: "list", uid: null, fuseBase: null };
+      petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [] };
       render();
     });
   });

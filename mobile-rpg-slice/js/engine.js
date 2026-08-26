@@ -7,7 +7,8 @@ import {
   SKILLS,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
-  PERSONALITIES,
+  FUSION_RULES,
+  FUSION_MAX_STAGE,
   buildPetStats,
   petLabel,
   masterSkillsForStage,
@@ -16,6 +17,8 @@ import {
   ranchCapForStage,
   upgradeStoneCost,
   fusionStoneCost,
+  nextFusionStage,
+  fusionMaterialNeed,
 } from "./data.js";
 
 const SAVE_KEY = "void-tide-pets-v4";
@@ -59,6 +62,7 @@ function normalizePet(p) {
   const next = { ...p };
   if (next.level == null) next.level = 1;
   if (next.fusionLevel == null) next.fusionLevel = 0;
+  if (next.fusionLevel > FUSION_MAX_STAGE) next.fusionLevel = FUSION_MAX_STAGE;
   return next;
 }
 
@@ -282,7 +286,7 @@ export function releasePet(state, uid) {
   return { ok: true, msg: `${gone.name} 已放歸` };
 }
 
-/** 升級靈寵（出戰或牧場） */
+/** 升級靈寵（出戰或牧場）——獨立計算，唔受融合影響等級 */
 export function upgradePet(state, uid) {
   const found = findOwnedPet(state, uid);
   if (!found) return { ok: false, msg: "找不到靈寵。" };
@@ -300,58 +304,84 @@ export function upgradePet(state, uid) {
 }
 
 /**
- * 融合：同種族；結果 fusionLevel = max+1；保留本體，消耗素材。
- * 性格：預設保留本體；若素材 fusion 更高，35% 繼承素材性格。
+ * 融合：同種族；目標融階 = 主體融階+1（最高 3）。
+ * 主體須達等級門檻；素材隻數 = 總需求-1（2/4/8 含主體 → 1/3/7 素材）；素材不計等級。
+ * 融合後繼承主體等級（唔吸收素材等級）。
+ * @param {string[]} matUids
  */
-export function fusePets(state, baseUid, matUid) {
-  if (baseUid === matUid) return { ok: false, msg: "不能與自己融合。" };
+export function fusePets(state, baseUid, matUids) {
+  const mats = Array.isArray(matUids) ? [...new Set(matUids)] : [matUids].filter(Boolean);
+  if (mats.includes(baseUid)) return { ok: false, msg: "素材不能包含主體。" };
+
   const baseFound = findOwnedPet(state, baseUid);
-  const matFound = findOwnedPet(state, matUid);
-  if (!baseFound || !matFound) return { ok: false, msg: "找不到靈寵。" };
+  if (!baseFound) return { ok: false, msg: "找不到主體靈寵。" };
   const base = baseFound.pet;
-  const mat = matFound.pet;
-  if (base.speciesId !== mat.speciesId) {
-    return { ok: false, msg: "只能融合同種族靈寵。" };
+  const curFusion = base.fusionLevel ?? 0;
+  const targetStage = nextFusionStage(curFusion);
+  if (targetStage == null) return { ok: false, msg: "已達融合上限（融階 3）。" };
+
+  const rule = FUSION_RULES[targetStage];
+  const baseLevel = base.level ?? 1;
+  if (baseLevel < rule.needLevel) {
+    return {
+      ok: false,
+      msg: `融階 ${targetStage} 需要主體至少 Lv.${rule.needLevel}（現 Lv.${baseLevel}）。`,
+    };
   }
 
-  const baseFusion = base.fusionLevel ?? 0;
-  const matFusion = mat.fusionLevel ?? 0;
-  const resultFusion = Math.max(baseFusion, matFusion) + 1;
-  const cost = fusionStoneCost(resultFusion);
-  if (state.stones < cost) return { ok: false, msg: `靈石不足（需 ${cost}）。` };
+  const needMats = fusionMaterialNeed(targetStage);
+  if (mats.length !== needMats) {
+    return {
+      ok: false,
+      msg: `融階 ${targetStage} 需要 ${rule.totalPets} 隻同種族（主體+${needMats} 素材），目前選了 ${mats.length} 隻素材。`,
+    };
+  }
 
+  const matFounds = [];
+  for (const uid of mats) {
+    const f = findOwnedPet(state, uid);
+    if (!f) return { ok: false, msg: "找不到素材靈寵。" };
+    if (f.pet.speciesId !== base.speciesId) {
+      return { ok: false, msg: "只能融合同種族靈寵。" };
+    }
+    matFounds.push(f);
+  }
+
+  const cost = fusionStoneCost(targetStage);
+  if (state.stones < cost) return { ok: false, msg: `靈石不足（需 ${cost}）。` };
   state.stones -= cost;
 
-  // 吸收素材數值
-  base.atk += Math.max(1, Math.floor(mat.atk * 0.2)) + resultFusion;
-  base.hp += Math.max(2, Math.floor(mat.hp * 0.15)) + resultFusion * 3;
-  base.spd += Math.max(0, Math.floor(mat.spd * 0.1));
-  if (resultFusion >= 2) base.spd += 1;
-  base.fusionLevel = resultFusion;
-
-  if (matFusion > baseFusion && Math.random() < 0.35) {
-    const pe = PERSONALITIES[mat.personalityId];
-    if (pe) {
-      base.personalityId = pe.id;
-      base.personalityName = pe.name;
-      if (base.genes) base.genes.personality = pe.id;
-      pushLog(state, `${base.name} 融合後性格傾向【${pe.name}】。`);
-    }
+  // 數值強化只跟融階／素材數量有關；等級完全繼承主體
+  const keepLevel = base.level ?? 1;
+  for (const { pet: mat } of matFounds) {
+    base.atk += Math.max(1, Math.floor(mat.atk * 0.12)) + targetStage;
+    base.hp += Math.max(2, Math.floor(mat.hp * 0.1)) + targetStage * 2;
+    base.spd += Math.max(0, Math.floor(mat.spd * 0.08));
   }
+  base.spd += targetStage;
+  base.fusionLevel = targetStage;
+  base.level = keepLevel;
 
-  // 移除素材
-  const matList = matFound.list === "pets" ? state.pets : state.ranch;
-  matList.splice(matFound.index, 1);
-
-  // 若 base 與 mat 同 list 且 mat index < base index，base 索引可能錯位——已用物件引用改 stats，無需再找
+  // 由高 index 開始刪，避免同 list 錯位
+  const removals = matFounds
+    .map((f) => ({ listName: f.list, index: f.index, uid: f.pet.uid }))
+    .sort((a, b) => {
+      if (a.listName !== b.listName) return a.listName < b.listName ? -1 : 1;
+      return b.index - a.index;
+    });
+  for (const r of removals) {
+    const list = r.listName === "pets" ? state.pets : state.ranch;
+    const idx = list.findIndex((p) => p.uid === r.uid);
+    if (idx >= 0) list.splice(idx, 1);
+  }
 
   pushLog(
     state,
-    `融合完成：${base.name} 融階 ${resultFusion}（耗 ${cost} 靈石）。`
+    `融合完成：${base.name} → 融階 ${targetStage}（繼承 Lv.${keepLevel}，耗 ${needMats} 素材／${cost} 靈石）。`
   );
   return {
     ok: true,
-    msg: `${base.name} 融階 ${resultFusion}`,
+    msg: `${base.name} 融階 ${targetStage}｜Lv.${keepLevel}`,
     pet: base,
     cost,
   };
@@ -364,7 +394,8 @@ export function petDetail(state, uid) {
   const pet = found.pet;
   const level = pet.level ?? 1;
   const fusion = pet.fusionLevel ?? 0;
-  const nextFusion = fusion + 1;
+  const target = nextFusionStage(fusion);
+  const rule = target != null ? FUSION_RULES[target] : null;
   return {
     pet,
     location: found.list,
@@ -372,8 +403,12 @@ export function petDetail(state, uid) {
     level,
     fusionLevel: fusion,
     upgradeCost: upgradeStoneCost(level),
-    /** 與同階素材融合時的預估最低花費（結果 = fusion+1） */
-    fuseCostHint: fusionStoneCost(nextFusion),
+    nextFusionStage: target,
+    fuseNeedLevel: rule?.needLevel ?? null,
+    fuseTotalPets: rule?.totalPets ?? null,
+    fuseMatNeed: target != null ? fusionMaterialNeed(target) : 0,
+    fuseCostHint: target != null ? fusionStoneCost(target) : null,
+    fuseMaxed: target == null,
     skill: skillInfo(pet.skillId),
     ranchFull: (state.ranch?.length || 0) >= ranchCap(state),
     partyFull: state.pets.length >= ACTIVE_PET_MAX,
@@ -638,10 +673,14 @@ export {
   SKILLS,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
+  FUSION_MAX_STAGE,
+  FUSION_RULES,
   petLabel,
   skillInfo,
   masterSkillsForStage,
   ranchCapForStage,
   upgradeStoneCost,
   fusionStoneCost,
+  nextFusionStage,
+  fusionMaterialNeed,
 };

@@ -164,19 +164,46 @@ export function ranchCapForStage(stageId) {
   return 3 + Math.max(0, stageId) * 2;
 }
 
-/** 升級耗靈石（遞增） */
+/** 升級耗靈石（獨立於融合，只跟寵物自身等級） */
 export function upgradeStoneCost(level) {
   const lv = Math.max(1, level | 0);
   return 10 + lv * 12 + lv * lv * 2;
 }
 
+/** 融合最高階 */
+export const FUSION_MAX_STAGE = 3;
+
 /**
- * 融合結果等級 n 所需靈石（三角遞增）：n=1→40, 2→120, 3→240…
- * 「所需合成」體感：越融越貴
+ * 融階規則（目標融階 → 主體最低等級、同種族總隻數含主體）
+ * 階1: Lv≥10、2隻｜階2: Lv≥20、4隻｜階3: Lv≥30、8隻
+ * 素材不計等級；數量倍增 2→4→8
  */
-export function fusionStoneCost(resultFusionLevel) {
-  const n = Math.max(1, resultFusionLevel | 0);
-  return 20 * n * (n + 1);
+export const FUSION_RULES = {
+  1: { needLevel: 10, totalPets: 2 },
+  2: { needLevel: 20, totalPets: 4 },
+  3: { needLevel: 30, totalPets: 8 },
+};
+
+export function nextFusionStage(currentFusionLevel) {
+  const cur = currentFusionLevel ?? 0;
+  if (cur >= FUSION_MAX_STAGE) return null;
+  return cur + 1;
+}
+
+export function fusionMaterialNeed(targetStage) {
+  const rule = FUSION_RULES[targetStage];
+  if (!rule) return 0;
+  return rule.totalPets - 1;
+}
+
+/**
+ * 融合耗靈石（隨目標融階＋所需隻數遞增）
+ * 階1→40, 階2→160, 階3→480
+ */
+export function fusionStoneCost(targetStage) {
+  const n = Math.max(1, Math.min(FUSION_MAX_STAGE, targetStage | 0));
+  const rule = FUSION_RULES[n];
+  return 10 * n * (n + 1) * rule.totalPets;
 }
 
 /** 性格 → 契約成功率 */

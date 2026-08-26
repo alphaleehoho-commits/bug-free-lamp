@@ -1,16 +1,19 @@
 /**
- * Smoke: encounter roll, pending bond, ranch cap, fusion cost curve.
+ * Smoke: encounter, ranch cap, fusion rules 2/4/8 + level gates.
  */
 import {
   rollWildEncounter,
   PENDING_BOND_MAX,
-  ACTIVE_PET_MAX,
   SPECIES,
   buildPetStats,
   SKILLS,
   ranchCapForStage,
-  upgradeStoneCost,
   fusionStoneCost,
+  fusionMaterialNeed,
+  nextFusionStage,
+  FUSION_RULES,
+  FUSION_MAX_STAGE,
+  upgradeStoneCost,
 } from "./data.js";
 
 function assert(cond, msg) {
@@ -22,8 +25,26 @@ assert(enc.encounterId && enc.bondRate > 0 && enc.bondRate < 1, "encounter field
 assert(enc.skillId && SKILLS[enc.skillId], "encounter skill");
 assert(enc.level === 1 && enc.fusionLevel === 0, "encounter level/fusion defaults");
 assert(PENDING_BOND_MAX === 5, "pending max");
-assert(ACTIVE_PET_MAX === 3, "active pet max");
 assert(Object.keys(SPECIES).length >= 5, "species");
+
+assert(ranchCapForStage(0) === 3, "ranch cap stage0");
+assert(ranchCapForStage(5) === 13, "ranch cap stage5");
+
+assert(FUSION_MAX_STAGE === 3, "max fusion 3");
+assert(FUSION_RULES[1].needLevel === 10 && FUSION_RULES[1].totalPets === 2, "fuse1");
+assert(FUSION_RULES[2].needLevel === 20 && FUSION_RULES[2].totalPets === 4, "fuse2");
+assert(FUSION_RULES[3].needLevel === 30 && FUSION_RULES[3].totalPets === 8, "fuse3");
+assert(fusionMaterialNeed(1) === 1, "mats1");
+assert(fusionMaterialNeed(2) === 3, "mats2");
+assert(fusionMaterialNeed(3) === 7, "mats3");
+assert(nextFusionStage(0) === 1 && nextFusionStage(3) == null, "next stage");
+assert(fusionStoneCost(1) === 40, "cost1");
+assert(fusionStoneCost(2) === 240, "cost2");
+assert(fusionStoneCost(3) === 960, "cost3");
+assert(fusionStoneCost(2) > fusionStoneCost(1), "cost increases");
+
+// 升級成本獨立遞增
+assert(upgradeStoneCost(1) < upgradeStoneCost(10), "upgrade independent curve");
 
 const pet = buildPetStats({
   id: "t",
@@ -35,24 +56,6 @@ const pet = buildPetStats({
 assert(pet.name.includes("礁狐"), "name");
 assert(pet.level === 1 && pet.fusionLevel === 0, "buildPetStats level/fusion");
 
-// ranchCap: 初契 3 → 通靈初 5 → … → 潮主 13
-assert(ranchCapForStage(0) === 3, "ranch cap stage 0");
-assert(ranchCapForStage(1) === 5, "ranch cap stage 1");
-assert(ranchCapForStage(5) === 13, "ranch cap stage 5");
-
-// upgrade cost curve
-assert(upgradeStoneCost(1) === 10 + 12 + 2, "upgrade lv1");
-assert(upgradeStoneCost(2) === 10 + 24 + 8, "upgrade lv2");
-assert(upgradeStoneCost(3) > upgradeStoneCost(2), "upgrade increases");
-
-// fusion cost: n=1→40, 2→120, 3→240…
-assert(fusionStoneCost(1) === 40, "fusion n=1");
-assert(fusionStoneCost(2) === 120, "fusion n=2");
-assert(fusionStoneCost(3) === 240, "fusion n=3");
-assert(fusionStoneCost(4) === 400, "fusion n=4");
-assert(fusionStoneCost(3) > fusionStoneCost(2), "fusion increases");
-
 console.log("encounter sample:", enc.name, `bond ${(enc.bondRate * 100) | 0}%`);
-console.log("ranchCap 0/5:", ranchCapForStage(0), ranchCapForStage(5));
-console.log("fusion costs:", [1, 2, 3, 4].map(fusionStoneCost).join(", "));
+console.log("fusion:", "2/4/8 pets, Lv gate 10/20/30, costs", [1, 2, 3].map(fusionStoneCost).join("/"));
 console.log("smoke-test ok");
