@@ -10,9 +10,9 @@ Other agents cannot see those files until the project is on a **private GitHub r
 
 - Path: `mobile-rpg-slice/`
 - Stack: vanilla HTML/CSS/JS PWA (portrait mobile)
-- Save key / SW cache: `void-tide-pets-v9`
+- Save key / SW cache: `void-tide-pets-v11`
 
-**Breed (dino-style):** hybrid species from cross-kind mates + rarity tiers (普通→傳說); fusion stays same-species stages. Bestiary 60 (12 species × 5 elements).
+**Breed (dino-style):** hybrid species from cross-kind mates + rarity tiers (普通→傳說); fusion stays same-species stages. Bestiary 60 (12 species × 5 elements). Species↔kind 1:1; generations 0–3.
 - Run: `cd mobile-rpg-slice && python3 -m http.server 8765`
 - Smoke: `cd mobile-rpg-slice && node js/smoke-test.mjs`
 
@@ -21,6 +21,8 @@ Other agents cannot see those files until the project is on a **private GitHub r
 Idle → dungeon → bond → ranch → fuse/breed → element → P1 idle/gear/skills/synergy.
 
 **P2:** bestiary (species×element) combat bonus · rename · release refund · daily quests · achievements · offline settlement banner.
+
+**P3:** breed goals (daily/once + claim) · recipe matrix on breed page · hybrid/gen celebrate flash · dungeon hybrid/gen trials.
 
 **Balance:** Master from gear; pets from innate (fuse/breed).
 
