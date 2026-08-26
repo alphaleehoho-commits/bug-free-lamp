@@ -157,6 +157,57 @@ export const SKILLS = {
     power: 1.2,
     desc: "蟲類：傷害並使目標攻擊降低",
   },
+  // —— 第二技能（融階／等級解鎖）——
+  pack_howl: {
+    id: "pack_howl",
+    name: "群嚎",
+    owner: "pet",
+    kind: "獸",
+    type: "buff",
+    cd: 4,
+    power: 0.12,
+    desc: "獸類二技：短時提升全體友方攻擊",
+  },
+  tidal_veil: {
+    id: "tidal_veil",
+    name: "潮帷",
+    owner: "pet",
+    kind: "鱗",
+    type: "heal",
+    cd: 3,
+    power: 0.22,
+    desc: "鱗類二技：為生命最低友方回復",
+  },
+  sky_pierce: {
+    id: "sky_pierce",
+    name: "穿空",
+    owner: "pet",
+    kind: "禽",
+    type: "strike",
+    cd: 3,
+    power: 2.0,
+    desc: "禽類二技：高倍率單體俯衝",
+  },
+  bulwark_pulse: {
+    id: "bulwark_pulse",
+    name: "甲脈",
+    owner: "pet",
+    kind: "甲",
+    type: "guard",
+    cd: 4,
+    power: 0.28,
+    desc: "甲類二技：強減傷並回血",
+  },
+  swarm_haze: {
+    id: "swarm_haze",
+    name: "蟲霾",
+    owner: "pet",
+    kind: "蟲",
+    type: "cleave",
+    cd: 3,
+    power: 0.65,
+    desc: "蟲類二技：濺射全體敵人",
+  },
 };
 
 /** 人物依階段解鎖技能 */
@@ -441,4 +492,223 @@ export function buildPetStats(template) {
 
 export function petLabel(pet) {
   return `${pet.name}（${pet.kind}·${pet.elementName}·${pet.personalityName}）`;
+}
+
+/* ─── P1：牧場掛機產物 ─── */
+
+/** 性格 → 每秒飼料／靈塵產量（牧場待命） */
+export const IDLE_BY_PERSONALITY = {
+  gentle: { feed: 0.09, dust: 0.02 },
+  steady: { feed: 0.07, dust: 0.035 },
+  sly: { feed: 0.045, dust: 0.055 },
+  fierce: { feed: 0.03, dust: 0.07 },
+  wild: { feed: 0.02, dust: 0.08 },
+};
+
+/** 元素對掛機倍率 */
+export const IDLE_BY_ELEMENT = {
+  tide: { feed: 1.1, dust: 1.0 },
+  stone: { feed: 1.15, dust: 0.95 },
+  flame: { feed: 0.9, dust: 1.15 },
+  gale: { feed: 1.0, dust: 1.1 },
+  gloom: { feed: 0.95, dust: 1.12 },
+};
+
+/** 飼料契約：消耗飼料換取成功率加成 */
+export const BOND_FEED_COST = 8;
+export const BOND_FEED_BONUS = 0.18;
+
+/** 用飼料升級（可替代靈石） */
+export function upgradeFeedCost(level) {
+  const lv = Math.max(1, level | 0);
+  return 6 + lv * 5 + Math.floor(lv * lv * 0.5);
+}
+
+/* ─── P1：技能升級／第二技能 ─── */
+
+export const SKILL_MAX_LEVEL = 5;
+
+/** 靈塵升級技能消耗 */
+export function skillDustCost(skillLevel) {
+  const lv = Math.max(1, skillLevel | 0);
+  return 4 + lv * 6;
+}
+
+/** 技能威力隨等級：每級 +8% */
+export function skillPowerMult(skillLevel) {
+  const lv = Math.max(1, Math.min(SKILL_MAX_LEVEL, skillLevel | 0));
+  return 1 + (lv - 1) * 0.08;
+}
+
+/**
+ * 第二技能（融階≥1 或 Lv≥15 解鎖）
+ * 豐富自動戰報
+ */
+export const KIND_SECOND_SKILLS = {
+  獸: "pack_howl",
+  鱗: "tidal_veil",
+  禽: "sky_pierce",
+  甲: "bulwark_pulse",
+  蟲: "swarm_haze",
+};
+
+export const SECOND_SKILL_UNLOCK = { fusionLevel: 1, level: 15 };
+
+export function petSkillIds(pet) {
+  const ids = [];
+  if (pet.skillId) ids.push(pet.skillId);
+  const unlocked =
+    (pet.fusionLevel ?? 0) >= SECOND_SKILL_UNLOCK.fusionLevel ||
+    (pet.level ?? 1) >= SECOND_SKILL_UNLOCK.level;
+  const second = KIND_SECOND_SKILLS[pet.kind];
+  if (unlocked && second) ids.push(second);
+  return ids;
+}
+
+/* ─── P1：裝備 ─── */
+
+/**
+ * slot: weapon | accessory（人物）／ accessory（寵）
+ * owner: master | pet | both
+ */
+export const GEAR = {
+  tide_blade: {
+    id: "tide_blade",
+    name: "潮紋短刃",
+    slot: "weapon",
+    owner: "master",
+    atk: 4,
+    hp: 0,
+    spd: 1,
+    rarity: 1,
+  },
+  mist_charm: {
+    id: "mist_charm",
+    name: "潮霧墜",
+    slot: "accessory",
+    owner: "both",
+    atk: 1,
+    hp: 18,
+    spd: 0,
+    rarity: 1,
+  },
+  reef_ring: {
+    id: "reef_ring",
+    name: "暗礁戒",
+    slot: "accessory",
+    owner: "both",
+    atk: 2,
+    hp: 8,
+    spd: 1,
+    rarity: 2,
+  },
+  ash_feather: {
+    id: "ash_feather",
+    name: "灰翼羽飾",
+    slot: "accessory",
+    owner: "pet",
+    atk: 3,
+    hp: 5,
+    spd: 2,
+    rarity: 2,
+  },
+  gloom_sigil: {
+    id: "gloom_sigil",
+    name: "幽印符",
+    slot: "accessory",
+    owner: "both",
+    atk: 3,
+    hp: 12,
+    spd: 1,
+    rarity: 3,
+  },
+  core_crown: {
+    id: "core_crown",
+    name: "心核冠片",
+    slot: "weapon",
+    owner: "master",
+    atk: 7,
+    hp: 10,
+    spd: 2,
+    rarity: 3,
+  },
+};
+
+/** 秘境掉落裝備權重（gearId → weight）；另有掉落機率 */
+export const DUNGEON_GEAR_DROPS = {
+  tide_1: { chance: 0.28, weights: { tide_blade: 3, mist_charm: 4, reef_ring: 1 } },
+  tide_2: { chance: 0.36, weights: { mist_charm: 2, reef_ring: 3, ash_feather: 3, gloom_sigil: 1 } },
+  tide_3: { chance: 0.45, weights: { reef_ring: 2, ash_feather: 2, gloom_sigil: 3, core_crown: 2 } },
+};
+
+export function rollGearDrop(dungeonId) {
+  const table = DUNGEON_GEAR_DROPS[dungeonId];
+  if (!table || Math.random() > table.chance) return null;
+  const gearId = pickWeighted(table.weights);
+  if (!gearId || !GEAR[gearId]) return null;
+  return {
+    uid: `gear-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
+    gearId,
+  };
+}
+
+export function gearBonuses(gearIds) {
+  let atk = 0;
+  let hp = 0;
+  let spd = 0;
+  for (const id of gearIds || []) {
+    const g = GEAR[id];
+    if (!g) continue;
+    atk += g.atk || 0;
+    hp += g.hp || 0;
+    spd += g.spd || 0;
+  }
+  return { atk, hp, spd };
+}
+
+/* ─── P1：羈絆／陣容加成 ─── */
+
+/**
+ * 出戰靈寵同元素／同 kind 觸發 buff
+ * @returns {{ atkMult: number, hpMult: number, spdMult: number, labels: string[] }}
+ */
+export function partySynergy(pets) {
+  const list = Array.isArray(pets) ? pets : [];
+  const labels = [];
+  let atkMult = 1;
+  let hpMult = 1;
+  let spdMult = 1;
+  if (list.length < 2) return { atkMult, hpMult, spdMult, labels };
+
+  const byEl = {};
+  const byKind = {};
+  for (const p of list) {
+    byEl[p.elementId] = (byEl[p.elementId] || 0) + 1;
+    byKind[p.kind] = (byKind[p.kind] || 0) + 1;
+  }
+  const maxEl = Math.max(...Object.values(byEl));
+  const maxKind = Math.max(...Object.values(byKind));
+
+  if (maxEl >= 3) {
+    atkMult *= 1.14;
+    labels.push("三元共鳴（攻↑）");
+  } else if (maxEl >= 2) {
+    atkMult *= 1.07;
+    labels.push("雙元呼應（攻↑）");
+  }
+
+  if (maxKind >= 3) {
+    hpMult *= 1.12;
+    labels.push("同族鐵壁（血↑）");
+  } else if (maxKind >= 2) {
+    hpMult *= 1.06;
+    labels.push("同種援護（血↑）");
+  }
+
+  if (list.length >= 3 && maxEl < 2 && maxKind < 2) {
+    spdMult *= 1.04;
+    labels.push("雜陣靈動（速↑）");
+  }
+
+  return { atkMult, hpMult, spdMult, labels };
 }

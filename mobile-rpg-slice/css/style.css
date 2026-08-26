@@ -82,8 +82,13 @@ body {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.5rem;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.4rem;
+}
+@media (max-width: 420px) {
+  .stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 .stats div {
   background: var(--panel);
@@ -205,6 +210,27 @@ body {
 .meta { margin: 0.45rem 0 0.9rem; color: var(--fog); font-size: 0.85rem; }
 
 .row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.gear-row {
+  align-items: flex-end;
+  margin: 0.5rem 0 0.75rem;
+}
+.gear-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  flex: 1;
+  min-width: 7rem;
+}
+.gear-row select {
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.45rem 0.5rem;
+}
 button {
   font: inherit;
   cursor: pointer;

@@ -9,6 +9,7 @@ import {
   deployPet,
   undeployPet,
   upgradePet,
+  upgradePetSkill,
   fusePets,
   petDetail,
   runDungeon,
@@ -20,12 +21,22 @@ import {
   realmInfo,
   nextRealm,
   ranchCap,
+  inventoryView,
+  equipMaster,
+  unequipMaster,
+  equipPet,
+  unequipPet,
+  masterGearBonus,
+  partySynergy,
   DUNGEONS,
   SKILLS,
+  GEAR,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
   FUSION_MAX_STAGE,
   BREED_STONE_COST,
+  BOND_FEED_COST,
+  BOND_FEED_BONUS,
   masterSkillsForStage,
   fusionStoneCost,
 } from "./engine.js";
@@ -108,6 +119,8 @@ function patchLive() {
   const qiBar = document.querySelector("[data-live=qi-bar]");
   const stones = document.querySelector("[data-live=stones]");
   const scrap = document.querySelector("[data-live=scrap]");
+  const feed = document.querySelector("[data-live=feed]");
+  const dust = document.querySelector("[data-live=dust]");
   const stageEl = document.querySelector("[data-live=stage]");
   const wins = document.querySelector("[data-live=wins]");
 
@@ -119,6 +132,8 @@ function patchLive() {
   if (qiBar) qiBar.style.width = `${qiPct}%`;
   if (stones) stones.textContent = String(Math.floor(state.stones));
   if (scrap) scrap.textContent = String(state.scrap);
+  if (feed) feed.textContent = String(Math.floor(state.feed || 0));
+  if (dust) dust.textContent = String(Math.floor(state.dust || 0));
   if (stageEl) stageEl.textContent = stage.name;
   if (wins) wins.textContent = `勝場 ${state.combatsWon}`;
 }
@@ -245,6 +260,8 @@ function render() {
       <div><span>階段</span><strong data-live="stage">${stage.name}</strong></div>
       <div><span>靈石</span><strong data-live="stones">${Math.floor(state.stones)}</strong></div>
       <div><span>碎片</span><strong data-live="scrap">${state.scrap}</strong></div>
+      <div><span>飼料</span><strong data-live="feed">${Math.floor(state.feed || 0)}</strong></div>
+      <div><span>靈塵</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
     </div>
 
     <p class="flash" data-live="flash" ${flash ? "" : "hidden"}>${escapeHtml(flash)}</p>
@@ -286,17 +303,70 @@ function cultivatePanel(qiPct, next, m) {
     .map((s) => `<li><strong>${escapeHtml(s.name)}</strong> — ${escapeHtml(s.desc)}（CD${s.cd}）</li>`)
     .join("");
 
+  const gBonus = masterGearBonus(state);
+  const eq = m.equip || {};
+  const inv = inventoryView(state);
+  const weaponItem = inv.find((x) => x.uid === eq.weapon);
+  const accItem = inv.find((x) => x.uid === eq.accessory);
+
+  const weaponOpts = inv
+    .filter((x) => x.slot === "weapon" && (x.owner === "master" || x.owner === "both") && (!x.worn || x.uid === eq.weapon))
+    .map(
+      (x) =>
+        `<option value="${escapeHtml(x.uid)}" ${x.uid === eq.weapon ? "selected" : ""}>${escapeHtml(x.name)} 攻${x.atk} 血${x.hp} 速${x.spd}</option>`
+    )
+    .join("");
+  const accOpts = inv
+    .filter((x) => x.slot === "accessory" && (x.owner === "master" || x.owner === "both") && (!x.worn || x.uid === eq.accessory))
+    .map(
+      (x) =>
+        `<option value="${escapeHtml(x.uid)}" ${x.uid === eq.accessory ? "selected" : ""}>${escapeHtml(x.name)} 攻${x.atk} 血${x.hp} 速${x.spd}</option>`
+    )
+    .join("");
+
+  const invList =
+    inv
+      .map((x) => {
+        const wornNote = x.worn
+          ? x.worn.who === "master"
+            ? "（人物）"
+            : `（${escapeHtml(x.worn.pet?.name || "寵")}）`
+          : "";
+        return `<li><strong>${escapeHtml(x.name)}</strong> · ${x.slot === "weapon" ? "武器" : "飾品"} · 攻${x.atk} 血${x.hp} 速${x.spd}${wornNote}</li>`;
+      })
+      .join("") || `<li class="empty">尚無裝備。秘境勝利有機會掉落。</li>`;
+
+  const ranchN = state.ranch?.length || 0;
   return `
     <h2>契壇修行</h2>
-    <p class="lead">掛機累積靈契。人物 ${escapeHtml(m.name)}：攻${m.atk} 血${m.hp} 速${m.spd}</p>
+    <p class="lead">掛機累積靈契。人物 ${escapeHtml(m.name)}：攻${m.atk + gBonus.atk} 血${m.hp + gBonus.hp} 速${m.spd + gBonus.spd}${gBonus.atk || gBonus.hp || gBonus.spd ? "（含裝備）" : ""}</p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)}${next ? ` / ${next.need}` : "（已滿）"}</p>
+    <p class="meta">牧場待命 ${ranchN} 隻慢產飼料／靈塵 · 現有 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
     <div class="row">
       <button type="button" class="primary" data-act="break">突破階段</button>
       <button type="button" data-act="forge">靈紋鍛造</button>
     </div>
     <h3>人物技能</h3>
     <ul class="skill-list">${skills || "<li class='empty'>尚未解鎖</li>"}</ul>
+    <h3>人物裝備</h3>
+    <p class="meta">武器：${weaponItem ? escapeHtml(weaponItem.name) : "空"} · 飾品：${accItem ? escapeHtml(accItem.name) : "空"}</p>
+    <div class="row gear-row">
+      <label>武器
+        <select data-master-equip-slot="weapon">
+          <option value="">（空）</option>
+          ${weaponOpts}
+        </select>
+      </label>
+      <label>飾品
+        <select data-master-equip-slot="accessory">
+          <option value="">（空）</option>
+          ${accOpts}
+        </select>
+      </label>
+    </div>
+    <h3>裝備庫存（${inv.length}）</h3>
+    <ul class="skill-list">${invList}</ul>
   `;
 }
 
@@ -351,10 +421,11 @@ function petsListView() {
         <div>
           <strong>${escapeHtml(c.name)}</strong>
           <span class="muted">${escapeHtml(c.kind)}·${escapeHtml(c.elementName)}·${escapeHtml(c.personalityName)} · 攻${c.atk} 血${c.hp} 速${c.spd}</span>
-          <span class="muted">技能【${escapeHtml(c.skillName)}】· 成功率 ${Math.round(c.bondRate * 100)}% · ${c.cost} 靈石</span>
+          <span class="muted">技能【${escapeHtml(c.skillName)}】· 成功率 ${Math.round(c.bondRate * 100)}%${Math.round(Math.min(0.95, c.bondRate + BOND_FEED_BONUS) * 100) !== Math.round(c.bondRate * 100) ? `（飼料→${Math.round(Math.min(0.95, c.bondRate + BOND_FEED_BONUS) * 100)}%）` : ""} · ${c.cost} 靈石</span>
         </div>
         <div class="row-actions">
           <button type="button" class="primary" data-try-bond="${escapeHtml(c.encounterId)}">契約</button>
+          <button type="button" data-try-bond-feed="${escapeHtml(c.encounterId)}">飼料契約（${BOND_FEED_COST}）</button>
           <button type="button" data-dismiss-pending="${escapeHtml(c.encounterId)}">放過</button>
         </div>
       </li>`
@@ -362,12 +433,17 @@ function petsListView() {
     .join("") ||
     `<li class="empty">尚無待契約靈寵。去秘境打本，隨機遇見後會出現喺呢度（最多 ${PENDING_BOND_MAX} 隻）。</li>`;
 
+  const syn = partySynergy(state.pets);
+  const synNote = syn.labels.length ? `羈絆：${syn.labels.join("、")}` : "出戰 2+ 同元素／同種類可觸發羈絆";
+
   return `
     <h2>靈寵</h2>
     <p class="lead">契約入牧場，再派出戰。牧場 ${ranch.length}/${cap} · 待契約 ${(state.pending || []).length}/${PENDING_BOND_MAX}</p>
+    <p class="meta">${escapeHtml(synNote)}</p>
     <h3>出戰（${state.pets.length}/${ACTIVE_PET_MAX}）</h3>
     <ul class="list">${roster}</ul>
     <h3>牧場（${ranch.length}/${cap}）</h3>
+    <p class="meta">待命寵按性格／元素慢產飼料與靈塵。</p>
     <ul class="list">${ranchList}</ul>
     <h3>待契約</h3>
     <ul class="list">${pending}</ul>
@@ -412,11 +488,29 @@ function petsBreedView() {
 function petsDetailView() {
   const detail = petDetail(state, petView.uid);
   if (!detail) {
-    petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [] };
+    petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
     return petsListView();
   }
-  const { pet, deployed, upgradeCost, fuseCostHint, skill, fuseMaxed, fuseNeedLevel, fuseTotalPets, fuseMatNeed, nextFusionStage } =
-    detail;
+  const {
+    pet,
+    deployed,
+    upgradeCost,
+    upgradeFeedCost: feedCost,
+    fuseCostHint,
+    skill,
+    fuseMaxed,
+    fuseNeedLevel,
+    fuseTotalPets,
+    fuseMatNeed,
+    nextFusionStage,
+    skillLevel,
+    skillDustCost: dustCost,
+    skillMaxed,
+    secondSkill,
+    secondUnlocked,
+    gearBonus,
+    accessoryName,
+  } = detail;
   const lv = pet.level ?? 1;
   const fus = pet.fusionLevel ?? 0;
   const loc = deployed ? "出戰中" : "牧場待命";
@@ -424,20 +518,47 @@ function petsDetailView() {
     ? `已達融階上限（${FUSION_MAX_STAGE}）`
     : `下一融階 ${nextFusionStage}：主體≥Lv.${fuseNeedLevel}、共 ${fuseTotalPets} 隻（${fuseMatNeed} 素材）· ${fuseCostHint} 石`;
 
+  const secondLine = secondUnlocked
+    ? `【${escapeHtml(secondSkill?.name || "—")}】${secondSkill ? ` ${escapeHtml(secondSkill.desc)}（CD${secondSkill.cd}）` : ""}`
+    : `未解鎖（融階≥1 或 Lv≥15）`;
+
+  const inv = inventoryView(state);
+  const petAccOpts = inv
+    .filter((x) => x.slot === "accessory" && (x.owner === "pet" || x.owner === "both") && (!x.worn || x.uid === pet.equip?.accessory))
+    .map(
+      (x) =>
+        `<option value="${escapeHtml(x.uid)}" ${x.uid === pet.equip?.accessory ? "selected" : ""}>${escapeHtml(x.name)} 攻${x.atk} 血${x.hp} 速${x.spd}</option>`
+    )
+    .join("");
+
   return `
     <h2>${escapeHtml(pet.name)}</h2>
-    <p class="lead">${escapeHtml(loc)} · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE}</p>
+    <p class="lead">${escapeHtml(loc)} · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE} · 技能 Lv.${skillLevel}</p>
     <ul class="skill-list">
       <li><strong>種類</strong> — ${escapeHtml(pet.kind)} · ${escapeHtml(pet.speciesName)}</li>
       <li><strong>元素</strong> — ${escapeHtml(pet.elementName)}</li>
       <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}</li>
-      <li><strong>數值</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}</li>
-      <li><strong>技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】${skill ? ` ${escapeHtml(skill.desc)}（CD${skill.cd}）` : ""}</li>
-      <li><strong>升級</strong> — 獨立計算，耗石只跟自身等級</li>
+      <li><strong>數值</strong> — 攻${pet.atk + gearBonus.atk} 血${pet.hp + gearBonus.hp} 速${pet.spd + gearBonus.spd}${gearBonus.atk || gearBonus.hp || gearBonus.spd ? "（含飾品）" : ""}</li>
+      <li><strong>主技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】${skill ? ` ${escapeHtml(skill.desc)}（CD${skill.cd}）` : ""}</li>
+      <li><strong>第二技能</strong> — ${secondLine}</li>
+      <li><strong>飾品</strong> — ${accessoryName ? escapeHtml(accessoryName) : "空"}</li>
+      <li><strong>升級</strong> — 靈石或飼料；技能用靈塵（最高 Lv.5）</li>
       <li><strong>融合</strong> — ${escapeHtml(fuseHint)}</li>
     </ul>
+    <div class="row gear-row">
+      <label>飾品
+        <select data-pet-equip="${escapeHtml(pet.uid)}">
+          <option value="">（空）</option>
+          ${petAccOpts}
+        </select>
+      </label>
+    </div>
     <div class="row">
       <button type="button" class="primary" data-upgrade="${escapeHtml(pet.uid)}">升級（${upgradeCost} 石）</button>
+      <button type="button" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升級（${feedCost}）</button>
+    </div>
+    <div class="row" style="margin-top:0.5rem">
+      <button type="button" data-upgrade-skill="${escapeHtml(pet.uid)}" ${skillMaxed ? "disabled" : ""}>${skillMaxed ? "技能已滿" : `技能升級（${dustCost} 靈塵）`}</button>
       ${
         deployed
           ? `<button type="button" data-undeploy="${escapeHtml(pet.uid)}">撤回牧場</button>`
@@ -554,7 +675,7 @@ function dungeonPanel() {
 
   return `
     <h2>潮汐秘境</h2>
-    <p class="lead">元素克制：潮克焰→嵐→岩→幽→潮。分層遇寵權重不同；有冷卻與首通獎。</p>
+    <p class="lead">元素克制：潮克焰→嵐→岩→幽→潮。同元素／同種出戰觸發羈絆。分層遇寵與裝備掉落；有冷卻與首通獎。</p>
     <ul class="list">${list}</ul>
   `;
 }
@@ -636,7 +757,56 @@ function bind() {
   });
   app.querySelectorAll("[data-try-bond]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const r = tryBondPending(state, btn.dataset.tryBond);
+      const r = tryBondPending(state, btn.dataset.tryBond, false);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-try-bond-feed]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = tryBondPending(state, btn.dataset.tryBondFeed, true);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-master-equip-slot]").forEach((sel) => {
+    sel.addEventListener("change", () => {
+      const slot = sel.dataset.masterEquipSlot;
+      const uid = sel.value;
+      let r;
+      if (!uid) r = unequipMaster(state, slot);
+      else r = equipMaster(state, uid, slot);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-pet-equip]").forEach((sel) => {
+    sel.addEventListener("change", () => {
+      const petUid = sel.dataset.petEquip;
+      const uid = sel.value;
+      let r;
+      if (!uid) r = unequipPet(state, petUid);
+      else r = equipPet(state, petUid, uid);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-upgrade-feed]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = upgradePet(state, btn.dataset.upgradeFeed, "feed");
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-upgrade-skill]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = upgradePetSkill(state, btn.dataset.upgradeSkill);
       saveState(state);
       render();
       setFlash(r.msg);
