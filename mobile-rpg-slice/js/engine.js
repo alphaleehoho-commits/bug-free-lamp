@@ -52,9 +52,13 @@ import {
   ACHIEVEMENTS,
   todayKey,
   OFFLINE_HINT_SEC,
+  rarityInfo,
+  RARITY_MAX,
+  HYBRID_RECIPES,
+  SPECIES,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v8";
+const SAVE_KEY = "void-tide-pets-v9";
 
 function defaultMaster() {
   return {
@@ -110,7 +114,7 @@ function defaultState() {
     bestiary: {},
     daily: emptyDaily(),
     achievements: {},
-    stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+    stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0, hybrids: 0, legendBreeds: 0 },
     /** 最近一次離線結算摘要（UI 顯示後可清） */
     offlineHint: null,
   };
@@ -124,6 +128,9 @@ function normalizePet(p) {
   if (next.fusionLevel > FUSION_MAX_STAGE) next.fusionLevel = FUSION_MAX_STAGE;
   if (next.skillLevel == null) next.skillLevel = 1;
   if (next.skillLevel > SKILL_MAX_LEVEL) next.skillLevel = SKILL_MAX_LEVEL;
+  if (next.rarity == null) next.rarity = 0;
+  if (next.rarity > RARITY_MAX) next.rarity = RARITY_MAX;
+  if (!next.rarityName) next.rarityName = rarityInfo(next.rarity).name;
   // 寵物不再穿裝備
   if (next.equip) delete next.equip;
   return next;
@@ -141,6 +148,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v8") ||
       localStorage.getItem("void-tide-pets-v7") ||
       localStorage.getItem("void-tide-pets-v6") ||
       localStorage.getItem("void-tide-pets-v5") ||
@@ -231,6 +239,8 @@ export function loadState() {
         breeds: parsed.stats?.breeds || 0,
         releases: parsed.stats?.releases || 0,
         bondAttempts: parsed.stats?.bondAttempts || 0,
+        hybrids: parsed.stats?.hybrids || 0,
+        legendBreeds: parsed.stats?.legendBreeds || 0,
       },
       offlineHint: parsed.offlineHint || null,
     };
@@ -400,6 +410,8 @@ export function checkAchievements(state) {
     else if (a.id === "fuse_once") ok = (state.stats.fusions || 0) >= 1;
     else if (a.id === "breed_once") ok = (state.stats.breeds || 0) >= 1;
     else if (a.id === "stage_2") ok = (state.realm || 0) >= 2;
+    else if (a.id === "hybrid_once") ok = (state.stats.hybrids || 0) >= 1;
+    else if (a.id === "legend_breed") ok = (state.stats.legendBreeds || 0) >= 1;
     if (!ok) continue;
     state.achievements[a.id] = true;
     applyReward(state, a.reward);
@@ -1255,7 +1267,8 @@ export function forgeHint(state) {
 }
 
 /**
- * 牧場雙親繁殖：任意兩隻均可；子代遺傳 genes，元素低機率變異。
+ * 牧場雙親繁殖（恐龍突變式）：
+ * 雜交新種族 + 稀有度升階 + 元素變異 + 天生繼承；融合仍負責同種升階。
  */
 export function tryBreed(state, uidA, uidB) {
   if (!uidA || !uidB || uidA === uidB) {
@@ -1289,6 +1302,7 @@ export function tryBreed(state, uidA, uidB) {
       species: genes.species,
       element: genes.element,
       personality: genes.personality,
+      rarity: genes.rarity,
       cost: 0,
     })
   );
@@ -1298,26 +1312,78 @@ export function tryBreed(state, uidA, uidB) {
   child.spd += born.spd;
   child.uid = `${child.templateId}-born`;
   child.bornFrom = [a.uid, b.uid];
+  child.generation = Math.max(a.generation ?? 1, b.generation ?? 1) + 1;
   state.ranch.push(child);
-  if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
+
+  if (!state.stats) {
+    state.stats = {
+      bonds: 0,
+      fusions: 0,
+      breeds: 0,
+      releases: 0,
+      bondAttempts: 0,
+      hybrids: 0,
+      legendBreeds: 0,
+    };
+  }
   state.stats.breeds += 1;
+  if (genes.hybrid) state.stats.hybrids = (state.stats.hybrids || 0) + 1;
+  if (genes.rarity >= 3) state.stats.legendBreeds = (state.stats.legendBreeds || 0) + 1;
   registerBestiary(state, child);
 
-  const mutNote = genes.mutated ? "（元素變異！）" : "";
+  const tags = [];
+  if (genes.hybrid) tags.push("雜交新種！");
+  if (genes.rarityUp) tags.push(`${child.rarityName}升階！`);
+  else if (genes.rarity > 0) tags.push(child.rarityName);
+  if (genes.mutated && !genes.hybrid) tags.push("元素變異");
+  const tagNote = tags.length ? `（${tags.join("·")}）` : "";
   const innNote =
     born.atk || born.hp || born.spd
-      ? `｜繼承天生 +${born.atk}攻/${born.hp}血/${born.spd}速`
+      ? `｜天生 +${born.atk}攻/${born.hp}血/${born.spd}速`
       : "";
   pushLog(
     state,
-    `繁殖成功：${displayPetName(a)} × ${displayPetName(b)} → ${petLabel(child)}${mutNote}${innNote}｜耗 ${BREED_STONE_COST} 靈石。`
+    `繁殖成功：${displayPetName(a)} × ${displayPetName(b)} → ${petLabel(child)}${tagNote}${innNote}｜耗 ${BREED_STONE_COST} 靈石。`
   );
   checkAchievements(state);
   return {
     ok: true,
-    msg: `誕生 ${child.name}${mutNote}${innNote}`,
+    msg: `誕生 ${child.name}${tagNote}${innNote}`,
     pet: child,
     mutated: genes.mutated,
+    hybrid: genes.hybrid,
+    rarity: genes.rarity,
+    rarityUp: genes.rarityUp,
+  };
+}
+
+/** UI：雙親雜交提示 */
+export function breedPairHint(petA, petB) {
+  if (!petA || !petB) return null;
+  const same = petA.speciesId === petB.speciesId;
+  const kindA = petA.kind;
+  const kindB = petB.kind;
+  let hybridName = null;
+  let hybridChance = 0;
+  if (!same && kindA !== kindB) {
+    const key = [kindA, kindB].sort().join("|");
+    const recipe = HYBRID_RECIPES.find(
+      (r) => r.chance > 0 && [r.kinds[0], r.kinds[1]].sort().join("|") === key
+    );
+    if (recipe && SPECIES[recipe.species]) {
+      hybridName = SPECIES[recipe.species].name;
+      hybridChance = recipe.chance;
+    }
+  }
+  return {
+    sameSpecies: same,
+    hybridName,
+    hybridChance,
+    note: same
+      ? "同種繁殖：較易提升稀有度"
+      : hybridName
+        ? `異種：約 ${Math.round(hybridChance * 100)}% 機率雜交出【${hybridName}】`
+        : "異種：遺傳父母種族，並可升稀有度／元素變異",
   };
 }
 
@@ -1333,6 +1399,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v8");
   localStorage.removeItem("void-tide-pets-v7");
   localStorage.removeItem("void-tide-pets-v6");
   localStorage.removeItem("void-tide-pets-v5");
@@ -1390,4 +1457,6 @@ export {
   DAILY_QUESTS,
   ACHIEVEMENTS,
   NICK_MAX_LEN,
+  rarityInfo,
+  RARITY_MAX,
 };

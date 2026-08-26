@@ -33,6 +33,8 @@ import {
   achievementsView,
   bestiaryStatus,
   displayPetName,
+  breedPairHint,
+  rarityInfo,
   DUNGEONS,
   SKILLS,
   MASTER_EQUIP_SLOTS,
@@ -384,11 +386,12 @@ function petRow(p, extraBtn = "") {
   const lv = p.level ?? 1;
   const fus = p.fusionLevel ?? 0;
   const title = displayPetName(p);
+  const r = rarityInfo(p.rarity ?? 0);
   return `
     <li class="card-row">
       <div>
         <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
-        <span class="muted">Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}</span>
+        <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}</span>
         <span class="muted">攻${p.atk} 血${p.hp} 速${p.spd} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
@@ -472,21 +475,28 @@ function petsBreedView() {
     ranch
       .map((p) => {
         const on = selected.has(p.uid);
+        const r = rarityInfo(p.rarity ?? 0);
         return `
         <li class="card-row">
           <div>
-            <strong>${escapeHtml(p.name)}</strong>
-            <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)} · Lv.${p.level ?? 1}</span>
+            <strong>${escapeHtml(displayPetName(p))}</strong>
+            <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}</span>
           </div>
           <button type="button" class="${on ? "primary" : ""}" data-breed-toggle="${escapeHtml(p.uid)}">${on ? "已選" : "選擇"}</button>
         </li>`;
       })
       .join("") || `<li class="empty">牧場需要至少兩隻靈寵才能繁殖。</li>`;
 
+  const [ua, ub] = petView.breedParents || [];
+  const pa = ranch.find((p) => p.uid === ua);
+  const pb = ranch.find((p) => p.uid === ub);
+  const hint = pa && pb ? breedPairHint(pa, pb) : null;
+
   const ready = selected.size === 2 && bs.ready && ranch.length < ranchCap(state);
   return `
-    <h2>繁殖</h2>
-    <p class="lead">揀兩隻牧場靈寵作雙親（任意種族）。耗 ${BREED_STONE_COST} 靈石${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}。子代遺傳基因，並繼承雙親天生溢出基礎；元素有小機率變異。</p>
+    <h2>繁殖 · 突變合配</h2>
+    <p class="lead">揀兩隻牧場靈寵。異種 kind 可雜交新種族；同種較易升稀有度。耗 ${BREED_STONE_COST} 靈石${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}。融合仍負責同種融階。</p>
+    ${hint ? `<p class="meta breed-hint">${escapeHtml(hint.note)}</p>` : ""}
     <ul class="list">${list}</ul>
     <div class="row" style="margin-top:0.85rem">
       <button type="button" class="primary" data-breed-confirm ${ready ? "" : "disabled"}>確認繁殖（${selected.size}/2）</button>
@@ -523,6 +533,7 @@ function petsDetailView() {
   } = detail;
   const lv = pet.level ?? 1;
   const fus = pet.fusionLevel ?? 0;
+  const r = rarityInfo(pet.rarity ?? 0);
   const loc = deployed ? "出戰中" : "牧場待命";
   const fuseHint = fuseMaxed
     ? `已達融階上限（${FUSION_MAX_STAGE}）`
@@ -534,9 +545,9 @@ function petsDetailView() {
 
   return `
     <h2>${escapeHtml(displayPetName(pet))}</h2>
-    <p class="lead">${escapeHtml(loc)} · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE} · 技能 Lv.${skillLevel}</p>
+    <p class="lead">${escapeHtml(loc)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE} · 技能 Lv.${skillLevel}${pet.generation ? ` · 第${pet.generation}代` : ""}</p>
     <ul class="skill-list">
-      <li><strong>種類</strong> — ${escapeHtml(pet.kind)} · ${escapeHtml(pet.speciesName)}</li>
+      <li><strong>種類</strong> — ${escapeHtml(pet.kind)} · ${escapeHtml(pet.speciesName)}${pet.breedOnly ? "（繁殖專屬）" : ""}</li>
       <li><strong>元素</strong> — ${escapeHtml(pet.elementName)}</li>
       <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}</li>
       <li><strong>天生數值</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}（基準 ${baseline.atk}/${baseline.hp}/${baseline.spd}，成長 +${innateBonus.atk}/${innateBonus.hp}/${innateBonus.spd}）</li>
@@ -670,7 +681,7 @@ function codexPanel() {
 
   return `
     <h2>靈寵圖鑑</h2>
-    <p class="lead">種族×元素共 ${dex.total} 格 · 已錄 ${dex.discovered}${dex.label ? ` · ${escapeHtml(dex.label)}` : " · 每 5 格全隊攻／血 +2%"}</p>
+    <p class="lead">種族×元素共 ${dex.total} 格（含繁殖專屬種）· 已錄 ${dex.discovered}${dex.label ? ` · ${escapeHtml(dex.label)}` : " · 每 5 格全隊攻／血 +2%"}</p>
     <ul class="codex-grid">${cells}</ul>
     <h3>每日任務</h3>
     <ul class="list">${dailies}</ul>

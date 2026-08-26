@@ -262,6 +262,15 @@ body {
   border-color: rgba(90, 160, 140, 0.5);
   background: rgba(40, 90, 75, 0.22);
 }
+.rarity { font-weight: 600; }
+.rarity-common { color: var(--muted); }
+.rarity-rare { color: #6db3d9; }
+.rarity-epic { color: #c9a0e8; }
+.rarity-legendary { color: #e8b86d; }
+.breed-hint {
+  color: var(--jade, #7eb8a3);
+  margin: 0.35rem 0 0.5rem;
+}
 .gear-row input[type="text"] {
   font: inherit;
   color: var(--text);

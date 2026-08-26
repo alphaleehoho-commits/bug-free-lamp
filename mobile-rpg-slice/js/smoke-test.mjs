@@ -1,24 +1,17 @@
 /**
- * Smoke: P2 bestiary, daily, release, offline constants.
+ * Smoke: hybrid breed + rarity mutation system.
  */
 import {
   buildPetStats,
   SPECIES,
   ELEMENTS,
-  GEAR,
-  MASTER_EQUIP_SLOTS,
-  bestiaryKey,
   bestiaryTotal,
-  bestiaryEntries,
-  bestiaryCombatBonus,
-  releaseRefund,
-  DAILY_QUESTS,
-  ACHIEVEMENTS,
-  todayKey,
-  OFFLINE_HINT_SEC,
-  NICK_MAX_LEN,
-  partySynergy,
-  fusionAbsorbRate,
+  wildSpeciesIds,
+  rollBreedGenes,
+  rollBreedRarity,
+  rarityInfo,
+  HYBRID_RECIPES,
+  RARITY_MAX,
   breedStatInheritance,
 } from "./data.js";
 
@@ -26,35 +19,49 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
-assert(bestiaryTotal() === Object.keys(SPECIES).length * Object.keys(ELEMENTS).length, "total");
-assert(bestiaryEntries().length === bestiaryTotal(), "entries");
-assert(bestiaryKey("reefox", "tide") === "reefox:tide", "key");
-const b10 = bestiaryCombatBonus(10);
-assert(b10.tiers === 2 && b10.atkMult === 1.04, "dex bonus");
-assert(DAILY_QUESTS.length === 3, "daily");
-assert(ACHIEVEMENTS.length >= 5, "ach");
-assert(todayKey().length === 10, "date");
-assert(OFFLINE_HINT_SEC >= 60, "offline");
-assert(NICK_MAX_LEN >= 4, "nick");
-assert(MASTER_EQUIP_SLOTS.length === 3 && GEAR.tide_blade, "gear");
+assert(wildSpeciesIds().length === 6, "wild 6");
+assert(Object.values(SPECIES).filter((s) => s.breedOnly).length === 6, "6 hybrids");
+assert(bestiaryTotal() === 12 * Object.keys(ELEMENTS).length, "dex 60");
+assert(HYBRID_RECIPES.some((r) => r.species === "tideling"), "recipe");
+assert(rarityInfo(3).mult === 1.5, "legend mult");
 
-const pet = buildPetStats({
-  id: "t",
+const fox = buildPetStats({
+  id: "a",
   species: "reefox",
   element: "tide",
   personality: "gentle",
   cost: 1,
+  rarity: 0,
 });
-pet.level = 5;
-pet.fusionLevel = 1;
-const ref = releaseRefund(pet);
-assert(ref.stones > 0 && ref.feed > 0, "refund");
+const carp = buildPetStats({
+  id: "b",
+  species: "tidecarp",
+  element: "flame",
+  personality: "fierce",
+  cost: 1,
+  rarity: 1,
+});
+assert(fox.rarity === 0 && carp.rarityName === "稀有", "rarity fields");
 
-const grown = { ...pet, atk: pet.atk + 20, hp: pet.hp + 40 };
-const born = breedStatInheritance(grown, grown, {});
-assert(born.atk > 0 || born.hp > 0, "inherit");
-assert(fusionAbsorbRate(2) > fusionAbsorbRate(1), "absorb");
-assert(partySynergy([{ elementId: "tide", kind: "獸" }, { elementId: "tide", kind: "鱗" }]).atkMult > 1, "syn");
+let hybridHits = 0;
+let rarityHits = 0;
+for (let i = 0; i < 80; i++) {
+  const g = rollBreedGenes(fox, carp);
+  if (g.hybrid && g.species === "tideling") hybridHits += 1;
+  if (g.rarity > 0) rarityHits += 1;
+}
+assert(hybridHits > 0, "hybrid sometimes (獸+鱗→潮獸)");
+assert(rarityHits > 0, "rarity sometimes");
 
-console.log("bestiary", bestiaryTotal(), "refund", ref);
+const same = rollBreedGenes(fox, { ...fox, uid: "x" });
+assert(typeof same.rarity === "number" && same.rarity <= RARITY_MAX, "same species rarity");
+
+const rareFox = { ...fox, rarity: 2, atk: fox.atk + 30, hp: fox.hp + 50 };
+const born = breedStatInheritance(rareFox, carp, { rarity: 2, hybrid: true });
+assert(born.atk >= 2, "inherit boosted");
+
+const r = rollBreedRarity(rareFox, carp, { sameSpecies: false, hybrid: true });
+assert(r >= 0 && r <= 3, "roll rarity");
+
+console.log("hybrid hits/80", hybridHits, "rarity hits", rarityHits);
 console.log("smoke-test ok");

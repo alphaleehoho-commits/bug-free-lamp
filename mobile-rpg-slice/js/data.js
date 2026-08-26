@@ -63,7 +63,57 @@ export const SPECIES = {
   mossback: { id: "mossback", name: "苔背", kind: "甲", base: { atk: 9, hp: 140, spd: 5 } },
   nightmoth: { id: "nightmoth", name: "夜蛾", kind: "蟲", base: { atk: 15, hp: 70, spd: 12 } },
   glowfin: { id: "glowfin", name: "熒鰭", kind: "鱗", base: { atk: 11, hp: 95, spd: 10 } },
+  // —— 繁殖專屬雜交種（野生秘境唔出）——
+  tideling: {
+    id: "tideling",
+    name: "潮獸",
+    kind: "獸",
+    breedOnly: true,
+    base: { atk: 16, hp: 100, spd: 12 },
+  },
+  duskfly: {
+    id: "duskfly",
+    name: "暮翼",
+    kind: "禽",
+    breedOnly: true,
+    base: { atk: 15, hp: 82, spd: 16 },
+  },
+  ironback: {
+    id: "ironback",
+    name: "鐵背",
+    kind: "甲",
+    breedOnly: true,
+    base: { atk: 12, hp: 165, spd: 6 },
+  },
+  mistcarp: {
+    id: "mistcarp",
+    name: "霧鯉",
+    kind: "鱗",
+    breedOnly: true,
+    base: { atk: 13, hp: 120, spd: 11 },
+  },
+  stormmoth: {
+    id: "stormmoth",
+    name: "嵐蛾",
+    kind: "蟲",
+    breedOnly: true,
+    base: { atk: 18, hp: 78, spd: 14 },
+  },
+  reefwing: {
+    id: "reefwing",
+    name: "礁翼",
+    kind: "禽",
+    breedOnly: true,
+    base: { atk: 14, hp: 90, spd: 15 },
+  },
 };
+
+/** 野生／秘境可遇種族（排除繁殖專屬） */
+export function wildSpeciesIds() {
+  return Object.values(SPECIES)
+    .filter((s) => !s.breedOnly)
+    .map((s) => s.id);
+}
 
 export const PERSONALITIES = {
   fierce: { id: "fierce", name: "烈性", atk: 1.15, hp: 0.92, spd: 1.05 },
@@ -307,13 +357,87 @@ function pickWeighted(weightMap) {
   return entries[entries.length - 1][0];
 }
 
-/** 繁殖：靈石消耗、冷卻、元素變異率 */
+/** 繁殖：靈石消耗、冷卻 */
 export const BREED_STONE_COST = 55;
-export const BREED_COOLDOWN_MS = 45_000;
-export const BREED_MUTATION_RATE = 0.08;
+export const BREED_COOLDOWN_MS = 40_000;
+export const BREED_ELEMENT_MUTATION_RATE = 0.1;
 
 /**
- * 由雙親 genes 生成子代模板（種族／元素／性格各 50% 遺傳；元素可變異）
+ * 稀有度（變異階）
+ * 0 普通 · 1 稀有 · 2 史詩 · 3 傳說
+ */
+export const RARITY = {
+  0: { id: 0, name: "普通", mult: 1, color: "common" },
+  1: { id: 1, name: "稀有", mult: 1.12, color: "rare" },
+  2: { id: 2, name: "史詩", mult: 1.28, color: "epic" },
+  3: { id: 3, name: "傳說", mult: 1.5, color: "legendary" },
+};
+
+export const RARITY_MAX = 3;
+
+export function rarityInfo(r) {
+  const id = Math.max(0, Math.min(RARITY_MAX, r | 0));
+  return RARITY[id];
+}
+
+/**
+ * 雜交配方：雙親 kind（無序）→ 新品種 + 基礎機率
+ * 同種繁殖唔出雜交，改加稀有度權重
+ */
+export const HYBRID_RECIPES = [
+  { kinds: ["獸", "鱗"], species: "tideling", chance: 0.28 },
+  { kinds: ["禽", "蟲"], species: "duskfly", chance: 0.26 },
+  { kinds: ["甲", "獸"], species: "ironback", chance: 0.26 },
+  { kinds: ["鱗", "甲"], species: "mistcarp", chance: 0.26 },
+  { kinds: ["蟲", "禽"], species: "stormmoth", chance: 0.24 },
+  { kinds: ["獸", "禽"], species: "reefwing", chance: 0.26 },
+  { kinds: ["鱗", "蟲"], species: "mistcarp", chance: 0.18 },
+  { kinds: ["甲", "禽"], species: "ironback", chance: 0.16 },
+];
+
+function kindPairKey(k1, k2) {
+  return [k1, k2].sort().join("|");
+}
+
+const HYBRID_BY_KINDS = (() => {
+  const map = {};
+  for (const r of HYBRID_RECIPES) {
+    if (!r.chance) continue;
+    const key = kindPairKey(r.kinds[0], r.kinds[1]);
+    if (!map[key] || r.chance > map[key].chance) map[key] = r;
+  }
+  return map;
+})();
+
+/** 依雙親稀有度 roll 子代稀有度（可升階） */
+export function rollBreedRarity(parentA, parentB, opts = {}) {
+  const ra = parentA.rarity ?? 0;
+  const rb = parentB.rarity ?? 0;
+  const floor = Math.min(ra, rb);
+  const ceil = Math.max(ra, rb);
+  // 權重：多数落在 floor～ceil，小機率 +1／+2
+  let weights = { 0: 0, 1: 0, 2: 0, 3: 0 };
+  weights[floor] += 55;
+  weights[ceil] += 30;
+  const up1 = Math.min(RARITY_MAX, ceil + 1);
+  weights[up1] += opts.sameSpecies ? 18 : 12;
+  const up2 = Math.min(RARITY_MAX, ceil + 2);
+  if (up2 > up1) weights[up2] += opts.sameSpecies ? 6 : 3;
+  if (opts.hybrid) {
+    weights[Math.min(RARITY_MAX, ceil + 1)] += 8;
+  }
+  // 雙親都高稀有 → 再推
+  if (ra + rb >= 4) weights[Math.min(RARITY_MAX, ceil + 1)] += 10;
+  const id = Number(pickWeighted(weights) ?? floor);
+  return Math.max(0, Math.min(RARITY_MAX, id));
+}
+
+/**
+ * 恐龍突變式繁殖：
+ * - 基因 50/50 遺傳
+ * - 異 kind → 機率雜交新種族
+ * - 同種 → 更高稀有度升階
+ * - 元素／稀有度變異
  */
 export function rollBreedGenes(parentA, parentB) {
   const ga = parentA.genes || {
@@ -326,24 +450,67 @@ export function rollBreedGenes(parentA, parentB) {
     element: parentB.elementId,
     personality: parentB.personalityId,
   };
+  const spA = SPECIES[ga.species] || SPECIES[parentA.speciesId];
+  const spB = SPECIES[gb.species] || SPECIES[parentB.speciesId];
+  const kindA = spA?.kind || parentA.kind;
+  const kindB = spB?.kind || parentB.kind;
+  const sameSpecies = ga.species === gb.species;
+
   let species = Math.random() < 0.5 ? ga.species : gb.species;
   let element = Math.random() < 0.5 ? ga.element : gb.element;
   let personality = Math.random() < 0.5 ? ga.personality : gb.personality;
   let mutated = false;
-  if (Math.random() < BREED_MUTATION_RATE) {
+  let hybrid = false;
+  let newSpecies = false;
+
+  // 雜交新品種
+  if (!sameSpecies && kindA && kindB && kindA !== kindB) {
+    const recipe = HYBRID_BY_KINDS[kindPairKey(kindA, kindB)];
+    if (recipe && Math.random() < recipe.chance && SPECIES[recipe.species]) {
+      species = recipe.species;
+      hybrid = true;
+      newSpecies = true;
+      mutated = true;
+    }
+  }
+
+  // 元素變異
+  if (Math.random() < BREED_ELEMENT_MUTATION_RATE) {
     const others = Object.keys(ELEMENTS).filter((e) => e !== element);
     element = pick(others);
     mutated = true;
   }
-  return { species, element, personality, mutated };
+
+  const rarity = rollBreedRarity(parentA, parentB, { sameSpecies, hybrid });
+  const parentMax = Math.max(parentA.rarity ?? 0, parentB.rarity ?? 0);
+  const rarityUp = rarity > parentMax;
+
+  return {
+    species,
+    element,
+    personality,
+    rarity,
+    mutated,
+    hybrid,
+    newSpecies,
+    rarityUp,
+    sameSpecies,
+  };
 }
 
-/** 秘境隨機生成一隻野生靈寵；可帶分層權重 */
+/** 秘境隨機生成一隻野生靈寵；可帶分層權重（僅野生種） */
 export function rollWildEncounter(dungeonId = "wild", dungeonDef = null) {
+  const wildIds = wildSpeciesIds();
   const weights = dungeonDef?.encounterWeights;
-  const speciesId = weights
-    ? pickWeighted(weights) || pick(Object.keys(SPECIES))
-    : pick(Object.keys(SPECIES));
+  let speciesId;
+  if (weights) {
+    const filtered = Object.fromEntries(
+      Object.entries(weights).filter(([id]) => wildIds.includes(id))
+    );
+    speciesId = pickWeighted(filtered) || pick(wildIds);
+  } else {
+    speciesId = pick(wildIds);
+  }
   const elWeights = dungeonDef?.elementWeights;
   const elementId = elWeights
     ? pickWeighted(elWeights) || pick(Object.keys(ELEMENTS))
@@ -356,6 +523,7 @@ export function rollWildEncounter(dungeonId = "wild", dungeonDef = null) {
     element: elementId,
     personality: personalityId,
     cost: baseCost,
+    rarity: 0,
   });
   const bondRate = BOND_RATE_BY_PERSONALITY[personalityId] ?? 0.5;
   return {
@@ -460,15 +628,18 @@ export function buildPetStats(template) {
   const el = ELEMENTS[template.element];
   const pe = PERSONALITIES[template.personality];
   if (!sp || !el || !pe) throw new Error("invalid pet template");
+  const rarity = Math.max(0, Math.min(RARITY_MAX, template.rarity ?? 0));
+  const rMult = rarityInfo(rarity).mult;
   const skillId = KIND_SKILLS[sp.kind];
-  const atk = Math.round(sp.base.atk * el.atk * pe.atk);
-  const hp = Math.round(sp.base.hp * el.hp * pe.hp);
-  const spd = Math.round(sp.base.spd * el.spd * pe.spd);
+  const atk = Math.round(sp.base.atk * el.atk * pe.atk * rMult);
+  const hp = Math.round(sp.base.hp * el.hp * pe.hp * rMult);
+  const spd = Math.round(sp.base.spd * el.spd * pe.spd * rMult);
   return {
     templateId: template.id,
     speciesId: sp.id,
     speciesName: sp.name,
     kind: sp.kind,
+    breedOnly: !!sp.breedOnly,
     elementId: el.id,
     elementName: el.name,
     personalityId: pe.id,
@@ -482,6 +653,8 @@ export function buildPetStats(template) {
     skillName: SKILLS[skillId]?.name || skillId,
     level: 1,
     fusionLevel: 0,
+    rarity,
+    rarityName: rarityInfo(rarity).name,
     genes: {
       species: sp.id,
       element: el.id,
@@ -491,7 +664,8 @@ export function buildPetStats(template) {
 }
 
 export function petLabel(pet) {
-  return `${pet.name}（${pet.kind}·${pet.elementName}·${pet.personalityName}）`;
+  const r = rarityInfo(pet.rarity ?? 0).name;
+  return `${pet.name}（${r}·${pet.kind}·${pet.elementName}·${pet.personalityName}）`;
 }
 
 /* ─── P1：牧場掛機產物 ─── */
@@ -758,13 +932,23 @@ export function breedStatInheritance(parentA, parentB, childGenes) {
   let atk = Math.floor(avg.atk * BREED_INHERIT_RATE);
   let hp = Math.floor(avg.hp * BREED_INHERIT_RATE);
   let spd = Math.floor(avg.spd * BREED_INHERIT_RATE);
-  if (Math.random() < BREED_MUTATION_STAT_RATE) {
-    atk += 1 + Math.floor(Math.random() * 3);
-    hp += 2 + Math.floor(Math.random() * 6);
-    spd += Math.floor(Math.random() * 2);
+  // 稀有度額外天生強化
+  const r = childGenes?.rarity ?? 0;
+  if (r >= 1) {
+    atk += r * 2;
+    hp += r * 5;
+    spd += Math.floor(r * 0.8);
   }
-  // 子代自身基準已由 buildPetStats 算好；這裡只回傳額外天生加成
-  void childGenes;
+  if (childGenes?.hybrid) {
+    atk += 2;
+    hp += 4;
+    spd += 1;
+  }
+  if (Math.random() < BREED_MUTATION_STAT_RATE + r * 0.04) {
+    atk += 1 + Math.floor(Math.random() * (2 + r));
+    hp += 2 + Math.floor(Math.random() * (5 + r * 2));
+    spd += Math.floor(Math.random() * (2 + r));
+  }
   return { atk, hp, spd };
 }
 
@@ -938,6 +1122,18 @@ export const ACHIEVEMENTS = [
     name: "通靈有成",
     desc: "達到通靈後期（階段 2）",
     reward: { stones: 80 },
+  },
+  {
+    id: "hybrid_once",
+    name: "雜交覺醒",
+    desc: "繁殖出 1 隻雜交新種族",
+    reward: { stones: 70, dust: 12 },
+  },
+  {
+    id: "legend_breed",
+    name: "傳說血脈",
+    desc: "繁殖出傳說稀有度靈寵",
+    reward: { stones: 100, scrap: 2 },
   },
 ];
 
