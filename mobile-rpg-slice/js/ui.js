@@ -30,7 +30,6 @@ import {
   partySynergy,
   DUNGEONS,
   SKILLS,
-  GEAR,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
   FUSION_MAX_STAGE,
