@@ -24,12 +24,12 @@ import {
   inventoryView,
   equipMaster,
   unequipMaster,
-  equipPet,
-  unequipPet,
   masterGearBonus,
   partySynergy,
   DUNGEONS,
   SKILLS,
+  MASTER_EQUIP_SLOTS,
+  SLOT_LABEL,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
   FUSION_MAX_STAGE,
@@ -305,65 +305,52 @@ function cultivatePanel(qiPct, next, m) {
   const gBonus = masterGearBonus(state);
   const eq = m.equip || {};
   const inv = inventoryView(state);
-  const weaponItem = inv.find((x) => x.uid === eq.weapon);
-  const accItem = inv.find((x) => x.uid === eq.accessory);
+  const totalAtk = m.atk + gBonus.atk;
+  const totalHp = m.hp + gBonus.hp;
+  const totalSpd = m.spd + gBonus.spd;
 
-  const weaponOpts = inv
-    .filter((x) => x.slot === "weapon" && (x.owner === "master" || x.owner === "both") && (!x.worn || x.uid === eq.weapon))
-    .map(
-      (x) =>
-        `<option value="${escapeHtml(x.uid)}" ${x.uid === eq.weapon ? "selected" : ""}>${escapeHtml(x.name)} 攻${x.atk} 血${x.hp} 速${x.spd}</option>`
-    )
-    .join("");
-  const accOpts = inv
-    .filter((x) => x.slot === "accessory" && (x.owner === "master" || x.owner === "both") && (!x.worn || x.uid === eq.accessory))
-    .map(
-      (x) =>
-        `<option value="${escapeHtml(x.uid)}" ${x.uid === eq.accessory ? "selected" : ""}>${escapeHtml(x.name)} 攻${x.atk} 血${x.hp} 速${x.spd}</option>`
-    )
-    .join("");
+  const slotSelects = MASTER_EQUIP_SLOTS.map((slot) => {
+    const cur = eq[slot];
+    const opts = inv
+      .filter((x) => x.slot === slot && (!x.worn || x.uid === cur))
+      .map(
+        (x) =>
+          `<option value="${escapeHtml(x.uid)}" ${x.uid === cur ? "selected" : ""}>${escapeHtml(x.name)} 攻${x.atk} 血${x.hp} 速${x.spd}</option>`
+      )
+      .join("");
+    return `
+      <label>${SLOT_LABEL[slot]}
+        <select data-master-equip-slot="${slot}">
+          <option value="">（空）</option>
+          ${opts}
+        </select>
+      </label>`;
+  }).join("");
 
   const invList =
     inv
       .map((x) => {
-        const wornNote = x.worn
-          ? x.worn.who === "master"
-            ? "（人物）"
-            : `（${escapeHtml(x.worn.pet?.name || "寵")}）`
-          : "";
-        return `<li><strong>${escapeHtml(x.name)}</strong> · ${x.slot === "weapon" ? "武器" : "飾品"} · 攻${x.atk} 血${x.hp} 速${x.spd}${wornNote}</li>`;
+        const wornNote = x.worn ? `（已裝·${SLOT_LABEL[x.worn.slot] || ""}）` : "";
+        const forgeNote = x.forgeAtk || x.forgeHp ? ` 鍛+${x.forgeAtk}/${x.forgeHp}` : "";
+        return `<li><strong>${escapeHtml(x.name)}</strong> · ${SLOT_LABEL[x.slot] || x.slot} · 攻${x.atk} 血${x.hp} 速${x.spd}${forgeNote}${wornNote}</li>`;
       })
-      .join("") || `<li class="empty">尚無裝備。秘境勝利有機會掉落。</li>`;
+      .join("") || `<li class="empty">尚無裝備。秘境勝利或靈紋鍛造可取得。</li>`;
 
   const ranchN = state.ranch?.length || 0;
   return `
     <h2>契壇修行</h2>
-    <p class="lead">掛機累積靈契。人物 ${escapeHtml(m.name)}：攻${m.atk + gBonus.atk} 血${m.hp + gBonus.hp} 速${m.spd + gBonus.spd}${gBonus.atk || gBonus.hp || gBonus.spd ? "（含裝備）" : ""}</p>
+    <p class="lead">人物 ${escapeHtml(m.name)} 戰力主要靠裝備。白板 攻${m.atk}/血${m.hp}/速${m.spd} → 裝備後 <strong>攻${totalAtk} 血${totalHp} 速${totalSpd}</strong></p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)}${next ? ` / ${next.need}` : "（已滿）"}</p>
-    <p class="meta">牧場待命 ${ranchN} 隻慢產飼料／靈塵 · 現有 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
+    <p class="meta">牧場待命 ${ranchN} 隻慢產飼料／靈塵 · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
     <div class="row">
       <button type="button" class="primary" data-act="break">突破階段</button>
       <button type="button" data-act="forge">靈紋鍛造</button>
     </div>
     <h3>人物技能</h3>
     <ul class="skill-list">${skills || "<li class='empty'>尚未解鎖</li>"}</ul>
-    <h3>人物裝備</h3>
-    <p class="meta">武器：${weaponItem ? escapeHtml(weaponItem.name) : "空"} · 飾品：${accItem ? escapeHtml(accItem.name) : "空"}</p>
-    <div class="row gear-row">
-      <label>武器
-        <select data-master-equip-slot="weapon">
-          <option value="">（空）</option>
-          ${weaponOpts}
-        </select>
-      </label>
-      <label>飾品
-        <select data-master-equip-slot="accessory">
-          <option value="">（空）</option>
-          ${accOpts}
-        </select>
-      </label>
-    </div>
+    <h3>人物裝備（三槽）</h3>
+    <div class="row gear-row">${slotSelects}</div>
     <h3>裝備庫存（${inv.length}）</h3>
     <ul class="skill-list">${invList}</ul>
   `;
@@ -475,7 +462,7 @@ function petsBreedView() {
   const ready = selected.size === 2 && bs.ready && ranch.length < ranchCap(state);
   return `
     <h2>繁殖</h2>
-    <p class="lead">揀兩隻牧場靈寵作雙親（任意種族）。耗 ${BREED_STONE_COST} 靈石${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}。子代遺傳基因，元素有小機率變異。</p>
+    <p class="lead">揀兩隻牧場靈寵作雙親（任意種族）。耗 ${BREED_STONE_COST} 靈石${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}。子代遺傳基因，並繼承雙親天生溢出基礎；元素有小機率變異。</p>
     <ul class="list">${list}</ul>
     <div class="row" style="margin-top:0.85rem">
       <button type="button" class="primary" data-breed-confirm ${ready ? "" : "disabled"}>確認繁殖（${selected.size}/2）</button>
@@ -507,8 +494,8 @@ function petsDetailView() {
     skillMaxed,
     secondSkill,
     secondUnlocked,
-    gearBonus,
-    accessoryName,
+    baseline,
+    innateBonus,
   } = detail;
   const lv = pet.level ?? 1;
   const fus = pet.fusionLevel ?? 0;
@@ -521,15 +508,6 @@ function petsDetailView() {
     ? `【${escapeHtml(secondSkill?.name || "—")}】${secondSkill ? ` ${escapeHtml(secondSkill.desc)}（CD${secondSkill.cd}）` : ""}`
     : `未解鎖（融階≥1 或 Lv≥15）`;
 
-  const inv = inventoryView(state);
-  const petAccOpts = inv
-    .filter((x) => x.slot === "accessory" && (x.owner === "pet" || x.owner === "both") && (!x.worn || x.uid === pet.equip?.accessory))
-    .map(
-      (x) =>
-        `<option value="${escapeHtml(x.uid)}" ${x.uid === pet.equip?.accessory ? "selected" : ""}>${escapeHtml(x.name)} 攻${x.atk} 血${x.hp} 速${x.spd}</option>`
-    )
-    .join("");
-
   return `
     <h2>${escapeHtml(pet.name)}</h2>
     <p class="lead">${escapeHtml(loc)} · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE} · 技能 Lv.${skillLevel}</p>
@@ -537,21 +515,13 @@ function petsDetailView() {
       <li><strong>種類</strong> — ${escapeHtml(pet.kind)} · ${escapeHtml(pet.speciesName)}</li>
       <li><strong>元素</strong> — ${escapeHtml(pet.elementName)}</li>
       <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}</li>
-      <li><strong>數值</strong> — 攻${pet.atk + gearBonus.atk} 血${pet.hp + gearBonus.hp} 速${pet.spd + gearBonus.spd}${gearBonus.atk || gearBonus.hp || gearBonus.spd ? "（含飾品）" : ""}</li>
+      <li><strong>天生數值</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}（基準 ${baseline.atk}/${baseline.hp}/${baseline.spd}，成長 +${innateBonus.atk}/${innateBonus.hp}/${innateBonus.spd}）</li>
       <li><strong>主技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】${skill ? ` ${escapeHtml(skill.desc)}（CD${skill.cd}）` : ""}</li>
       <li><strong>第二技能</strong> — ${secondLine}</li>
-      <li><strong>飾品</strong> — ${accessoryName ? escapeHtml(accessoryName) : "空"}</li>
-      <li><strong>升級</strong> — 靈石或飼料；技能用靈塵（最高 Lv.5）</li>
+      <li><strong>養成</strong> — 不穿裝備；融合吸收素材天生、繁殖遺傳溢出基礎</li>
+      <li><strong>升級</strong> — 靈石或飼料；技能用靈塵</li>
       <li><strong>融合</strong> — ${escapeHtml(fuseHint)}</li>
     </ul>
-    <div class="row gear-row">
-      <label>飾品
-        <select data-pet-equip="${escapeHtml(pet.uid)}">
-          <option value="">（空）</option>
-          ${petAccOpts}
-        </select>
-      </label>
-    </div>
     <div class="row">
       <button type="button" class="primary" data-upgrade="${escapeHtml(pet.uid)}">升級（${upgradeCost} 石）</button>
       <button type="button" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升級（${feedCost}）</button>
@@ -674,7 +644,7 @@ function dungeonPanel() {
 
   return `
     <h2>潮汐秘境</h2>
-    <p class="lead">元素克制：潮克焰→嵐→岩→幽→潮。同元素／同種出戰觸發羈絆。分層遇寵與裝備掉落；有冷卻與首通獎。</p>
+    <p class="lead">元素克制：潮克焰→嵐→岩→幽→潮。人物靠裝備掉落；靈寵靠天生／融合／繁殖。同元素／同種出戰觸發羈絆。</p>
     <ul class="list">${list}</ul>
   `;
 }
@@ -777,18 +747,6 @@ function bind() {
       let r;
       if (!uid) r = unequipMaster(state, slot);
       else r = equipMaster(state, uid, slot);
-      saveState(state);
-      render();
-      setFlash(r.msg);
-    });
-  });
-  app.querySelectorAll("[data-pet-equip]").forEach((sel) => {
-    sel.addEventListener("change", () => {
-      const petUid = sel.dataset.petEquip;
-      const uid = sel.value;
-      let r;
-      if (!uid) r = unequipPet(state, petUid);
-      else r = equipPet(state, petUid, uid);
       saveState(state);
       render();
       setFlash(r.msg);

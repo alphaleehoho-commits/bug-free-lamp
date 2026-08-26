@@ -36,21 +36,25 @@ import {
   KIND_SECOND_SKILLS,
   SECOND_SKILL_UNLOCK,
   rollGearDrop,
-  gearBonuses,
   partySynergy,
+  MASTER_EQUIP_SLOTS,
+  SLOT_LABEL,
+  fusionAbsorbRate,
+  breedStatInheritance,
+  petSpeciesBaseline,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v6";
+const SAVE_KEY = "void-tide-pets-v7";
 
 function defaultMaster() {
   return {
     name: "潮行者",
-    atk: 10,
-    hp: 120,
-    spd: 9,
+    /** 人物白板偏弱，主要靠裝備拉高戰力 */
+    atk: 6,
+    hp: 90,
+    spd: 7,
     skillIds: masterSkillsForStage(0),
-    /** weapon / accessory → inventory item uid or null */
-    equip: { weapon: null, accessory: null },
+    equip: { weapon: null, armor: null, accessory: null },
   };
 }
 
@@ -76,7 +80,8 @@ function defaultState() {
       "你沿著暗潮抵達荒廢契壇。",
       "可先獨自踏入秘境；戰勝後或會遇見願意結契的靈寵。",
       "契約成功的靈寵進入牧場；再從牧場派出戰（最多 3 隻）。",
-      "牧場待命會慢產飼料／靈塵；秘境或掉落裝備。",
+      "牧場待命會慢產飼料／靈塵；秘境掉落人物裝備。",
+      "人物靠裝備；靈寵靠天生基礎（融合／繁殖成長）。",
     ],
     lastTick: Date.now(),
     combatsWon: 0,
@@ -98,8 +103,8 @@ function normalizePet(p) {
   if (next.fusionLevel > FUSION_MAX_STAGE) next.fusionLevel = FUSION_MAX_STAGE;
   if (next.skillLevel == null) next.skillLevel = 1;
   if (next.skillLevel > SKILL_MAX_LEVEL) next.skillLevel = SKILL_MAX_LEVEL;
-  if (!next.equip || typeof next.equip !== "object") next.equip = { accessory: null };
-  if (next.equip.accessory === undefined) next.equip.accessory = null;
+  // 寵物不再穿裝備
+  if (next.equip) delete next.equip;
   return next;
 }
 
@@ -115,6 +120,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v6") ||
       localStorage.getItem("void-tide-pets-v5") ||
       localStorage.getItem("void-tide-pets-v4") ||
       localStorage.getItem("void-tide-pets-v3") ||
@@ -125,9 +131,11 @@ export function loadState() {
     const base = defaultState();
     const master = { ...base.master, ...(parsed.master || {}) };
     master.skillIds = masterSkillsForStage(parsed.realm ?? 0);
+    const oldEq = master.equip || {};
     master.equip = {
-      weapon: master.equip?.weapon ?? null,
-      accessory: master.equip?.accessory ?? null,
+      weapon: oldEq.weapon ?? null,
+      armor: oldEq.armor ?? null,
+      accessory: oldEq.accessory ?? null,
     };
 
     let pets = normalizePetList(parsed.pets).map((p) => {
@@ -159,6 +167,17 @@ export function loadState() {
       pets = pets.slice(0, ACTIVE_PET_MAX);
     }
 
+    // 清掉已刪除／寵物專用舊裝備；無效槽位卸下
+    let inventory = Array.isArray(parsed.inventory) ? parsed.inventory.filter((it) => GEAR[it.gearId]) : [];
+    const validUids = new Set(inventory.map((x) => x.uid));
+    for (const slot of MASTER_EQUIP_SLOTS) {
+      if (master.equip[slot] && !validUids.has(master.equip[slot])) master.equip[slot] = null;
+      else if (master.equip[slot]) {
+        const it = inventory.find((x) => x.uid === master.equip[slot]);
+        if (it && GEAR[it.gearId]?.slot !== slot) master.equip[slot] = null;
+      }
+    }
+
     return {
       ...base,
       ...parsed,
@@ -167,7 +186,7 @@ export function loadState() {
       ranch,
       feed: parsed.feed ?? 0,
       dust: parsed.dust ?? 0,
-      inventory: Array.isArray(parsed.inventory) ? parsed.inventory : [],
+      inventory,
       pending: Array.isArray(parsed.pending) ? parsed.pending : [],
       clearedDungeons: parsed.clearedDungeons || {},
       dungeonReadyAt: parsed.dungeonReadyAt || {},
@@ -230,22 +249,20 @@ function resolveInvGear(state, itemUid) {
   return { item, def };
 }
 
-/** 人物裝備加成 */
+/** 人物裝備加成（含鍛造強化） */
 export function masterGearBonus(state) {
   const eq = state.master?.equip || {};
-  const ids = [];
-  for (const slot of ["weapon", "accessory"]) {
+  let atk = 0;
+  let hp = 0;
+  let spd = 0;
+  for (const slot of MASTER_EQUIP_SLOTS) {
     const r = resolveInvGear(state, eq[slot]);
-    if (r) ids.push(r.def.id);
+    if (!r) continue;
+    atk += (r.def.atk || 0) + (r.item.forgeAtk || 0);
+    hp += (r.def.hp || 0) + (r.item.forgeHp || 0);
+    spd += r.def.spd || 0;
   }
-  return gearBonuses(ids);
-}
-
-/** 靈寵飾品加成 */
-export function petGearBonus(state, pet) {
-  const accUid = pet?.equip?.accessory;
-  const r = resolveInvGear(state, accUid);
-  return r ? gearBonuses([r.def.id]) : gearBonuses([]);
+  return { atk, hp, spd };
 }
 
 export function tryBreakthrough(state) {
@@ -256,8 +273,8 @@ export function tryBreakthrough(state) {
   }
   state.qi -= next.need;
   state.realm = next.id;
-  state.master.atk += 2;
-  state.master.hp += 8;
+  state.master.atk += 1;
+  state.master.hp += 4;
   state.master.spd += 1;
   state.master.skillIds = masterSkillsForStage(state.realm);
   pushLog(state, `階段突破——晉升【${next.name}】。御靈之力加深。`);
@@ -456,9 +473,8 @@ export function upgradePetSkill(state, uid) {
 
 function isItemEquipped(state, itemUid) {
   const me = state.master?.equip || {};
-  if (me.weapon === itemUid || me.accessory === itemUid) return { who: "master", slot: me.weapon === itemUid ? "weapon" : "accessory" };
-  for (const p of [...(state.pets || []), ...(state.ranch || [])]) {
-    if (p.equip?.accessory === itemUid) return { who: "pet", pet: p, slot: "accessory" };
+  for (const slot of MASTER_EQUIP_SLOTS) {
+    if (me[slot] === itemUid) return { who: "master", slot };
   }
   return null;
 }
@@ -466,64 +482,33 @@ function isItemEquipped(state, itemUid) {
 /** 人物裝備／卸下 */
 export function equipMaster(state, itemUid, slot) {
   if (!state.inventory) state.inventory = [];
-  if (!state.master.equip) state.master.equip = { weapon: null, accessory: null };
-  if (slot !== "weapon" && slot !== "accessory") return { ok: false, msg: "無效槽位。" };
+  if (!state.master.equip) state.master.equip = { weapon: null, armor: null, accessory: null };
+  if (!MASTER_EQUIP_SLOTS.includes(slot)) return { ok: false, msg: "無效槽位。" };
   const resolved = resolveInvGear(state, itemUid);
   if (!resolved) return { ok: false, msg: "庫存中找不到這件裝備。" };
   const { def } = resolved;
-  if (def.slot !== slot) return { ok: false, msg: `這件是${def.slot === "weapon" ? "武器" : "飾品"}。` };
-  if (def.owner === "pet") return { ok: false, msg: "這件只能給靈寵。" };
+  if (def.slot !== slot) {
+    return { ok: false, msg: `這件應裝在${SLOT_LABEL[def.slot] || def.slot}槽。` };
+  }
 
   const worn = isItemEquipped(state, itemUid);
-  if (worn && !(worn.who === "master" && worn.slot === slot)) {
+  if (worn && worn.slot !== slot) {
     return { ok: false, msg: "這件已被穿戴。" };
   }
 
   state.master.equip[slot] = itemUid;
-  pushLog(state, `裝備【${def.name}】於人物${slot === "weapon" ? "武器" : "飾品"}槽。`);
+  pushLog(state, `裝備【${def.name}】於人物${SLOT_LABEL[slot]}槽。`);
   return { ok: true, msg: `已裝備 ${def.name}` };
 }
 
 export function unequipMaster(state, slot) {
   if (!state.master.equip) return { ok: false, msg: "無裝備。" };
-  if (slot !== "weapon" && slot !== "accessory") return { ok: false, msg: "無效槽位。" };
+  if (!MASTER_EQUIP_SLOTS.includes(slot)) return { ok: false, msg: "無效槽位。" };
   const uid = state.master.equip[slot];
   if (!uid) return { ok: false, msg: "該槽為空。" };
   const r = resolveInvGear(state, uid);
   state.master.equip[slot] = null;
-  pushLog(state, `卸下人物${slot === "weapon" ? "武器" : "飾品"}${r ? `【${r.def.name}】` : ""}。`);
-  return { ok: true, msg: "已卸下" };
-}
-
-/** 靈寵飾品 */
-export function equipPet(state, petUid, itemUid) {
-  const found = findOwnedPet(state, petUid);
-  if (!found) return { ok: false, msg: "找不到靈寵。" };
-  const resolved = resolveInvGear(state, itemUid);
-  if (!resolved) return { ok: false, msg: "庫存中找不到這件裝備。" };
-  const { def } = resolved;
-  if (def.slot !== "accessory") return { ok: false, msg: "靈寵只能戴飾品。" };
-  if (def.owner === "master") return { ok: false, msg: "這件只能給人物。" };
-
-  const worn = isItemEquipped(state, itemUid);
-  if (worn && !(worn.who === "pet" && worn.pet.uid === found.pet.uid)) {
-    return { ok: false, msg: "這件已被穿戴。" };
-  }
-
-  if (!found.pet.equip) found.pet.equip = { accessory: null };
-  found.pet.equip.accessory = itemUid;
-  pushLog(state, `${found.pet.name} 裝備【${def.name}】。`);
-  return { ok: true, msg: `${found.pet.name} 已裝備 ${def.name}` };
-}
-
-export function unequipPet(state, petUid) {
-  const found = findOwnedPet(state, petUid);
-  if (!found) return { ok: false, msg: "找不到靈寵。" };
-  const uid = found.pet.equip?.accessory;
-  if (!uid) return { ok: false, msg: "沒有飾品。" };
-  const r = resolveInvGear(state, uid);
-  found.pet.equip.accessory = null;
-  pushLog(state, `${found.pet.name} 卸下${r ? `【${r.def.name}】` : "飾品"}。`);
+  pushLog(state, `卸下人物${SLOT_LABEL[slot]}${r ? `【${r.def.name}】` : ""}。`);
   return { ok: true, msg: "已卸下" };
 }
 
@@ -537,11 +522,12 @@ export function inventoryView(state) {
       gearId: it.gearId,
       name: def?.name || it.gearId,
       slot: def?.slot,
-      owner: def?.owner,
       rarity: def?.rarity || 1,
-      atk: def?.atk || 0,
-      hp: def?.hp || 0,
+      atk: (def?.atk || 0) + (it.forgeAtk || 0),
+      hp: (def?.hp || 0) + (it.forgeHp || 0),
       spd: def?.spd || 0,
+      forgeAtk: it.forgeAtk || 0,
+      forgeHp: it.forgeHp || 0,
       worn,
     };
   });
@@ -595,13 +581,16 @@ export function fusePets(state, baseUid, matUids) {
   if (state.stones < cost) return { ok: false, msg: `靈石不足（需 ${cost}）。` };
   state.stones -= cost;
 
-  // 數值強化只跟融階／素材數量有關；等級完全繼承主體
+  // 融合主要吸收素材天生數值，寫入主體基礎
   const keepLevel = base.level ?? 1;
+  const rate = fusionAbsorbRate(targetStage);
   for (const { pet: mat } of matFounds) {
-    base.atk += Math.max(1, Math.floor(mat.atk * 0.12)) + targetStage;
-    base.hp += Math.max(2, Math.floor(mat.hp * 0.1)) + targetStage * 2;
-    base.spd += Math.max(0, Math.floor(mat.spd * 0.08));
+    base.atk += Math.max(2, Math.floor(mat.atk * rate)) + targetStage;
+    base.hp += Math.max(4, Math.floor(mat.hp * rate)) + targetStage * 3;
+    base.spd += Math.max(1, Math.floor(mat.spd * rate * 0.85));
   }
+  base.atk += 1 + targetStage;
+  base.hp += 4 + targetStage * 2;
   base.spd += targetStage;
   base.fusionLevel = targetStage;
   base.level = keepLevel;
@@ -650,8 +639,12 @@ export function petDetail(state, uid) {
   const secondId = KIND_SECOND_SKILLS[pet.kind];
   const secondUnlocked =
     fusion >= SECOND_SKILL_UNLOCK.fusionLevel || level >= SECOND_SKILL_UNLOCK.level;
-  const gear = petGearBonus(state, pet);
-  const acc = resolveInvGear(state, pet.equip?.accessory);
+  const baseline = petSpeciesBaseline(pet.speciesId, pet.elementId, pet.personalityId);
+  const innateBonus = {
+    atk: Math.max(0, (pet.atk || 0) - baseline.atk),
+    hp: Math.max(0, (pet.hp || 0) - baseline.hp),
+    spd: Math.max(0, (pet.spd || 0) - baseline.spd),
+  };
   return {
     pet,
     location: found.list,
@@ -673,9 +666,8 @@ export function petDetail(state, uid) {
     skillIds,
     secondSkill: secondId ? skillInfo(secondId) : null,
     secondUnlocked,
-    gearBonus: gear,
-    accessoryName: acc?.def?.name || null,
-    accessoryUid: pet.equip?.accessory || null,
+    baseline,
+    innateBonus,
     ranchFull: (state.ranch?.length || 0) >= ranchCap(state),
     partyFull: state.pets.length >= ACTIVE_PET_MAX,
   };
@@ -825,15 +817,14 @@ export function runDungeon(state, dungeonId) {
       atkBuffPct: 0,
     },
     ...state.pets.map((p) => {
-      const g = petGearBonus(state, p);
       const skills = petSkillIds(p);
       return {
         side: "ally",
         name: p.name,
-        hp: Math.round((p.hp + stageBonus * 2 + g.hp) * synergy.hpMult),
-        maxHp: Math.round((p.hp + stageBonus * 2 + g.hp) * synergy.hpMult),
-        atk: Math.round((p.atk + stageBonus + g.atk) * synergy.atkMult),
-        spd: Math.round((p.spd + g.spd) * synergy.spdMult),
+        hp: Math.round((p.hp + stageBonus * 2) * synergy.hpMult),
+        maxHp: Math.round((p.hp + stageBonus * 2) * synergy.hpMult),
+        atk: Math.round((p.atk + stageBonus) * synergy.atkMult),
+        spd: Math.round(p.spd * synergy.spdMult),
         isMaster: false,
         elementId: p.elementId,
         skillLevel: p.skillLevel ?? 1,
@@ -980,16 +971,37 @@ export function forgeHint(state) {
   if (state.scrap < need) {
     return { ok: false, msg: `靈紋鍛造需要 ${need} 碎片（現有 ${state.scrap}）。` };
   }
-  if (state.pets.length === 0) return { ok: false, msg: "沒有可強化的靈寵。" };
+  if (!state.inventory) state.inventory = [];
   state.scrap -= need;
-  state.stones += 20;
-  const bonus = 2 + Math.floor(Math.random() * 3);
-  state.pets.forEach((p) => {
-    p.atk += bonus;
-    p.hp += bonus * 3;
-  });
-  pushLog(state, `靈紋鍛造：出戰靈寵攻擊 +${bonus}，生命 +${bonus * 3}。`);
-  return { ok: true, msg: `靈寵強化 +${bonus} 攻` };
+
+  // 優先強化已裝備的一件人物裝；否則鍛出低階裝
+  const eq = state.master?.equip || {};
+  const equipped = MASTER_EQUIP_SLOTS.map((s) => eq[s]).filter(Boolean);
+  if (equipped.length) {
+    const uid = equipped[Math.floor(Math.random() * equipped.length)];
+    const r = resolveInvGear(state, uid);
+    if (r) {
+      const bonusAtk = 1 + Math.floor(Math.random() * 2);
+      const bonusHp = 3 + Math.floor(Math.random() * 5);
+      r.item.forgeAtk = (r.item.forgeAtk || 0) + bonusAtk;
+      r.item.forgeHp = (r.item.forgeHp || 0) + bonusHp;
+      pushLog(
+        state,
+        `靈紋鍛造：【${r.def.name}】強化 +${bonusAtk} 攻／+${bonusHp} 血。`
+      );
+      return { ok: true, msg: `${r.def.name} 強化 +${bonusAtk}攻` };
+    }
+  }
+
+  const pool = Object.values(GEAR).filter((g) => g.rarity <= 2);
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  const item = {
+    uid: `gear-forge-${Date.now()}-${Math.floor(Math.random() * 999)}`,
+    gearId: pick.id,
+  };
+  state.inventory.push(item);
+  pushLog(state, `靈紋鍛造：獲得人物裝備【${pick.name}】。`);
+  return { ok: true, msg: `鍛出 ${pick.name}` };
 }
 
 /**
@@ -1030,18 +1042,26 @@ export function tryBreed(state, uidA, uidB) {
       cost: 0,
     })
   );
+  const born = breedStatInheritance(a, b, genes);
+  child.atk += born.atk;
+  child.hp += born.hp;
+  child.spd += born.spd;
   child.uid = `${child.templateId}-born`;
   child.bornFrom = [a.uid, b.uid];
   state.ranch.push(child);
 
   const mutNote = genes.mutated ? "（元素變異！）" : "";
+  const innNote =
+    born.atk || born.hp || born.spd
+      ? `｜繼承天生 +${born.atk}攻/${born.hp}血/${born.spd}速`
+      : "";
   pushLog(
     state,
-    `繁殖成功：${a.name} × ${b.name} → ${petLabel(child)}${mutNote}｜耗 ${BREED_STONE_COST} 靈石。`
+    `繁殖成功：${a.name} × ${b.name} → ${petLabel(child)}${mutNote}${innNote}｜耗 ${BREED_STONE_COST} 靈石。`
   );
   return {
     ok: true,
-    msg: `誕生 ${child.name}${mutNote}`,
+    msg: `誕生 ${child.name}${mutNote}${innNote}`,
     pet: child,
     mutated: genes.mutated,
   };
@@ -1059,6 +1079,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v6");
   localStorage.removeItem("void-tide-pets-v5");
   localStorage.removeItem("void-tide-pets-v4");
   localStorage.removeItem("void-tide-pets-v3");
@@ -1081,6 +1102,8 @@ export {
   WILD_PETS,
   SKILLS,
   GEAR,
+  MASTER_EQUIP_SLOTS,
+  SLOT_LABEL,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
   FUSION_MAX_STAGE,
@@ -1104,4 +1127,6 @@ export {
   elementMatchup,
   partySynergy,
   petSkillIds,
+  petSpeciesBaseline,
+  fusionAbsorbRate,
 };

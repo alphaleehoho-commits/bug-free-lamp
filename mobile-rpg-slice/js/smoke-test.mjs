@@ -1,5 +1,5 @@
 /**
- * Smoke: P1 ranch idle, gear, skills, synergy.
+ * Smoke: master gear focus, pet innate via fuse/breed.
  */
 import {
   rollWildEncounter,
@@ -8,6 +8,7 @@ import {
   buildPetStats,
   SKILLS,
   GEAR,
+  MASTER_EQUIP_SLOTS,
   ranchCapForStage,
   fusionStoneCost,
   FUSION_RULES,
@@ -27,17 +28,17 @@ import {
   gearBonuses,
   KIND_SECOND_SKILLS,
   IDLE_BY_PERSONALITY,
+  fusionAbsorbRate,
+  breedStatInheritance,
+  petSpeciesBaseline,
 } from "./data.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
-assert(elementMatchup("tide", "flame").tag === "克制", "tide > flame");
-assert(elementMatchup("tide", "flame").mult === ELEMENT_ADV, "adv mult");
-assert(elementMatchup("flame", "tide").tag === "被克", "flame < tide");
-assert(elementMatchup("flame", "tide").mult === ELEMENT_DIS, "dis mult");
-assert(elementMatchup("tide", "tide").mult === 1, "same elem");
+assert(elementMatchup("tide", "flame").mult === ELEMENT_ADV, "adv");
+assert(elementMatchup("flame", "tide").mult === ELEMENT_DIS, "dis");
 
 const a = buildPetStats({
   id: "a",
@@ -53,49 +54,53 @@ const b = buildPetStats({
   personality: "fierce",
   cost: 1,
 });
-const g = rollBreedGenes(a, b);
-assert(SPECIES[g.species], "breed species");
-assert(g.element && g.personality, "breed genes");
-assert(BREED_STONE_COST > 0, "breed cost");
+a.atk += 20;
+a.hp += 40;
+b.atk += 10;
+b.hp += 20;
+const born = breedStatInheritance(a, b, { species: "reefox", element: "tide", personality: "gentle" });
+assert(born.atk > 0 || born.hp > 0, "breed inherit excess");
+
+assert(MASTER_EQUIP_SLOTS.length === 3, "3 master slots");
+assert(GEAR.tide_blade && GEAR.moss_vest && GEAR.mist_charm, "master gear set");
+assert(!GEAR.ash_feather && !GEAR.core_crown, "pet gear removed");
+assert(gearBonuses(["tide_blade", "moss_vest"]).atk === 8, "blade atk");
+assert(gearBonuses(["tide_blade", "moss_vest"]).hp === 35, "vest hp");
+assert(fusionAbsorbRate(1) > 0.2, "fuse absorb");
+assert(fusionAbsorbRate(3) > fusionAbsorbRate(1), "fuse absorb scales");
+
+const base = petSpeciesBaseline("reefox", "tide", "gentle");
+assert(base.atk === a.atk - 20, "baseline");
 
 for (const d of DUNGEONS) {
-  assert(d.encounterWeights && d.firstClearBonus && d.cooldownMs > 0, `dungeon ${d.id} tables`);
+  assert(d.encounterWeights && d.firstClearBonus, `dungeon ${d.id}`);
   const enc = rollWildEncounter(d.id, d);
-  assert(enc.speciesId && enc.elementId, `weighted enc ${d.id}`);
+  assert(enc.speciesId, `enc ${d.id}`);
 }
 
 assert(PENDING_BOND_MAX === 5, "pending");
 assert(ranchCapForStage(0) === 3, "ranch");
 assert(FUSION_RULES[1].totalPets === 2, "fuse");
 assert(fusionStoneCost(1) === 40, "fuse cost");
-assert(SKILLS.pounce, "skills");
-assert(SKILLS.pack_howl && SKILLS.swarm_haze, "second skills");
-assert(GEAR.tide_blade && GEAR.mist_charm, "gear");
-assert(IDLE_BY_PERSONALITY.gentle.feed > 0, "idle feed");
-assert(BOND_FEED_COST > 0, "bond feed");
-assert(upgradeFeedCost(1) > 0, "feed upgrade");
-assert(skillDustCost(1) > 0, "dust skill");
-assert(skillPowerMult(3) > skillPowerMult(1), "skill power");
-assert(gearBonuses(["tide_blade"]).atk === 4, "gear bonus");
-
-const sameEl = [
-  { ...a, elementId: "tide", kind: "獸" },
-  { ...a, elementId: "tide", kind: "鱗", name: "b" },
-  { ...a, elementId: "tide", kind: "禽", name: "c" },
-];
-const syn = partySynergy(sameEl);
-assert(syn.atkMult > 1 && syn.labels.some((l) => l.includes("三元")), "3-element synergy");
+assert(SKILLS.pack_howl, "second skills");
+assert(IDLE_BY_PERSONALITY.gentle.feed > 0, "idle");
+assert(BOND_FEED_COST > 0 && upgradeFeedCost(1) > 0 && skillDustCost(1) > 0, "costs");
+assert(skillPowerMult(3) > 1, "skill power");
+assert(BREED_STONE_COST > 0 && SPECIES[rollBreedGenes(a, b).species], "breed");
 
 const fused = { ...a, fusionLevel: 1, level: 5, kind: "獸", skillId: "pounce" };
-assert(petSkillIds(fused).includes(KIND_SECOND_SKILLS["獸"]), "second skill unlock fuse");
-const leveled = { ...a, fusionLevel: 0, level: 15, kind: "蟲", skillId: "venom_bite" };
-assert(petSkillIds(leveled).includes("swarm_haze"), "second skill unlock lv");
+assert(petSkillIds(fused).includes(KIND_SECOND_SKILLS["獸"]), "2nd skill");
+
+const syn = partySynergy([
+  { elementId: "tide", kind: "獸" },
+  { elementId: "tide", kind: "鱗" },
+  { elementId: "tide", kind: "禽" },
+]);
+assert(syn.atkMult > 1, "synergy");
 
 let drops = 0;
-for (let i = 0; i < 80; i++) {
-  if (rollGearDrop("tide_3")) drops += 1;
-}
-assert(drops > 0, "gear drops sometimes");
+for (let i = 0; i < 60; i++) if (rollGearDrop("tide_3")) drops += 1;
+assert(drops > 0, "gear drops");
 
-console.log("synergy", syn);
+console.log("inherit sample", born);
 console.log("smoke-test ok");

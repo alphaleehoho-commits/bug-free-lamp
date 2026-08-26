@@ -565,80 +565,132 @@ export function petSkillIds(pet) {
   return ids;
 }
 
-/* ─── P1：裝備 ─── */
+/* ─── 裝備：僅人物；寵物不穿戴 ─── */
+
+/** 人物裝備槽 */
+export const MASTER_EQUIP_SLOTS = ["weapon", "armor", "accessory"];
+
+export const SLOT_LABEL = {
+  weapon: "武器",
+  armor: "防具",
+  accessory: "飾品",
+};
 
 /**
- * slot: weapon | accessory（人物）／ accessory（寵）
- * owner: master | pet | both
+ * 人物裝備表（寵物不可穿）
+ * slot: weapon | armor | accessory
  */
 export const GEAR = {
   tide_blade: {
     id: "tide_blade",
     name: "潮紋短刃",
     slot: "weapon",
-    owner: "master",
-    atk: 4,
+    atk: 8,
     hp: 0,
-    spd: 1,
+    spd: 2,
     rarity: 1,
+  },
+  reef_cleaver: {
+    id: "reef_cleaver",
+    name: "暗礁劈斧",
+    slot: "weapon",
+    atk: 14,
+    hp: 6,
+    spd: 0,
+    rarity: 2,
+  },
+  core_fang: {
+    id: "core_fang",
+    name: "心核牙刃",
+    slot: "weapon",
+    atk: 22,
+    hp: 10,
+    spd: 3,
+    rarity: 3,
+  },
+  moss_vest: {
+    id: "moss_vest",
+    name: "苔紋背心",
+    slot: "armor",
+    atk: 0,
+    hp: 35,
+    spd: 0,
+    rarity: 1,
+  },
+  tide_mail: {
+    id: "tide_mail",
+    name: "潮鱗甲",
+    slot: "armor",
+    atk: 2,
+    hp: 55,
+    spd: 1,
+    rarity: 2,
+  },
+  abyss_plate: {
+    id: "abyss_plate",
+    name: "深淵板甲",
+    slot: "armor",
+    atk: 4,
+    hp: 85,
+    spd: 0,
+    rarity: 3,
   },
   mist_charm: {
     id: "mist_charm",
     name: "潮霧墜",
     slot: "accessory",
-    owner: "both",
-    atk: 1,
-    hp: 18,
-    spd: 0,
+    atk: 3,
+    hp: 12,
+    spd: 2,
     rarity: 1,
   },
   reef_ring: {
     id: "reef_ring",
     name: "暗礁戒",
     slot: "accessory",
-    owner: "both",
-    atk: 2,
-    hp: 8,
-    spd: 1,
-    rarity: 2,
-  },
-  ash_feather: {
-    id: "ash_feather",
-    name: "灰翼羽飾",
-    slot: "accessory",
-    owner: "pet",
-    atk: 3,
-    hp: 5,
-    spd: 2,
+    atk: 5,
+    hp: 18,
+    spd: 3,
     rarity: 2,
   },
   gloom_sigil: {
     id: "gloom_sigil",
     name: "幽印符",
     slot: "accessory",
-    owner: "both",
-    atk: 3,
-    hp: 12,
-    spd: 1,
-    rarity: 3,
-  },
-  core_crown: {
-    id: "core_crown",
-    name: "心核冠片",
-    slot: "weapon",
-    owner: "master",
-    atk: 7,
-    hp: 10,
-    spd: 2,
+    atk: 8,
+    hp: 22,
+    spd: 4,
     rarity: 3,
   },
 };
 
-/** 秘境掉落裝備權重（gearId → weight）；另有掉落機率 */
+/** 秘境掉落（僅人物裝） */
 export const DUNGEON_GEAR_DROPS = {
-  tide_1: { chance: 0.28, weights: { tide_blade: 3, mist_charm: 4, reef_ring: 1 } },
-  tide_2: { chance: 0.36, weights: { mist_charm: 2, reef_ring: 3, ash_feather: 3, gloom_sigil: 1 } },
-  tide_3: { chance: 0.45, weights: { reef_ring: 2, ash_feather: 2, gloom_sigil: 3, core_crown: 2 } },
+  tide_1: {
+    chance: 0.38,
+    weights: { tide_blade: 3, moss_vest: 3, mist_charm: 3, reef_cleaver: 1 },
+  },
+  tide_2: {
+    chance: 0.48,
+    weights: {
+      reef_cleaver: 3,
+      tide_mail: 3,
+      reef_ring: 3,
+      mist_charm: 2,
+      moss_vest: 1,
+    },
+  },
+  tide_3: {
+    chance: 0.58,
+    weights: {
+      core_fang: 2,
+      abyss_plate: 2,
+      gloom_sigil: 3,
+      reef_cleaver: 2,
+      tide_mail: 2,
+      reef_ring: 2,
+    },
+  },
 };
 
 export function rollGearDrop(dungeonId) {
@@ -664,6 +716,62 @@ export function gearBonuses(gearIds) {
     spd += g.spd || 0;
   }
   return { atk, hp, spd };
+}
+
+/**
+ * 種族×元素×性格的天生基準（寵物成長以此為根）
+ */
+export function petSpeciesBaseline(speciesId, elementId, personalityId) {
+  const sp = SPECIES[speciesId];
+  const el = ELEMENTS[elementId];
+  const pe = PERSONALITIES[personalityId];
+  if (!sp || !el || !pe) return { atk: 0, hp: 0, spd: 0 };
+  return {
+    atk: Math.round(sp.base.atk * el.atk * pe.atk),
+    hp: Math.round(sp.base.hp * el.hp * pe.hp),
+    spd: Math.round(sp.base.spd * el.spd * pe.spd),
+  };
+}
+
+/**
+ * 繁殖：子代繼承雙親「超出基準」的天生成長（攻／血／速）
+ * 約 40% 平均溢出；再加小幅變異
+ */
+export const BREED_INHERIT_RATE = 0.4;
+export const BREED_MUTATION_STAT_RATE = 0.12;
+
+export function breedStatInheritance(parentA, parentB, childGenes) {
+  const baseA = petSpeciesBaseline(parentA.speciesId, parentA.elementId, parentA.personalityId);
+  const baseB = petSpeciesBaseline(parentB.speciesId, parentB.elementId, parentB.personalityId);
+  const excess = (p, base) => ({
+    atk: Math.max(0, (p.atk || 0) - base.atk),
+    hp: Math.max(0, (p.hp || 0) - base.hp),
+    spd: Math.max(0, (p.spd || 0) - base.spd),
+  });
+  const ea = excess(parentA, baseA);
+  const eb = excess(parentB, baseB);
+  const avg = {
+    atk: (ea.atk + eb.atk) / 2,
+    hp: (ea.hp + eb.hp) / 2,
+    spd: (ea.spd + eb.spd) / 2,
+  };
+  let atk = Math.floor(avg.atk * BREED_INHERIT_RATE);
+  let hp = Math.floor(avg.hp * BREED_INHERIT_RATE);
+  let spd = Math.floor(avg.spd * BREED_INHERIT_RATE);
+  if (Math.random() < BREED_MUTATION_STAT_RATE) {
+    atk += 1 + Math.floor(Math.random() * 3);
+    hp += 2 + Math.floor(Math.random() * 6);
+    spd += Math.floor(Math.random() * 2);
+  }
+  // 子代自身基準已由 buildPetStats 算好；這裡只回傳額外天生加成
+  void childGenes;
+  return { atk, hp, spd };
+}
+
+/** 融合吸收素材天生數值比例（隨融階升高） */
+export function fusionAbsorbRate(targetStage) {
+  const n = Math.max(1, Math.min(3, targetStage | 0));
+  return 0.18 + n * 0.1; // 階1 28%、階2 38%、階3 48%
 }
 
 /* ─── P1：羈絆／陣容加成 ─── */
