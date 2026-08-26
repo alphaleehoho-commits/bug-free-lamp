@@ -10,17 +10,17 @@ Other agents cannot see those files until the project is on a **private GitHub r
 
 - Path: `mobile-rpg-slice/`
 - Stack: vanilla HTML/CSS/JS PWA (portrait mobile)
-- Save key / SW cache: `void-tide-pets-v7`
+- Save key / SW cache: `void-tide-pets-v8`
 - Run: `cd mobile-rpg-slice && python3 -m http.server 8765`
 - Smoke: `cd mobile-rpg-slice && node js/smoke-test.mjs`
 
 ## Features in tree
 
-Idle cultivation → dungeon combat (streamed log) → encounter pets → bond → ranch → deploy/upgrade/fusion/breeding → element matchups → dungeon tables.
+Idle → dungeon → bond → ranch → fuse/breed → element → P1 idle/gear/skills/synergy.
 
-**P1:** ranch idle feed/dust · master gear (weapon/armor/accessory) · skill levels + second skills · party synergy.
+**P2:** bestiary (species×element) combat bonus · rename · release refund · daily quests · achievements · offline settlement banner.
 
-**Balance:** Master power from gear (+forge). Pets have no gear; innate atk/hp/spd grow via fusion absorb and breed inheritance.
+**Balance:** Master from gear; pets from innate (fuse/breed).
 
 ## Publish checklist (owner)
 

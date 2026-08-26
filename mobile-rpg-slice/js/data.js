@@ -820,3 +820,134 @@ export function partySynergy(pets) {
 
   return { atkMult, hpMult, spdMult, labels };
 }
+
+/* ─── P2：圖鑑／放生／每日／成就 ─── */
+
+export function bestiaryKey(speciesId, elementId) {
+  return `${speciesId}:${elementId}`;
+}
+
+export function bestiaryTotal() {
+  return Object.keys(SPECIES).length * Object.keys(ELEMENTS).length;
+}
+
+export function bestiaryEntries() {
+  const out = [];
+  for (const sp of Object.values(SPECIES)) {
+    for (const el of Object.values(ELEMENTS)) {
+      out.push({
+        key: bestiaryKey(sp.id, el.id),
+        speciesId: sp.id,
+        speciesName: sp.name,
+        kind: sp.kind,
+        elementId: el.id,
+        elementName: el.name,
+        label: `${el.name}${sp.name}`,
+      });
+    }
+  }
+  return out;
+}
+
+/** 每收集 5 格：全隊攻／血 +2%（戰鬥） */
+export function bestiaryCombatBonus(discoveredCount) {
+  const n = Math.max(0, discoveredCount | 0);
+  const tiers = Math.floor(n / 5);
+  const rate = tiers * 0.02;
+  return {
+    tiers,
+    discovered: n,
+    total: bestiaryTotal(),
+    atkMult: 1 + rate,
+    hpMult: 1 + rate,
+    label: tiers > 0 ? `圖鑑共鳴 ×${tiers}（攻／血 +${tiers * 2}%）` : "",
+  };
+}
+
+/** 放生返還 */
+export function releaseRefund(pet) {
+  const lv = pet.level ?? 1;
+  const fus = pet.fusionLevel ?? 0;
+  const stones = 8 + lv * 4 + fus * 12;
+  const feed = 2 + Math.floor(lv / 2) + fus;
+  const dust = fus > 0 ? fus * 3 : Math.floor(lv / 3);
+  return { stones, feed, dust };
+}
+
+export const NICK_MAX_LEN = 8;
+
+/** 每日任務定義 */
+export const DAILY_QUESTS = [
+  {
+    id: "idle",
+    name: "靜心修行",
+    desc: "完成 1 次階段突破，或累積掛機滿 3 分鐘",
+    need: 1,
+    reward: { stones: 20, feed: 6 },
+  },
+  {
+    id: "dungeon",
+    name: "潮汐試煉",
+    desc: "挑戰秘境 1 次（不論勝負）",
+    need: 1,
+    reward: { stones: 30, scrap: 1 },
+  },
+  {
+    id: "bond",
+    name: "結契之緣",
+    desc: "嘗試契約 1 次（成功或失敗皆可）",
+    need: 1,
+    reward: { stones: 25, dust: 5 },
+  },
+];
+
+/** 成就（一次性） */
+export const ACHIEVEMENTS = [
+  {
+    id: "first_win",
+    name: "初戰告捷",
+    desc: "秘境勝利 1 場",
+    reward: { stones: 40 },
+  },
+  {
+    id: "bonds_3",
+    name: "三契已成",
+    desc: "成功契約 3 次",
+    reward: { stones: 50, feed: 10 },
+  },
+  {
+    id: "bestiary_10",
+    name: "潮錄十影",
+    desc: "圖鑑收集滿 10 格",
+    reward: { stones: 60, dust: 10 },
+  },
+  {
+    id: "fuse_once",
+    name: "融靈初成",
+    desc: "完成 1 次融合",
+    reward: { stones: 45, scrap: 1 },
+  },
+  {
+    id: "breed_once",
+    name: "血脈相傳",
+    desc: "完成 1 次繁殖",
+    reward: { stones: 45, feed: 8 },
+  },
+  {
+    id: "stage_2",
+    name: "通靈有成",
+    desc: "達到通靈後期（階段 2）",
+    reward: { stones: 80 },
+  },
+];
+
+export function todayKey(now = Date.now()) {
+  const d = new Date(now);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** 離線結算提示門檻（秒） */
+export const OFFLINE_HINT_SEC = 90;

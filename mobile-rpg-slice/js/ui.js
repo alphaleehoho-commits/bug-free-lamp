@@ -26,6 +26,13 @@ import {
   unequipMaster,
   masterGearBonus,
   partySynergy,
+  renamePet,
+  clearOfflineHint,
+  claimDaily,
+  dailyView,
+  achievementsView,
+  bestiaryStatus,
+  displayPetName,
   DUNGEONS,
   SKILLS,
   MASTER_EQUIP_SLOTS,
@@ -36,6 +43,8 @@ import {
   BREED_STONE_COST,
   BOND_FEED_COST,
   BOND_FEED_BONUS,
+  NICK_MAX_LEN,
+  bestiaryEntries,
   masterSkillsForStage,
   fusionStoneCost,
 } from "./engine.js";
@@ -264,11 +273,13 @@ function render() {
     </div>
 
     <p class="flash" data-live="flash" ${flash ? "" : "hidden"}>${escapeHtml(flash)}</p>
+    ${offlineBanner()}
 
     <nav class="tabs" role="tablist">
       ${tabBtn("cultivate", "修行", busy)}
       ${tabBtn("party", "靈寵", busy)}
       ${tabBtn("dungeon", "秘境", busy)}
+      ${tabBtn("codex", "圖鑑", busy)}
       ${tabBtn("log", "見聞", busy)}
     </nav>
 
@@ -276,6 +287,7 @@ function render() {
       ${tab === "cultivate" ? cultivatePanel(qiPct, next, m) : ""}
       ${tab === "party" ? petsPanel() : ""}
       ${tab === "dungeon" ? dungeonPanel() : ""}
+      ${tab === "codex" ? codexPanel() : ""}
       ${tab === "log" ? logPanel() : ""}
     </main>
 
@@ -289,6 +301,17 @@ function render() {
   shellReady = true;
   saveState(state);
   if (playback) updatePlaybackDom();
+}
+
+function offlineBanner() {
+  const h = state.offlineHint;
+  if (!h) return "";
+  const min = Math.max(1, Math.round(h.sec / 60));
+  return `
+    <div class="offline-banner" data-live="offline">
+      <p>離線約 ${min} 分鐘：靈契 +${Math.floor(h.qi)} · 飼料 +${h.feed.toFixed(1)} · 靈塵 +${h.dust.toFixed(1)}</p>
+      <button type="button" data-act="clear-offline">知道了</button>
+    </div>`;
 }
 
 function tabBtn(id, label, busy) {
@@ -360,10 +383,11 @@ function petRow(p, extraBtn = "") {
   const uid = escapeHtml(p.uid || p.templateId);
   const lv = p.level ?? 1;
   const fus = p.fusionLevel ?? 0;
+  const title = displayPetName(p);
   return `
     <li class="card-row">
       <div>
-        <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(p.name)}</strong></button>
+        <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
         <span class="muted">Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}</span>
         <span class="muted">攻${p.atk} 血${p.hp} 速${p.spd} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
@@ -509,7 +533,7 @@ function petsDetailView() {
     : `未解鎖（融階≥1 或 Lv≥15）`;
 
   return `
-    <h2>${escapeHtml(pet.name)}</h2>
+    <h2>${escapeHtml(displayPetName(pet))}</h2>
     <p class="lead">${escapeHtml(loc)} · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE} · 技能 Lv.${skillLevel}</p>
     <ul class="skill-list">
       <li><strong>種類</strong> — ${escapeHtml(pet.kind)} · ${escapeHtml(pet.speciesName)}</li>
@@ -522,6 +546,12 @@ function petsDetailView() {
       <li><strong>升級</strong> — 靈石或飼料；技能用靈塵</li>
       <li><strong>融合</strong> — ${escapeHtml(fuseHint)}</li>
     </ul>
+    <div class="row gear-row">
+      <label>暱稱（最多 ${NICK_MAX_LEN} 字）
+        <input type="text" maxlength="${NICK_MAX_LEN}" data-nick-input value="${escapeHtml(pet.nick || "")}" placeholder="${escapeHtml(pet.name)}" />
+      </label>
+      <button type="button" data-rename="${escapeHtml(pet.uid)}">命名</button>
+    </div>
     <div class="row">
       <button type="button" class="primary" data-upgrade="${escapeHtml(pet.uid)}">升級（${upgradeCost} 石）</button>
       <button type="button" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升級（${feedCost}）</button>
@@ -536,7 +566,7 @@ function petsDetailView() {
     </div>
     <div class="row" style="margin-top:0.5rem">
       <button type="button" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>
-      <button type="button" data-release="${escapeHtml(pet.uid)}">放歸</button>
+      <button type="button" data-release="${escapeHtml(pet.uid)}">放歸（返還資源）</button>
     </div>
     <div class="row" style="margin-top:0.85rem">
       <button type="button" data-pet-back>返回列表</button>
@@ -597,6 +627,56 @@ function petsPanel() {
   if (petView.mode === "fuse") return petsFuseView();
   if (petView.mode === "breed") return petsBreedView();
   return petsListView();
+}
+
+function codexPanel() {
+  const dex = bestiaryStatus(state);
+  const known = state.bestiary || {};
+  const cells = bestiaryEntries()
+    .map((e) => {
+      const on = !!known[e.key];
+      return `<li class="codex-cell ${on ? "on" : ""}" title="${escapeHtml(e.label)}">${
+        on ? escapeHtml(e.label) : "？？"
+      }</li>`;
+    })
+    .join("");
+
+  const dailies = dailyView(state)
+    .map((q) => {
+      const status = q.claimed ? "已領" : q.done ? "可領" : `${q.progress}/${q.need}`;
+      return `
+        <li class="card-row">
+          <div>
+            <strong>${escapeHtml(q.name)}</strong>
+            <span class="muted">${escapeHtml(q.desc)} · ${status}</span>
+          </div>
+          <button type="button" class="primary" data-claim-daily="${q.id}" ${q.done && !q.claimed ? "" : "disabled"}>領獎</button>
+        </li>`;
+    })
+    .join("");
+
+  const ach = achievementsView(state)
+    .map(
+      (a) => `
+      <li class="card-row">
+        <div>
+          <strong>${a.done ? "✓ " : ""}${escapeHtml(a.name)}</strong>
+          <span class="muted">${escapeHtml(a.desc)}</span>
+        </div>
+        <span class="muted">${a.done ? "已達成" : "未完成"}</span>
+      </li>`
+    )
+    .join("");
+
+  return `
+    <h2>靈寵圖鑑</h2>
+    <p class="lead">種族×元素共 ${dex.total} 格 · 已錄 ${dex.discovered}${dex.label ? ` · ${escapeHtml(dex.label)}` : " · 每 5 格全隊攻／血 +2%"}</p>
+    <ul class="codex-grid">${cells}</ul>
+    <h3>每日任務</h3>
+    <ul class="list">${dailies}</ul>
+    <h3>成就</h3>
+    <ul class="list">${ach}</ul>
+  `;
 }
 
 function dungeonPanel() {
@@ -677,6 +757,10 @@ function bind() {
         setFlash(r.msg);
       } else if (act === "start-breed") {
         petView = { mode: "breed", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+        render();
+      } else if (act === "clear-offline") {
+        clearOfflineHint(state);
+        saveState(state);
         render();
       } else if (act === "reset") {
         if (confirm("確定清除存檔？")) {
@@ -779,10 +863,28 @@ function bind() {
   });
   app.querySelectorAll("[data-release]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!confirm("確定放歸這隻靈寵？")) return;
+      if (!confirm("確定放歸？將返還部分靈石／飼料／靈塵。")) return;
       const r = releasePet(state, btn.dataset.release);
       saveState(state);
       petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-rename]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = app.querySelector("[data-nick-input]");
+      const r = renamePet(state, btn.dataset.rename, input?.value || "");
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-claim-daily]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = claimDaily(state, btn.dataset.claimDaily);
+      saveState(state);
       render();
       setFlash(r.msg);
     });

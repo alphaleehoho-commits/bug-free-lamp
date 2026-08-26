@@ -42,9 +42,19 @@ import {
   fusionAbsorbRate,
   breedStatInheritance,
   petSpeciesBaseline,
+  bestiaryKey,
+  bestiaryTotal,
+  bestiaryEntries,
+  bestiaryCombatBonus,
+  releaseRefund,
+  NICK_MAX_LEN,
+  DAILY_QUESTS,
+  ACHIEVEMENTS,
+  todayKey,
+  OFFLINE_HINT_SEC,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v7";
+const SAVE_KEY = "void-tide-pets-v8";
 
 function defaultMaster() {
   return {
@@ -58,23 +68,29 @@ function defaultMaster() {
   };
 }
 
+function emptyDaily(now = Date.now()) {
+  return {
+    date: todayKey(now),
+    progress: { idle: 0, dungeon: 0, bond: 0 },
+    /** questId → true */
+    claimed: {},
+    /** 累積掛機秒數（當日） */
+    idleSec: 0,
+  };
+}
+
 function defaultState() {
   return {
     realm: 0,
     qi: 0,
     stones: 160,
     scrap: 0,
-    /** P1 牧場產物 */
     feed: 0,
     dust: 0,
-    /** 裝備庫存 { uid, gearId }[] */
     inventory: [],
     master: defaultMaster(),
-    /** 出戰欄（最多 ACTIVE_PET_MAX） */
     pets: [],
-    /** 牧場待命 */
     ranch: [],
-    /** 待契約野生靈寵（秘境遇見） */
     pending: [],
     log: [
       "你沿著暗潮抵達荒廢契壇。",
@@ -82,16 +98,21 @@ function defaultState() {
       "契約成功的靈寵進入牧場；再從牧場派出戰（最多 3 隻）。",
       "牧場待命會慢產飼料／靈塵；秘境掉落人物裝備。",
       "人物靠裝備；靈寵靠天生基礎（融合／繁殖成長）。",
+      "圖鑑、每日任務與成就已開啟——見「圖鑑」頁。",
     ],
     lastTick: Date.now(),
     combatsWon: 0,
     breedingUnlocked: true,
-    /** 首通紀錄 dungeonId → true */
     clearedDungeons: {},
-    /** dungeonId → 可再挑戰的 timestamp */
     dungeonReadyAt: {},
-    /** 下次可繁殖時間 */
     breedReadyAt: 0,
+    /** P2 */
+    bestiary: {},
+    daily: emptyDaily(),
+    achievements: {},
+    stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+    /** 最近一次離線結算摘要（UI 顯示後可清） */
+    offlineHint: null,
   };
 }
 
@@ -120,6 +141,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v7") ||
       localStorage.getItem("void-tide-pets-v6") ||
       localStorage.getItem("void-tide-pets-v5") ||
       localStorage.getItem("void-tide-pets-v4") ||
@@ -178,6 +200,14 @@ export function loadState() {
       }
     }
 
+    // 以現有靈寵回填圖鑑（舊存檔）
+    const bestiary = { ...(parsed.bestiary || {}) };
+    for (const p of [...pets, ...ranch]) {
+      if (p?.speciesId && p?.elementId) {
+        bestiary[bestiaryKey(p.speciesId, p.elementId)] = true;
+      }
+    }
+
     return {
       ...base,
       ...parsed,
@@ -192,6 +222,17 @@ export function loadState() {
       dungeonReadyAt: parsed.dungeonReadyAt || {},
       breedReadyAt: parsed.breedReadyAt || 0,
       breedingUnlocked: true,
+      bestiary,
+      daily: ensureDaily(parsed.daily),
+      achievements: parsed.achievements || {},
+      stats: {
+        bonds: parsed.stats?.bonds || 0,
+        fusions: parsed.stats?.fusions || 0,
+        breeds: parsed.stats?.breeds || 0,
+        releases: parsed.stats?.releases || 0,
+        bondAttempts: parsed.stats?.bondAttempts || 0,
+      },
+      offlineHint: parsed.offlineHint || null,
     };
   } catch {
     return defaultState();
@@ -230,14 +271,168 @@ export function tickRanchIdle(state, elapsedSec) {
 }
 
 export function tickCultivation(state, now = Date.now()) {
+  ensureDaily(state);
   const elapsed = Math.min(Math.max(0, now - state.lastTick) / 1000, 3600 * 8);
+  const qiBefore = state.qi;
+  const feedBefore = state.feed || 0;
+  const dustBefore = state.dust || 0;
+
   const ranchBonus = (state.ranch?.length || 0) * 0.04;
   const bondBonus = 1 + state.pets.length * 0.18 + ranchBonus;
   const rate = realmInfo(state).rate * bondBonus;
   state.qi += rate * elapsed;
   tickRanchIdle(state, elapsed);
+
+  // 每日：掛機累積
+  state.daily.idleSec = (state.daily.idleSec || 0) + elapsed;
+  if (state.daily.idleSec >= 180) {
+    bumpDaily(state, "idle", 1);
+  }
+
+  if (elapsed >= OFFLINE_HINT_SEC) {
+    const qiGain = state.qi - qiBefore;
+    const feedGain = (state.feed || 0) - feedBefore;
+    const dustGain = (state.dust || 0) - dustBefore;
+    state.offlineHint = {
+      sec: Math.floor(elapsed),
+      qi: qiGain,
+      feed: feedGain,
+      dust: dustGain,
+      at: now,
+    };
+  }
+
   state.lastTick = now;
+  checkAchievements(state);
   return state;
+}
+
+export function clearOfflineHint(state) {
+  state.offlineHint = null;
+  return state;
+}
+
+function ensureDaily(dailyOrState, now = Date.now()) {
+  // overload: ensureDaily(state) mutates state.daily; ensureDaily(parsed.daily) returns normalized
+  if (dailyOrState && dailyOrState.pets !== undefined) {
+    const state = dailyOrState;
+    const key = todayKey(now);
+    if (!state.daily || state.daily.date !== key) {
+      state.daily = emptyDaily(now);
+    }
+    if (!state.daily.progress) state.daily.progress = { idle: 0, dungeon: 0, bond: 0 };
+    if (!state.daily.claimed) state.daily.claimed = {};
+    return state.daily;
+  }
+  const daily = dailyOrState;
+  const key = todayKey(now);
+  if (!daily || daily.date !== key) return emptyDaily(now);
+  return {
+    date: daily.date,
+    progress: { idle: 0, dungeon: 0, bond: 0, ...(daily.progress || {}) },
+    claimed: { ...(daily.claimed || {}) },
+    idleSec: daily.idleSec || 0,
+  };
+}
+
+function bumpDaily(state, questId, amount = 1) {
+  ensureDaily(state);
+  const q = DAILY_QUESTS.find((x) => x.id === questId);
+  if (!q) return;
+  const cur = state.daily.progress[questId] || 0;
+  if (cur >= q.need) return;
+  state.daily.progress[questId] = Math.min(q.need, cur + amount);
+}
+
+function applyReward(state, reward) {
+  if (!reward) return;
+  if (reward.stones) state.stones += reward.stones;
+  if (reward.scrap) state.scrap += reward.scrap;
+  if (reward.feed) state.feed = (state.feed || 0) + reward.feed;
+  if (reward.dust) state.dust = (state.dust || 0) + reward.dust;
+}
+
+export function claimDaily(state, questId) {
+  ensureDaily(state);
+  const q = DAILY_QUESTS.find((x) => x.id === questId);
+  if (!q) return { ok: false, msg: "任務不存在。" };
+  if (state.daily.claimed[questId]) return { ok: false, msg: "今日已領取。" };
+  const prog = state.daily.progress[questId] || 0;
+  if (prog < q.need) return { ok: false, msg: "尚未完成。" };
+  state.daily.claimed[questId] = true;
+  applyReward(state, q.reward);
+  const bits = [];
+  if (q.reward.stones) bits.push(`${q.reward.stones} 石`);
+  if (q.reward.feed) bits.push(`${q.reward.feed} 飼料`);
+  if (q.reward.dust) bits.push(`${q.reward.dust} 靈塵`);
+  if (q.reward.scrap) bits.push(`${q.reward.scrap} 碎片`);
+  pushLog(state, `每日任務【${q.name}】領獎：${bits.join("／")}。`);
+  checkAchievements(state);
+  return { ok: true, msg: `領取 ${bits.join("／")}` };
+}
+
+export function registerBestiary(state, pet) {
+  if (!pet?.speciesId || !pet?.elementId) return false;
+  if (!state.bestiary) state.bestiary = {};
+  const key = bestiaryKey(pet.speciesId, pet.elementId);
+  if (state.bestiary[key]) return false;
+  state.bestiary[key] = true;
+  pushLog(state, `圖鑑登錄：${pet.elementName || ""}${pet.speciesName || pet.name}。`);
+  checkAchievements(state);
+  return true;
+}
+
+export function bestiaryStatus(state) {
+  const discovered = Object.keys(state.bestiary || {}).length;
+  return bestiaryCombatBonus(discovered);
+}
+
+export function checkAchievements(state) {
+  if (!state.achievements) state.achievements = {};
+  if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
+  const unlocked = [];
+  for (const a of ACHIEVEMENTS) {
+    if (state.achievements[a.id]) continue;
+    let ok = false;
+    if (a.id === "first_win") ok = (state.combatsWon || 0) >= 1;
+    else if (a.id === "bonds_3") ok = (state.stats.bonds || 0) >= 3;
+    else if (a.id === "bestiary_10") ok = Object.keys(state.bestiary || {}).length >= 10;
+    else if (a.id === "fuse_once") ok = (state.stats.fusions || 0) >= 1;
+    else if (a.id === "breed_once") ok = (state.stats.breeds || 0) >= 1;
+    else if (a.id === "stage_2") ok = (state.realm || 0) >= 2;
+    if (!ok) continue;
+    state.achievements[a.id] = true;
+    applyReward(state, a.reward);
+    unlocked.push(a);
+    const bits = [];
+    if (a.reward.stones) bits.push(`${a.reward.stones}石`);
+    if (a.reward.feed) bits.push(`${a.reward.feed}飼料`);
+    if (a.reward.dust) bits.push(`${a.reward.dust}靈塵`);
+    if (a.reward.scrap) bits.push(`${a.reward.scrap}碎片`);
+    pushLog(state, `成就【${a.name}】達成！獎勵 ${bits.join("／")}。`);
+  }
+  return unlocked;
+}
+
+export function achievementsView(state) {
+  checkAchievements(state);
+  return ACHIEVEMENTS.map((a) => ({
+    ...a,
+    done: !!(state.achievements || {})[a.id],
+  }));
+}
+
+export function dailyView(state) {
+  ensureDaily(state);
+  return DAILY_QUESTS.map((q) => {
+    const prog = state.daily.progress[q.id] || 0;
+    return {
+      ...q,
+      progress: prog,
+      done: prog >= q.need,
+      claimed: !!state.daily.claimed[q.id],
+    };
+  });
 }
 
 function resolveInvGear(state, itemUid) {
@@ -279,6 +474,7 @@ export function tryBreakthrough(state) {
   state.master.skillIds = masterSkillsForStage(state.realm);
   pushLog(state, `階段突破——晉升【${next.name}】。御靈之力加深。`);
   pushLog(state, `牧場容量擴展至 ${ranchCap(state)}。`);
+  bumpDaily(state, "idle", 1);
   const unlocked = MASTER_UNLOCK_MSG(state.realm);
   if (unlocked) pushLog(state, unlocked);
   if (Math.random() < 0.55) {
@@ -286,6 +482,7 @@ export function tryBreakthrough(state) {
     pushLog(state, `靈兆：${ev}`);
     state.stones += 15 + state.realm * 8;
   }
+  checkAchievements(state);
   return { ok: true, msg: `階段：${next.name}` };
 }
 
@@ -343,6 +540,10 @@ export function tryBondPending(state, encounterId, useFeed = false) {
   }
 
   state.stones -= cand.cost;
+  if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
+  state.stats.bondAttempts += 1;
+  bumpDaily(state, "bond", 1);
+
   const roll = Math.random();
   const chance = Math.min(0.95, (cand.bondRate || 0.5) + rateBonus);
   if (roll <= chance) {
@@ -355,8 +556,11 @@ export function tryBondPending(state, encounterId, useFeed = false) {
     delete pet.bondRate;
     delete pet.status;
     state.ranch.push(pet);
+    state.stats.bonds += 1;
+    registerBestiary(state, pet);
     const feedNote = useFeed ? `（飼料加成）` : "";
     pushLog(state, `契約成功${feedNote}：${petLabel(pet)} 進入牧場｜技能【${pet.skillName}】。`);
+    checkAchievements(state);
     return { ok: true, success: true, msg: `契約成功！${pet.name} 已入牧場` };
   }
 
@@ -409,8 +613,44 @@ export function releasePet(state, uid) {
   if (!found) return { ok: false, msg: "不在靈寵欄／牧場。" };
   const list = found.list === "pets" ? state.pets : state.ranch;
   const [gone] = list.splice(found.index, 1);
-  pushLog(state, `放歸 ${gone.name}。`);
-  return { ok: true, msg: `${gone.name} 已放歸` };
+  const refund = releaseRefund(gone);
+  state.stones += refund.stones;
+  state.feed = (state.feed || 0) + refund.feed;
+  state.dust = (state.dust || 0) + refund.dust;
+  if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
+  state.stats.releases += 1;
+  pushLog(
+    state,
+    `放歸 ${gone.nick || gone.name}，返還 ${refund.stones} 石／${refund.feed} 飼料／${refund.dust} 靈塵。`
+  );
+  return {
+    ok: true,
+    msg: `放歸返還 ${refund.stones}石 ${refund.feed}飼料 ${refund.dust}塵`,
+    refund,
+  };
+}
+
+/** 為靈寵命名（最多 NICK_MAX_LEN 字） */
+export function renamePet(state, uid, nick) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  const cleaned = String(nick || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .slice(0, NICK_MAX_LEN);
+  if (!cleaned) {
+    delete found.pet.nick;
+    pushLog(state, `${found.pet.name} 恢復本名。`);
+    return { ok: true, msg: "已清除暱稱" };
+  }
+  found.pet.nick = cleaned;
+  pushLog(state, `${found.pet.name} 命名為「${cleaned}」。`);
+  return { ok: true, msg: `命名「${cleaned}」` };
+}
+
+export function displayPetName(pet) {
+  if (!pet) return "";
+  return pet.nick ? `${pet.nick}（${pet.name}）` : pet.name;
 }
 
 /**
@@ -612,11 +852,14 @@ export function fusePets(state, baseUid, matUids) {
     state,
     `融合完成：${base.name} → 融階 ${targetStage}（繼承 Lv.${keepLevel}，耗 ${needMats} 素材／${cost} 靈石）。`
   );
+  if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
+  state.stats.fusions += 1;
   if (targetStage === SECOND_SKILL_UNLOCK.fusionLevel) {
     const secondId = KIND_SECOND_SKILLS[base.kind];
     const sn = SKILLS[secondId]?.name;
     if (sn) pushLog(state, `${base.name} 覺醒第二技能【${sn}】！`);
   }
+  checkAchievements(state);
   return {
     ok: true,
     msg: `${base.name} 融階 ${targetStage}｜Lv.${keepLevel}`,
@@ -799,13 +1042,16 @@ export function runDungeon(state, dungeonId) {
   const masterSkills = masterSkillsForStage(state.realm);
   const mGear = masterGearBonus(state);
   const synergy = partySynergy(state.pets);
+  const dex = bestiaryStatus(state);
+  const atkMult = synergy.atkMult * dex.atkMult;
+  const hpMult = synergy.hpMult * dex.hpMult;
   const allies = [
     {
       side: "ally",
       name: state.master.name,
-      hp: Math.round((state.master.hp + state.realm * 10 + mGear.hp) * synergy.hpMult),
-      maxHp: Math.round((state.master.hp + state.realm * 10 + mGear.hp) * synergy.hpMult),
-      atk: Math.round((state.master.atk + stageBonus + mGear.atk) * synergy.atkMult),
+      hp: Math.round((state.master.hp + state.realm * 10 + mGear.hp) * hpMult),
+      maxHp: Math.round((state.master.hp + state.realm * 10 + mGear.hp) * hpMult),
+      atk: Math.round((state.master.atk + stageBonus + mGear.atk) * atkMult),
       spd: Math.round((state.master.spd + Math.floor(state.realm / 2) + mGear.spd) * synergy.spdMult),
       isMaster: true,
       elementId: "tide",
@@ -820,10 +1066,10 @@ export function runDungeon(state, dungeonId) {
       const skills = petSkillIds(p);
       return {
         side: "ally",
-        name: p.name,
-        hp: Math.round((p.hp + stageBonus * 2) * synergy.hpMult),
-        maxHp: Math.round((p.hp + stageBonus * 2) * synergy.hpMult),
-        atk: Math.round((p.atk + stageBonus) * synergy.atkMult),
+        name: displayPetName(p),
+        hp: Math.round((p.hp + stageBonus * 2) * hpMult),
+        maxHp: Math.round((p.hp + stageBonus * 2) * hpMult),
+        atk: Math.round((p.atk + stageBonus) * atkMult),
         spd: Math.round(p.spd * synergy.spdMult),
         isMaster: false,
         elementId: p.elementId,
@@ -861,6 +1107,10 @@ export function runDungeon(state, dungeonId) {
   if (synergy.labels.length) {
     transcript.push(`陣容羈絆發動：${synergy.labels.join("、")}。`);
   }
+  if (dex.label) {
+    transcript.push(dex.label);
+  }
+  bumpDaily(state, "dungeon", 1);
   let round = 0;
   const maxRounds = 40;
   let won = false;
@@ -1049,6 +1299,9 @@ export function tryBreed(state, uidA, uidB) {
   child.uid = `${child.templateId}-born`;
   child.bornFrom = [a.uid, b.uid];
   state.ranch.push(child);
+  if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
+  state.stats.breeds += 1;
+  registerBestiary(state, child);
 
   const mutNote = genes.mutated ? "（元素變異！）" : "";
   const innNote =
@@ -1057,8 +1310,9 @@ export function tryBreed(state, uidA, uidB) {
       : "";
   pushLog(
     state,
-    `繁殖成功：${a.name} × ${b.name} → ${petLabel(child)}${mutNote}${innNote}｜耗 ${BREED_STONE_COST} 靈石。`
+    `繁殖成功：${displayPetName(a)} × ${displayPetName(b)} → ${petLabel(child)}${mutNote}${innNote}｜耗 ${BREED_STONE_COST} 靈石。`
   );
+  checkAchievements(state);
   return {
     ok: true,
     msg: `誕生 ${child.name}${mutNote}${innNote}`,
@@ -1079,6 +1333,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v7");
   localStorage.removeItem("void-tide-pets-v6");
   localStorage.removeItem("void-tide-pets-v5");
   localStorage.removeItem("void-tide-pets-v4");
@@ -1129,4 +1384,10 @@ export {
   petSkillIds,
   petSpeciesBaseline,
   fusionAbsorbRate,
+  bestiaryEntries,
+  bestiaryTotal,
+  bestiaryCombatBonus,
+  DAILY_QUESTS,
+  ACHIEVEMENTS,
+  NICK_MAX_LEN,
 };
