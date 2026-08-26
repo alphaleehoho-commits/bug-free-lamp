@@ -1,5 +1,5 @@
 /**
- * Smoke: kind sync + generation breeding rules.
+ * Smoke: kind sync + generation breeding + P3 goals / trials / recipes.
  */
 import {
   buildPetStats,
@@ -14,6 +14,13 @@ import {
   hybridRecipeForKinds,
   HYBRID_RECIPES,
   KIND_SKILLS,
+  BREED_GOALS,
+  hybridRecipeSummary,
+  hybridRecipeMatrix,
+  DUNGEON_TRIALS,
+  partyMeetsTrial,
+  countHybridBestiary,
+  bestiaryKey,
 } from "./data.js";
 
 function assert(cond, msg) {
@@ -72,6 +79,57 @@ assert(g2 > 5 && g2 < 35, "1+1 roughly 50%");
 const g = rollBreedGenes(fox, fin);
 assert(g.generation >= 1 && g.generation <= 2, "genes gen");
 assert(typeof g.hybridChance === "number", "hybrid chance field");
+
+/* P3: breed goals + recipe board + dungeon trials */
+assert(BREED_GOALS.some((x) => x.id === "daily_breed"), "daily breed goal");
+assert(BREED_GOALS.some((x) => x.type === "hybrid_species" && x.species === "tideling"), "tideling goal");
+assert(BREED_GOALS.filter((x) => x.cadence === "daily").length >= 2, "daily goals");
+assert(BREED_GOALS.filter((x) => x.cadence === "once").length >= 4, "once goals");
+
+const summary = hybridRecipeSummary();
+assert(summary.length === HYBRID_RECIPES.length, "recipe summary");
+assert(summary.every((r) => r.name && r.kindsLabel), "summary labels");
+
+const matrix = hybridRecipeMatrix();
+assert(matrix.length === 36, "6×6 matrix");
+const tideCell = matrix.find((c) => c.kindA === "獸" && c.kindB === "鱗");
+assert(tideCell?.recipe?.species === "tideling", "matrix tideling");
+const noneCell = matrix.find((c) => c.kindA === "獸" && c.kindB === "蟲");
+assert(noneCell && !noneCell.recipe, "matrix none");
+
+assert(DUNGEON_TRIALS.tide_1?.needGen === 1, "trial tide_1");
+assert(DUNGEON_TRIALS.tide_2?.match === "any", "trial tide_2 any");
+assert(DUNGEON_TRIALS.tide_3?.match === "all", "trial tide_3 all");
+
+const native = { ...fox, generation: 0, breedOnly: false, speciesId: "reefox" };
+const gen1 = { ...fox, generation: 1, breedOnly: false, speciesId: "reefox" };
+const hybrid = {
+  ...fox,
+  generation: 2,
+  breedOnly: true,
+  speciesId: "tideling",
+};
+assert(!partyMeetsTrial([native], DUNGEON_TRIALS.tide_1).ok, "trial1 fail native");
+assert(partyMeetsTrial([gen1], DUNGEON_TRIALS.tide_1).ok, "trial1 pass gen1");
+assert(partyMeetsTrial([hybrid], DUNGEON_TRIALS.tide_2).ok, "trial2 hybrid");
+assert(partyMeetsTrial([gen1], DUNGEON_TRIALS.tide_2).ok === false, "trial2 gen1 alone fail needGen2");
+assert(
+  partyMeetsTrial([{ ...gen1, generation: 2 }], DUNGEON_TRIALS.tide_2).ok,
+  "trial2 gen2"
+);
+assert(partyMeetsTrial([hybrid], DUNGEON_TRIALS.tide_3).ok, "trial3 ok");
+assert(
+  !partyMeetsTrial([{ ...fox, generation: 2, breedOnly: false, speciesId: "reefox" }], DUNGEON_TRIALS.tide_3)
+    .ok,
+  "trial3 need hybrid"
+);
+
+const emptyDex = countHybridBestiary({});
+assert(emptyDex === 0, "empty hybrid dex");
+const keyed = {};
+keyed[bestiaryKey("tideling", "tide")] = true;
+keyed[bestiaryKey("stormmoth", "gale")] = true;
+assert(countHybridBestiary(keyed) === 2, "hybrid dex count");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

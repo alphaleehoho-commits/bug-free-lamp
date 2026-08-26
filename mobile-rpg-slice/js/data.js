@@ -1257,3 +1257,216 @@ export function todayKey(now = Date.now()) {
 
 /** 離線結算提示門檻（秒） */
 export const OFFLINE_HINT_SEC = 90;
+
+/* ─── P3：繁殖目標／配方一覽／秘境試煉 ─── */
+
+/**
+ * 繁殖目標
+ * cadence: daily | once
+ * type: hybrid_species | reach_gen | reach_rarity | hybrid_bestiary | breed_count
+ */
+export const BREED_GOALS = [
+  {
+    id: "daily_breed",
+    cadence: "daily",
+    type: "breed_count",
+    need: 1,
+    name: "血脈試合",
+    desc: "完成 1 次繁殖",
+    reward: { stones: 25, feed: 4 },
+  },
+  {
+    id: "daily_hybrid",
+    cadence: "daily",
+    type: "hybrid_any",
+    need: 1,
+    name: "今日雜交",
+    desc: "雜交出任意新種族 1 隻",
+    reward: { stones: 40, dust: 6 },
+  },
+  {
+    id: "goal_tideling",
+    cadence: "once",
+    type: "hybrid_species",
+    species: "tideling",
+    need: 1,
+    name: "潮獸覺醒",
+    desc: "雜交出【潮獸】",
+    reward: { stones: 80, dust: 10 },
+  },
+  {
+    id: "goal_stormmoth",
+    cadence: "once",
+    type: "hybrid_species",
+    species: "stormmoth",
+    need: 1,
+    name: "嵐蛾降臨",
+    desc: "雜交出【嵐蛾】",
+    reward: { stones: 80, dust: 10 },
+  },
+  {
+    id: "goal_gen2",
+    cadence: "once",
+    type: "reach_gen",
+    gen: 2,
+    need: 1,
+    name: "二代血脈",
+    desc: "誕生 1 隻繁殖 2 代靈寵",
+    reward: { stones: 60, feed: 10 },
+  },
+  {
+    id: "goal_gen3",
+    cadence: "once",
+    type: "reach_gen",
+    gen: 3,
+    need: 1,
+    name: "三代血脈",
+    desc: "誕生 1 隻繁殖 3 代靈寵",
+    reward: { stones: 100, scrap: 1 },
+  },
+  {
+    id: "goal_rare",
+    cadence: "once",
+    type: "reach_rarity",
+    rarity: 1,
+    need: 1,
+    name: "稀有突變",
+    desc: "繁殖出稀有或以上靈寵",
+    reward: { stones: 50, dust: 8 },
+  },
+  {
+    id: "goal_epic",
+    cadence: "once",
+    type: "reach_rarity",
+    rarity: 2,
+    need: 1,
+    name: "史詩血紋",
+    desc: "繁殖出史詩或以上靈寵",
+    reward: { stones: 90, dust: 12 },
+  },
+  {
+    id: "goal_hybrid_dex",
+    cadence: "once",
+    type: "hybrid_bestiary",
+    need: 3,
+    name: "雜交圖錄",
+    desc: "圖鑑登錄 3 格繁殖專屬種（種族×元素）",
+    reward: { stones: 70, feed: 8 },
+  },
+];
+
+/** 配方矩陣（UI）：6 kind × 6，主配方優先 */
+export function hybridRecipeMatrix() {
+  const cells = [];
+  for (const a of KINDS) {
+    for (const b of KINDS) {
+      if (a === b) {
+        cells.push({ kindA: a, kindB: b, same: true, recipe: null });
+        continue;
+      }
+      const recipe = hybridRecipeForKinds(a, b);
+      cells.push({
+        kindA: a,
+        kindB: b,
+        same: false,
+        recipe: recipe
+          ? {
+              species: recipe.species,
+              name: SPECIES[recipe.species]?.name || recipe.species,
+              chance: recipe.chance,
+              tier: recipe.tier,
+            }
+          : null,
+      });
+    }
+  }
+  return cells;
+}
+
+/** 主配方列表（繁殖頁摘要） */
+export function hybridRecipeSummary() {
+  return HYBRID_RECIPES.map((r) => ({
+    ...r,
+    name: SPECIES[r.species]?.name || r.species,
+    kindsLabel: `${r.kinds[0]}×${r.kinds[1]}`,
+  }));
+}
+
+/**
+ * 秘境雜交試煉：出戰滿足條件勝利額外獎
+ * needHybrid: 需要出戰含 breedOnly 寵
+ * needGen: 需要至少一隻 ≥ 該代
+ */
+export const DUNGEON_TRIALS = {
+  tide_1: {
+    id: "trial_tide_1",
+    label: "試煉：帶 ≥1 代寵",
+    needGen: 1,
+    bonus: { stones: 12, scrap: 0 },
+  },
+  tide_2: {
+    id: "trial_tide_2",
+    label: "試煉：帶雜交種或 ≥2 代",
+    needHybrid: true,
+    needGen: 2,
+    match: "any",
+    bonus: { stones: 22, scrap: 1 },
+  },
+  tide_3: {
+    id: "trial_tide_3",
+    label: "試煉：帶雜交種且 ≥2 代",
+    needHybrid: true,
+    needGen: 2,
+    match: "all",
+    bonus: { stones: 40, scrap: 1 },
+  },
+};
+
+export function partyMeetsTrial(pets, trial) {
+  if (!trial) return { ok: false, reason: "" };
+  const list = Array.isArray(pets) ? pets : [];
+  const hasHybrid = list.some((p) => p.breedOnly || SPECIES[p.speciesId]?.breedOnly);
+  const maxGen = list.reduce((m, p) => Math.max(m, petGeneration(p)), 0);
+  const genOk = !trial.needGen || maxGen >= trial.needGen;
+  const hybridOk = !trial.needHybrid || hasHybrid;
+
+  if (trial.match === "all") {
+    const ok = hybridOk && genOk;
+    return {
+      ok,
+      reason: ok
+        ? ""
+        : `需要雜交種且至少 ${trial.needGen} 代（現${hasHybrid ? "有" : "無"}雜交／最高${maxGen}代）`,
+    };
+  }
+  if (trial.needHybrid && trial.needGen) {
+    // any: hybrid OR gen
+    const ok = hasHybrid || genOk;
+    return {
+      ok,
+      reason: ok ? "" : `需要雜交種或 ≥${trial.needGen} 代（最高${maxGen}代）`,
+    };
+  }
+  if (trial.needHybrid) {
+    return { ok: hybridOk, reason: hybridOk ? "" : "需要出戰含雜交種" };
+  }
+  if (trial.needGen) {
+    return {
+      ok: genOk,
+      reason: genOk ? "" : `需要出戰含 ≥${trial.needGen} 代寵（最高${maxGen}代）`,
+    };
+  }
+  return { ok: true, reason: "" };
+}
+
+export function countHybridBestiary(bestiary) {
+  const known = bestiary || {};
+  let n = 0;
+  for (const sp of Object.values(SPECIES)) {
+    if (!sp.breedOnly) continue;
+    for (const el of Object.keys(ELEMENTS)) {
+      if (known[bestiaryKey(sp.id, el)]) n += 1;
+    }
+  }
+  return n;
+}

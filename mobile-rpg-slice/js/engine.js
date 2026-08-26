@@ -60,9 +60,16 @@ import {
   childGenerationOdds,
   hybridRecipeForKinds,
   genPowerMult,
+  BREED_GOALS,
+  hybridRecipeSummary,
+  hybridRecipeMatrix,
+  DUNGEON_TRIALS,
+  partyMeetsTrial,
+  countHybridBestiary,
+  KINDS,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v10";
+const SAVE_KEY = "void-tide-pets-v11";
 
 function defaultMaster() {
   return {
@@ -107,6 +114,7 @@ function defaultState() {
       "牧場待命會慢產飼料／靈塵；秘境掉落人物裝備。",
       "人物靠裝備；靈寵靠天生基礎（融合／繁殖成長）。",
       "圖鑑、每日任務與成就已開啟——見「圖鑑」頁。",
+      "繁殖目標：雜交出潮獸／嵐蛾、升代與稀有——圖鑑或繁殖頁可領獎。",
     ],
     lastTick: Date.now(),
     combatsWon: 0,
@@ -119,8 +127,19 @@ function defaultState() {
     daily: emptyDaily(),
     achievements: {},
     stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0, hybrids: 0, legendBreeds: 0 },
-    /** 最近一次離線結算摘要（UI 顯示後可清） */
+    /** P3 繁殖目標進度 */
+    breedGoals: emptyBreedGoals(),
     offlineHint: null,
+  };
+}
+
+function emptyBreedGoals(now = Date.now()) {
+  return {
+    date: todayKey(now),
+    /** goalId → progress number */
+    progress: {},
+    /** goalId → true（每日／一次性領完） */
+    claimed: {},
   };
 }
 
@@ -161,6 +180,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v10") ||
       localStorage.getItem("void-tide-pets-v9") ||
       localStorage.getItem("void-tide-pets-v8") ||
       localStorage.getItem("void-tide-pets-v7") ||
@@ -256,6 +276,7 @@ export function loadState() {
         hybrids: parsed.stats?.hybrids || 0,
         legendBreeds: parsed.stats?.legendBreeds || 0,
       },
+      breedGoals: ensureBreedGoalsState(parsed.breedGoals),
       offlineHint: parsed.offlineHint || null,
     };
   } catch {
@@ -457,6 +478,127 @@ export function dailyView(state) {
       progress: prog,
       done: prog >= q.need,
       claimed: !!state.daily.claimed[q.id],
+    };
+  });
+}
+
+function ensureBreedGoalsState(rawOrState, now = Date.now()) {
+  if (rawOrState && rawOrState.pets !== undefined) {
+    const state = rawOrState;
+    const key = todayKey(now);
+    if (!state.breedGoals) state.breedGoals = emptyBreedGoals(now);
+    if (state.breedGoals.date !== key) {
+      // 重置每日目標進度／領取；保留 once 已領
+      const claimed = { ...(state.breedGoals.claimed || {}) };
+      const progress = { ...(state.breedGoals.progress || {}) };
+      for (const g of BREED_GOALS) {
+        if (g.cadence === "daily") {
+          delete claimed[g.id];
+          delete progress[g.id];
+        }
+      }
+      state.breedGoals = { date: key, progress, claimed };
+    }
+    if (!state.breedGoals.progress) state.breedGoals.progress = {};
+    if (!state.breedGoals.claimed) state.breedGoals.claimed = {};
+    return state.breedGoals;
+  }
+  const raw = rawOrState;
+  const key = todayKey(now);
+  if (!raw) return emptyBreedGoals(now);
+  if (raw.date !== key) {
+    const claimed = { ...(raw.claimed || {}) };
+    const progress = { ...(raw.progress || {}) };
+    for (const g of BREED_GOALS) {
+      if (g.cadence === "daily") {
+        delete claimed[g.id];
+        delete progress[g.id];
+      }
+    }
+    return { date: key, progress, claimed };
+  }
+  return {
+    date: raw.date,
+    progress: { ...(raw.progress || {}) },
+    claimed: { ...(raw.claimed || {}) },
+  };
+}
+
+function bumpBreedGoalProgress(state, goalId, amount = 1) {
+  ensureBreedGoalsState(state);
+  const g = BREED_GOALS.find((x) => x.id === goalId);
+  if (!g) return;
+  if (state.breedGoals.claimed[goalId]) return;
+  const cur = state.breedGoals.progress[goalId] || 0;
+  if (cur >= g.need) return;
+  state.breedGoals.progress[goalId] = Math.min(g.need, cur + amount);
+}
+
+/** 繁殖結果推進目標 */
+export function progressBreedGoalsFromChild(state, child, genes) {
+  ensureBreedGoalsState(state);
+  bumpBreedGoalProgress(state, "daily_breed", 1);
+  if (genes?.hybrid) {
+    bumpBreedGoalProgress(state, "daily_hybrid", 1);
+    for (const g of BREED_GOALS) {
+      if (g.type === "hybrid_species" && g.species === child.speciesId) {
+        bumpBreedGoalProgress(state, g.id, 1);
+      }
+    }
+  }
+  const gen = child.generation ?? genes?.generation ?? 0;
+  for (const g of BREED_GOALS) {
+    if (g.type === "reach_gen" && gen >= g.gen) bumpBreedGoalProgress(state, g.id, 1);
+    if (g.type === "reach_rarity" && (child.rarity ?? 0) >= g.rarity) {
+      bumpBreedGoalProgress(state, g.id, 1);
+    }
+  }
+  const hybridDex = countHybridBestiary(state.bestiary);
+  for (const g of BREED_GOALS) {
+    if (g.type === "hybrid_bestiary") {
+      const cur = state.breedGoals.progress[g.id] || 0;
+      if (!state.breedGoals.claimed[g.id] && hybridDex > cur) {
+        state.breedGoals.progress[g.id] = Math.min(g.need, hybridDex);
+      }
+    }
+  }
+}
+
+export function claimBreedGoal(state, goalId) {
+  ensureBreedGoalsState(state);
+  const g = BREED_GOALS.find((x) => x.id === goalId);
+  if (!g) return { ok: false, msg: "目標不存在。" };
+  if (state.breedGoals.claimed[goalId]) return { ok: false, msg: "已領取。" };
+  const prog = state.breedGoals.progress[goalId] || 0;
+  if (prog < g.need) return { ok: false, msg: "尚未完成。" };
+  state.breedGoals.claimed[goalId] = true;
+  applyReward(state, g.reward);
+  const bits = [];
+  if (g.reward.stones) bits.push(`${g.reward.stones} 石`);
+  if (g.reward.feed) bits.push(`${g.reward.feed} 飼料`);
+  if (g.reward.dust) bits.push(`${g.reward.dust} 靈塵`);
+  if (g.reward.scrap) bits.push(`${g.reward.scrap} 碎片`);
+  pushLog(state, `繁殖目標【${g.name}】領獎：${bits.join("／")}。`);
+  return { ok: true, msg: `領取 ${bits.join("／")}` };
+}
+
+export function breedGoalsView(state) {
+  ensureBreedGoalsState(state);
+  // 同步圖鑑類目標
+  const hybridDex = countHybridBestiary(state.bestiary);
+  for (const g of BREED_GOALS) {
+    if (g.type === "hybrid_bestiary" && !state.breedGoals.claimed[g.id]) {
+      state.breedGoals.progress[g.id] = Math.min(g.need, hybridDex);
+    }
+  }
+  return BREED_GOALS.map((g) => {
+    const prog = state.breedGoals.progress[g.id] || 0;
+    return {
+      ...g,
+      progress: prog,
+      done: prog >= g.need,
+      claimed: !!state.breedGoals.claimed[g.id],
+      speciesName: g.species ? SPECIES[g.species]?.name : null,
     };
   });
 }
@@ -1136,6 +1278,15 @@ export function runDungeon(state, dungeonId) {
   if (dex.label) {
     transcript.push(dex.label);
   }
+  const trial = DUNGEON_TRIALS[dungeonId];
+  const trialCheck = trial ? partyMeetsTrial(state.pets, trial) : null;
+  if (trial) {
+    transcript.push(
+      trialCheck.ok
+        ? `雜交試煉條件已滿足（${trial.label}）——勝利可領額外獎。`
+        : `雜交試煉未啟：${trial.label}。${trialCheck.reason}`
+    );
+  }
   bumpDaily(state, "dungeon", 1);
   let round = 0;
   const maxRounds = 40;
@@ -1143,6 +1294,8 @@ export function runDungeon(state, dungeonId) {
   let ended = false;
   let bonusStones = 0;
   let bonusScrap = 0;
+  let trialStones = 0;
+  let trialScrap = 0;
 
   while (round < maxRounds && !ended) {
     round += 1;
@@ -1182,6 +1335,15 @@ export function runDungeon(state, dungeonId) {
           `攻克【${d.name}】，獲靈石 ${d.reward.stones}、靈晶碎片 ${d.reward.scrap}。`
         );
       }
+      if (trial && trialCheck?.ok && trial.bonus) {
+        trialStones = trial.bonus.stones || 0;
+        trialScrap = trial.bonus.scrap || 0;
+        state.stones += trialStones;
+        state.scrap += trialScrap;
+        transcript.push(
+          `雜交試煉達成！額外 +${trialStones} 石${trialScrap ? `／+${trialScrap} 碎片` : ""}。`
+        );
+      }
       const drop = rollGearDrop(dungeonId);
       if (drop) {
         if (!state.inventory) state.inventory = [];
@@ -1213,8 +1375,8 @@ export function runDungeon(state, dungeonId) {
     transcript.push(`待契約欄已滿（${PENDING_BOND_MAX}），未再遇見新靈。`);
   }
 
-  const lines = transcript.slice(0, 48);
-  const totalStones = won ? d.reward.stones + bonusStones : 0;
+  const lines = transcript.slice(0, 52);
+  const totalStones = won ? d.reward.stones + bonusStones + trialStones : 0;
 
   return {
     ok: true,
@@ -1222,8 +1384,9 @@ export function runDungeon(state, dungeonId) {
     rounds: round,
     transcript: lines,
     encounter,
+    trialMet: !!(trial && trialCheck?.ok),
     msg: won
-      ? `勝利！+${totalStones} 靈石${bonusStones ? "（含首通）" : ""}`
+      ? `勝利！+${totalStones} 靈石${bonusStones ? "（含首通）" : ""}${trialStones ? "（含試煉）" : ""}`
       : ended
         ? "戰敗。"
         : "撤退。",
@@ -1235,10 +1398,15 @@ export function dungeonStatus(state, dungeonId) {
   if (!d) return null;
   const now = Date.now();
   const readyAt = (state.dungeonReadyAt || {})[dungeonId] || 0;
+  const trial = DUNGEON_TRIALS[dungeonId] || null;
+  const trialCheck = trial ? partyMeetsTrial(state.pets, trial) : null;
   return {
     cleared: !!(state.clearedDungeons || {})[dungeonId],
     cooldownLeftMs: Math.max(0, readyAt - now),
     firstClearBonus: d.firstClearBonus || null,
+    trial,
+    trialMet: trialCheck ? trialCheck.ok : false,
+    trialReason: trialCheck?.reason || "",
   };
 }
 
@@ -1344,6 +1512,7 @@ export function tryBreed(state, uidA, uidB) {
   if (genes.hybrid) state.stats.hybrids = (state.stats.hybrids || 0) + 1;
   if (genes.rarity >= 3) state.stats.legendBreeds = (state.stats.legendBreeds || 0) + 1;
   registerBestiary(state, child);
+  progressBreedGoalsFromChild(state, child, genes);
 
   const tags = [];
   tags.push(genLabel(genes.generation));
@@ -1370,6 +1539,7 @@ export function tryBreed(state, uidA, uidB) {
     rarity: genes.rarity,
     rarityUp: genes.rarityUp,
     generation: genes.generation,
+    celebrate: !!(genes.hybrid || genes.rarityUp || genes.rarity >= 2 || genes.generation >= 2),
   };
 }
 
@@ -1431,6 +1601,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v10");
   localStorage.removeItem("void-tide-pets-v9");
   localStorage.removeItem("void-tide-pets-v8");
   localStorage.removeItem("void-tide-pets-v7");
@@ -1489,9 +1660,14 @@ export {
   bestiaryCombatBonus,
   DAILY_QUESTS,
   ACHIEVEMENTS,
+  BREED_GOALS,
   NICK_MAX_LEN,
   rarityInfo,
   RARITY_MAX,
   genLabel,
   petGeneration,
+  hybridRecipeSummary,
+  hybridRecipeMatrix,
+  DUNGEON_TRIALS,
+  KINDS,
 };

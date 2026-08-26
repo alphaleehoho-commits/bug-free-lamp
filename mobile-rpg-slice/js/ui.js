@@ -37,6 +37,11 @@ import {
   rarityInfo,
   genLabel,
   petGeneration,
+  breedGoalsView,
+  claimBreedGoal,
+  hybridRecipeSummary,
+  hybridRecipeMatrix,
+  KINDS,
   DUNGEONS,
   SKILLS,
   MASTER_EQUIP_SLOTS,
@@ -60,6 +65,8 @@ state = tickCultivation(state);
 saveState(state);
 
 let flash = "";
+/** @type {'' | 'celebrate' | 'hybrid' | 'legend'} */
+let flashTone = "";
 let flashTimer = 0;
 let tab = "cultivate";
 let shellReady = false;
@@ -79,16 +86,20 @@ let playback = null;
 
 const LINE_MS = 520;
 
-function setFlash(msg) {
+function setFlash(msg, tone = "") {
   flash = msg;
+  flashTone = tone || "";
   const el = document.querySelector("[data-live=flash]");
   if (el) {
     if (msg) {
       el.hidden = false;
       el.textContent = msg;
+      el.className = flashTone ? `flash flash-${flashTone}` : "flash";
     } else {
       el.hidden = true;
       el.textContent = "";
+      el.className = "flash";
+      flashTone = "";
     }
   } else {
     render();
@@ -97,13 +108,115 @@ function setFlash(msg) {
   if (msg) {
     flashTimer = setTimeout(() => {
       flash = "";
+      flashTone = "";
       const f = document.querySelector("[data-live=flash]");
       if (f) {
         f.hidden = true;
         f.textContent = "";
+        f.className = "flash";
       }
-    }, 2200);
+    }, 2600);
   }
+}
+
+function genTagHtml(g) {
+  const n = g ?? 0;
+  const cls = n >= 3 ? "gen-3" : n >= 2 ? "gen-2" : n >= 1 ? "gen-1" : "gen-0";
+  return `<span class="gen-tag ${cls}">${escapeHtml(genLabel(n))}</span>`;
+}
+
+function rewardBitsHtml(reward) {
+  if (!reward) return "";
+  const bits = [];
+  if (reward.stones) bits.push(`${reward.stones}石`);
+  if (reward.feed) bits.push(`${reward.feed}飼料`);
+  if (reward.dust) bits.push(`${reward.dust}靈塵`);
+  if (reward.scrap) bits.push(`${reward.scrap}碎片`);
+  return bits.join("／");
+}
+
+function breedGoalsBoardHtml(compact = false) {
+  const goals = breedGoalsView(state);
+  const daily = goals.filter((g) => g.cadence === "daily");
+  const once = goals.filter((g) => g.cadence === "once");
+  const renderGoal = (g) => {
+    const status = g.claimed ? "已領" : g.done ? "可領" : `${g.progress}/${g.need}`;
+    const cadence = g.cadence === "daily" ? "每日" : "常駐";
+    return `
+      <li class="card-row">
+        <div>
+          <strong>${escapeHtml(g.name)}</strong>
+          <span class="muted">${escapeHtml(cadence)} · ${escapeHtml(g.desc)} · ${status}${
+            compact ? "" : ` · 獎 ${escapeHtml(rewardBitsHtml(g.reward))}`
+          }</span>
+        </div>
+        <button type="button" class="primary" data-claim-breed-goal="${g.id}" ${
+          g.done && !g.claimed ? "" : "disabled"
+        }>領獎</button>
+      </li>`;
+  };
+  if (compact) {
+    const open = goals.filter((g) => !g.claimed).slice(0, 4);
+    const rows = open.map(renderGoal).join("") || `<li class="empty">繁殖目標已全部領完。</li>`;
+    return `
+      <h3>繁殖目標</h3>
+      <p class="meta">完成雜交／升代可領石與飼料——圖鑑頁有完整列表。</p>
+      <ul class="list">${rows}</ul>`;
+  }
+  return `
+    <h3>繁殖目標 · 每日</h3>
+    <ul class="list">${daily.map(renderGoal).join("")}</ul>
+    <h3>繁殖目標 · 常駐</h3>
+    <ul class="list">${once.map(renderGoal).join("")}</ul>`;
+}
+
+function recipeBoardHtml() {
+  const summary = hybridRecipeSummary();
+  const mains = summary
+    .filter((r) => r.tier === "main")
+    .map(
+      (r) =>
+        `<li><strong>${escapeHtml(r.kindsLabel)}</strong> → ${escapeHtml(r.name)} <span class="muted">${Math.round(
+          r.chance * 100
+        )}%</span></li>`
+    )
+    .join("");
+  const subs = summary
+    .filter((r) => r.tier === "sub")
+    .map(
+      (r) =>
+        `<li><strong>${escapeHtml(r.kindsLabel)}</strong> → ${escapeHtml(r.name)} <span class="muted">${Math.round(
+          r.chance * 100
+        )}% · 次</span></li>`
+    )
+    .join("");
+
+  const cells = hybridRecipeMatrix();
+  const head = KINDS.map((k) => `<th>${escapeHtml(k)}</th>`).join("");
+  const rows = KINDS.map((rowKind) => {
+    const tds = KINDS.map((colKind) => {
+      const cell = cells.find((c) => c.kindA === rowKind && c.kindB === colKind);
+      if (!cell || cell.same) return `<td class="recipe-same">—</td>`;
+      if (!cell.recipe) return `<td class="recipe-none">×</td>`;
+      const pct = Math.round(cell.recipe.chance * 100);
+      const tier = cell.recipe.tier === "main" ? "main" : "sub";
+      return `<td class="recipe-${tier}" title="${escapeHtml(cell.recipe.name)} ${pct}%">${escapeHtml(
+        cell.recipe.name.slice(0, 2)
+      )}<span>${pct}</span></td>`;
+    }).join("");
+    return `<tr><th>${escapeHtml(rowKind)}</th>${tds}</tr>`;
+  }).join("");
+
+  return `
+    <h3>主／次配方一覽</h3>
+    <p class="meta">只讀參考；實際機率受雙親代數加成。</p>
+    <ul class="recipe-sum">${mains}${subs}</ul>
+    <div class="recipe-matrix-wrap">
+      <table class="recipe-matrix" aria-label="種類雜交矩陣">
+        <thead><tr><th></th>${head}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 function stopPlayback() {
@@ -276,7 +389,7 @@ function render() {
       <div><span>靈塵</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
     </div>
 
-    <p class="flash" data-live="flash" ${flash ? "" : "hidden"}>${escapeHtml(flash)}</p>
+    <p class="flash${flashTone ? ` flash-${flashTone}` : ""}" data-live="flash" ${flash ? "" : "hidden"}>${escapeHtml(flash)}</p>
     ${offlineBanner()}
 
     <nav class="tabs" role="tablist">
@@ -394,7 +507,7 @@ function petRow(p, extraBtn = "") {
     <li class="card-row">
       <div>
         <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
-        <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(genLabel(g))} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}</span>
+        <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}</span>
         <span class="muted">攻${p.atk} 血${p.hp} 速${p.spd} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
@@ -483,7 +596,9 @@ function petsBreedView() {
         <li class="card-row">
           <div>
             <strong>${escapeHtml(displayPetName(p))}</strong>
-            <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(genLabel(petGeneration(p)))} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}</span>
+            <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
+              petGeneration(p)
+            )} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}</span>
           </div>
           <button type="button" class="${on ? "primary" : ""}" data-breed-toggle="${escapeHtml(p.uid)}">${on ? "已選" : "選擇"}</button>
         </li>`;
@@ -499,12 +614,14 @@ function petsBreedView() {
   return `
     <h2>繁殖 · 突變合配</h2>
     <p class="lead">6 種族＝6 種類（熒鰭＝光）。主／次配方雜交；原生／1–3 代影響升代機率同能力。耗 ${BREED_STONE_COST} 靈石${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}。</p>
+    ${breedGoalsBoardHtml(true)}
     ${hint ? `<p class="meta breed-hint">${escapeHtml(hint.note)}</p>` : ""}
     <ul class="list">${list}</ul>
     <div class="row" style="margin-top:0.85rem">
       <button type="button" class="primary" data-breed-confirm ${ready ? "" : "disabled"}>確認繁殖（${selected.size}/2）</button>
       <button type="button" data-pet-back>返回列表</button>
     </div>
+    ${recipeBoardHtml()}
   `;
 }
 
@@ -549,7 +666,7 @@ function petsDetailView() {
 
   return `
     <h2>${escapeHtml(displayPetName(pet))}</h2>
-    <p class="lead">${escapeHtml(loc)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(genLabel(g))} · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE} · 技能 Lv.${skillLevel}</p>
+    <p class="lead">${escapeHtml(loc)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE} · 技能 Lv.${skillLevel}</p>
     <ul class="skill-list">
       <li><strong>種類</strong> — ${escapeHtml(pet.kind)} · ${escapeHtml(pet.speciesName)}${pet.breedOnly ? "（繁殖專屬）" : ""}</li>
       <li><strong>元素</strong> — ${escapeHtml(pet.elementName)}</li>
@@ -687,6 +804,7 @@ function codexPanel() {
     <h2>靈寵圖鑑</h2>
     <p class="lead">種族×元素共 ${dex.total} 格（含繁殖專屬種）· 已錄 ${dex.discovered}${dex.label ? ` · ${escapeHtml(dex.label)}` : " · 每 5 格全隊攻／血 +2%"}</p>
     <ul class="codex-grid">${cells}</ul>
+    ${breedGoalsBoardHtml(false)}
     <h3>每日任務</h3>
     <ul class="list">${dailies}</ul>
     <h3>成就</h3>
@@ -730,11 +848,22 @@ function dungeonPanel() {
     const cdSec = st ? Math.ceil(st.cooldownLeftMs / 1000) : 0;
     const onCd = cdSec > 0;
     const clearNote = st?.cleared ? "已通" : `首通+${d.firstClearBonus?.stones || 0}石`;
+    const trial = st?.trial;
+    const trialNote = trial
+      ? ` · ${trial.label}${st.trialMet ? "✓" : ""}（+${trial.bonus?.stones || 0}石${
+          trial.bonus?.scrap ? `/${trial.bonus.scrap}碎` : ""
+        }）`
+      : "";
     return `
       <li class="card-row">
         <div>
           <strong>${escapeHtml(d.name)}</strong>
           <span class="muted">${d.enemies.length} 敵 · 獎 ${d.reward.stones} 石 / ${d.reward.scrap} 碎片 · ${clearNote}${locked ? " · 階段不足" : ""}${onCd ? ` · 冷卻 ${cdSec}s` : ""}</span>
+          ${
+            trial
+              ? `<span class="muted trial-note ${st.trialMet ? "on" : ""}">${escapeHtml(trialNote.trim().replace(/^·\s*/, ""))}</span>`
+              : ""
+          }
         </div>
         <button type="button" class="primary" data-dungeon="${d.id}" ${locked || onCd ? "disabled" : ""}>進攻</button>
       </li>`;
@@ -742,7 +871,7 @@ function dungeonPanel() {
 
   return `
     <h2>潮汐秘境</h2>
-    <p class="lead">元素克制：潮克焰→嵐→岩→幽→潮。人物靠裝備掉落；靈寵靠天生／融合／繁殖。同元素／同種出戰觸發羈絆。</p>
+    <p class="lead">元素克制：潮克焰→嵐→岩→幽→潮。人物靠裝備掉落；靈寵靠天生／融合／繁殖。同元素／同種出戰觸發羈絆。帶雜交／高代寵可觸發試煉額外獎。</p>
     <ul class="list">${list}</ul>
   `;
 }
@@ -832,7 +961,22 @@ function bind() {
         petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
       }
       render();
-      setFlash(r.msg);
+      let tone = "";
+      if (r.ok && r.celebrate) {
+        if (r.hybrid) tone = "hybrid";
+        else if ((r.rarity ?? 0) >= 3) tone = "legend";
+        else tone = "celebrate";
+      }
+      setFlash(r.msg, tone);
+    });
+  });
+  app.querySelectorAll("[data-claim-breed-goal]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = claimBreedGoal(state, btn.dataset.claimBreedGoal);
+      saveState(state);
+      render();
+      setFlash(r.msg, r.ok ? "celebrate" : "");
     });
   });
   app.querySelectorAll("[data-try-bond]").forEach((btn) => {
