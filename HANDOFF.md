@@ -10,7 +10,9 @@ Other agents cannot see those files until the project is on a **private GitHub r
 
 - Path: `mobile-rpg-slice/`
 - Stack: vanilla HTML/CSS/JS PWA (portrait mobile)
-- Save key / SW cache: `void-tide-pets-v8`
+- Save key / SW cache: `void-tide-pets-v9`
+
+**Breed (dino-style):** hybrid species from cross-kind mates + rarity tiers (普通→傳說); fusion stays same-species stages. Bestiary 60 (12 species × 5 elements).
 - Run: `cd mobile-rpg-slice && python3 -m http.server 8765`
 - Smoke: `cd mobile-rpg-slice && node js/smoke-test.mjs`
 
