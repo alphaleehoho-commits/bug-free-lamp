@@ -42,6 +42,7 @@ import {
   hybridRecipeSummary,
   hybridRecipeMatrix,
   KINDS,
+  dungeonWaves,
   DUNGEONS,
   SKILLS,
   MASTER_EQUIP_SLOTS,
@@ -848,20 +849,38 @@ function dungeonPanel() {
     const cdSec = st ? Math.ceil(st.cooldownLeftMs / 1000) : 0;
     const onCd = cdSec > 0;
     const clearNote = st?.cleared ? "已通" : `首通+${d.firstClearBonus?.stones || 0}石`;
+    const roles = st?.roles;
+    const waveN = roles?.waves || dungeonWaves(d).length;
+    const roleBits = roles
+      ? `${waveN}波 · 普${roles.normal}/精${roles.elite}/BOSS${roles.boss}`
+      : `${waveN}波`;
     const trial = st?.trial;
-    const trialNote = trial
-      ? ` · ${trial.label}${st.trialMet ? "✓" : ""}（+${trial.bonus?.stones || 0}石${
-          trial.bonus?.scrap ? `/${trial.bonus.scrap}碎` : ""
-        }）`
-      : "";
+    const conds = (st?.conditions || []).filter((c) => !c.passive);
+    const passives = (st?.conditions || []).filter((c) => c.passive);
+    const condLines = conds
+      .map((c) => `${c.ok ? "✓" : "·"} ${c.label}`)
+      .join(" · ");
+    const passiveLine = passives.map((p) => p.label).join(" · ");
     return `
-      <li class="card-row">
+      <li class="card-row dungeon-card">
         <div>
           <strong>${escapeHtml(d.name)}</strong>
-          <span class="muted">${d.enemies.length} 敵 · 獎 ${d.reward.stones} 石 / ${d.reward.scrap} 碎片 · ${clearNote}${locked ? " · 階段不足" : ""}${onCd ? ` · 冷卻 ${cdSec}s` : ""}</span>
+          <span class="muted">${escapeHtml(roleBits)} · 獎 ${d.reward.stones} 石 / ${d.reward.scrap} 碎片 · ${clearNote}${locked ? " · 階段不足" : ""}${onCd ? ` · 冷卻 ${cdSec}s` : ""}</span>
+          ${
+            passiveLine
+              ? `<span class="muted">${escapeHtml(passiveLine)}</span>`
+              : ""
+          }
+          ${
+            condLines
+              ? `<span class="muted trial-note">${escapeHtml(condLines)}</span>`
+              : ""
+          }
           ${
             trial
-              ? `<span class="muted trial-note ${st.trialMet ? "on" : ""}">${escapeHtml(trialNote.trim().replace(/^·\s*/, ""))}</span>`
+              ? `<span class="muted trial-note ${st.trialMet ? "on" : ""}">${escapeHtml(
+                  `${st.trialMet ? "✓" : "·"} ${trial.label}`
+                )}</span>`
               : ""
           }
         </div>
@@ -871,7 +890,7 @@ function dungeonPanel() {
 
   return `
     <h2>潮汐秘境</h2>
-    <p class="lead">元素克制：潮克焰→嵐→岩→幽→潮。人物靠裝備掉落；靈寵靠天生／融合／繁殖。同元素／同種出戰觸發羈絆。帶雜交／高代寵可觸發試煉額外獎。</p>
+    <p class="lead">波次：雜兵→精英→BOSS。精英／BOSS 會放技能（BOSS 雙動）。滿足關卡條件／雜交試煉可領額外獎；精英／BOSS 提升裝備掉落。</p>
     <ul class="list">${list}</ul>
   `;
 }

@@ -281,6 +281,52 @@ export const SKILLS = {
     power: 0.7,
     desc: "光類二技：棱光濺射全體",
   },
+  // —— 敵方專屬 ——
+  abyss_slam: {
+    id: "abyss_slam",
+    name: "深淵錘",
+    owner: "foe",
+    type: "strike",
+    cd: 2,
+    power: 1.75,
+    desc: "精英／BOSS：重錘單體",
+  },
+  shadow_cleave: {
+    id: "shadow_cleave",
+    name: "影裂",
+    owner: "foe",
+    type: "cleave",
+    cd: 3,
+    power: 0.72,
+    desc: "精英／BOSS：暗影濺射",
+  },
+  coral_spike: {
+    id: "coral_spike",
+    name: "珊瑚刺",
+    owner: "foe",
+    type: "strike",
+    cd: 2,
+    power: 1.5,
+    desc: "精英：珊瑚穿刺",
+  },
+  core_roar: {
+    id: "core_roar",
+    name: "心核咆哮",
+    owner: "foe",
+    type: "buff",
+    cd: 4,
+    power: 0.14,
+    desc: "BOSS：鼓舞敵方攻擊",
+  },
+  tide_crush: {
+    id: "tide_crush",
+    name: "潮壓",
+    owner: "foe",
+    type: "strike",
+    cd: 2,
+    power: 1.65,
+    desc: "精英：潮壓重擊",
+  },
 };
 
 /** 人物依階段解鎖技能 */
@@ -650,12 +696,59 @@ export const DUNGEONS = [
     name: "潮汐廢墟 · 一層",
     needRealm: 0,
     cooldownMs: 20_000,
-    enemies: [
-      { name: "潮腐鼠", hp: 40, atk: 6, spd: 7, element: "tide" },
-      { name: "暗礁妖", hp: 55, atk: 8, spd: 5, element: "stone" },
+    waves: [
+      {
+        label: "潮腐前哨",
+        enemies: [
+          { name: "潮腐鼠", hp: 38, atk: 6, spd: 7, element: "tide", role: "normal" },
+          { name: "暗礁妖", hp: 50, atk: 8, spd: 5, element: "stone", role: "normal" },
+        ],
+      },
+      {
+        label: "廢墟精英",
+        enemies: [
+          {
+            name: "潮蝕爪衛",
+            hp: 95,
+            atk: 11,
+            spd: 8,
+            element: "tide",
+            role: "elite",
+            skills: ["tide_crush", "coral_spike"],
+          },
+        ],
+      },
     ],
-    reward: { stones: 25, scrap: 1 },
+    conditions: [
+      {
+        id: "tide_1_flame",
+        type: "min_element",
+        element: "flame",
+        count: 1,
+        label: "條件：出戰含焰屬",
+        bonus: { stones: 12, scrap: 0 },
+      },
+      {
+        id: "tide_1_lean",
+        type: "max_pets",
+        max: 2,
+        label: "條件：出戰≤2寵",
+        bonus: { stones: 10, feed: 2 },
+      },
+    ],
+    passives: [
+      {
+        id: "tide_1_favored",
+        type: "elem_atk",
+        element: "flame",
+        mult: 1.12,
+        label: "關卡：焰屬友方攻擊 +12%",
+      },
+    ],
+    reward: { stones: 28, scrap: 1 },
     firstClearBonus: { stones: 40, scrap: 1 },
+    eliteBonus: { stones: 8, scrap: 1 },
+    bossBonus: null,
     encounterWeights: {
       reefox: 4,
       tidecarp: 3,
@@ -671,13 +764,73 @@ export const DUNGEONS = [
     name: "潮汐廢墟 · 二層",
     needRealm: 2,
     cooldownMs: 35_000,
-    enemies: [
-      { name: "黑潮衛", hp: 80, atk: 12, spd: 8, element: "tide" },
-      { name: "深淵蛙", hp: 70, atk: 10, spd: 10, element: "gloom" },
-      { name: "暗潮使徒", hp: 110, atk: 15, spd: 7, element: "gloom" },
+    waves: [
+      {
+        label: "黑潮巡邏",
+        enemies: [
+          { name: "黑潮衛", hp: 70, atk: 11, spd: 8, element: "tide", role: "normal" },
+          { name: "深淵蛙", hp: 65, atk: 10, spd: 10, element: "gloom", role: "normal" },
+        ],
+      },
+      {
+        label: "使徒精英",
+        enemies: [
+          {
+            name: "暗潮使徒",
+            hp: 130,
+            atk: 15,
+            spd: 7,
+            element: "gloom",
+            role: "elite",
+            skills: ["shadow_cleave", "venom_bite"],
+          },
+        ],
+      },
+      {
+        label: "二層看守",
+        enemies: [
+          {
+            name: "沉淵監守",
+            hp: 200,
+            atk: 17,
+            spd: 9,
+            element: "gloom",
+            role: "boss",
+            skills: ["abyss_slam", "shadow_cleave", "core_roar"],
+            actions: 2,
+          },
+        ],
+      },
+    ],
+    conditions: [
+      {
+        id: "tide_2_unique",
+        type: "unique_species",
+        label: "條件：出戰無重複種族",
+        bonus: { stones: 18, scrap: 1 },
+      },
+      {
+        id: "tide_2_gale",
+        type: "min_element",
+        element: "gale",
+        count: 1,
+        label: "條件：出戰含嵐屬",
+        bonus: { stones: 14, dust: 4 },
+      },
+    ],
+    passives: [
+      {
+        id: "tide_2_favored",
+        type: "elem_atk",
+        element: "gale",
+        mult: 1.1,
+        label: "關卡：嵐屬友方攻擊 +10%",
+      },
     ],
     reward: { stones: 55, scrap: 2 },
     firstClearBonus: { stones: 80, scrap: 2 },
+    eliteBonus: { stones: 12, scrap: 1 },
+    bossBonus: { stones: 22, scrap: 1 },
     encounterWeights: {
       nightmoth: 4,
       glowfin: 3,
@@ -693,12 +846,89 @@ export const DUNGEONS = [
     name: "潮汐廢墟 · 心核",
     needRealm: 3,
     cooldownMs: 50_000,
-    enemies: [
-      { name: "暗潮之影", hp: 160, atk: 18, spd: 9, element: "gloom" },
-      { name: "心核看守", hp: 200, atk: 22, spd: 6, element: "stone" },
+    waves: [
+      {
+        label: "心核外衛",
+        enemies: [
+          { name: "暗潮之影", hp: 110, atk: 14, spd: 9, element: "gloom", role: "normal" },
+          { name: "岩殼衛", hp: 120, atk: 13, spd: 5, element: "stone", role: "normal" },
+        ],
+      },
+      {
+        label: "雙生精英",
+        enemies: [
+          {
+            name: "裂潮刃侍",
+            hp: 150,
+            atk: 18,
+            spd: 10,
+            element: "tide",
+            role: "elite",
+            skills: ["tide_crush", "abyss_slam"],
+          },
+          {
+            name: "幽甲祭司",
+            hp: 140,
+            atk: 15,
+            spd: 7,
+            element: "gloom",
+            role: "elite",
+            skills: ["shadow_cleave", "mist_ward"],
+          },
+        ],
+      },
+      {
+        label: "心核 BOSS",
+        enemies: [
+          {
+            name: "心核看守",
+            hp: 320,
+            atk: 22,
+            spd: 8,
+            element: "stone",
+            role: "boss",
+            skills: ["abyss_slam", "shadow_cleave", "core_roar", "shell_guard"],
+            actions: 2,
+          },
+        ],
+      },
+    ],
+    conditions: [
+      {
+        id: "tide_3_hybrid",
+        type: "min_hybrid",
+        count: 1,
+        label: "條件：出戰含雜交種",
+        bonus: { stones: 28, scrap: 1 },
+      },
+      {
+        id: "tide_3_gen",
+        type: "min_gen",
+        gen: 2,
+        label: "條件：出戰含≥2代寵",
+        bonus: { stones: 24, dust: 6 },
+      },
+      {
+        id: "tide_3_lean",
+        type: "max_pets",
+        max: 2,
+        label: "條件：出戰≤2寵",
+        bonus: { stones: 30, scrap: 1 },
+      },
+    ],
+    passives: [
+      {
+        id: "tide_3_stone_pen",
+        type: "elem_atk",
+        element: "gale",
+        mult: 1.15,
+        label: "關卡：嵐屬友方攻擊 +15%（剋岩）",
+      },
     ],
     reward: { stones: 120, scrap: 4 },
     firstClearBonus: { stones: 150, scrap: 3 },
+    eliteBonus: { stones: 18, scrap: 1 },
+    bossBonus: { stones: 40, scrap: 2 },
     encounterWeights: {
       mossback: 3,
       nightmoth: 3,
@@ -710,6 +940,107 @@ export const DUNGEONS = [
     elementWeights: { stone: 3, gloom: 3, gale: 2, flame: 1, tide: 1 },
   },
 ];
+
+/** 兼容：扁平敵人列表（舊資料／測試）→ 單波 */
+export function dungeonWaves(dungeon) {
+  if (!dungeon) return [];
+  if (Array.isArray(dungeon.waves) && dungeon.waves.length) return dungeon.waves;
+  if (Array.isArray(dungeon.enemies) && dungeon.enemies.length) {
+    return [{ label: dungeon.name || "交戰", enemies: dungeon.enemies }];
+  }
+  return [];
+}
+
+export function roleLabel(role) {
+  if (role === "boss") return "BOSS";
+  if (role === "elite") return "精英";
+  return "普通";
+}
+
+export function countDungeonRoles(waves) {
+  let normal = 0;
+  let elite = 0;
+  let boss = 0;
+  let total = 0;
+  for (const w of waves || []) {
+    for (const e of w.enemies || []) {
+      total += 1;
+      const r = e.role || "normal";
+      if (r === "boss") boss += 1;
+      else if (r === "elite") elite += 1;
+      else normal += 1;
+    }
+  }
+  return { total, normal, elite, boss, waves: (waves || []).length };
+}
+
+/**
+ * 評估關卡條件（挑戰獎）與被動說明
+ * pets = 出戰靈寵
+ */
+export function evaluateDungeonConditions(pets, dungeon) {
+  const list = Array.isArray(pets) ? pets : [];
+  const out = [];
+  for (const c of dungeon?.conditions || []) {
+    let ok = false;
+    let reason = "";
+    if (c.type === "max_pets") {
+      ok = list.length <= c.max;
+      reason = ok ? "" : `出戰 ${list.length}／上限 ${c.max}`;
+    } else if (c.type === "min_element") {
+      const n = list.filter((p) => p.elementId === c.element).length;
+      ok = n >= (c.count || 1);
+      const elName = ELEMENTS[c.element]?.name || c.element;
+      reason = ok ? "" : `需要${elName}屬≥${c.count || 1}（現 ${n}）`;
+    } else if (c.type === "unique_species") {
+      const ids = list.map((p) => p.speciesId);
+      ok = ids.length === 0 || new Set(ids).size === ids.length;
+      reason = ok ? "" : "出戰有重複種族";
+    } else if (c.type === "min_hybrid") {
+      const n = list.filter((p) => p.breedOnly || SPECIES[p.speciesId]?.breedOnly).length;
+      ok = n >= (c.count || 1);
+      reason = ok ? "" : `需要雜交種≥${c.count || 1}（現 ${n}）`;
+    } else if (c.type === "min_gen") {
+      const maxG = list.reduce((m, p) => Math.max(m, petGeneration(p)), 0);
+      ok = maxG >= (c.gen || 1);
+      reason = ok ? "" : `需要≥${c.gen}代（最高 ${maxG}）`;
+    } else {
+      ok = false;
+      reason = "未知條件";
+    }
+    out.push({
+      id: c.id,
+      label: c.label,
+      type: c.type,
+      bonus: c.bonus || {},
+      ok,
+      reason,
+      passive: false,
+    });
+  }
+  for (const p of dungeon?.passives || []) {
+    out.push({
+      id: p.id,
+      label: p.label,
+      type: p.type,
+      ok: true,
+      reason: "",
+      passive: true,
+      element: p.element,
+      mult: p.mult,
+    });
+  }
+  return out;
+}
+
+/** 關卡被動：元素攻擊倍率（乘在友方對應元素上） */
+export function dungeonElemAtkMult(passives, elementId) {
+  let m = 1;
+  for (const p of passives || []) {
+    if (p.type === "elem_atk" && p.element === elementId) m *= p.mult || 1;
+  }
+  return m;
+}
 
 export const EVENTS = [
   "潮霧散開，一枚靈紋貝落在腳邊。",
@@ -972,9 +1303,16 @@ export const DUNGEON_GEAR_DROPS = {
   },
 };
 
-export function rollGearDrop(dungeonId) {
+export function rollGearDrop(dungeonId, opts = {}) {
   const table = DUNGEON_GEAR_DROPS[dungeonId];
-  if (!table || Math.random() > table.chance) return null;
+  if (!table) return null;
+  let chance = table.chance || 0;
+  if (opts.bossCleared) chance = Math.min(0.95, chance + 0.22);
+  else if (opts.eliteCleared) chance = Math.min(0.9, chance + 0.12);
+  if (opts.conditionHits > 0) {
+    chance = Math.min(0.95, chance + 0.04 * opts.conditionHits);
+  }
+  if (Math.random() > chance) return null;
   const gearId = pickWeighted(table.weights);
   if (!gearId || !GEAR[gearId]) return null;
   return {

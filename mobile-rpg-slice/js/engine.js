@@ -38,6 +38,11 @@ import {
   rollGearDrop,
   partySynergy,
   MASTER_EQUIP_SLOTS,
+  dungeonWaves,
+  roleLabel,
+  countDungeonRoles,
+  evaluateDungeonConditions,
+  dungeonElemAtkMult,
   SLOT_LABEL,
   fusionAbsorbRate,
   breedStatInheritance,
@@ -69,7 +74,7 @@ import {
   KINDS,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v11";
+const SAVE_KEY = "void-tide-pets-v12";
 
 function defaultMaster() {
   return {
@@ -115,6 +120,7 @@ function defaultState() {
       "人物靠裝備；靈寵靠天生基礎（融合／繁殖成長）。",
       "圖鑑、每日任務與成就已開啟——見「圖鑑」頁。",
       "繁殖目標：雜交出潮獸／嵐蛾、升代與稀有——圖鑑或繁殖頁可領獎。",
+      "秘境改為波次戰：雜兵→精英→BOSS；滿足關卡條件有額外獎。",
     ],
     lastTick: Date.now(),
     combatsWon: 0,
@@ -180,6 +186,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v11") ||
       localStorage.getItem("void-tide-pets-v10") ||
       localStorage.getItem("void-tide-pets-v9") ||
       localStorage.getItem("void-tide-pets-v8") ||
@@ -1179,17 +1186,48 @@ function act(actor, allies, foes, transcript) {
     .sort((a, b) => a.cd - b.cd);
 
   const ready = skills.filter((s) => (actor.skillCd[s.id] || 0) <= 0);
-  if (ready.length && Math.random() < 0.72) {
+  const skillChance = actor.role === "boss" ? 0.85 : actor.role === "elite" ? 0.78 : 0.72;
+  if (ready.length && Math.random() < skillChance) {
     const skill = ready[Math.floor(Math.random() * ready.length)];
     if (useSkill(actor, skill, allies, foes, transcript)) return;
   }
-  const targetSide = actor.side === "ally" ? foes : allies;
-  dealStrike(actor, pickFoe(targetSide), 1, transcript, null);
+  // allies／foes 已按行動者視角傳入（敵方行動時已對調）
+  dealStrike(actor, pickFoe(foes), 1, transcript, null);
+}
+
+function spawnCombatFoe(e) {
+  const role = e.role || "normal";
+  const skills = Array.isArray(e.skills) ? e.skills.filter((id) => SKILLS[id]) : [];
+  const tag = role === "boss" ? "【BOSS】" : role === "elite" ? "【精英】" : "";
+  const actions = e.actions != null ? e.actions : role === "boss" ? 2 : 1;
+  return {
+    side: "foe",
+    name: `${tag}${e.name}`,
+    rawName: e.name,
+    hp: e.hp,
+    maxHp: e.hp,
+    atk: e.atk,
+    spd: e.spd,
+    elementId: e.element,
+    role,
+    actions: Math.max(1, actions),
+    skillLevel: role === "boss" ? 2 : 1,
+    skills,
+    skillCd: Object.fromEntries(skills.map((id) => [id, 0])),
+    guardTurns: 0,
+    atkBuffTurns: 0,
+    atkBuffPct: 0,
+  };
+}
+
+function spawnWaveFoes(wave) {
+  return (wave?.enemies || []).map(spawnCombatFoe);
 }
 
 /**
  * 戰鬥結算（同步計算）；UI 負責逐條播放戰報。
- * 可獨自進本（0 靈寵）。含元素克制、首通、冷卻。
+ * 波次：雜兵 → 精英 → BOSS；敵人可施技能；BOSS 可雙動。
+ * 含關卡條件獎、雜交試煉、首通、冷卻。
  */
 export function runDungeon(state, dungeonId) {
   const d = DUNGEONS.find((x) => x.id === dungeonId);
@@ -1206,6 +1244,9 @@ export function runDungeon(state, dungeonId) {
     return { ok: false, msg: `秘境冷卻中（${sec}s）。` };
   }
 
+  const waves = dungeonWaves(d);
+  if (!waves.length) return { ok: false, msg: "此秘境無敵人。" };
+
   const stageBonus = state.realm * 2;
   const masterSkills = masterSkillsForStage(state.realm);
   const mGear = masterGearBonus(state);
@@ -1213,6 +1254,10 @@ export function runDungeon(state, dungeonId) {
   const dex = bestiaryStatus(state);
   const atkMult = synergy.atkMult * dex.atkMult;
   const hpMult = synergy.hpMult * dex.hpMult;
+  const condEval = evaluateDungeonConditions(state.pets, d);
+  const passives = condEval.filter((c) => c.passive);
+  const challenges = condEval.filter((c) => !c.passive);
+
   const allies = [
     {
       side: "ally",
@@ -1232,12 +1277,13 @@ export function runDungeon(state, dungeonId) {
     },
     ...state.pets.map((p) => {
       const skills = petSkillIds(p);
+      const elemMult = dungeonElemAtkMult(passives, p.elementId);
       return {
         side: "ally",
         name: displayPetName(p),
         hp: Math.round((p.hp + stageBonus * 2) * hpMult),
         maxHp: Math.round((p.hp + stageBonus * 2) * hpMult),
-        atk: Math.round((p.atk + stageBonus) * atkMult),
+        atk: Math.round((p.atk + stageBonus) * atkMult * elemMult),
         spd: Math.round(p.spd * synergy.spdMult),
         isMaster: false,
         elementId: p.elementId,
@@ -1251,32 +1297,38 @@ export function runDungeon(state, dungeonId) {
     }),
   ];
 
-  const foes = d.enemies.map((e) => ({
-    side: "foe",
-    name: e.name,
-    hp: e.hp,
-    maxHp: e.hp,
-    atk: e.atk,
-    spd: e.spd,
-    elementId: e.element,
-    skillLevel: 1,
-    skills: [],
-    skillCd: {},
-    guardTurns: 0,
-    atkBuffTurns: 0,
-    atkBuffPct: 0,
-  }));
+  // Also apply passive to master if matching
+  const masterElemMult = dungeonElemAtkMult(passives, "tide");
+  if (masterElemMult !== 1) {
+    allies[0].atk = Math.round(allies[0].atk * masterElemMult);
+  }
+
+  let waveIndex = 0;
+  let foes = spawnWaveFoes(waves[0]);
+  const roles = countDungeonRoles(waves);
 
   const lead =
     state.pets.length > 0
       ? `御靈師率靈寵進入【${d.name}】。（潮克焰→嵐→岩→幽→潮）`
       : `你獨自踏入【${d.name}】，潮霧裡似有靈息。`;
   const transcript = [lead];
+  transcript.push(
+    `本關 ${waves.length} 波 · ${roles.total} 敵（普通${roles.normal}／精英${roles.elite}／BOSS${roles.boss}）。`
+  );
+  transcript.push(`—— 第 1 波・${waves[0].label} ——`);
   if (synergy.labels.length) {
     transcript.push(`陣容羈絆發動：${synergy.labels.join("、")}。`);
   }
   if (dex.label) {
     transcript.push(dex.label);
+  }
+  for (const p of passives) {
+    transcript.push(p.label);
+  }
+  for (const c of challenges) {
+    transcript.push(
+      c.ok ? `關卡條件已滿足：${c.label}` : `關卡條件未啟：${c.label}。${c.reason}`
+    );
   }
   const trial = DUNGEON_TRIALS[dungeonId];
   const trialCheck = trial ? partyMeetsTrial(state.pets, trial) : null;
@@ -1289,13 +1341,37 @@ export function runDungeon(state, dungeonId) {
   }
   bumpDaily(state, "dungeon", 1);
   let round = 0;
-  const maxRounds = 40;
+  const maxRounds = 55;
   let won = false;
   let ended = false;
   let bonusStones = 0;
   let bonusScrap = 0;
   let trialStones = 0;
   let trialScrap = 0;
+  let condStones = 0;
+  let condScrap = 0;
+  let condFeed = 0;
+  let condDust = 0;
+  let roleStones = 0;
+  let roleScrap = 0;
+  let eliteCleared = roles.elite > 0;
+  let bossCleared = roles.boss > 0;
+
+  const checkSideDown = () => {
+    if (allies.every((a) => a.hp <= 0)) return "lose";
+    if (foes.every((f) => f.hp <= 0)) return "wave";
+    return null;
+  };
+
+  const advanceOrWin = () => {
+    if (waveIndex + 1 < waves.length) {
+      waveIndex += 1;
+      foes = spawnWaveFoes(waves[waveIndex]);
+      transcript.push(`—— 第 ${waveIndex + 1} 波・${waves[waveIndex].label} 湧出！——`);
+      return false;
+    }
+    return true;
+  };
 
   while (round < maxRounds && !ended) {
     round += 1;
@@ -1305,18 +1381,33 @@ export function runDungeon(state, dungeonId) {
 
     for (const actor of order) {
       if (actor.hp <= 0) continue;
-      if (actor.side === "ally") act(actor, allies, foes, transcript);
-      else {
-        const target = pickFoe(allies);
-        if (target) dealStrike(actor, target, 1, transcript, null);
+      const actions = Math.max(1, actor.actions || 1);
+      for (let a = 0; a < actions; a += 1) {
+        if (actor.hp <= 0) break;
+        const down = checkSideDown();
+        if (down) break;
+        if (actor.side === "ally") act(actor, allies, foes, transcript);
+        else act(actor, foes, allies, transcript);
       }
       tickCooldowns(actor);
-      if (foes.every((f) => f.hp <= 0) || allies.every((a) => a.hp <= 0)) break;
+
+      const down = checkSideDown();
+      if (down === "lose") {
+        ended = true;
+        transcript.push(`折戟【${d.name}】……退回契壇休養。`);
+        break;
+      }
+      if (down === "wave") {
+        if (advanceOrWin()) {
+          won = true;
+          ended = true;
+          break;
+        }
+        // 新波已進場：本回合剩餘友方可繼續出手（舊敵已死會被跳過）
+      }
     }
 
-    if (foes.every((f) => f.hp <= 0)) {
-      won = true;
-      ended = true;
+    if (won && ended) {
       state.stones += d.reward.stones;
       state.scrap += d.reward.scrap;
       state.combatsWon += 1;
@@ -1335,6 +1426,50 @@ export function runDungeon(state, dungeonId) {
           `攻克【${d.name}】，獲靈石 ${d.reward.stones}、靈晶碎片 ${d.reward.scrap}。`
         );
       }
+
+      if (eliteCleared && d.eliteBonus) {
+        roleStones += d.eliteBonus.stones || 0;
+        roleScrap += d.eliteBonus.scrap || 0;
+        transcript.push(
+          `擊破精英！額外 +${d.eliteBonus.stones || 0} 石${d.eliteBonus.scrap ? `／+${d.eliteBonus.scrap} 碎片` : ""}。`
+        );
+      }
+      if (bossCleared && d.bossBonus) {
+        roleStones += d.bossBonus.stones || 0;
+        roleScrap += d.bossBonus.scrap || 0;
+        transcript.push(
+          `擊破 BOSS！額外 +${d.bossBonus.stones || 0} 石${d.bossBonus.scrap ? `／+${d.bossBonus.scrap} 碎片` : ""}。`
+        );
+      }
+      if (roleStones || roleScrap) {
+        state.stones += roleStones;
+        state.scrap += roleScrap;
+      }
+
+      let condHits = 0;
+      for (const c of challenges) {
+        if (!c.ok || !c.bonus) continue;
+        condHits += 1;
+        condStones += c.bonus.stones || 0;
+        condScrap += c.bonus.scrap || 0;
+        condFeed += c.bonus.feed || 0;
+        condDust += c.bonus.dust || 0;
+        const bits = [];
+        if (c.bonus.stones) bits.push(`${c.bonus.stones}石`);
+        if (c.bonus.scrap) bits.push(`${c.bonus.scrap}碎片`);
+        if (c.bonus.feed) bits.push(`${c.bonus.feed}飼料`);
+        if (c.bonus.dust) bits.push(`${c.bonus.dust}靈塵`);
+        transcript.push(`關卡條件【${c.label}】達成！+${bits.join("／")}`);
+      }
+      if (condStones || condScrap || condFeed || condDust) {
+        applyReward(state, {
+          stones: condStones,
+          scrap: condScrap,
+          feed: condFeed,
+          dust: condDust,
+        });
+      }
+
       if (trial && trialCheck?.ok && trial.bonus) {
         trialStones = trial.bonus.stones || 0;
         trialScrap = trial.bonus.scrap || 0;
@@ -1344,16 +1479,18 @@ export function runDungeon(state, dungeonId) {
           `雜交試煉達成！額外 +${trialStones} 石${trialScrap ? `／+${trialScrap} 碎片` : ""}。`
         );
       }
-      const drop = rollGearDrop(dungeonId);
+      const drop = rollGearDrop(dungeonId, {
+        eliteCleared,
+        bossCleared,
+        conditionHits: condHits,
+      });
       if (drop) {
         if (!state.inventory) state.inventory = [];
         state.inventory.push(drop);
         const gname = GEAR[drop.gearId]?.name || drop.gearId;
-        transcript.push(`拾獲裝備【${gname}】！可至修行頁穿戴。`);
+        const why = bossCleared ? "（BOSS 掉落加成）" : eliteCleared ? "（精英掉落加成）" : "";
+        transcript.push(`拾獲裝備【${gname}】${why}！可至修行頁穿戴。`);
       }
-    } else if (allies.every((a) => a.hp <= 0)) {
-      ended = true;
-      transcript.push(`折戟【${d.name}】……退回契壇休養。`);
     }
   }
 
@@ -1375,8 +1512,16 @@ export function runDungeon(state, dungeonId) {
     transcript.push(`待契約欄已滿（${PENDING_BOND_MAX}），未再遇見新靈。`);
   }
 
-  const lines = transcript.slice(0, 52);
-  const totalStones = won ? d.reward.stones + bonusStones + trialStones : 0;
+  const lines = transcript.slice(0, 72);
+  const totalStones =
+    won ? d.reward.stones + bonusStones + trialStones + condStones + roleStones : 0;
+  const condNote = challenges.some((c) => c.ok) && (condStones || condFeed || condDust || condScrap)
+    ? "（含條件）"
+    : "";
+  let roleNote = "";
+  if (bossCleared && d.bossBonus && eliteCleared && d.eliteBonus) roleNote = "（含精英／BOSS）";
+  else if (bossCleared && d.bossBonus) roleNote = "（含BOSS）";
+  else if (eliteCleared && d.eliteBonus) roleNote = "（含精英）";
 
   return {
     ok: true,
@@ -1385,8 +1530,10 @@ export function runDungeon(state, dungeonId) {
     transcript: lines,
     encounter,
     trialMet: !!(trial && trialCheck?.ok),
+    waves: waves.length,
+    conditionsMet: challenges.filter((c) => c.ok).map((c) => c.id),
     msg: won
-      ? `勝利！+${totalStones} 靈石${bonusStones ? "（含首通）" : ""}${trialStones ? "（含試煉）" : ""}`
+      ? `勝利！+${totalStones} 靈石${bonusStones ? "（含首通）" : ""}${trialStones ? "（含試煉）" : ""}${condNote}${roleNote}`
       : ended
         ? "戰敗。"
         : "撤退。",
@@ -1400,6 +1547,9 @@ export function dungeonStatus(state, dungeonId) {
   const readyAt = (state.dungeonReadyAt || {})[dungeonId] || 0;
   const trial = DUNGEON_TRIALS[dungeonId] || null;
   const trialCheck = trial ? partyMeetsTrial(state.pets, trial) : null;
+  const waves = dungeonWaves(d);
+  const roles = countDungeonRoles(waves);
+  const condEval = evaluateDungeonConditions(state.pets, d);
   return {
     cleared: !!(state.clearedDungeons || {})[dungeonId],
     cooldownLeftMs: Math.max(0, readyAt - now),
@@ -1407,6 +1557,11 @@ export function dungeonStatus(state, dungeonId) {
     trial,
     trialMet: trialCheck ? trialCheck.ok : false,
     trialReason: trialCheck?.reason || "",
+    waves,
+    roles,
+    conditions: condEval,
+    eliteBonus: d.eliteBonus || null,
+    bossBonus: d.bossBonus || null,
   };
 }
 
@@ -1601,6 +1756,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v11");
   localStorage.removeItem("void-tide-pets-v10");
   localStorage.removeItem("void-tide-pets-v9");
   localStorage.removeItem("void-tide-pets-v8");
@@ -1670,4 +1826,8 @@ export {
   hybridRecipeMatrix,
   DUNGEON_TRIALS,
   KINDS,
+  dungeonWaves,
+  roleLabel,
+  countDungeonRoles,
+  evaluateDungeonConditions,
 };
