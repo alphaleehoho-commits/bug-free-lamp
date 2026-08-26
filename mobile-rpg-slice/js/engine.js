@@ -72,9 +72,11 @@ import {
   partyMeetsTrial,
   countHybridBestiary,
   KINDS,
+  breakthroughView,
+  BREAKTHROUGH_GATES,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v12";
+const SAVE_KEY = "void-tide-pets-v13";
 
 function defaultMaster() {
   return {
@@ -186,6 +188,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v12") ||
       localStorage.getItem("void-tide-pets-v11") ||
       localStorage.getItem("void-tide-pets-v10") ||
       localStorage.getItem("void-tide-pets-v9") ||
@@ -636,18 +639,27 @@ export function masterGearBonus(state) {
 }
 
 export function tryBreakthrough(state) {
-  const next = nextRealm(state);
-  if (!next) return { ok: false, msg: "已至本切片最高階段（潮主）。" };
-  if (state.qi < next.need) {
-    return { ok: false, msg: `靈契不足：需要 ${next.need}，現有 ${Math.floor(state.qi)}。` };
+  const view = breakthroughView(state);
+  if (view.maxed) return { ok: false, msg: "已至本切片最高階段（潮主）。" };
+  if (!view.ready) {
+    const miss = view.items.filter((i) => !i.ok).slice(0, 3).map((i) => i.label);
+    return { ok: false, msg: `突破條件未齊：${miss.join("；")}` };
   }
+  const next = view.next;
+  const costs = view.costs || {};
   state.qi -= next.need;
+  if (costs.stones) state.stones -= costs.stones;
+  if (costs.scrap) state.scrap -= costs.scrap;
+  if (costs.dust) state.dust = (state.dust || 0) - costs.dust;
+  if (costs.feed) state.feed = (state.feed || 0) - costs.feed;
+
   state.realm = next.id;
-  state.master.atk += 1;
-  state.master.hp += 4;
-  state.master.spd += 1;
+  state.master.atk += 1 + Math.floor(next.id / 2);
+  state.master.hp += 4 + next.id * 2;
+  state.master.spd += next.id >= 3 ? 2 : 1;
   state.master.skillIds = masterSkillsForStage(state.realm);
-  pushLog(state, `階段突破——晉升【${next.name}】。御靈之力加深。`);
+  const costNote = view.costLabel ? `（耗 ${view.costLabel}）` : "";
+  pushLog(state, `階段突破——晉升【${next.name}】${costNote}。御靈之力加深。`);
   pushLog(state, `牧場容量擴展至 ${ranchCap(state)}。`);
   bumpDaily(state, "idle", 1);
   const unlocked = MASTER_UNLOCK_MSG(state.realm);
@@ -658,7 +670,7 @@ export function tryBreakthrough(state) {
     state.stones += 15 + state.realm * 8;
   }
   checkAchievements(state);
-  return { ok: true, msg: `階段：${next.name}` };
+  return { ok: true, msg: `階段：${next.name}${costNote}` };
 }
 
 function MASTER_UNLOCK_MSG(stage) {
@@ -1356,6 +1368,8 @@ export function runDungeon(state, dungeonId) {
   let roleScrap = 0;
   let eliteCleared = roles.elite > 0;
   let bossCleared = roles.boss > 0;
+  /** @type {{ id: string, label: string, ok: boolean, reward: object, bits: string }[]} */
+  let conditionResults = [];
 
   const checkSideDown = () => {
     if (allies.every((a) => a.hp <= 0)) return "lose";
@@ -1447,37 +1461,47 @@ export function runDungeon(state, dungeonId) {
       }
 
       let condHits = 0;
+      conditionResults = [];
       for (const c of challenges) {
-        if (!c.ok || !c.bonus) continue;
-        condHits += 1;
-        condStones += c.bonus.stones || 0;
-        condScrap += c.bonus.scrap || 0;
-        condFeed += c.bonus.feed || 0;
-        condDust += c.bonus.dust || 0;
         const bits = [];
-        if (c.bonus.stones) bits.push(`${c.bonus.stones}石`);
-        if (c.bonus.scrap) bits.push(`${c.bonus.scrap}碎片`);
-        if (c.bonus.feed) bits.push(`${c.bonus.feed}飼料`);
-        if (c.bonus.dust) bits.push(`${c.bonus.dust}靈塵`);
-        transcript.push(`關卡條件【${c.label}】達成！+${bits.join("／")}`);
-      }
-      if (condStones || condScrap || condFeed || condDust) {
-        applyReward(state, {
-          stones: condStones,
-          scrap: condScrap,
-          feed: condFeed,
-          dust: condDust,
+        if (c.bonus?.stones) bits.push(`${c.bonus.stones}石`);
+        if (c.bonus?.scrap) bits.push(`${c.bonus.scrap}碎片`);
+        if (c.bonus?.feed) bits.push(`${c.bonus.feed}飼料`);
+        if (c.bonus?.dust) bits.push(`${c.bonus.dust}靈塵`);
+        if (c.ok && c.bonus) {
+          condHits += 1;
+          condStones += c.bonus.stones || 0;
+          condScrap += c.bonus.scrap || 0;
+          condFeed += c.bonus.feed || 0;
+          condDust += c.bonus.dust || 0;
+          applyReward(state, c.bonus);
+          transcript.push(`條件達成【${c.label}】→ 分開結算 +${bits.join("／")}`);
+        } else {
+          transcript.push(`條件未達成【${c.label}】→ 無額外獎${c.reason ? `（${c.reason}）` : ""}`);
+        }
+        conditionResults.push({
+          id: c.id,
+          label: c.label,
+          ok: !!c.ok,
+          reward: c.bonus || {},
+          bits: bits.join("／"),
         });
       }
 
-      if (trial && trialCheck?.ok && trial.bonus) {
-        trialStones = trial.bonus.stones || 0;
-        trialScrap = trial.bonus.scrap || 0;
-        state.stones += trialStones;
-        state.scrap += trialScrap;
-        transcript.push(
-          `雜交試煉達成！額外 +${trialStones} 石${trialScrap ? `／+${trialScrap} 碎片` : ""}。`
-        );
+      if (trial) {
+        if (trialCheck?.ok && trial.bonus) {
+          trialStones = trial.bonus.stones || 0;
+          trialScrap = trial.bonus.scrap || 0;
+          state.stones += trialStones;
+          state.scrap += trialScrap;
+          transcript.push(
+            `試煉達成【${trial.label}】→ 分開結算 +${trialStones}石${trialScrap ? `／+${trialScrap}碎片` : ""}`
+          );
+        } else {
+          transcript.push(
+            `試煉未達成【${trial.label}】→ 無額外獎${trialCheck?.reason ? `（${trialCheck.reason}）` : ""}`
+          );
+        }
       }
       const drop = rollGearDrop(dungeonId, {
         eliteCleared,
@@ -1512,16 +1536,47 @@ export function runDungeon(state, dungeonId) {
     transcript.push(`待契約欄已滿（${PENDING_BOND_MAX}），未再遇見新靈。`);
   }
 
-  const lines = transcript.slice(0, 72);
-  const totalStones =
-    won ? d.reward.stones + bonusStones + trialStones + condStones + roleStones : 0;
-  const condNote = challenges.some((c) => c.ok) && (condStones || condFeed || condDust || condScrap)
-    ? "（含條件）"
-    : "";
-  let roleNote = "";
-  if (bossCleared && d.bossBonus && eliteCleared && d.eliteBonus) roleNote = "（含精英／BOSS）";
-  else if (bossCleared && d.bossBonus) roleNote = "（含BOSS）";
-  else if (eliteCleared && d.eliteBonus) roleNote = "（含精英）";
+  const lines = transcript.slice(0, 80);
+  const baseStones = won ? d.reward.stones : 0;
+  const totalStones = won
+    ? baseStones + bonusStones + trialStones + condStones + roleStones
+    : 0;
+
+  const rewardBreakdown = {
+    base: { stones: baseStones, scrap: won ? d.reward.scrap : 0 },
+    firstClear: { stones: bonusStones, scrap: bonusScrap },
+    elite: eliteCleared && d.eliteBonus ? { ...d.eliteBonus } : null,
+    boss: bossCleared && d.bossBonus ? { ...d.bossBonus } : null,
+    conditions: conditionResults,
+    trial: trial
+      ? {
+          label: trial.label,
+          ok: !!(trialCheck && trialCheck.ok),
+          stones: trialStones,
+          scrap: trialScrap,
+        }
+      : null,
+    totalStones,
+  };
+
+  let msg;
+  if (won) {
+    const parts = [`基礎+${baseStones}石`];
+    if (bonusStones) parts.push(`首通+${bonusStones}`);
+    if (roleStones) parts.push(`精／Boss+${roleStones}`);
+    for (const c of conditionResults) {
+      const short = c.label.replace(/^條件[:：]?\s*/, "");
+      parts.push(c.ok ? `${short}✓+${c.bits || "獎"}` : `${short}✗`);
+    }
+    if (rewardBreakdown.trial) {
+      parts.push(rewardBreakdown.trial.ok ? `試煉✓+${rewardBreakdown.trial.stones}石` : "試煉✗");
+    }
+    msg = `勝利！合計 +${totalStones} 石｜${parts.join(" · ")}`;
+  } else if (ended) {
+    msg = "戰敗。";
+  } else {
+    msg = "撤退。";
+  }
 
   return {
     ok: true,
@@ -1531,12 +1586,9 @@ export function runDungeon(state, dungeonId) {
     encounter,
     trialMet: !!(trial && trialCheck?.ok),
     waves: waves.length,
-    conditionsMet: challenges.filter((c) => c.ok).map((c) => c.id),
-    msg: won
-      ? `勝利！+${totalStones} 靈石${bonusStones ? "（含首通）" : ""}${trialStones ? "（含試煉）" : ""}${condNote}${roleNote}`
-      : ended
-        ? "戰敗。"
-        : "撤退。",
+    conditionsMet: conditionResults.filter((c) => c.ok).map((c) => c.id),
+    rewardBreakdown,
+    msg,
   };
 }
 
@@ -1756,6 +1808,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v12");
   localStorage.removeItem("void-tide-pets-v11");
   localStorage.removeItem("void-tide-pets-v10");
   localStorage.removeItem("void-tide-pets-v9");
@@ -1830,4 +1883,5 @@ export {
   roleLabel,
   countDungeonRoles,
   evaluateDungeonConditions,
+  breakthroughView,
 };

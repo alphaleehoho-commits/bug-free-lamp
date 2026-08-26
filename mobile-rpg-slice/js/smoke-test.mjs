@@ -26,6 +26,9 @@ import {
   countDungeonRoles,
   evaluateDungeonConditions,
   SKILLS,
+  breakthroughView,
+  BREAKTHROUGH_GATES,
+  STAGES,
 } from "./data.js";
 
 function assert(cond, msg) {
@@ -155,6 +158,32 @@ assert(t1ev.find((c) => c.passive)?.type === "elem_atk", "passive elem");
 
 const flatCompat = dungeonWaves({ name: "x", enemies: [{ name: "a", hp: 1, atk: 1, spd: 1, element: "tide" }] });
 assert(flatCompat.length === 1 && flatCompat[0].enemies.length === 1, "legacy enemies compat");
+
+/* P5: breakthrough gates */
+assert(BREAKTHROUGH_GATES[1] && BREAKTHROUGH_GATES[5], "gates");
+assert(STAGES.length === 6, "stages");
+const fakeState = {
+  realm: 0,
+  qi: 10,
+  stones: 0,
+  scrap: 0,
+  dust: 0,
+  feed: 0,
+  combatsWon: 0,
+  clearedDungeons: {},
+  pets: [],
+  ranch: [],
+  stats: {},
+  bestiary: {},
+  master: { equip: {} },
+};
+const br0 = breakthroughView(fakeState);
+assert(!br0.ready && br0.items.some((i) => !i.ok), "break blocked at start");
+fakeState.qi = 40;
+fakeState.stones = 25;
+fakeState.combatsWon = 1;
+const br1 = breakthroughView(fakeState);
+assert(br1.ready && br1.next.id === 1, "break ready to stage1");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

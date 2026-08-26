@@ -11,6 +11,200 @@ export const STAGES = [
 
 export const REALMS = STAGES;
 
+/**
+ * 晉升至目標階段的額外門檻（靈契仍用 STAGES[target].need）
+ * costs: 突破時扣除；checks: 硬性條件
+ */
+export const BREAKTHROUGH_GATES = {
+  1: {
+    costs: { stones: 25 },
+    checks: [{ type: "combats", need: 1, label: "秘境勝場 ≥ 1" }],
+  },
+  2: {
+    costs: { stones: 50, scrap: 1 },
+    checks: [
+      { type: "cleared", dungeonId: "tide_1", label: "通關【潮汐廢墟·一層】" },
+      { type: "bonds", need: 1, label: "成功契約 ≥ 1" },
+      { type: "owned_pets", need: 2, label: "擁有靈寵 ≥ 2" },
+    ],
+  },
+  3: {
+    costs: { stones: 100, scrap: 2, dust: 10 },
+    checks: [
+      { type: "cleared", dungeonId: "tide_1", label: "通關【一層】" },
+      { type: "combats", need: 5, label: "累計秘境勝場 ≥ 5" },
+      { type: "bonds", need: 3, label: "成功契約 ≥ 3" },
+      { type: "gear_equipped", need: 1, label: "人物穿戴 ≥ 1 件裝備" },
+    ],
+  },
+  4: {
+    costs: { stones: 200, scrap: 3, dust: 20, feed: 15 },
+    checks: [
+      { type: "cleared", dungeonId: "tide_2", label: "通關【二層】" },
+      { type: "fusions", need: 1, label: "完成融合 ≥ 1" },
+      { type: "hybrid_owned", need: 1, label: "擁有雜交種 ≥ 1" },
+      { type: "gear_equipped", need: 2, label: "人物穿戴 ≥ 2 件裝備" },
+    ],
+  },
+  5: {
+    costs: { stones: 400, scrap: 5, dust: 40, feed: 30 },
+    checks: [
+      { type: "cleared", dungeonId: "tide_3", label: "通關【心核】" },
+      { type: "min_gen", gen: 2, label: "擁有 ≥ 2 代寵" },
+      { type: "breeds", need: 3, label: "繁殖次數 ≥ 3" },
+      { type: "bestiary", need: 10, label: "圖鑑登錄 ≥ 10 格" },
+      { type: "gear_equipped", need: 3, label: "三槽滿裝" },
+    ],
+  },
+};
+
+function ownedPetList(state) {
+  return [...(state.pets || []), ...(state.ranch || [])];
+}
+
+function countEquippedGear(state) {
+  const eq = state.master?.equip || {};
+  return ["weapon", "armor", "accessory"].filter((s) => eq[s]).length;
+}
+
+/** 評估單項突破檢查 */
+export function evalBreakthroughCheck(state, check) {
+  const stats = state.stats || {};
+  const owned = ownedPetList(state);
+  if (check.type === "combats") {
+    const n = state.combatsWon || 0;
+    return { ok: n >= check.need, progress: `${n}/${check.need}` };
+  }
+  if (check.type === "cleared") {
+    const ok = !!(state.clearedDungeons || {})[check.dungeonId];
+    return { ok, progress: ok ? "已通" : "未通" };
+  }
+  if (check.type === "bonds") {
+    const n = stats.bonds || 0;
+    return { ok: n >= check.need, progress: `${n}/${check.need}` };
+  }
+  if (check.type === "owned_pets") {
+    const n = owned.length;
+    return { ok: n >= check.need, progress: `${n}/${check.need}` };
+  }
+  if (check.type === "gear_equipped") {
+    const n = countEquippedGear(state);
+    return { ok: n >= check.need, progress: `${n}/${check.need}` };
+  }
+  if (check.type === "fusions") {
+    const n = stats.fusions || 0;
+    return { ok: n >= check.need, progress: `${n}/${check.need}` };
+  }
+  if (check.type === "breeds") {
+    const n = stats.breeds || 0;
+    return { ok: n >= check.need, progress: `${n}/${check.need}` };
+  }
+  if (check.type === "hybrid_owned") {
+    const n = owned.filter((p) => p.breedOnly || SPECIES[p.speciesId]?.breedOnly).length;
+    return { ok: n >= check.need, progress: `${n}/${check.need}` };
+  }
+  if (check.type === "min_gen") {
+    const maxG = owned.reduce((m, p) => Math.max(m, petGeneration(p)), 0);
+    return { ok: maxG >= check.gen, progress: `最高${maxG}代` };
+  }
+  if (check.type === "bestiary") {
+    const n = Object.keys(state.bestiary || {}).length;
+    return { ok: n >= check.need, progress: `${n}/${check.need}` };
+  }
+  return { ok: false, progress: "?" };
+}
+
+function formatCostBits(costs) {
+  if (!costs) return "";
+  const bits = [];
+  if (costs.stones) bits.push(`${costs.stones}石`);
+  if (costs.scrap) bits.push(`${costs.scrap}碎片`);
+  if (costs.dust) bits.push(`${costs.dust}靈塵`);
+  if (costs.feed) bits.push(`${costs.feed}飼料`);
+  return bits.join("／");
+}
+
+/**
+ * 下一階段突破檢視：分項達標狀態（供 UI 清單表）
+ */
+export function breakthroughView(state) {
+  const cur = STAGES[Math.min(state.realm, STAGES.length - 1)];
+  const next = STAGES[state.realm + 1] || null;
+  if (!next) {
+    return { maxed: true, cur, next: null, items: [], ready: false, costs: null, costLabel: "" };
+  }
+  const gate = BREAKTHROUGH_GATES[next.id] || { costs: {}, checks: [] };
+  const costs = gate.costs || {};
+  const items = [];
+
+  const qiOk = state.qi >= next.need;
+  items.push({
+    id: "qi",
+    label: `靈契 ≥ ${next.need}`,
+    ok: qiOk,
+    progress: `${Math.floor(state.qi)}/${next.need}`,
+    kind: "qi",
+  });
+
+  if (costs.stones) {
+    items.push({
+      id: "cost_stones",
+      label: `靈石 ≥ ${costs.stones}`,
+      ok: state.stones >= costs.stones,
+      progress: `${Math.floor(state.stones)}/${costs.stones}`,
+      kind: "cost",
+    });
+  }
+  if (costs.scrap) {
+    items.push({
+      id: "cost_scrap",
+      label: `碎片 ≥ ${costs.scrap}`,
+      ok: (state.scrap || 0) >= costs.scrap,
+      progress: `${state.scrap || 0}/${costs.scrap}`,
+      kind: "cost",
+    });
+  }
+  if (costs.dust) {
+    items.push({
+      id: "cost_dust",
+      label: `靈塵 ≥ ${costs.dust}`,
+      ok: (state.dust || 0) >= costs.dust,
+      progress: `${Math.floor(state.dust || 0)}/${costs.dust}`,
+      kind: "cost",
+    });
+  }
+  if (costs.feed) {
+    items.push({
+      id: "cost_feed",
+      label: `飼料 ≥ ${costs.feed}`,
+      ok: (state.feed || 0) >= costs.feed,
+      progress: `${Math.floor(state.feed || 0)}/${costs.feed}`,
+      kind: "cost",
+    });
+  }
+
+  for (const ch of gate.checks || []) {
+    const ev = evalBreakthroughCheck(state, ch);
+    items.push({
+      id: `chk_${ch.type}_${ch.dungeonId || ch.need || ch.gen || ""}`,
+      label: ch.label,
+      ok: ev.ok,
+      progress: ev.progress,
+      kind: "check",
+    });
+  }
+
+  return {
+    maxed: false,
+    cur,
+    next,
+    items,
+    ready: items.every((i) => i.ok),
+    costs,
+    costLabel: formatCostBits(costs),
+  };
+}
+
 export const ELEMENTS = {
   tide: { id: "tide", name: "潮", atk: 1.05, hp: 1.0, spd: 1.05 },
   stone: { id: "stone", name: "岩", atk: 1.0, hp: 1.12, spd: 0.92 },

@@ -57,6 +57,7 @@ import {
   bestiaryEntries,
   masterSkillsForStage,
   fusionStoneCost,
+  breakthroughView,
 } from "./engine.js";
 
 const app = document.querySelector("#app");
@@ -134,6 +135,25 @@ function rewardBitsHtml(reward) {
   if (reward.dust) bits.push(`${reward.dust}靈塵`);
   if (reward.scrap) bits.push(`${reward.scrap}碎片`);
   return bits.join("／");
+}
+
+function condStatusRow(label, ok, rewardText = "", reason = "") {
+  return `
+    <li class="cond-item ${ok ? "is-met" : "is-miss"}">
+      <span class="cond-badge">${ok ? "達成" : "未達成"}</span>
+      <div class="cond-body">
+        <strong>${escapeHtml(label)}</strong>
+        <span class="muted">${
+          ok
+            ? rewardText
+              ? `分開結算 ${escapeHtml(rewardText)}`
+              : "已滿足"
+            : reason
+              ? escapeHtml(reason)
+              : "出戰陣容未滿足"
+        }</span>
+      </div>
+    </li>`;
 }
 
 function breedGoalsBoardHtml(compact = false) {
@@ -286,7 +306,9 @@ function updatePlaybackDom() {
       li.textContent = last;
       list.prepend(li);
       list.dataset.lastLine = last;
-      while (list.children.length > 24) list.removeChild(list.lastChild);
+      while (list.children.length > 40) list.removeChild(list.lastChild);
+      const scroller = document.querySelector("[data-live=combat-scroll]");
+      if (scroller) scroller.scrollTop = 0;
     }
   }
 }
@@ -298,14 +320,9 @@ function finishPlayback() {
     clearInterval(playback.timer);
     playback.timer = null;
   }
-  updatePlaybackDom();
   saveState(state);
+  render();
   setFlash(playback.result.msg);
-  // 解鎖返回按鈕
-  const back = document.querySelector("[data-act=clear-combat]");
-  if (back) back.disabled = false;
-  const skip = document.querySelector("[data-act=skip-combat]");
-  if (skip) skip.hidden = true;
 }
 
 function advancePlayback() {
@@ -357,7 +374,7 @@ function skipPlayback() {
     list.innerHTML = playback.shown
       .slice()
       .reverse()
-      .slice(0, 24)
+      .slice(0, 40)
       .map((t) => `<li>${escapeHtml(t)}</li>`)
       .join("");
   }
@@ -449,6 +466,7 @@ function cultivatePanel(qiPct, next, m) {
   const totalAtk = m.atk + gBonus.atk;
   const totalHp = m.hp + gBonus.hp;
   const totalSpd = m.spd + gBonus.spd;
+  const br = breakthroughView(state);
 
   const slotSelects = MASTER_EQUIP_SLOTS.map((slot) => {
     const cur = eq[slot];
@@ -477,15 +495,39 @@ function cultivatePanel(qiPct, next, m) {
       })
       .join("") || `<li class="empty">尚無裝備。秘境勝利或靈紋鍛造可取得。</li>`;
 
+  const gateRows = br.maxed
+    ? `<li class="empty">已達最高階段【潮主】。</li>`
+    : br.items
+        .map(
+          (it) => `
+      <li class="cond-item ${it.ok ? "is-met" : "is-miss"}">
+        <span class="cond-badge">${it.ok ? "達成" : "未達成"}</span>
+        <div class="cond-body">
+          <strong>${escapeHtml(it.label)}</strong>
+          <span class="muted">${escapeHtml(it.progress)}</span>
+        </div>
+      </li>`
+        )
+        .join("");
+
   const ranchN = state.ranch?.length || 0;
+  const breakLabel = br.maxed
+    ? "已滿階"
+    : br.ready
+      ? `突破至${br.next.name}${br.costLabel ? `（耗${br.costLabel}）` : ""}`
+      : "突破階段（條件未齊）";
+
   return `
     <h2>契壇修行</h2>
     <p class="lead">人物 ${escapeHtml(m.name)} 戰力主要靠裝備。白板 攻${m.atk}/血${m.hp}/速${m.spd} → 裝備後 <strong>攻${totalAtk} 血${totalHp} 速${totalSpd}</strong></p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
-    <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)}${next ? ` / ${next.need}` : "（已滿）"}</p>
+    <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)}${next ? ` / ${next.need}` : "（已滿）"} · 現階【${escapeHtml(br.cur?.name || "")}】${br.next ? ` → 【${escapeHtml(br.next.name)}】` : ""}</p>
     <p class="meta">牧場待命 ${ranchN} 隻慢產飼料／靈塵 · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
+    <h3>突破門檻${br.next ? ` · ${escapeHtml(br.next.name)}` : ""}</h3>
+    <p class="meta">靈契＋資源＋歷練條件齊備方可晉升；各項分開檢定。</p>
+    <ul class="cond-list">${gateRows}</ul>
     <div class="row">
-      <button type="button" class="primary" data-act="break">突破階段</button>
+      <button type="button" class="primary" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
       <button type="button" data-act="forge">靈紋鍛造</button>
     </div>
     <h3>人物技能</h3>
@@ -827,6 +869,49 @@ function dungeonPanel() {
       .reverse()
       .map((t) => `<li>${escapeHtml(t)}</li>`)
       .join("");
+    const bd = playback.result?.rewardBreakdown;
+    const breakdownHtml =
+      playback.done && bd && playback.result.won
+        ? `<ul class="cond-list reward-breakdown">
+            <li class="cond-item is-met"><span class="cond-badge">基礎</span><div class="cond-body"><strong>通關獎勵</strong><span class="muted">+${bd.base.stones}石／${bd.base.scrap}碎片</span></div></li>
+            ${
+              bd.firstClear?.stones
+                ? `<li class="cond-item is-met"><span class="cond-badge">首通</span><div class="cond-body"><strong>首通加成</strong><span class="muted">+${bd.firstClear.stones}石</span></div></li>`
+                : ""
+            }
+            ${
+              bd.elite
+                ? `<li class="cond-item is-met"><span class="cond-badge">精英</span><div class="cond-body"><strong>擊破精英</strong><span class="muted">+${bd.elite.stones || 0}石</span></div></li>`
+                : ""
+            }
+            ${
+              bd.boss
+                ? `<li class="cond-item is-met"><span class="cond-badge">BOSS</span><div class="cond-body"><strong>擊破 BOSS</strong><span class="muted">+${bd.boss.stones || 0}石</span></div></li>`
+                : ""
+            }
+            ${(bd.conditions || [])
+              .map((c) =>
+                condStatusRow(
+                  c.label.replace(/^條件[:：]?\s*/, ""),
+                  c.ok,
+                  c.ok ? c.bits : "",
+                  "未滿足·本場無此獎"
+                )
+              )
+              .join("")}
+            ${
+              bd.trial
+                ? condStatusRow(
+                    bd.trial.label.replace(/^試煉[:：]?\s*/, "試煉："),
+                    bd.trial.ok,
+                    bd.trial.ok ? `+${bd.trial.stones}石` : "",
+                    "未滿足·本場無此獎"
+                  )
+                : ""
+            }
+            <li class="cond-item is-met"><span class="cond-badge">合計</span><div class="cond-body"><strong>+${bd.totalStones} 靈石</strong><span class="muted">各項分開累加</span></div></li>
+          </ul>`
+        : "";
     return `
       <h2>戰報</h2>
       <p class="lead" data-live="combat-meta">${
@@ -835,7 +920,10 @@ function dungeonPanel() {
           : `戰鬥進行中… ${playback.index}/${playback.lines.length}`
       }</p>
       <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
-      <ul class="combat" data-live="combat-log">${lines}</ul>
+      <div class="combat-scroll" data-live="combat-scroll">
+        <ul class="combat" data-live="combat-log">${lines}</ul>
+      </div>
+      ${breakdownHtml}
       <div class="row">
         <button type="button" data-act="skip-combat" ${playback.done ? "hidden" : ""}>跳過動畫</button>
         <button type="button" data-act="clear-combat" ${playback.done ? "" : "disabled"}>返回秘境</button>
@@ -857,41 +945,37 @@ function dungeonPanel() {
     const trial = st?.trial;
     const conds = (st?.conditions || []).filter((c) => !c.passive);
     const passives = (st?.conditions || []).filter((c) => c.passive);
-    const condLines = conds
-      .map((c) => `${c.ok ? "✓" : "·"} ${c.label}`)
-      .join(" · ");
+    const condList = conds
+      .map((c) => condStatusRow(c.label.replace(/^條件[:：]?\s*/, ""), c.ok, rewardBitsHtml(c.bonus), c.reason))
+      .join("");
+    const trialRow = trial
+      ? condStatusRow(
+          trial.label.replace(/^試煉[:：]?\s*/, "試煉："),
+          st.trialMet,
+          `+${trial.bonus?.stones || 0}石${trial.bonus?.scrap ? `／${trial.bonus.scrap}碎片` : ""}`,
+          st.trialReason || "出戰未滿足"
+        )
+      : "";
     const passiveLine = passives.map((p) => p.label).join(" · ");
     return `
-      <li class="card-row dungeon-card">
-        <div>
-          <strong>${escapeHtml(d.name)}</strong>
-          <span class="muted">${escapeHtml(roleBits)} · 獎 ${d.reward.stones} 石 / ${d.reward.scrap} 碎片 · ${clearNote}${locked ? " · 階段不足" : ""}${onCd ? ` · 冷卻 ${cdSec}s` : ""}</span>
-          ${
-            passiveLine
-              ? `<span class="muted">${escapeHtml(passiveLine)}</span>`
-              : ""
-          }
-          ${
-            condLines
-              ? `<span class="muted trial-note">${escapeHtml(condLines)}</span>`
-              : ""
-          }
-          ${
-            trial
-              ? `<span class="muted trial-note ${st.trialMet ? "on" : ""}">${escapeHtml(
-                  `${st.trialMet ? "✓" : "·"} ${trial.label}`
-                )}</span>`
-              : ""
-          }
+      <li class="dungeon-card">
+        <div class="dungeon-head">
+          <div>
+            <strong>${escapeHtml(d.name)}</strong>
+            <span class="muted">${escapeHtml(roleBits)} · 基礎獎 ${d.reward.stones} 石 / ${d.reward.scrap} 碎片 · ${clearNote}${locked ? " · 階段不足" : ""}${onCd ? ` · 冷卻 ${cdSec}s` : ""}</span>
+            ${passiveLine ? `<span class="muted">${escapeHtml(passiveLine)}</span>` : ""}
+          </div>
+          <button type="button" class="primary" data-dungeon="${d.id}" ${locked || onCd ? "disabled" : ""}>進攻</button>
         </div>
-        <button type="button" class="primary" data-dungeon="${d.id}" ${locked || onCd ? "disabled" : ""}>進攻</button>
+        <p class="meta cond-caption">挑戰條件（各項分開結算）</p>
+        <ul class="cond-list">${condList}${trialRow}</ul>
       </li>`;
   }).join("");
 
   return `
     <h2>潮汐秘境</h2>
-    <p class="lead">波次：雜兵→精英→BOSS。精英／BOSS 會放技能（BOSS 雙動）。滿足關卡條件／雜交試煉可領額外獎；精英／BOSS 提升裝備掉落。</p>
-    <ul class="list">${list}</ul>
+    <p class="lead">波次：雜兵→精英→BOSS。條件／試煉各自獨立判定與發獎；達成＝綠標，未達成＝灰標。</p>
+    <ul class="list dungeon-list">${list}</ul>
   `;
 }
 
