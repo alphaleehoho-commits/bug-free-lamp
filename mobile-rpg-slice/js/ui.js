@@ -676,6 +676,9 @@ function codexPanel() {
     <ul class="list">${dailies}</ul>
     <h3>成就</h3>
     <ul class="list">${ach}</ul>
+    <div class="row" style="margin-top:0.85rem">
+      <button type="button" data-act="notify-perm">開啟離線通知（可選）</button>
+    </div>
   `;
 }
 
@@ -762,6 +765,15 @@ function bind() {
         clearOfflineHint(state);
         saveState(state);
         render();
+      } else if (act === "notify-perm") {
+        if (typeof Notification === "undefined") {
+          setFlash("此環境不支援通知。");
+          return;
+        }
+        Notification.requestPermission().then((p) => {
+          setFlash(p === "granted" ? "已開啟離線通知" : "未授權通知");
+          if (p === "granted" && state.offlineHint) maybeNotifyOffline(state.offlineHint);
+        });
       } else if (act === "reset") {
         if (confirm("確定清除存檔？")) {
           stopPlayback();
@@ -1004,10 +1016,26 @@ function escapeHtml(s) {
 }
 
 render();
+maybeNotifyOffline(state.offlineHint);
 setInterval(() => {
   patchLive();
   saveState(state);
 }, 1000);
+
+function maybeNotifyOffline(hint) {
+  if (!hint || typeof Notification === "undefined") return;
+  if (Notification.permission !== "granted") return;
+  if (maybeNotifyOffline._sent === hint.at) return;
+  maybeNotifyOffline._sent = hint.at;
+  try {
+    new Notification("暗潮 · 離線結算", {
+      body: `約 ${Math.round(hint.sec / 60)} 分鐘：靈契 +${Math.floor(hint.qi)}，飼料 +${hint.feed.toFixed(1)}，靈塵 +${hint.dust.toFixed(1)}`,
+      icon: "./icons/icon.svg",
+    });
+  } catch {
+    /* ignore */
+  }
+}
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
