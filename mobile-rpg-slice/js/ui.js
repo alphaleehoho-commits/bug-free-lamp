@@ -91,7 +91,9 @@ function stopPlayback() {
 function switchTab(id) {
   if (playback && !playback.done) return; // 戰鬥播放中唔切頁
   tab = id;
-  if (id !== "party") petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [] };
+  if (id !== "party") {
+    petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+  }
   render();
 }
 
@@ -370,7 +372,39 @@ function petsListView() {
     <h3>待契約</h3>
     <ul class="list">${pending}</ul>
     <div class="row" style="margin-top:0.85rem">
-      <button type="button" data-act="breed">嘗試繁殖</button>
+      <button type="button" data-act="start-breed">繁殖</button>
+    </div>
+  `;
+}
+
+function petsBreedView() {
+  const bs = breedStatus(state);
+  const ranch = state.ranch || [];
+  const selected = new Set(petView.breedParents || []);
+  const cdSec = Math.ceil(bs.cooldownLeftMs / 1000);
+  const list =
+    ranch
+      .map((p) => {
+        const on = selected.has(p.uid);
+        return `
+        <li class="card-row">
+          <div>
+            <strong>${escapeHtml(p.name)}</strong>
+            <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)} · Lv.${p.level ?? 1}</span>
+          </div>
+          <button type="button" class="${on ? "primary" : ""}" data-breed-toggle="${escapeHtml(p.uid)}">${on ? "已選" : "選擇"}</button>
+        </li>`;
+      })
+      .join("") || `<li class="empty">牧場需要至少兩隻靈寵才能繁殖。</li>`;
+
+  const ready = selected.size === 2 && bs.ready && ranch.length < ranchCap(state);
+  return `
+    <h2>繁殖</h2>
+    <p class="lead">揀兩隻牧場靈寵作雙親（任意種族）。耗 ${BREED_STONE_COST} 靈石${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}。子代遺傳基因，元素有小機率變異。</p>
+    <ul class="list">${list}</ul>
+    <div class="row" style="margin-top:0.85rem">
+      <button type="button" class="primary" data-breed-confirm ${ready ? "" : "disabled"}>確認繁殖（${selected.size}/2）</button>
+      <button type="button" data-pet-back>返回列表</button>
     </div>
   `;
 }
@@ -471,6 +505,7 @@ function petsFuseView() {
 function petsPanel() {
   if (petView.mode === "detail") return petsDetailView();
   if (petView.mode === "fuse") return petsFuseView();
+  if (petView.mode === "breed") return petsBreedView();
   return petsListView();
 }
 
@@ -503,19 +538,23 @@ function dungeonPanel() {
 
   const list = DUNGEONS.map((d) => {
     const locked = state.realm < d.needRealm;
+    const st = dungeonStatus(state, d.id);
+    const cdSec = st ? Math.ceil(st.cooldownLeftMs / 1000) : 0;
+    const onCd = cdSec > 0;
+    const clearNote = st?.cleared ? "已通" : `首通+${d.firstClearBonus?.stones || 0}石`;
     return `
       <li class="card-row">
         <div>
           <strong>${escapeHtml(d.name)}</strong>
-          <span class="muted">${d.enemies.length} 敵 · 獎 ${d.reward.stones} 石 / ${d.reward.scrap} 碎片${locked ? " · 階段不足" : ""}</span>
+          <span class="muted">${d.enemies.length} 敵 · 獎 ${d.reward.stones} 石 / ${d.reward.scrap} 碎片 · ${clearNote}${locked ? " · 階段不足" : ""}${onCd ? ` · 冷卻 ${cdSec}s` : ""}</span>
         </div>
-        <button type="button" class="primary" data-dungeon="${d.id}" ${locked ? "disabled" : ""}>進攻</button>
+        <button type="button" class="primary" data-dungeon="${d.id}" ${locked || onCd ? "disabled" : ""}>進攻</button>
       </li>`;
   }).join("");
 
   return `
     <h2>潮汐秘境</h2>
-    <p class="lead">可獨自進本。戰勝後有機會遇見野生靈寵；戰報會逐條播出。</p>
+    <p class="lead">元素克制：潮克焰→嵐→岩→幽→潮。分層遇寵權重不同；有冷卻與首通獎。</p>
     <ul class="list">${list}</ul>
   `;
 }
@@ -546,13 +585,14 @@ function bind() {
         saveState(state);
         render();
         setFlash(r.msg);
-      } else if (act === "breed") {
-        setFlash(tryBreed(state).msg);
+      } else if (act === "start-breed") {
+        petView = { mode: "breed", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+        render();
       } else if (act === "reset") {
         if (confirm("確定清除存檔？")) {
           stopPlayback();
           state = resetSave();
-          petView = { mode: "list", uid: null, fuseBase: null };
+          petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
           shellReady = false;
           render();
           setFlash("存檔已重置。");
@@ -563,6 +603,35 @@ function bind() {
       } else if (act === "skip-combat") {
         skipPlayback();
       }
+    });
+  });
+  app.querySelectorAll("[data-breed-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const uid = btn.dataset.breedToggle;
+      const set = new Set(petView.breedParents || []);
+      if (set.has(uid)) set.delete(uid);
+      else {
+        if (set.size >= 2) {
+          setFlash("最多選兩隻雙親。");
+          return;
+        }
+        set.add(uid);
+      }
+      petView = { ...petView, breedParents: [...set] };
+      render();
+    });
+  });
+  app.querySelectorAll("[data-breed-confirm]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const [a, b] = petView.breedParents || [];
+      const r = tryBreed(state, a, b);
+      saveState(state);
+      if (r.ok) {
+        petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+      }
+      render();
+      setFlash(r.msg);
     });
   });
   app.querySelectorAll("[data-try-bond]").forEach((btn) => {
@@ -586,7 +655,7 @@ function bind() {
       if (!confirm("確定放歸這隻靈寵？")) return;
       const r = releasePet(state, btn.dataset.release);
       saveState(state);
-      petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [] };
+      petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
       render();
       setFlash(r.msg);
     });
@@ -617,13 +686,19 @@ function bind() {
   });
   app.querySelectorAll("[data-pet-detail]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      petView = { mode: "detail", uid: btn.dataset.petDetail, fuseBase: null, fuseMats: [] };
+      petView = { mode: "detail", uid: btn.dataset.petDetail, fuseBase: null, fuseMats: [], breedParents: [] };
       render();
     });
   });
   app.querySelectorAll("[data-start-fuse]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      petView = { mode: "fuse", uid: null, fuseBase: btn.dataset.startFuse, fuseMats: [] };
+      petView = {
+        mode: "fuse",
+        uid: null,
+        fuseBase: btn.dataset.startFuse,
+        fuseMats: [],
+        breedParents: [],
+      };
       render();
     });
   });
@@ -665,7 +740,7 @@ function bind() {
       const r = fusePets(state, baseUid, mats);
       saveState(state);
       if (r.ok) {
-        petView = { mode: "detail", uid: baseUid, fuseBase: null, fuseMats: [] };
+        petView = { mode: "detail", uid: baseUid, fuseBase: null, fuseMats: [], breedParents: [] };
       }
       render();
       setFlash(r.msg);
@@ -673,7 +748,7 @@ function bind() {
   });
   app.querySelectorAll("[data-pet-back]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [] };
+      petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
       render();
     });
   });
