@@ -10,13 +10,15 @@ Other agents cannot see those files until the project is on a **private GitHub r
 
 - Path: `mobile-rpg-slice/`
 - Stack: vanilla HTML/CSS/JS PWA (portrait mobile)
-- Save key / SW cache: `void-tide-pets-v5`
+- Save key / SW cache: `void-tide-pets-v6`
 - Run: `cd mobile-rpg-slice && python3 -m http.server 8765`
 - Smoke: `cd mobile-rpg-slice && node js/smoke-test.mjs`
 
 ## Features in tree
 
-Idle cultivation → dungeon combat (streamed log) → encounter pets → bond → ranch → deploy/upgrade/fusion/breeding → element matchups → dungeon tables (weights, first-clear, cooldown).
+Idle cultivation → dungeon combat (streamed log) → encounter pets → bond → ranch → deploy/upgrade/fusion/breeding → element matchups → dungeon tables.
+
+**P1:** ranch idle feed/dust · gear drops & equip · skill levels + second skills · party synergy buffs.
 
 ## Publish checklist (owner)
 
