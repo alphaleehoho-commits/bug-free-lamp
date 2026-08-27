@@ -360,6 +360,20 @@ export const SPECIES = {
     breedOnly: true,
     base: { atk: 14, hp: 90, spd: 15 },
   },
+  fangmite: {
+    id: "fangmite",
+    name: "牙蟎",
+    kind: "蟲",
+    breedOnly: true,
+    base: { atk: 17, hp: 88, spd: 13 },
+  },
+  scalequill: {
+    id: "scalequill",
+    name: "鱗羽",
+    kind: "鱗",
+    breedOnly: true,
+    base: { atk: 14, hp: 105, spd: 13 },
+  },
 };
 
 /** 野生／秘境可遇種族（排除繁殖專屬） */
@@ -633,6 +647,24 @@ export const SKILLS = {
     power: 1.7,
     desc: "礁翼專屬：俯衝（＋速）",
   },
+  fang_burst: {
+    id: "fang_burst",
+    name: "牙爆",
+    owner: "pet",
+    type: "cleave",
+    cd: 3,
+    power: 1.55,
+    desc: "牙蟎專屬：毒牙濺射",
+  },
+  scale_glide: {
+    id: "scale_glide",
+    name: "鱗翔",
+    owner: "pet",
+    type: "strike",
+    cd: 2,
+    power: 1.75,
+    desc: "鱗羽專屬：鱗刃俯衝",
+  },
 };
 
 /** 人物依階段解鎖技能 */
@@ -758,7 +790,7 @@ export function rarityInfo(r) {
 /**
  * 雜交配方（主／次）：雙親 kind（無序）→ 新品種
  * 同一格只取最高 chance（主配方覆蓋次配方唔會撞名時分開寫不同產物）
- * × 無配方：獸×蟲、鱗×禽、甲×蟲
+ * × 無配方：甲×蟲
  */
 export const HYBRID_RECIPES = [
   // —— 主配方 ——
@@ -768,6 +800,8 @@ export const HYBRID_RECIPES = [
   { kinds: ["鱗", "甲"], species: "mistcarp", chance: 0.26, tier: "main" },
   { kinds: ["獸", "禽"], species: "reefwing", chance: 0.26, tier: "main" },
   { kinds: ["光", "蟲"], species: "stormmoth", chance: 0.26, tier: "main" },
+  { kinds: ["獸", "蟲"], species: "fangmite", chance: 0.25, tier: "main" },
+  { kinds: ["鱗", "禽"], species: "scalequill", chance: 0.25, tier: "main" },
   // —— 次配方（較低機率／後門）——
   { kinds: ["鱗", "蟲"], species: "mistcarp", chance: 0.18, tier: "sub" },
   { kinds: ["甲", "禽"], species: "ironback", chance: 0.16, tier: "sub" },
@@ -1017,6 +1051,106 @@ export const TACTICS = {
 
 export const TACTIC_IDS = ["balanced", "focus_boss", "sustain"];
 
+/** 出戰陣型（影響寵物攻／血／速；人物不受影響） */
+export const FORMATIONS = {
+  vanguard: {
+    id: "vanguard",
+    name: "前衛",
+    desc: "寵物血量 +12%，攻擊 −5%",
+    petHpMult: 1.12,
+    petAtkMult: 0.95,
+    petSpdMult: 1,
+  },
+  balanced: {
+    id: "balanced",
+    name: "均衡",
+    desc: "無額外修正",
+    petHpMult: 1,
+    petAtkMult: 1,
+    petSpdMult: 1,
+  },
+  rear: {
+    id: "rear",
+    name: "後場",
+    desc: "寵物攻擊 +12%，血量 −6%，速度 +5%",
+    petHpMult: 0.94,
+    petAtkMult: 1.12,
+    petSpdMult: 1.05,
+  },
+};
+
+export const FORMATION_IDS = ["vanguard", "balanced", "rear"];
+
+/**
+ * 每日秘境挑戰規則（每層 seed 抽 1；過關另獎）
+ */
+export const DUNGEON_CHALLENGE_RULES = [
+  {
+    id: "no_master",
+    label: "挑戰：禁人物出戰",
+    banMaster: true,
+    bonus: { stones: 22, scrap: 1 },
+  },
+  {
+    id: "max_2_pets",
+    label: "挑戰：出戰≤2寵",
+    maxPets: 2,
+    bonus: { stones: 18, dust: 4 },
+  },
+  {
+    id: "ban_flame",
+    label: "挑戰：禁焰屬出戰",
+    banElement: "flame",
+    bonus: { stones: 16, dust: 4 },
+  },
+  {
+    id: "ban_gloom",
+    label: "挑戰：禁幽屬出戰",
+    banElement: "gloom",
+    bonus: { stones: 16, dust: 4 },
+  },
+  {
+    id: "elite_trash",
+    label: "挑戰：雜兵精英化",
+    eliteTrash: true,
+    bonus: { stones: 24, scrap: 1 },
+  },
+  {
+    id: "boss_bulk",
+    label: "挑戰：BOSS 強化",
+    bossHpMult: 1.25,
+    bossAtkMult: 1.12,
+    bonus: { stones: 28, scrap: 1 },
+  },
+];
+
+export function pickDailyChallenge(dateKey, dungeonId) {
+  const list = DUNGEON_CHALLENGE_RULES;
+  if (!list.length) return null;
+  const idx = hashDayKey(`${dateKey || ""}:chal:${dungeonId || ""}`) % list.length;
+  return { ...list[idx] };
+}
+
+/** 評估出戰是否滿足挑戰規則（可拿挑戰獎） */
+export function evaluateDungeonChallenge(pets, challenge, opts = {}) {
+  if (!challenge) return { ok: true, reason: "" };
+  const list = Array.isArray(pets) ? pets : [];
+  if (challenge.maxPets != null && list.length > challenge.maxPets) {
+    return { ok: false, reason: `出戰 ${list.length}／上限 ${challenge.maxPets}` };
+  }
+  if (challenge.banElement) {
+    const hit = list.filter((p) => p.elementId === challenge.banElement);
+    if (hit.length) {
+      const elName = ELEMENTS[challenge.banElement]?.name || challenge.banElement;
+      return { ok: false, reason: `含禁屬${elName}` };
+    }
+  }
+  if (challenge.banMaster && opts.hasMaster === false) {
+    // master already excluded — ok
+  }
+  return { ok: true, reason: "" };
+}
+
 /**
  * 每日秘境修飾（全關共用；用 todayKey 穩定抽一條）
  */
@@ -1077,6 +1211,8 @@ export const HYBRID_SKILLS = {
   mistcarp: "mist_surge",
   stormmoth: "storm_lance",
   reefwing: "reef_dive",
+  fangmite: "fang_burst",
+  scalequill: "scale_glide",
 };
 
 /** 代數出戰攻／血倍率 */
@@ -1885,6 +2021,8 @@ export function generateDailyDungeon(dungeonId, dateKey) {
   }
 
   d.dailySeed = seed;
+  const challenge = pickDailyChallenge(dateKey, dungeonId);
+  d.challenge = challenge;
   return d;
 }
 
@@ -2509,6 +2647,20 @@ export const DAILY_QUESTS = [
     need: 1,
     reward: { stones: 25, dust: 5 },
   },
+  {
+    id: "breed",
+    name: "血脈催生",
+    desc: "完成 1 次繁殖",
+    need: 1,
+    reward: { stones: 28, feed: 5 },
+  },
+  {
+    id: "win",
+    name: "秘境取勝",
+    desc: "秘境勝利 1 場",
+    need: 1,
+    reward: { stones: 35, dust: 4 },
+  },
 ];
 
 /** 成就（一次性） */
@@ -2561,6 +2713,78 @@ export const ACHIEVEMENTS = [
     desc: "繁殖出傳說稀有度靈寵",
     reward: { stones: 100, scrap: 2 },
   },
+  {
+    id: "bestiary_30",
+    name: "潮錄三十",
+    desc: "圖鑑收集滿 30 格",
+    reward: { stones: 90, dust: 15 },
+  },
+  {
+    id: "bestiary_full",
+    name: "全潮錄成",
+    desc: "圖鑑全部登錄",
+    reward: { stones: 200, scrap: 3, dust: 20 },
+  },
+  {
+    id: "stage_5",
+    name: "潮主臨世",
+    desc: "達到潮主（階段 5）",
+    reward: { stones: 120, scrap: 2 },
+  },
+  {
+    id: "stage_8",
+    name: "三重潮主",
+    desc: "達到潮主·3重（階段 8）",
+    reward: { stones: 180, scrap: 3 },
+  },
+  {
+    id: "clear_tide_4",
+    name: "深層踏破",
+    desc: "通關潮汐深層（四層）",
+    reward: { stones: 100, scrap: 2 },
+  },
+  {
+    id: "clear_tide_8",
+    name: "八層潮痕",
+    desc: "通關潮汐廢墟 · 8層",
+    reward: { stones: 160, scrap: 3 },
+  },
+  {
+    id: "wins_25",
+    name: "百戰初成",
+    desc: "累計秘境勝場 ≥ 25",
+    reward: { stones: 80, feed: 12 },
+  },
+  {
+    id: "wins_50",
+    name: "潮戰不息",
+    desc: "累計秘境勝場 ≥ 50",
+    reward: { stones: 140, scrap: 2 },
+  },
+  {
+    id: "hybrids_3",
+    name: "三雜交成",
+    desc: "累計雜交誕生 ≥ 3",
+    reward: { stones: 90, dust: 15 },
+  },
+  {
+    id: "challenge_win",
+    name: "挑戰破關",
+    desc: "帶挑戰規則通關 1 次",
+    reward: { stones: 70, scrap: 1 },
+  },
+  {
+    id: "streak_5",
+    name: "連勝五潮",
+    desc: "秘境連勝達 5 場",
+    reward: { stones: 85, dust: 10 },
+  },
+  {
+    id: "fangmite_once",
+    name: "牙蟎初現",
+    desc: "雜交出【牙蟎】",
+    reward: { stones: 75, dust: 10 },
+  },
 ];
 
 export function todayKey(now = Date.now()) {
@@ -2571,15 +2795,26 @@ export function todayKey(now = Date.now()) {
   return `${y}-${m}-${day}`;
 }
 
+/** ISO 週鍵（YYYY-Www），用於週循環目標 */
+export function weekKey(now = Date.now()) {
+  const d = new Date(now);
+  const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = tmp.getUTCDay() || 7;
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((tmp - yearStart) / 86400000 + 1) / 7);
+  return `${tmp.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+
 /** 離線結算提示門檻（秒） */
 export const OFFLINE_HINT_SEC = 90;
 
 /* ─── P3：繁殖目標／配方一覽／秘境試煉 ─── */
 
 /**
- * 繁殖目標
- * cadence: daily | once
- * type: hybrid_species | reach_gen | reach_rarity | hybrid_bestiary | breed_count
+ * 繁殖／歷練目標
+ * cadence: daily | weekly | once
+ * type: hybrid_species | reach_gen | reach_rarity | hybrid_bestiary | breed_count | hybrid_any | dungeon_wins
  */
 export const BREED_GOALS = [
   {
@@ -2601,6 +2836,34 @@ export const BREED_GOALS = [
     reward: { stones: 40, dust: 6 },
   },
   {
+    id: "weekly_hybrid",
+    cadence: "weekly",
+    type: "hybrid_any",
+    need: 2,
+    name: "週課：雜交",
+    desc: "本週雜交誕生 2 隻",
+    reward: { stones: 70, dust: 12 },
+  },
+  {
+    id: "weekly_gen2",
+    cadence: "weekly",
+    type: "reach_gen",
+    gen: 2,
+    need: 1,
+    name: "週課：二代",
+    desc: "本週誕生 ≥2 代寵 1 隻",
+    reward: { stones: 55, feed: 10 },
+  },
+  {
+    id: "weekly_dungeon",
+    cadence: "weekly",
+    type: "dungeon_wins",
+    need: 5,
+    name: "週課：秘境",
+    desc: "本週秘境勝場 ≥ 5",
+    reward: { stones: 90, scrap: 2 },
+  },
+  {
     id: "goal_tideling",
     cadence: "once",
     type: "hybrid_species",
@@ -2618,6 +2881,26 @@ export const BREED_GOALS = [
     need: 1,
     name: "嵐蛾降臨",
     desc: "雜交出【嵐蛾】",
+    reward: { stones: 80, dust: 10 },
+  },
+  {
+    id: "goal_fangmite",
+    cadence: "once",
+    type: "hybrid_species",
+    species: "fangmite",
+    need: 1,
+    name: "牙蟎覺醒",
+    desc: "雜交出【牙蟎】",
+    reward: { stones: 80, dust: 10 },
+  },
+  {
+    id: "goal_scalequill",
+    cadence: "once",
+    type: "hybrid_species",
+    species: "scalequill",
+    need: 1,
+    name: "鱗羽降臨",
+    desc: "雜交出【鱗羽】",
     reward: { stones: 80, dust: 10 },
   },
   {

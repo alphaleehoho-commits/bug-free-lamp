@@ -36,6 +36,14 @@ import {
   dungeonsForRealm,
   dungeonTrialFor,
   breakthroughGateFor,
+  FORMATIONS,
+  FORMATION_IDS,
+  DUNGEON_CHALLENGE_RULES,
+  pickDailyChallenge,
+  evaluateDungeonChallenge,
+  weekKey,
+  DAILY_QUESTS,
+  ACHIEVEMENTS,
   RECRUIT_POOL,
   HYBRID_SKILLS,
   genCombatMult,
@@ -57,9 +65,10 @@ assert(kindsOfWild.size === 6, "1:1 wild kind");
 
 assert(hybridRecipeForKinds("獸", "鱗").species === "tideling", "main 獸鱗");
 assert(hybridRecipeForKinds("光", "蟲").species === "stormmoth", "main 光蟲→嵐蛾");
-assert(hybridRecipeForKinds("獸", "蟲") == null, "no 獸蟲");
-assert(hybridRecipeForKinds("鱗", "禽") == null, "no 鱗禽");
-assert(HYBRID_RECIPES.filter((r) => r.tier === "main").length >= 5, "mains");
+assert(hybridRecipeForKinds("獸", "蟲")?.species === "fangmite", "main 獸蟲→牙蟎");
+assert(hybridRecipeForKinds("鱗", "禽")?.species === "scalequill", "main 鱗禽→鱗羽");
+assert(hybridRecipeForKinds("甲", "蟲") == null, "no 甲蟲");
+assert(HYBRID_RECIPES.filter((r) => r.tier === "main").length >= 7, "mains");
 assert(HYBRID_RECIPES.filter((r) => r.tier === "sub").length >= 4, "subs");
 
 assert(rollChildGeneration(0, 0) === 1, "0+0→1");
@@ -104,6 +113,7 @@ assert(typeof g.hybridChance === "number", "hybrid chance field");
 assert(BREED_GOALS.some((x) => x.id === "daily_breed"), "daily breed goal");
 assert(BREED_GOALS.some((x) => x.type === "hybrid_species" && x.species === "tideling"), "tideling goal");
 assert(BREED_GOALS.filter((x) => x.cadence === "daily").length >= 2, "daily goals");
+assert(BREED_GOALS.filter((x) => x.cadence === "weekly").length >= 3, "weekly goals");
 assert(BREED_GOALS.filter((x) => x.cadence === "once").length >= 4, "once goals");
 
 const summary = hybridRecipeSummary();
@@ -114,8 +124,10 @@ const matrix = hybridRecipeMatrix();
 assert(matrix.length === 36, "6×6 matrix");
 const tideCell = matrix.find((c) => c.kindA === "獸" && c.kindB === "鱗");
 assert(tideCell?.recipe?.species === "tideling", "matrix tideling");
-const noneCell = matrix.find((c) => c.kindA === "獸" && c.kindB === "蟲");
-assert(noneCell && !noneCell.recipe, "matrix none");
+const noneCell = matrix.find((c) => c.kindA === "甲" && c.kindB === "蟲");
+assert(noneCell && !noneCell.recipe, "matrix none 甲蟲");
+const fangCell = matrix.find((c) => c.kindA === "獸" && c.kindB === "蟲");
+assert(fangCell?.recipe?.species === "fangmite", "matrix fangmite");
 
 assert(DUNGEON_TRIALS.tide_1?.needGen === 1, "trial tide_1");
 assert(DUNGEON_TRIALS.tide_2?.match === "any", "trial tide_2 any");
@@ -207,8 +219,8 @@ assert(br1.ready && br1.next.id === 1, "break ready to stage1");
 assert(DUNGEONS.some((d) => d.id === "tide_4"), "tide_4");
 assert(dungeonWaves(DUNGEONS.find((d) => d.id === "tide_4")).length === 3, "t4 3 waves");
 assert(RECRUIT_POOL.length >= 6, "recruit pool");
-assert(Object.keys(HYBRID_SKILLS).length === 6, "hybrid skills");
-assert(SKILLS.tide_beast_rush && SKILLS.storm_lance, "hybrid skill defs");
+assert(Object.keys(HYBRID_SKILLS).length === 8, "hybrid skills");
+assert(SKILLS.tide_beast_rush && SKILLS.storm_lance && SKILLS.fang_burst && SKILLS.scale_glide, "hybrid skill defs");
 assert(
   petSkillIds({ skillId: "pounce", speciesId: "tideling", kind: "獸", fusionLevel: 1 }).includes(
     "tide_beast_rush"
@@ -241,6 +253,25 @@ assert(generateDailyDungeon("tide_3", "2026-08-26") !== generateDailyDungeon("ti
 const d3a = generateDailyDungeon("tide_3", "2026-08-26");
 const d3b = generateDailyDungeon("tide_3", "2026-08-26");
 assert(d3a.dailyVariantLabel === d3b.dailyVariantLabel, "same day same variant");
+
+/* P8: goals, challenge, formation, new hybrids */
+assert(DAILY_QUESTS.length >= 5, "5 daily quests");
+assert(ACHIEVEMENTS.length >= 16, "expanded achievements");
+assert(typeof weekKey() === "string" && weekKey().includes("-W"), "weekKey");
+assert(FORMATIONS.vanguard && FORMATION_IDS.length === 3, "formations");
+assert(DUNGEON_CHALLENGE_RULES.length >= 5, "challenge rules");
+const chal = pickDailyChallenge("2026-08-26", "tide_2");
+assert(chal?.label && pickDailyChallenge("2026-08-26", "tide_2").id === chal.id, "chal deterministic");
+assert(generateDailyDungeon("tide_2", "2026-08-26")?.challenge?.id, "daily has challenge");
+assert(SPECIES.fangmite?.breedOnly && SPECIES.scalequill?.breedOnly, "new hybrids");
+assert(
+  !evaluateDungeonChallenge(
+    [{ elementId: "flame" }],
+    { banElement: "flame", label: "x" }
+  ).ok,
+  "ban flame"
+);
+assert(evaluateDungeonChallenge([{ elementId: "tide" }, { elementId: "gale" }], { maxPets: 2 }).ok, "max2 ok");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

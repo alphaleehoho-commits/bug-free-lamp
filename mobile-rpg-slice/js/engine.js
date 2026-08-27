@@ -87,11 +87,15 @@ import {
   SHOP_OFFER_COUNT,
   TACTICS,
   TACTIC_IDS,
+  FORMATIONS,
+  FORMATION_IDS,
   HYBRID_SKILLS,
   genCombatMult,
+  weekKey,
+  evaluateDungeonChallenge,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v15";
+const SAVE_KEY = "void-tide-pets-v16";
 
 function defaultMaster() {
   return {
@@ -108,7 +112,7 @@ function defaultMaster() {
 function emptyDaily(now = Date.now()) {
   return {
     date: todayKey(now),
-    progress: { idle: 0, dungeon: 0, bond: 0 },
+    progress: { idle: 0, dungeon: 0, bond: 0, breed: 0, win: 0 },
     /** questId → true */
     claimed: {},
     /** 累積掛機秒數（當日） */
@@ -138,10 +142,12 @@ function defaultState() {
       "圖鑑、每日任務與成就已開啟——見「圖鑑」頁。",
       "繁殖目標：雜交出潮獸／嵐蛾、升代與稀有——圖鑑或繁殖頁可領獎。",
       "秘境改為波次戰：雜兵→精英→BOSS；滿足關卡條件有額外獎。",
-      "契壇商肆可購待契約靈寵；秘境可選戰術；深層考驗血脈。",
+      "契壇商肆可購待契約靈寵；秘境可選戰術與陣型；深層考驗血脈。",
+      "每日挑戰規則輪換；週課與成就提供長期目標。",
     ],
     lastTick: Date.now(),
     combatsWon: 0,
+    winStreak: 0,
     breedingUnlocked: true,
     clearedDungeons: {},
     dungeonReadyAt: {},
@@ -150,7 +156,18 @@ function defaultState() {
     bestiary: {},
     daily: emptyDaily(),
     achievements: {},
-    stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0, hybrids: 0, legendBreeds: 0 },
+    stats: {
+      bonds: 0,
+      fusions: 0,
+      breeds: 0,
+      releases: 0,
+      bondAttempts: 0,
+      hybrids: 0,
+      legendBreeds: 0,
+      challengeWins: 0,
+      maxWinStreak: 0,
+      speciesBreeds: {},
+    },
     /** P3 繁殖目標進度 */
     breedGoals: emptyBreedGoals(),
     offlineHint: null,
@@ -158,6 +175,8 @@ function defaultState() {
     tactics: "balanced",
     shop: emptyShop(),
     dungeonDaily: null,
+    /** P8 */
+    formation: "balanced",
   };
 }
 
@@ -168,9 +187,10 @@ function emptyShop(now = Date.now()) {
 function emptyBreedGoals(now = Date.now()) {
   return {
     date: todayKey(now),
+    week: weekKey(now),
     /** goalId → progress number */
     progress: {},
-    /** goalId → true（每日／一次性領完） */
+    /** goalId → true（每日／週／一次性領完） */
     claimed: {},
   };
 }
@@ -212,6 +232,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v15") ||
       localStorage.getItem("void-tide-pets-v14") ||
       localStorage.getItem("void-tide-pets-v12") ||
       localStorage.getItem("void-tide-pets-v11") ||
@@ -310,12 +331,17 @@ export function loadState() {
         bondAttempts: parsed.stats?.bondAttempts || 0,
         hybrids: parsed.stats?.hybrids || 0,
         legendBreeds: parsed.stats?.legendBreeds || 0,
+        challengeWins: parsed.stats?.challengeWins || 0,
+        maxWinStreak: parsed.stats?.maxWinStreak || 0,
+        speciesBreeds: parsed.stats?.speciesBreeds || {},
       },
       breedGoals: ensureBreedGoalsState(parsed.breedGoals),
       offlineHint: parsed.offlineHint || null,
       tactics: TACTIC_IDS.includes(parsed.tactics) ? parsed.tactics : "balanced",
+      formation: FORMATION_IDS.includes(parsed.formation) ? parsed.formation : "balanced",
       shop: parsed.shop || emptyShop(),
       dungeonDaily: parsed.dungeonDaily || null,
+      winStreak: parsed.winStreak || 0,
     };
   } catch {
     return defaultState();
@@ -410,7 +436,7 @@ function ensureDaily(dailyOrState, now = Date.now()) {
     if (!state.daily || state.daily.date !== key) {
       state.daily = emptyDaily(now);
     }
-    if (!state.daily.progress) state.daily.progress = { idle: 0, dungeon: 0, bond: 0 };
+    if (!state.daily.progress) state.daily.progress = { idle: 0, dungeon: 0, bond: 0, breed: 0, win: 0 };
     if (!state.daily.claimed) state.daily.claimed = {};
     return state.daily;
   }
@@ -419,7 +445,7 @@ function ensureDaily(dailyOrState, now = Date.now()) {
   if (!daily || daily.date !== key) return emptyDaily(now);
   return {
     date: daily.date,
-    progress: { idle: 0, dungeon: 0, bond: 0, ...(daily.progress || {}) },
+    progress: { idle: 0, dungeon: 0, bond: 0, breed: 0, win: 0, ...(daily.progress || {}) },
     claimed: { ...(daily.claimed || {}) },
     idleSec: daily.idleSec || 0,
   };
@@ -479,19 +505,46 @@ export function bestiaryStatus(state) {
 
 export function checkAchievements(state) {
   if (!state.achievements) state.achievements = {};
-  if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
+  if (!state.stats) {
+    state.stats = {
+      bonds: 0,
+      fusions: 0,
+      breeds: 0,
+      releases: 0,
+      bondAttempts: 0,
+      hybrids: 0,
+      legendBreeds: 0,
+      challengeWins: 0,
+      maxWinStreak: 0,
+      speciesBreeds: {},
+    };
+  }
   const unlocked = [];
+  const dexN = Object.keys(state.bestiary || {}).length;
+  const cleared = state.clearedDungeons || {};
   for (const a of ACHIEVEMENTS) {
     if (state.achievements[a.id]) continue;
     let ok = false;
     if (a.id === "first_win") ok = (state.combatsWon || 0) >= 1;
     else if (a.id === "bonds_3") ok = (state.stats.bonds || 0) >= 3;
-    else if (a.id === "bestiary_10") ok = Object.keys(state.bestiary || {}).length >= 10;
+    else if (a.id === "bestiary_10") ok = dexN >= 10;
+    else if (a.id === "bestiary_30") ok = dexN >= 30;
+    else if (a.id === "bestiary_full") ok = dexN >= bestiaryTotal();
     else if (a.id === "fuse_once") ok = (state.stats.fusions || 0) >= 1;
     else if (a.id === "breed_once") ok = (state.stats.breeds || 0) >= 1;
     else if (a.id === "stage_2") ok = (state.realm || 0) >= 2;
+    else if (a.id === "stage_5") ok = (state.realm || 0) >= 5;
+    else if (a.id === "stage_8") ok = (state.realm || 0) >= 8;
     else if (a.id === "hybrid_once") ok = (state.stats.hybrids || 0) >= 1;
     else if (a.id === "legend_breed") ok = (state.stats.legendBreeds || 0) >= 1;
+    else if (a.id === "clear_tide_4") ok = !!cleared.tide_4;
+    else if (a.id === "clear_tide_8") ok = !!cleared.tide_8;
+    else if (a.id === "wins_25") ok = (state.combatsWon || 0) >= 25;
+    else if (a.id === "wins_50") ok = (state.combatsWon || 0) >= 50;
+    else if (a.id === "hybrids_3") ok = (state.stats.hybrids || 0) >= 3;
+    else if (a.id === "challenge_win") ok = (state.stats.challengeWins || 0) >= 1;
+    else if (a.id === "streak_5") ok = (state.stats.maxWinStreak || 0) >= 5;
+    else if (a.id === "fangmite_once") ok = (state.stats.speciesBreeds?.fangmite || 0) >= 1;
     if (!ok) continue;
     state.achievements[a.id] = true;
     applyReward(state, a.reward);
@@ -531,39 +584,50 @@ function ensureBreedGoalsState(rawOrState, now = Date.now()) {
   if (rawOrState && rawOrState.pets !== undefined) {
     const state = rawOrState;
     const key = todayKey(now);
+    const week = weekKey(now);
     if (!state.breedGoals) state.breedGoals = emptyBreedGoals(now);
-    if (state.breedGoals.date !== key) {
-      // 重置每日目標進度／領取；保留 once 已領
+    if (state.breedGoals.date !== key || state.breedGoals.week !== week) {
       const claimed = { ...(state.breedGoals.claimed || {}) };
       const progress = { ...(state.breedGoals.progress || {}) };
       for (const g of BREED_GOALS) {
-        if (g.cadence === "daily") {
+        if (g.cadence === "daily" && state.breedGoals.date !== key) {
+          delete claimed[g.id];
+          delete progress[g.id];
+        }
+        if (g.cadence === "weekly" && state.breedGoals.week !== week) {
           delete claimed[g.id];
           delete progress[g.id];
         }
       }
-      state.breedGoals = { date: key, progress, claimed };
+      state.breedGoals = { date: key, week, progress, claimed };
     }
     if (!state.breedGoals.progress) state.breedGoals.progress = {};
     if (!state.breedGoals.claimed) state.breedGoals.claimed = {};
+    if (!state.breedGoals.week) state.breedGoals.week = week;
     return state.breedGoals;
   }
   const raw = rawOrState;
   const key = todayKey(now);
+  const week = weekKey(now);
   if (!raw) return emptyBreedGoals(now);
-  if (raw.date !== key) {
+  if (raw.date !== key || raw.week !== week) {
     const claimed = { ...(raw.claimed || {}) };
     const progress = { ...(raw.progress || {}) };
     for (const g of BREED_GOALS) {
-      if (g.cadence === "daily") {
+      if (g.cadence === "daily" && raw.date !== key) {
+        delete claimed[g.id];
+        delete progress[g.id];
+      }
+      if (g.cadence === "weekly" && raw.week !== week) {
         delete claimed[g.id];
         delete progress[g.id];
       }
     }
-    return { date: key, progress, claimed };
+    return { date: key, week, progress, claimed };
   }
   return {
     date: raw.date,
+    week: raw.week || week,
     progress: { ...(raw.progress || {}) },
     claimed: { ...(raw.claimed || {}) },
   };
@@ -585,6 +649,7 @@ export function progressBreedGoalsFromChild(state, child, genes) {
   bumpBreedGoalProgress(state, "daily_breed", 1);
   if (genes?.hybrid) {
     bumpBreedGoalProgress(state, "daily_hybrid", 1);
+    bumpBreedGoalProgress(state, "weekly_hybrid", 1);
     for (const g of BREED_GOALS) {
       if (g.type === "hybrid_species" && g.species === child.speciesId) {
         bumpBreedGoalProgress(state, g.id, 1);
@@ -606,6 +671,14 @@ export function progressBreedGoalsFromChild(state, child, genes) {
         state.breedGoals.progress[g.id] = Math.min(g.need, hybridDex);
       }
     }
+  }
+}
+
+/** 秘境勝利推進週課 */
+export function progressDungeonWinGoals(state) {
+  ensureBreedGoalsState(state);
+  for (const g of BREED_GOALS) {
+    if (g.type === "dungeon_wins") bumpBreedGoalProgress(state, g.id, 1);
   }
 }
 
@@ -837,6 +910,23 @@ export function tacticsView(state) {
   const cur = TACTIC_IDS.includes(state.tactics) ? state.tactics : "balanced";
   return TACTIC_IDS.map((id) => ({
     ...TACTICS[id],
+    selected: id === cur,
+  }));
+}
+
+export function setFormation(state, formationId) {
+  if (!FORMATION_IDS.includes(formationId)) {
+    return { ok: false, msg: "未知陣型。" };
+  }
+  state.formation = formationId;
+  const f = FORMATIONS[formationId];
+  return { ok: true, msg: `陣型：${f.name}` };
+}
+
+export function formationView(state) {
+  const cur = FORMATION_IDS.includes(state.formation) ? state.formation : "balanced";
+  return FORMATION_IDS.map((id) => ({
+    ...FORMATIONS[id],
     selected: id === cur,
   }));
 }
@@ -1393,16 +1483,27 @@ function act(actor, allies, foes, transcript, tactics = "balanced") {
   dealStrike(actor, pickFoe(foes, tactics), 1, transcript, null);
 }
 
-function spawnCombatFoe(e, dailyMod = null) {
-  const role = e.role || "normal";
-  const skills = Array.isArray(e.skills) ? e.skills.filter((id) => SKILLS[id]) : [];
-  const tag = role === "boss" ? "【BOSS】" : role === "elite" ? "【精英】" : "";
-  const actions = e.actions != null ? e.actions : role === "boss" ? 2 : 1;
+function spawnCombatFoe(e, dailyMod = null, challenge = null) {
+  let role = e.role || "normal";
   let hp = e.hp;
   let atk = e.atk;
+  let spd = e.spd;
+  let skills = Array.isArray(e.skills) ? e.skills.filter((id) => SKILLS[id]) : [];
+  if (challenge?.eliteTrash && role === "normal") {
+    role = "elite";
+    hp = Math.round(hp * 1.35);
+    atk = Math.round(atk * 1.2);
+    if (!skills.length) skills = ["tide_crush", "coral_spike"].filter((id) => SKILLS[id]);
+  }
+  const tag = role === "boss" ? "【BOSS】" : role === "elite" ? "【精英】" : "";
+  const actions = e.actions != null ? e.actions : role === "boss" ? 2 : 1;
   if (dailyMod) {
     if (role === "elite" && dailyMod.eliteHpMult) hp = Math.round(hp * dailyMod.eliteHpMult);
     if (role === "boss" && dailyMod.bossAtkMult) atk = Math.round(atk * dailyMod.bossAtkMult);
+  }
+  if (challenge && role === "boss") {
+    if (challenge.bossHpMult) hp = Math.round(hp * challenge.bossHpMult);
+    if (challenge.bossAtkMult) atk = Math.round(atk * challenge.bossAtkMult);
   }
   return {
     side: "foe",
@@ -1411,7 +1512,7 @@ function spawnCombatFoe(e, dailyMod = null) {
     hp,
     maxHp: hp,
     atk,
-    spd: e.spd,
+    spd,
     elementId: e.element,
     role,
     actions: Math.max(1, actions),
@@ -1424,8 +1525,8 @@ function spawnCombatFoe(e, dailyMod = null) {
   };
 }
 
-function spawnWaveFoes(wave, dailyMod = null) {
-  return (wave?.enemies || []).map((e) => spawnCombatFoe(e, dailyMod));
+function spawnWaveFoes(wave, dailyMod = null, challenge = null) {
+  return (wave?.enemies || []).map((e) => spawnCombatFoe(e, dailyMod, challenge));
 }
 
 /**
@@ -1453,7 +1554,30 @@ export function runDungeon(state, dungeonId) {
 
   const dailyPack = ensureDungeonDaily(state);
   const dailyMod = dailyPack?.mod || null;
+  const challenge = d.challenge || null;
   const tactics = TACTIC_IDS.includes(state.tactics) ? state.tactics : "balanced";
+  const formationId = FORMATION_IDS.includes(state.formation) ? state.formation : "balanced";
+  const formation = FORMATIONS[formationId] || FORMATIONS.balanced;
+
+  const chalEval = evaluateDungeonChallenge(state.pets, challenge, {
+    hasMaster: !challenge?.banMaster,
+  });
+  // 強制入口限制：出戰人數／禁屬不符則拒進
+  if (challenge?.maxPets != null && state.pets.length > challenge.maxPets) {
+    return {
+      ok: false,
+      msg: `今日挑戰要求出戰≤${challenge.maxPets}寵（現 ${state.pets.length}）。`,
+    };
+  }
+  if (challenge?.banElement) {
+    const banned = state.pets.filter((p) => p.elementId === challenge.banElement);
+    if (banned.length) {
+      const elName = { flame: "焰", gloom: "幽", tide: "潮", stone: "岩", gale: "嵐" }[
+        challenge.banElement
+      ];
+      return { ok: false, msg: `今日挑戰禁${elName || challenge.banElement}屬出戰。` };
+    }
+  }
 
   const stageBonus = state.realm * 2;
   const masterSkills = masterSkillsForStage(state.realm);
@@ -1478,8 +1602,10 @@ export function runDungeon(state, dungeonId) {
     });
   }
 
-  const allies = [
-    {
+  const includeMaster = !challenge?.banMaster;
+  const allies = [];
+  if (includeMaster) {
+    allies.push({
       side: "ally",
       name: state.master.name,
       hp: Math.round((state.master.hp + state.realm * 10 + mGear.hp) * hpMult),
@@ -1494,40 +1620,50 @@ export function runDungeon(state, dungeonId) {
       guardTurns: 0,
       atkBuffTurns: 0,
       atkBuffPct: 0,
-    },
-    ...state.pets.map((p) => {
-      const skills = petSkillIds(p);
-      const elemMult = dungeonElemAtkMult(combatPassives, p.elementId);
-      const gen = petGeneration(p);
-      const gMult = genCombatMult(gen);
-      return {
-        side: "ally",
-        name: displayPetName(p),
-        hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult),
-        maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult),
-        atk: Math.round((p.atk + stageBonus) * atkMult * elemMult * gMult),
-        spd: Math.round(p.spd * synergy.spdMult),
-        isMaster: false,
-        elementId: p.elementId,
-        skillLevel: p.skillLevel ?? 1,
-        skills,
-        skillCd: Object.fromEntries(skills.map((id) => [id, 0])),
-        guardTurns: 0,
-        atkBuffTurns: 0,
-        atkBuffPct: 0,
-        generation: gen,
-      };
-    }),
-  ];
+    });
+  }
+  for (const p of state.pets) {
+    const skills = petSkillIds(p);
+    const elemMult = dungeonElemAtkMult(combatPassives, p.elementId);
+    const gen = petGeneration(p);
+    const gMult = genCombatMult(gen);
+    const fAtk = formation.petAtkMult || 1;
+    const fHp = formation.petHpMult || 1;
+    const fSpd = formation.petSpdMult || 1;
+    allies.push({
+      side: "ally",
+      name: displayPetName(p),
+      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp),
+      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp),
+      atk: Math.round((p.atk + stageBonus) * atkMult * elemMult * gMult * fAtk),
+      spd: Math.round(p.spd * synergy.spdMult * fSpd),
+      isMaster: false,
+      elementId: p.elementId,
+      skillLevel: p.skillLevel ?? 1,
+      skills,
+      skillCd: Object.fromEntries(skills.map((id) => [id, 0])),
+      guardTurns: 0,
+      atkBuffTurns: 0,
+      atkBuffPct: 0,
+      generation: gen,
+    });
+  }
+
+  if (!allies.length) {
+    return { ok: false, msg: "無出戰單位（挑戰禁人物且未派出靈寵）。" };
+  }
 
   // Also apply passive to master if matching
-  const masterElemMult = dungeonElemAtkMult(combatPassives, "tide");
-  if (masterElemMult !== 1) {
-    allies[0].atk = Math.round(allies[0].atk * masterElemMult);
+  const masterAlly = allies.find((a) => a.isMaster);
+  if (masterAlly) {
+    const masterElemMult = dungeonElemAtkMult(combatPassives, "tide");
+    if (masterElemMult !== 1) {
+      masterAlly.atk = Math.round(masterAlly.atk * masterElemMult);
+    }
   }
 
   let waveIndex = 0;
-  let foes = spawnWaveFoes(waves[0], dailyMod);
+  let foes = spawnWaveFoes(waves[0], dailyMod, challenge);
   const roles = countDungeonRoles(waves);
 
   const lead =
@@ -1538,7 +1674,15 @@ export function runDungeon(state, dungeonId) {
   transcript.push(
     `本關 ${waves.length} 波 · ${roles.total} 敵（普通${roles.normal}／精英${roles.elite}／BOSS${roles.boss}）。`
   );
-  transcript.push(`戰術【${TACTICS[tactics]?.name || tactics}】· 自動戰鬥。`);
+  transcript.push(
+    `戰術【${TACTICS[tactics]?.name || tactics}】· 陣型【${formation.name}】· 自動戰鬥。`
+  );
+  if (challenge?.label) {
+    transcript.push(
+      `${challenge.label}${chalEval.ok ? "（條件已滿足，勝利可領挑戰獎）" : `（${chalEval.reason || "未滿足"}）`}`
+    );
+    if (challenge.banMaster) transcript.push("挑戰生效：人物未出戰。");
+  }
   if (dailyMod?.label) transcript.push(dailyMod.label);
   const genNotes = state.pets
     .map((p) => {
@@ -1591,6 +1735,10 @@ export function runDungeon(state, dungeonId) {
   let bossCleared = roles.boss > 0;
   let dailyStoneBonus = 0;
   let dailyScrapBonus = 0;
+  let challengeStones = 0;
+  let challengeScrap = 0;
+  let challengeDust = 0;
+  let challengeMet = false;
   /** @type {{ id: string, label: string, ok: boolean, reward: object, bits: string }[]} */
   let conditionResults = [];
 
@@ -1603,7 +1751,7 @@ export function runDungeon(state, dungeonId) {
   const advanceOrWin = () => {
     if (waveIndex + 1 < waves.length) {
       waveIndex += 1;
-      foes = spawnWaveFoes(waves[waveIndex], dailyMod);
+      foes = spawnWaveFoes(waves[waveIndex], dailyMod, challenge);
       transcript.push(`—— 第 ${waveIndex + 1} 波・${waves[waveIndex].label} 湧出！——`);
       return false;
     }
@@ -1631,6 +1779,7 @@ export function runDungeon(state, dungeonId) {
       const down = checkSideDown();
       if (down === "lose") {
         ended = true;
+        state.winStreak = 0;
         transcript.push(`折戟【${d.name}】……退回契壇休養。`);
         break;
       }
@@ -1648,6 +1797,11 @@ export function runDungeon(state, dungeonId) {
       state.stones += d.reward.stones;
       state.scrap += d.reward.scrap;
       state.combatsWon += 1;
+      state.winStreak = (state.winStreak || 0) + 1;
+      if (!state.stats) state.stats = {};
+      state.stats.maxWinStreak = Math.max(state.stats.maxWinStreak || 0, state.winStreak);
+      bumpDaily(state, "win", 1);
+      progressDungeonWinGoals(state);
       dailyStoneBonus = 0;
       dailyScrapBonus = 0;
       if (dailyMod?.clearStoneBonus) {
@@ -1678,6 +1832,28 @@ export function runDungeon(state, dungeonId) {
           `攻克【${d.name}】，獲靈石 ${d.reward.stones}、靈晶碎片 ${d.reward.scrap}。`
         );
       }
+
+      // 挑戰獎：banMaster 已強制生效；其餘以出戰評估
+      challengeMet = !!(
+        challenge &&
+        evaluateDungeonChallenge(state.pets, challenge, { hasMaster: includeMaster }).ok
+      );
+      if (challengeMet && challenge?.bonus) {
+        challengeStones = challenge.bonus.stones || 0;
+        challengeScrap = challenge.bonus.scrap || 0;
+        challengeDust = challenge.bonus.dust || 0;
+        applyReward(state, challenge.bonus);
+        state.stats.challengeWins = (state.stats.challengeWins || 0) + 1;
+        const bits = [];
+        if (challengeStones) bits.push(`${challengeStones}石`);
+        if (challengeScrap) bits.push(`${challengeScrap}碎片`);
+        if (challengeDust) bits.push(`${challengeDust}靈塵`);
+        transcript.push(`挑戰達成【${challenge.label}】→ +${bits.join("／")}`);
+      } else if (challenge) {
+        transcript.push(`挑戰未達成【${challenge.label}】→ 無挑戰獎`);
+      }
+
+      checkAchievements(state);
 
       if (eliteCleared && d.eliteBonus) {
         roleStones += d.eliteBonus.stones || 0;
@@ -1777,7 +1953,13 @@ export function runDungeon(state, dungeonId) {
   const lines = transcript.slice(0, 80);
   const baseStones = won ? d.reward.stones : 0;
   const totalStones = won
-    ? baseStones + bonusStones + trialStones + condStones + roleStones + dailyStoneBonus
+    ? baseStones +
+      bonusStones +
+      trialStones +
+      condStones +
+      roleStones +
+      dailyStoneBonus +
+      challengeStones
     : 0;
 
   const rewardBreakdown = {
@@ -1786,6 +1968,16 @@ export function runDungeon(state, dungeonId) {
     daily: dailyStoneBonus || dailyScrapBonus
       ? { stones: dailyStoneBonus, scrap: dailyScrapBonus, label: dailyMod?.label || "今日修飾" }
       : null,
+    challenge:
+      challenge && won
+        ? {
+            label: challenge.label,
+            ok: challengeMet,
+            stones: challengeStones,
+            scrap: challengeScrap,
+            dust: challengeDust,
+          }
+        : null,
     elite: eliteCleared && d.eliteBonus ? { ...d.eliteBonus } : null,
     boss: bossCleared && d.bossBonus ? { ...d.bossBonus } : null,
     conditions: conditionResults,
@@ -1807,6 +1999,7 @@ export function runDungeon(state, dungeonId) {
     if (dailyStoneBonus || dailyScrapBonus) {
       parts.push(`今日+${dailyStoneBonus}石/${dailyScrapBonus}碎`);
     }
+    if (challengeMet && challengeStones) parts.push(`挑戰+${challengeStones}`);
     if (roleStones) parts.push(`精／Boss+${roleStones}`);
     for (const c of conditionResults) {
       const short = c.label.replace(/^條件[:：]?\s*/, "");
@@ -1829,6 +2022,7 @@ export function runDungeon(state, dungeonId) {
     transcript: lines,
     encounter,
     trialMet: !!(trial && trialCheck?.ok),
+    challengeMet,
     waves: waves.length,
     conditionsMet: conditionResults.filter((c) => c.ok).map((c) => c.id),
     rewardBreakdown,
@@ -1847,6 +2041,9 @@ export function dungeonStatus(state, dungeonId) {
   const roles = countDungeonRoles(waves);
   const condEval = evaluateDungeonConditions(state.pets, d);
   const daily = dungeonDailyView(state);
+  const chalEval = evaluateDungeonChallenge(state.pets, d.challenge, {
+    hasMaster: !d.challenge?.banMaster,
+  });
   return {
     cleared: !!(state.clearedDungeons || {})[dungeonId],
     cooldownLeftMs: Math.max(0, readyAt - now),
@@ -1860,6 +2057,10 @@ export function dungeonStatus(state, dungeonId) {
     eliteBonus: d.eliteBonus || null,
     bossBonus: d.bossBonus || null,
     dailyMod: daily,
+    challenge: d.challenge || null,
+    challengeMet: chalEval.ok,
+    challengeReason: chalEval.reason || "",
+    dailyVariantLabel: d.dailyVariantLabel || null,
   };
 }
 
@@ -1964,8 +2165,14 @@ export function tryBreed(state, uidA, uidB) {
   state.stats.breeds += 1;
   if (genes.hybrid) state.stats.hybrids = (state.stats.hybrids || 0) + 1;
   if (genes.rarity >= 3) state.stats.legendBreeds = (state.stats.legendBreeds || 0) + 1;
+  if (genes.hybrid && child.speciesId) {
+    if (!state.stats.speciesBreeds) state.stats.speciesBreeds = {};
+    state.stats.speciesBreeds[child.speciesId] =
+      (state.stats.speciesBreeds[child.speciesId] || 0) + 1;
+  }
   registerBestiary(state, child);
   progressBreedGoalsFromChild(state, child, genes);
+  bumpDaily(state, "breed", 1);
 
   const tags = [];
   tags.push(genLabel(genes.generation));
@@ -2054,6 +2261,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v15");
   localStorage.removeItem("void-tide-pets-v14");
   localStorage.removeItem("void-tide-pets-v12");
   localStorage.removeItem("void-tide-pets-v11");
@@ -2133,9 +2341,10 @@ export {
   breakthroughView,
   TACTICS,
   TACTIC_IDS,
+  FORMATIONS,
+  FORMATION_IDS,
   stageAt,
   nextStageAt,
-  resolveDungeon,
   dungeonsForRealm,
   generateDailyDungeon,
   buildDungeonForTier,

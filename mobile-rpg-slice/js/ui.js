@@ -61,11 +61,14 @@ import {
   buyShopOffer,
   setTactics,
   tacticsView,
+  setFormation,
+  formationView,
   dungeonDailyView,
   resolveDungeon,
   dungeonsForRealm,
   stageAt,
   TACTICS,
+  FORMATIONS,
 } from "./engine.js";
 
 const app = document.querySelector("#app");
@@ -167,10 +170,12 @@ function condStatusRow(label, ok, rewardText = "", reason = "") {
 function breedGoalsBoardHtml(compact = false) {
   const goals = breedGoalsView(state);
   const daily = goals.filter((g) => g.cadence === "daily");
+  const weekly = goals.filter((g) => g.cadence === "weekly");
   const once = goals.filter((g) => g.cadence === "once");
   const renderGoal = (g) => {
     const status = g.claimed ? "已領" : g.done ? "可領" : `${g.progress}/${g.need}`;
-    const cadence = g.cadence === "daily" ? "每日" : "常駐";
+    const cadence =
+      g.cadence === "daily" ? "每日" : g.cadence === "weekly" ? "每週" : "常駐";
     return `
       <li class="card-row">
         <div>
@@ -189,12 +194,14 @@ function breedGoalsBoardHtml(compact = false) {
     const rows = open.map(renderGoal).join("") || `<li class="empty">繁殖目標已全部領完。</li>`;
     return `
       <h3>繁殖目標</h3>
-      <p class="meta">完成雜交／升代可領石與飼料——圖鑑頁有完整列表。</p>
+      <p class="meta">完成雜交／升代／週課可領獎——圖鑑頁有完整列表。</p>
       <ul class="list">${rows}</ul>`;
   }
   return `
     <h3>繁殖目標 · 每日</h3>
     <ul class="list">${daily.map(renderGoal).join("")}</ul>
+    <h3>歷練目標 · 每週</h3>
+    <ul class="list">${weekly.map(renderGoal).join("")}</ul>
     <h3>繁殖目標 · 常駐</h3>
     <ul class="list">${once.map(renderGoal).join("")}</ul>`;
 }
@@ -911,6 +918,20 @@ function dungeonPanel() {
                 : ""
             }
             ${
+              bd.challenge
+                ? condStatusRow(
+                    bd.challenge.label.replace(/^挑戰[:：]?\s*/, "挑戰："),
+                    bd.challenge.ok,
+                    bd.challenge.ok
+                      ? `+${bd.challenge.stones || 0}石${
+                          bd.challenge.scrap ? `／${bd.challenge.scrap}碎片` : ""
+                        }`
+                      : "",
+                    "未滿足·本場無挑戰獎"
+                  )
+                : ""
+            }
+            ${
               bd.elite
                 ? `<li class="cond-item is-met"><span class="cond-badge">精英</span><div class="cond-body"><strong>擊破精英</strong><span class="muted">+${bd.elite.stones || 0}石</span></div></li>`
                 : ""
@@ -990,6 +1011,14 @@ function dungeonPanel() {
           st.trialReason || "出戰未滿足"
         )
       : "";
+    const challengeRow = st?.challenge
+      ? condStatusRow(
+          st.challenge.label.replace(/^挑戰[:：]?\s*/, "挑戰："),
+          st.challengeMet,
+          rewardBitsHtml(st.challenge.bonus),
+          st.challengeReason || "出戰未滿足"
+        )
+      : "";
     const passiveLine = passives.map((p) => p.label).join(" · ");
     const variantLine = d.dailyVariantLabel
       ? `<span class="muted daily-variant">今日變體：${escapeHtml(d.dailyVariantLabel)}</span>`
@@ -1006,7 +1035,7 @@ function dungeonPanel() {
           <button type="button" class="primary" data-dungeon="${d.id}" ${locked || onCd ? "disabled" : ""}>進攻</button>
         </div>
         <p class="meta cond-caption">挑戰條件（各項分開結算 · 每日輪換）</p>
-        <ul class="cond-list">${condList}${trialRow}</ul>
+        <ul class="cond-list">${challengeRow}${condList}${trialRow}</ul>
       </li>`;
   })
     .join("");
@@ -1022,10 +1051,20 @@ function dungeonPanel() {
     )
     .join("");
   const tacticCur = tactics.find((t) => t.selected);
+  const formations = formationView(state);
+  const formBtns = formations
+    .map(
+      (f) =>
+        `<button type="button" class="${f.selected ? "primary" : ""}" data-set-formation="${f.id}">${escapeHtml(
+          f.name
+        )}</button>`
+    )
+    .join("");
+  const formCur = formations.find((f) => f.selected);
 
   return `
     <h2>潮汐秘境</h2>
-    <p class="lead">波次：雜兵→精英→BOSS。每層 Boss／條件每日輪換（相近難度）。選戰術後仍自動戰鬥。</p>
+    <p class="lead">波次：雜兵→精英→BOSS。每日變體＋挑戰規則。選戰術／陣型後仍自動戰鬥。</p>
     ${
       dailyMod
         ? `<ul class="cond-list"><li class="cond-item is-met"><span class="cond-badge">今日</span><div class="cond-body"><strong>${escapeHtml(
@@ -1036,6 +1075,9 @@ function dungeonPanel() {
     <h3>戰術偏好</h3>
     <p class="meta">${escapeHtml(tacticCur?.desc || "")}</p>
     <div class="row tactics-row">${tacticBtns}</div>
+    <h3>出戰陣型</h3>
+    <p class="meta">${escapeHtml(formCur?.desc || "")}</p>
+    <div class="row tactics-row">${formBtns}</div>
     <ul class="list dungeon-list">${list}</ul>
   `;
 }
@@ -1236,6 +1278,14 @@ function bind() {
   app.querySelectorAll("[data-set-tactics]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const r = setTactics(state, btn.dataset.setTactics);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-set-formation]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = setFormation(state, btn.dataset.setFormation);
       saveState(state);
       render();
       setFlash(r.msg);
