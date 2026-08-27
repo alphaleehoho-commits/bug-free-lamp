@@ -10,7 +10,7 @@ Other agents cannot see those files until the project is on a **private GitHub r
 
 - Path: `mobile-rpg-slice/`
 - Stack: vanilla HTML/CSS/JS PWA (portrait mobile)
-- Save key / SW cache: `void-tide-pets-v16`
+- Save key / SW cache: `void-tide-pets-v17`
 
 **Breed (dino-style):** hybrid species from cross-kind mates + rarity tiers (普通→傳說); fusion stays same-species stages. Bestiary 60 (12 species × 5 elements). Species↔kind 1:1; generations 0–3.
 - Run: `cd mobile-rpg-slice && python3 -m http.server 8765`
@@ -34,7 +34,9 @@ Idle → dungeon → bond → ranch → fuse/breed → element → P1 idle/gear/
 
 **P8:** expanded achievements + 5 daily quests · weekly breed/dungeon goals · daily dungeon challenge rules · party formations (vanguard/balanced/rear) · hybrid recipes 獸×蟲→牙蟎、鱗×禽→鱗羽.
 
-**Balance:** Master from gear; pets from innate (fuse/breed). UI polish / combat animation deferred.
+**P9:** pet depth (kinship/species/gen bonds + personality combat passives) · ranch dispatch missions · master gear sets (潮紋／暗礁／深淵) · soft prestige 潮印 (reset stage, keep pets/gear/dex).
+
+**Balance:** Master from gear; pets from innate (fuse/breed). UI polish / combat animation deferred. Skip: pet ornaments, stamina/energy.
 
 ## Publish checklist (owner)
 
