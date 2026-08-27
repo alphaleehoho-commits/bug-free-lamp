@@ -75,6 +75,14 @@ import {
   breakthroughView,
   BREAKTHROUGH_GATES,
   pickDailyDungeonMod,
+  stageAt,
+  nextStageAt,
+  generateDailyDungeon,
+  buildDungeonForTier,
+  parseDungeonTier,
+  dungeonsForRealm,
+  dungeonTrialFor,
+  dungeonDisplayName,
   RECRUIT_POOL,
   SHOP_OFFER_COUNT,
   TACTICS,
@@ -83,7 +91,7 @@ import {
   genCombatMult,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v14";
+const SAVE_KEY = "void-tide-pets-v15";
 
 function defaultMaster() {
   return {
@@ -204,7 +212,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
-      localStorage.getItem("void-tide-pets-v13") ||
+      localStorage.getItem("void-tide-pets-v14") ||
       localStorage.getItem("void-tide-pets-v12") ||
       localStorage.getItem("void-tide-pets-v11") ||
       localStorage.getItem("void-tide-pets-v10") ||
@@ -319,11 +327,18 @@ export function saveState(state) {
 }
 
 export function realmInfo(state) {
-  return STAGES[Math.min(state.realm, STAGES.length - 1)];
+  return stageAt(state.realm);
 }
 
 export function nextRealm(state) {
-  return STAGES[state.realm + 1] || null;
+  return nextStageAt(state.realm);
+}
+
+/** 當日秘境完整定義（tier 公式 + 每日變體） */
+export function resolveDungeon(state, dungeonId) {
+  ensureDungeonDaily(state);
+  const key = state.dungeonDaily?.date || todayKey();
+  return generateDailyDungeon(dungeonId, key) || buildDungeonForTier(parseDungeonTier(dungeonId));
 }
 
 /** 牧場待命：按性格／元素慢產飼料／靈塵 */
@@ -660,7 +675,6 @@ export function masterGearBonus(state) {
 
 export function tryBreakthrough(state) {
   const view = breakthroughView(state);
-  if (view.maxed) return { ok: false, msg: "已至本切片最高階段（潮主）。" };
   if (!view.ready) {
     const miss = view.items.filter((i) => !i.ok).slice(0, 3).map((i) => i.label);
     return { ok: false, msg: `突破條件未齊：${miss.join("；")}` };
@@ -1420,10 +1434,10 @@ function spawnWaveFoes(wave, dailyMod = null) {
  * 含關卡條件獎、雜交試煉、首通、冷卻。
  */
 export function runDungeon(state, dungeonId) {
-  const d = DUNGEONS.find((x) => x.id === dungeonId);
+  const d = resolveDungeon(state, dungeonId);
   if (!d) return { ok: false, msg: "秘境不存在。" };
   if (state.realm < d.needRealm) {
-    return { ok: false, msg: `需要階段：${STAGES[d.needRealm].name}` };
+    return { ok: false, msg: `需要階段：${stageAt(d.needRealm).name}` };
   }
   if (!state.dungeonReadyAt) state.dungeonReadyAt = {};
   if (!state.clearedDungeons) state.clearedDungeons = {};
@@ -1549,7 +1563,7 @@ export function runDungeon(state, dungeonId) {
       c.ok ? `關卡條件已滿足：${c.label}` : `關卡條件未啟：${c.label}。${c.reason}`
     );
   }
-  const trial = DUNGEON_TRIALS[dungeonId];
+  const trial = dungeonTrialFor(dungeonId);
   const trialCheck = trial ? partyMeetsTrial(state.pets, trial) : null;
   if (trial) {
     transcript.push(
@@ -1823,11 +1837,11 @@ export function runDungeon(state, dungeonId) {
 }
 
 export function dungeonStatus(state, dungeonId) {
-  const d = DUNGEONS.find((x) => x.id === dungeonId);
+  const d = resolveDungeon(state, dungeonId);
   if (!d) return null;
   const now = Date.now();
   const readyAt = (state.dungeonReadyAt || {})[dungeonId] || 0;
-  const trial = DUNGEON_TRIALS[dungeonId] || null;
+  const trial = dungeonTrialFor(dungeonId) || null;
   const trialCheck = trial ? partyMeetsTrial(state.pets, trial) : null;
   const waves = dungeonWaves(d);
   const roles = countDungeonRoles(waves);
@@ -2040,7 +2054,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
-  localStorage.removeItem("void-tide-pets-v13");
+  localStorage.removeItem("void-tide-pets-v14");
   localStorage.removeItem("void-tide-pets-v12");
   localStorage.removeItem("void-tide-pets-v11");
   localStorage.removeItem("void-tide-pets-v10");
@@ -2119,4 +2133,12 @@ export {
   breakthroughView,
   TACTICS,
   TACTIC_IDS,
+  stageAt,
+  nextStageAt,
+  resolveDungeon,
+  dungeonsForRealm,
+  generateDailyDungeon,
+  buildDungeonForTier,
+  dungeonTrialFor,
+  dungeonDisplayName,
 };

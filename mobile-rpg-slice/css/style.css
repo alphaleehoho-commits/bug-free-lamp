@@ -394,6 +394,12 @@ body {
   display: block;
   font-family: var(--font-display);
 }
+.daily-variant {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--accent, #7ec8e3);
+  margin-top: 0.15rem;
+}
 .cond-caption {
   margin: 0.55rem 0 0.3rem;
   font-size: 0.75rem;

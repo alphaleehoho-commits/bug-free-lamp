@@ -43,7 +43,6 @@ import {
   hybridRecipeMatrix,
   KINDS,
   dungeonWaves,
-  DUNGEONS,
   SKILLS,
   MASTER_EQUIP_SLOTS,
   SLOT_LABEL,
@@ -63,6 +62,9 @@ import {
   setTactics,
   tacticsView,
   dungeonDailyView,
+  resolveDungeon,
+  dungeonsForRealm,
+  stageAt,
   TACTICS,
 } from "./engine.js";
 
@@ -277,9 +279,7 @@ function patchLive() {
   const wins = document.querySelector("[data-live=wins]");
 
   if (qiText) {
-    qiText.textContent = next
-      ? `靈契 ${Math.floor(state.qi)} / ${next.need}`
-      : `靈契 ${Math.floor(state.qi)}（已滿）`;
+    qiText.textContent = `靈契 ${Math.floor(state.qi)} / ${next.need}`;
   }
   if (qiBar) qiBar.style.width = `${qiPct}%`;
   if (stones) stones.textContent = String(Math.floor(state.stones));
@@ -501,11 +501,9 @@ function cultivatePanel(qiPct, next, m) {
       })
       .join("") || `<li class="empty">尚無裝備。秘境勝利或靈紋鍛造可取得。</li>`;
 
-  const gateRows = br.maxed
-    ? `<li class="empty">已達最高階段【潮主】。</li>`
-    : br.items
-        .map(
-          (it) => `
+  const gateRows = br.items
+    .map(
+      (it) => `
       <li class="cond-item ${it.ok ? "is-met" : "is-miss"}">
         <span class="cond-badge">${it.ok ? "達成" : "未達成"}</span>
         <div class="cond-body">
@@ -513,8 +511,8 @@ function cultivatePanel(qiPct, next, m) {
           <span class="muted">${escapeHtml(it.progress)}</span>
         </div>
       </li>`
-        )
-        .join("");
+    )
+    .join("");
 
   const shopOffers = shopView(state);
   const pendingFull = (state.pending || []).length >= PENDING_BOND_MAX;
@@ -536,19 +534,17 @@ function cultivatePanel(qiPct, next, m) {
       .join("") || `<li class="empty">今日商肆無貨。</li>`;
 
   const ranchN = state.ranch?.length || 0;
-  const breakLabel = br.maxed
-    ? "已滿階"
-    : br.ready
-      ? `突破至${br.next.name}${br.costLabel ? `（耗${br.costLabel}）` : ""}`
-      : "突破階段（條件未齊）";
+  const breakLabel = br.ready
+    ? `突破至${br.next.name}${br.costLabel ? `（耗${br.costLabel}）` : ""}`
+    : "突破階段（條件未齊）";
 
   return `
     <h2>契壇修行</h2>
     <p class="lead">人物 ${escapeHtml(m.name)} 戰力主要靠裝備。白板 攻${m.atk}/血${m.hp}/速${m.spd} → 裝備後 <strong>攻${totalAtk} 血${totalHp} 速${totalSpd}</strong></p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
-    <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)}${next ? ` / ${next.need}` : "（已滿）"} · 現階【${escapeHtml(br.cur?.name || "")}】${br.next ? ` → 【${escapeHtml(br.next.name)}】` : ""}</p>
+    <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 現階【${escapeHtml(br.cur?.name || "")}】 → 【${escapeHtml(br.next.name)}】</p>
     <p class="meta">牧場待命 ${ranchN} 隻慢產飼料／靈塵 · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
-    <h3>突破門檻${br.next ? ` · ${escapeHtml(br.next.name)}` : ""}</h3>
+    <h3>突破門檻 · ${escapeHtml(br.next.name)}</h3>
     <p class="meta">靈契＋資源＋歷練條件齊備方可晉升；各項分開檢定。</p>
     <ul class="cond-list">${gateRows}</ul>
     <div class="row">
@@ -966,7 +962,10 @@ function dungeonPanel() {
     `;
   }
 
-  const list = DUNGEONS.map((d) => {
+  const list = dungeonsForRealm(state.realm)
+    .map((dungeonId) => {
+    const d = resolveDungeon(state, dungeonId);
+    if (!d) return "";
     const locked = state.realm < d.needRealm;
     const st = dungeonStatus(state, d.id);
     const cdSec = st ? Math.ceil(st.cooldownLeftMs / 1000) : 0;
@@ -992,20 +991,25 @@ function dungeonPanel() {
         )
       : "";
     const passiveLine = passives.map((p) => p.label).join(" · ");
+    const variantLine = d.dailyVariantLabel
+      ? `<span class="muted daily-variant">今日變體：${escapeHtml(d.dailyVariantLabel)}</span>`
+      : "";
     return `
       <li class="dungeon-card">
         <div class="dungeon-head">
           <div>
             <strong>${escapeHtml(d.name)}</strong>
-            <span class="muted">${escapeHtml(roleBits)} · 基礎獎 ${d.reward.stones} 石 / ${d.reward.scrap} 碎片 · ${clearNote}${locked ? " · 階段不足" : ""}${onCd ? ` · 冷卻 ${cdSec}s` : ""}</span>
+            ${variantLine}
+            <span class="muted">${escapeHtml(roleBits)} · 基礎獎 ${d.reward.stones} 石 / ${d.reward.scrap} 碎片 · ${clearNote}${locked ? ` · 需${escapeHtml(stageAt(d.needRealm).name)}` : ""}${onCd ? ` · 冷卻 ${cdSec}s` : ""}</span>
             ${passiveLine ? `<span class="muted">${escapeHtml(passiveLine)}</span>` : ""}
           </div>
           <button type="button" class="primary" data-dungeon="${d.id}" ${locked || onCd ? "disabled" : ""}>進攻</button>
         </div>
-        <p class="meta cond-caption">挑戰條件（各項分開結算）</p>
+        <p class="meta cond-caption">挑戰條件（各項分開結算 · 每日輪換）</p>
         <ul class="cond-list">${condList}${trialRow}</ul>
       </li>`;
-  }).join("");
+  })
+    .join("");
 
   const dailyMod = dungeonDailyView(state);
   const tactics = tacticsView(state);
@@ -1021,7 +1025,7 @@ function dungeonPanel() {
 
   return `
     <h2>潮汐秘境</h2>
-    <p class="lead">波次：雜兵→精英→BOSS。條件／試煉分開結算。選戰術後仍自動戰鬥。</p>
+    <p class="lead">波次：雜兵→精英→BOSS。每層 Boss／條件每日輪換（相近難度）。選戰術後仍自動戰鬥。</p>
     ${
       dailyMod
         ? `<ul class="cond-list"><li class="cond-item is-met"><span class="cond-badge">今日</span><div class="cond-body"><strong>${escapeHtml(

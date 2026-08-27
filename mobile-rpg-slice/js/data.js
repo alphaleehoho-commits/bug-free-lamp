@@ -11,6 +11,28 @@ export const STAGES = [
 
 export const REALMS = STAGES;
 
+/** 固定表最後一階（潮主）；之後用公式延伸 */
+export const STAGE_FORMULA_BASE = 5;
+
+/** 修行階段（0..∞）：固定表 + 指數公式 */
+export function stageAt(realmId) {
+  const id = Math.max(0, realmId | 0);
+  if (id < STAGES.length) return { ...STAGES[id] };
+  const extra = id - STAGE_FORMULA_BASE;
+  const baseNeed = STAGES[STAGE_FORMULA_BASE].need;
+  const baseRate = STAGES[STAGE_FORMULA_BASE].rate;
+  return {
+    id,
+    name: `潮主·${id - STAGE_FORMULA_BASE}重`,
+    need: Math.round(baseNeed * Math.pow(1.72, extra)),
+    rate: Math.round((baseRate + extra * 0.55) * 10) / 10,
+  };
+}
+
+export function nextStageAt(realmId) {
+  return stageAt((realmId | 0) + 1);
+}
+
 /**
  * 晉升至目標階段的額外門檻（靈契仍用 STAGES[target].need）
  * costs: 突破時扣除；checks: 硬性條件
@@ -57,6 +79,44 @@ export const BREAKTHROUGH_GATES = {
     ],
   },
 };
+
+/** 潮主之後的突破門檻（公式生成） */
+export function breakthroughGateFor(targetRealmId) {
+  if (BREAKTHROUGH_GATES[targetRealmId]) return BREAKTHROUGH_GATES[targetRealmId];
+  const extra = Math.max(1, targetRealmId - STAGE_FORMULA_BASE);
+  const reqTier = Math.max(4, targetRealmId - 2);
+  const reqGen = Math.min(3, 2 + Math.floor((extra - 1) / 2));
+  return {
+    costs: {
+      stones: Math.round(400 * Math.pow(1.48, extra - 1)),
+      scrap: 5 + extra * 2,
+      dust: 40 + extra * 12,
+      feed: 30 + extra * 8,
+    },
+    checks: [
+      {
+        type: "cleared",
+        dungeonId: dungeonIdForTier(reqTier),
+        label: `通關【${dungeonDisplayName(reqTier)}】`,
+      },
+      {
+        type: "combats",
+        need: 8 + extra * 4,
+        label: `累計秘境勝場 ≥ ${8 + extra * 4}`,
+      },
+      {
+        type: "min_gen",
+        gen: reqGen,
+        label: `擁有 ≥ ${reqGen} 代寵`,
+      },
+      {
+        type: "gear_equipped",
+        need: 3,
+        label: "三槽滿裝",
+      },
+    ],
+  };
+}
 
 function ownedPetList(state) {
   return [...(state.pets || []), ...(state.ranch || [])];
@@ -128,12 +188,9 @@ function formatCostBits(costs) {
  * 下一階段突破檢視：分項達標狀態（供 UI 清單表）
  */
 export function breakthroughView(state) {
-  const cur = STAGES[Math.min(state.realm, STAGES.length - 1)];
-  const next = STAGES[state.realm + 1] || null;
-  if (!next) {
-    return { maxed: true, cur, next: null, items: [], ready: false, costs: null, costLabel: "" };
-  }
-  const gate = BREAKTHROUGH_GATES[next.id] || { costs: {}, checks: [] };
+  const cur = stageAt(state.realm);
+  const next = nextStageAt(state.realm);
+  const gate = breakthroughGateFor(next.id);
   const costs = gate.costs || {};
   const items = [];
 
@@ -1383,6 +1440,470 @@ export const DUNGEONS = [
     elementWeights: { gloom: 3, tide: 2, stone: 2, flame: 2, gale: 2 },
   },
 ];
+
+/** 秘境 tier → id */
+export function dungeonIdForTier(tier) {
+  return `tide_${Math.max(1, tier | 0)}`;
+}
+
+export function parseDungeonTier(dungeonId) {
+  const m = /^tide_(\d+)$/.exec(String(dungeonId || ""));
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+export function dungeonDisplayName(tier) {
+  if (tier <= 1) return "潮汐廢墟 · 一層";
+  if (tier === 2) return "潮汐廢墟 · 二層";
+  if (tier === 3) return "潮汐廢墟 · 心核";
+  if (tier === 4) return "潮汐廢墟 · 深層";
+  return `潮汐廢墟 · ${tier}層`;
+}
+
+function cloneDungeon(d) {
+  return JSON.parse(JSON.stringify(d));
+}
+
+function scaleReward(obj, mult) {
+  if (!obj) return obj;
+  const out = { ...obj };
+  for (const k of Object.keys(out)) {
+    if (typeof out[k] === "number") out[k] = Math.max(0, Math.round(out[k] * mult));
+  }
+  return out;
+}
+
+/** 5 層以上：以第 4 層為基準按 tier 公式放大 */
+export function scaleDungeonForTier(base, tier) {
+  const d = cloneDungeon(base);
+  d.id = dungeonIdForTier(tier);
+  d.name = dungeonDisplayName(tier);
+  d.needRealm = Math.max(0, tier - 1);
+  const extra = tier - 4;
+  const statMult = Math.pow(1.22, extra);
+  const rewardMult = Math.pow(1.18, extra);
+  d.cooldownMs = Math.round(d.cooldownMs * (1 + extra * 0.12));
+  for (const w of d.waves || []) {
+    for (const e of w.enemies || []) {
+      e.hp = Math.round(e.hp * statMult);
+      e.atk = Math.round(e.atk * statMult);
+      if (extra > 0) e.spd = Math.min(15, Math.round(e.spd * (1 + extra * 0.02)));
+    }
+  }
+  d.reward = scaleReward(d.reward, rewardMult);
+  d.firstClearBonus = scaleReward(d.firstClearBonus, rewardMult);
+  d.eliteBonus = scaleReward(d.eliteBonus, rewardMult);
+  d.bossBonus = scaleReward(d.bossBonus, rewardMult);
+  for (const c of d.conditions || []) {
+    if (c.bonus) c.bonus = scaleReward(c.bonus, rewardMult);
+  }
+  return d;
+}
+
+export function buildDungeonForTier(tier) {
+  const t = Math.max(1, tier | 0);
+  const base = DUNGEONS[Math.min(t, 4) - 1];
+  if (!base) return null;
+  if (t <= 4) return cloneDungeon(base);
+  return scaleDungeonForTier(DUNGEONS[3], t);
+}
+
+/** 可見秘境 tier 列表：至少 4 層，隨階段 +1 層預覽 */
+export function dungeonsForRealm(realm) {
+  const count = Math.max(4, (realm | 0) + 1);
+  const out = [];
+  for (let t = 1; t <= count; t++) out.push(dungeonIdForTier(t));
+  return out;
+}
+
+function seededRand(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 0x100000000;
+  };
+}
+
+function pickSeeded(list, rand, count = 1) {
+  if (!list?.length) return [];
+  const pool = list.map((x, i) => ({ x, i }));
+  const out = [];
+  for (let n = 0; n < count && pool.length; n++) {
+    const idx = Math.floor(rand() * pool.length);
+    out.push(pool[idx].x);
+    pool.splice(idx, 1);
+  }
+  return out;
+}
+
+/** 每日 Boss 變體池（同 tier 相近 powerScore） */
+const BOSS_VARIANTS = {
+  1: [],
+  2: [
+    {
+      name: "沉淵監守",
+      hp: 200,
+      atk: 17,
+      spd: 9,
+      element: "gloom",
+      skills: ["abyss_slam", "shadow_cleave", "core_roar"],
+      waveLabel: "二層看守",
+    },
+    {
+      name: "黑潮督軍",
+      hp: 210,
+      atk: 16,
+      spd: 10,
+      element: "tide",
+      skills: ["tide_crush", "abyss_slam", "core_roar"],
+      waveLabel: "督軍前線",
+    },
+    {
+      name: "裂岩守將",
+      hp: 195,
+      atk: 18,
+      spd: 8,
+      element: "stone",
+      skills: ["shell_guard", "abyss_slam", "coral_spike"],
+      waveLabel: "岩殼防線",
+    },
+  ],
+  3: [
+    {
+      name: "心核看守",
+      hp: 320,
+      atk: 22,
+      spd: 8,
+      element: "stone",
+      skills: ["abyss_slam", "shadow_cleave", "core_roar", "shell_guard"],
+      waveLabel: "心核 BOSS",
+    },
+    {
+      name: "幽潮巫首",
+      hp: 300,
+      atk: 23,
+      spd: 9,
+      element: "gloom",
+      skills: ["shadow_cleave", "mist_ward", "core_roar", "venom_bite"],
+      waveLabel: "巫首祭壇",
+    },
+    {
+      name: "裂潮雙刃",
+      hp: 310,
+      atk: 24,
+      spd: 10,
+      element: "tide",
+      skills: ["tide_crush", "abyss_slam", "storm_lance"],
+      waveLabel: "雙刃決戰",
+    },
+  ],
+  4: [
+    {
+      name: "暗潮心核·真影",
+      hp: 480,
+      atk: 28,
+      spd: 10,
+      element: "gloom",
+      skills: ["abyss_slam", "shadow_cleave", "core_roar", "shell_guard", "tide_crush"],
+      waveLabel: "深層 BOSS",
+    },
+    {
+      name: "萬潮噬主",
+      hp: 460,
+      atk: 30,
+      spd: 11,
+      element: "tide",
+      skills: ["tide_crush", "abyss_slam", "core_roar", "storm_lance"],
+      waveLabel: "噬潮王座",
+    },
+    {
+      name: "寂滅岩靈",
+      hp: 500,
+      atk: 27,
+      spd: 9,
+      element: "stone",
+      skills: ["shell_guard", "abyss_slam", "core_roar", "coral_spike"],
+      waveLabel: "岩靈核心",
+    },
+  ],
+};
+
+const ELITE_VARIANTS = {
+  1: [
+    {
+      name: "潮蝕爪衛",
+      hp: 95,
+      atk: 11,
+      spd: 8,
+      element: "tide",
+      skills: ["tide_crush", "coral_spike"],
+      waveLabel: "廢墟精英",
+    },
+    {
+      name: "暗礁刃客",
+      hp: 90,
+      atk: 12,
+      spd: 9,
+      element: "gloom",
+      skills: ["shadow_cleave", "venom_bite"],
+      waveLabel: "暗礁精英",
+    },
+  ],
+  2: [
+    {
+      name: "暗潮使徒",
+      hp: 130,
+      atk: 15,
+      spd: 7,
+      element: "gloom",
+      skills: ["shadow_cleave", "venom_bite"],
+      waveLabel: "使徒精英",
+    },
+    {
+      name: "深淵獵手",
+      hp: 125,
+      atk: 16,
+      spd: 9,
+      element: "tide",
+      skills: ["tide_crush", "abyss_slam"],
+      waveLabel: "獵手精英",
+    },
+  ],
+};
+
+const CONDITION_TEMPLATES = {
+  1: [
+    {
+      type: "min_element",
+      element: "flame",
+      count: 1,
+      label: "條件：出戰含焰屬",
+      bonus: { stones: 12, scrap: 0 },
+    },
+    {
+      type: "min_element",
+      element: "tide",
+      count: 1,
+      label: "條件：出戰含潮屬",
+      bonus: { stones: 10, scrap: 0 },
+    },
+    {
+      type: "max_pets",
+      max: 2,
+      label: "條件：出戰≤2寵",
+      bonus: { stones: 10, feed: 2 },
+    },
+    {
+      type: "max_pets",
+      max: 1,
+      label: "條件：單騎出戰",
+      bonus: { stones: 14, dust: 3 },
+    },
+  ],
+  2: [
+    {
+      type: "unique_species",
+      label: "條件：出戰無重複種族",
+      bonus: { stones: 18, scrap: 1 },
+    },
+    {
+      type: "min_element",
+      element: "gale",
+      count: 1,
+      label: "條件：出戰含嵐屬",
+      bonus: { stones: 14, dust: 4 },
+    },
+    {
+      type: "min_element",
+      element: "stone",
+      count: 1,
+      label: "條件：出戰含岩屬",
+      bonus: { stones: 16, scrap: 1 },
+    },
+    {
+      type: "max_pets",
+      max: 2,
+      label: "條件：出戰≤2寵",
+      bonus: { stones: 15, feed: 3 },
+    },
+  ],
+  3: [
+    {
+      type: "min_hybrid",
+      count: 1,
+      label: "條件：出戰含雜交種",
+      bonus: { stones: 28, scrap: 1 },
+    },
+    {
+      type: "min_gen",
+      gen: 2,
+      label: "條件：出戰含≥2代寵",
+      bonus: { stones: 24, dust: 6 },
+    },
+    {
+      type: "max_pets",
+      max: 2,
+      label: "條件：出戰≤2寵",
+      bonus: { stones: 30, scrap: 1 },
+    },
+    {
+      type: "unique_species",
+      label: "條件：出戰無重複種族",
+      bonus: { stones: 22, dust: 5 },
+    },
+  ],
+  4: [
+    {
+      type: "min_hybrid",
+      count: 1,
+      label: "條件：出戰含雜交種",
+      bonus: { stones: 45, scrap: 2 },
+    },
+    {
+      type: "min_gen",
+      gen: 2,
+      label: "條件：出戰含≥2代寵",
+      bonus: { stones: 40, dust: 10 },
+    },
+    {
+      type: "min_gen",
+      gen: 3,
+      label: "條件：出戰含≥3代寵",
+      bonus: { stones: 55, scrap: 2 },
+    },
+    {
+      type: "max_pets",
+      max: 2,
+      label: "條件：出戰≤2寵",
+      bonus: { stones: 50, scrap: 1 },
+    },
+  ],
+};
+
+const PASSIVE_TEMPLATES = {
+  1: [
+    { type: "elem_atk", element: "flame", mult: 1.12, label: "關卡：焰屬友方攻擊 +12%" },
+    { type: "elem_atk", element: "tide", mult: 1.1, label: "關卡：潮屬友方攻擊 +10%" },
+  ],
+  2: [
+    { type: "elem_atk", element: "gale", mult: 1.1, label: "關卡：嵐屬友方攻擊 +10%" },
+    { type: "elem_atk", element: "gloom", mult: 1.08, label: "關卡：幽屬友方攻擊 +8%" },
+  ],
+  3: [
+    { type: "elem_atk", element: "gale", mult: 1.15, label: "關卡：嵐屬友方攻擊 +15%（剋岩）" },
+    { type: "elem_atk", element: "flame", mult: 1.12, label: "關卡：焰屬友方攻擊 +12%" },
+  ],
+  4: [
+    { type: "elem_atk", element: "flame", mult: 1.12, label: "關卡：焰屬友方攻擊 +12%" },
+    { type: "elem_atk", element: "stone", mult: 1.1, label: "關卡：岩屬友方攻擊 +10%" },
+  ],
+};
+
+function tierBand(tier) {
+  return Math.min(4, Math.max(1, tier | 0));
+}
+
+function applyStatVariance(val, rand, spread = 0.08) {
+  const mult = 1 + (rand() * 2 - 1) * spread;
+  return Math.max(1, Math.round(val * mult));
+}
+
+/**
+ * 每日秘境變體：同 tier 相近難度，輪換 Boss／精英／條件／被動
+ * dateKey 通常為 YYYY-MM-DD；同 seed 必須 deterministic
+ */
+export function generateDailyDungeon(dungeonId, dateKey) {
+  const tier = parseDungeonTier(dungeonId);
+  if (!tier) return null;
+  const d = buildDungeonForTier(tier);
+  if (!d) return null;
+
+  const seed = hashDayKey(`${dateKey || ""}:${dungeonId}`);
+  const rand = seededRand(seed);
+  const band = tierBand(tier);
+
+  const condPool = CONDITION_TEMPLATES[band] || CONDITION_TEMPLATES[4];
+  const pickedConds = pickSeeded(condPool, rand, Math.min(2, condPool.length)).map((c, i) => ({
+    ...c,
+    id: `${dungeonId}_dc_${i}_${seed % 997}`,
+  }));
+  d.conditions = pickedConds;
+
+  const passivePool = PASSIVE_TEMPLATES[band] || PASSIVE_TEMPLATES[4];
+  const pickedPassive = pickSeeded(passivePool, rand, 1)[0];
+  d.passives = pickedPassive
+    ? [{ ...pickedPassive, id: `${dungeonId}_dp_${seed % 991}` }]
+    : [];
+
+  const bossPool = BOSS_VARIANTS[band] || BOSS_VARIANTS[4];
+  if (bossPool.length) {
+    const bossTpl = pickSeeded(bossPool, rand, 1)[0];
+    const statMult = tier > 4 ? Math.pow(1.22, tier - 4) : 1;
+    const bossEnemy = {
+      name: bossTpl.name,
+      hp: applyStatVariance(Math.round(bossTpl.hp * statMult), rand),
+      atk: applyStatVariance(Math.round(bossTpl.atk * statMult), rand),
+      spd: bossTpl.spd,
+      element: bossTpl.element,
+      role: "boss",
+      skills: [...bossTpl.skills],
+      actions: 2,
+    };
+    const waves = dungeonWaves(d);
+    const bossWaveIdx = waves.findIndex((w) => (w.enemies || []).some((e) => e.role === "boss"));
+    if (bossWaveIdx >= 0) {
+      waves[bossWaveIdx] = {
+        label: bossTpl.waveLabel,
+        enemies: [bossEnemy],
+      };
+    } else {
+      waves.push({ label: bossTpl.waveLabel, enemies: [bossEnemy] });
+    }
+    d.waves = waves;
+    d.dailyVariantLabel = bossTpl.name;
+  } else {
+    const elitePool = ELITE_VARIANTS[band];
+    if (elitePool?.length) {
+      const eliteTpl = pickSeeded(elitePool, rand, 1)[0];
+      const statMult = tier > 4 ? Math.pow(1.22, tier - 4) : 1;
+      const eliteEnemy = {
+        name: eliteTpl.name,
+        hp: applyStatVariance(Math.round(eliteTpl.hp * statMult), rand),
+        atk: applyStatVariance(Math.round(eliteTpl.atk * statMult), rand),
+        spd: eliteTpl.spd,
+        element: eliteTpl.element,
+        role: "elite",
+        skills: [...eliteTpl.skills],
+      };
+      const waves = dungeonWaves(d);
+      const eliteIdx = waves.findIndex((w) => (w.enemies || []).some((e) => e.role === "elite"));
+      if (eliteIdx >= 0) {
+        waves[eliteIdx] = { label: eliteTpl.waveLabel, enemies: [eliteEnemy] };
+        d.waves = waves;
+      }
+      d.dailyVariantLabel = eliteTpl.name;
+    }
+  }
+
+  d.dailySeed = seed;
+  return d;
+}
+
+/** 試煉：5 層以上公式延伸 */
+export function dungeonTrialFor(dungeonId) {
+  if (DUNGEON_TRIALS[dungeonId]) return DUNGEON_TRIALS[dungeonId];
+  const tier = parseDungeonTier(dungeonId);
+  if (tier <= 4) return null;
+  const extra = tier - 4;
+  const needGen = Math.min(3, 2 + Math.floor((extra + 1) / 2));
+  return {
+    id: `trial_${dungeonId}`,
+    label: `試煉：雜交種且 ≥${needGen} 代`,
+    needHybrid: true,
+    needGen,
+    match: "all",
+    bonus: { stones: 70 + extra * 25, scrap: 2 + Math.floor(extra / 2) },
+  };
+}
 
 /** 兼容：扁平敵人列表（舊資料／測試）→ 單波 */
 export function dungeonWaves(dungeon) {

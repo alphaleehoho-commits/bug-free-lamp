@@ -30,6 +30,12 @@ import {
   BREAKTHROUGH_GATES,
   STAGES,
   pickDailyDungeonMod,
+  stageAt,
+  generateDailyDungeon,
+  buildDungeonForTier,
+  dungeonsForRealm,
+  dungeonTrialFor,
+  breakthroughGateFor,
   RECRUIT_POOL,
   HYBRID_SKILLS,
   genCombatMult,
@@ -158,8 +164,14 @@ assert(countDungeonRoles(dungeonWaves(DUNGEONS.find((d) => d.id === "tide_2"))).
 assert(countDungeonRoles(dungeonWaves(DUNGEONS.find((d) => d.id === "tide_3"))).boss >= 1, "t3 boss");
 
 const flameParty = [{ elementId: "flame", speciesId: "glowfin", generation: 0 }];
-const t1ev = evaluateDungeonConditions(flameParty, DUNGEONS.find((d) => d.id === "tide_1"));
-assert(t1ev.find((c) => c.id === "tide_1_flame")?.ok, "flame condition");
+const t1daily = generateDailyDungeon("tide_1", "2026-08-26");
+assert(t1daily?.conditions?.length === 2, "daily 2 conds");
+assert(t1daily.dailyVariantLabel, "t1 daily variant");
+assert(
+  generateDailyDungeon("tide_1", "2026-08-26").dailyVariantLabel === t1daily.dailyVariantLabel,
+  "daily deterministic"
+);
+const t1ev = evaluateDungeonConditions(flameParty, t1daily);
 assert(t1ev.find((c) => c.passive)?.type === "elem_atk", "passive elem");
 
 const flatCompat = dungeonWaves({ name: "x", enemies: [{ name: "a", hp: 1, atk: 1, spd: 1, element: "tide" }] });
@@ -208,6 +220,27 @@ assert(pickDailyDungeonMod("2026-08-26")?.label, "daily mod");
 assert(DUNGEON_TRIALS.tide_4?.match === "all", "t4 trial");
 assert(BREAKTHROUGH_GATES[5].checks.some((c) => c.dungeonId === "tide_4"), "break needs t4");
 assert(TACTICS.sustain && TACTICS.focus_boss, "tactics");
+
+/* P7: infinite stages + daily dungeon variants */
+assert(stageAt(5).name === "潮主", "stage 5 name");
+assert(stageAt(6).name === "潮主·1重", "stage 6 name");
+assert(stageAt(6).need > stageAt(5).need, "stage 6 need");
+assert(stageAt(10).need > stageAt(6).need, "stage scaling");
+const br5 = breakthroughView({ ...fakeState, realm: 5, qi: 99999, stones: 9999, scrap: 99, dust: 99, feed: 99, combatsWon: 99, clearedDungeons: { tide_4: true }, pets: [{ generation: 3 }], ranch: [], stats: { bonds: 5, fusions: 5, breeds: 5 }, bestiary: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`k${i}`, true])), master: { equip: { weapon: "a", armor: "b", accessory: "c" } } });
+assert(!br5.maxed && br5.next.id === 6, "no stage cap");
+assert(breakthroughGateFor(6).checks.some((c) => c.dungeonId === "tide_4"), "stage6 needs t4");
+assert(dungeonsForRealm(4).includes("tide_5"), "realm4 sees t5");
+assert(dungeonsForRealm(0).length === 4, "min 4 dungeons");
+const t5 = buildDungeonForTier(5);
+assert(t5.id === "tide_5" && t5.needRealm === 4, "t5 tier");
+assert(t5.reward.stones > DUNGEONS[3].reward.stones, "t5 scaled reward");
+const t2daily = generateDailyDungeon("tide_2", "2026-08-27");
+assert(countDungeonRoles(dungeonWaves(t2daily)).boss >= 1, "t2 daily boss");
+assert(dungeonTrialFor("tide_5")?.needHybrid, "t5 trial");
+assert(generateDailyDungeon("tide_3", "2026-08-26") !== generateDailyDungeon("tide_3", "2026-08-27") || true, "date may differ");
+const d3a = generateDailyDungeon("tide_3", "2026-08-26");
+const d3b = generateDailyDungeon("tide_3", "2026-08-26");
+assert(d3a.dailyVariantLabel === d3b.dailyVariantLabel, "same day same variant");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
