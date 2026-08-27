@@ -92,6 +92,7 @@ export function breakthroughGateFor(targetRealmId) {
       scrap: 5 + extra * 2,
       dust: 40 + extra * 12,
       feed: 30 + extra * 8,
+      seal_ember: extra,
     },
     checks: [
       {
@@ -181,6 +182,7 @@ function formatCostBits(costs) {
   if (costs.scrap) bits.push(`${costs.scrap}碎片`);
   if (costs.dust) bits.push(`${costs.dust}靈塵`);
   if (costs.feed) bits.push(`${costs.feed}飼料`);
+  if (costs.seal_ember) bits.push(`${costs.seal_ember}契火`);
   return bits.join("／");
 }
 
@@ -236,6 +238,16 @@ export function breakthroughView(state) {
       label: `飼料 ≥ ${costs.feed}`,
       ok: (state.feed || 0) >= costs.feed,
       progress: `${Math.floor(state.feed || 0)}/${costs.feed}`,
+      kind: "cost",
+    });
+  }
+  if (costs.seal_ember) {
+    const have = state.materials?.seal_ember || 0;
+    items.push({
+      id: "cost_seal_ember",
+      label: `契火 ≥ ${costs.seal_ember}`,
+      ok: have >= costs.seal_ember,
+      progress: `${have}/${costs.seal_ember}`,
       kind: "cost",
     });
   }
@@ -373,6 +385,13 @@ export const SPECIES = {
     kind: "鱗",
     breedOnly: true,
     base: { atk: 14, hp: 105, spd: 13 },
+  },
+  shellmite: {
+    id: "shellmite",
+    name: "甲蟎",
+    kind: "甲",
+    breedOnly: true,
+    base: { atk: 13, hp: 150, spd: 8 },
   },
 };
 
@@ -665,6 +684,15 @@ export const SKILLS = {
     power: 1.75,
     desc: "鱗羽專屬：鱗刃俯衝",
   },
+  shell_spike: {
+    id: "shell_spike",
+    name: "甲刺",
+    owner: "pet",
+    type: "guard",
+    cd: 3,
+    power: 0.5,
+    desc: "甲蟎專屬：甲刺反震",
+  },
 };
 
 /** 人物依階段解鎖技能 */
@@ -790,7 +818,7 @@ export function rarityInfo(r) {
 /**
  * 雜交配方（主／次）：雙親 kind（無序）→ 新品種
  * 同一格只取最高 chance（主配方覆蓋次配方唔會撞名時分開寫不同產物）
- * × 無配方：甲×蟲
+ * × 無配方：（已補齊主要缺口）
  */
 export const HYBRID_RECIPES = [
   // —— 主配方 ——
@@ -802,6 +830,7 @@ export const HYBRID_RECIPES = [
   { kinds: ["光", "蟲"], species: "stormmoth", chance: 0.26, tier: "main" },
   { kinds: ["獸", "蟲"], species: "fangmite", chance: 0.25, tier: "main" },
   { kinds: ["鱗", "禽"], species: "scalequill", chance: 0.25, tier: "main" },
+  { kinds: ["甲", "蟲"], species: "shellmite", chance: 0.24, tier: "main" },
   // —— 次配方（較低機率／後門）——
   { kinds: ["鱗", "蟲"], species: "mistcarp", chance: 0.18, tier: "sub" },
   { kinds: ["甲", "禽"], species: "ironback", chance: 0.16, tier: "sub" },
@@ -918,18 +947,20 @@ export function rollBreedRarity(parentA, parentB, opts = {}) {
 }
 
 /**
- * 恐龍突變式繁殖 + 代際
+ * 恐龍突變式繁殖 + 代際 + 第二性格
  */
 export function rollBreedGenes(parentA, parentB) {
   const ga = parentA.genes || {
     species: parentA.speciesId,
     element: parentA.elementId,
     personality: parentA.personalityId,
+    personality2: parentA.personality2Id || null,
   };
   const gb = parentB.genes || {
     species: parentB.speciesId,
     element: parentB.elementId,
     personality: parentB.personalityId,
+    personality2: parentB.personality2Id || null,
   };
   const spA = SPECIES[ga.species] || SPECIES[parentA.speciesId];
   const spB = SPECIES[gb.species] || SPECIES[parentB.speciesId];
@@ -943,7 +974,6 @@ export function rollBreedGenes(parentA, parentB) {
 
   let species = Math.random() < 0.5 ? ga.species : gb.species;
   let element = Math.random() < 0.5 ? ga.element : gb.element;
-  let personality = Math.random() < 0.5 ? ga.personality : gb.personality;
   let mutated = false;
   let hybrid = false;
   let newSpecies = false;
@@ -966,6 +996,36 @@ export function rollBreedGenes(parentA, parentB) {
     mutated = true;
   }
 
+  // 性格池：雙親主／副性格
+  const pePool = [
+    ga.personality,
+    gb.personality,
+    ga.personality2,
+    gb.personality2,
+  ].filter((id) => id && PERSONALITIES[id]);
+  let personality = pePool.length
+    ? pePool[Math.floor(Math.random() * pePool.length)]
+    : Math.random() < 0.5
+      ? ga.personality
+      : gb.personality;
+  // 主性格突變
+  if (Math.random() < 0.12 * genMult) {
+    const others = Object.keys(PERSONALITIES).filter((p) => p !== personality);
+    personality = pick(others);
+    mutated = true;
+  }
+  // 第二性格：從池中另抽，可突變
+  let personality2 = null;
+  const pe2Pool = pePool.filter((p) => p !== personality);
+  if (pe2Pool.length && Math.random() < 0.72) {
+    personality2 = pe2Pool[Math.floor(Math.random() * pe2Pool.length)];
+  } else if (Math.random() < 0.45) {
+    const others = Object.keys(PERSONALITIES).filter((p) => p !== personality);
+    personality2 = pick(others);
+    mutated = true;
+  }
+  if (personality2 === personality) personality2 = null;
+
   const rarity = rollBreedRarity(parentA, parentB, { sameSpecies, hybrid, genMult });
   const parentMax = Math.max(parentA.rarity ?? 0, parentB.rarity ?? 0);
   const rarityUp = rarity > parentMax;
@@ -974,6 +1034,7 @@ export function rollBreedGenes(parentA, parentB) {
     species,
     element,
     personality,
+    personality2,
     rarity,
     generation,
     genA,
@@ -1213,6 +1274,7 @@ export const HYBRID_SKILLS = {
   reefwing: "reef_dive",
   fangmite: "fang_burst",
   scalequill: "scale_glide",
+  shellmite: "shell_spike",
 };
 
 /** 代數出戰攻／血倍率 */
@@ -2165,12 +2227,20 @@ export function buildPetStats(template) {
   const el = ELEMENTS[template.element];
   const pe = PERSONALITIES[template.personality];
   if (!sp || !el || !pe) throw new Error("invalid pet template");
+  const pe2 =
+    template.personality2 && template.personality2 !== template.personality
+      ? PERSONALITIES[template.personality2]
+      : null;
   const rarity = Math.max(0, Math.min(RARITY_MAX, template.rarity ?? 0));
   const rMult = rarityInfo(rarity).mult;
   const skillId = KIND_SKILLS[sp.kind];
-  const atk = Math.round(sp.base.atk * el.atk * pe.atk * rMult);
-  const hp = Math.round(sp.base.hp * el.hp * pe.hp * rMult);
-  const spd = Math.round(sp.base.spd * el.spd * pe.spd * rMult);
+  // 主性格 75% + 副性格 25% 影響白板
+  const peAtk = pe2 ? pe.atk * 0.75 + pe2.atk * 0.25 : pe.atk;
+  const peHp = pe2 ? pe.hp * 0.75 + pe2.hp * 0.25 : pe.hp;
+  const peSpd = pe2 ? pe.spd * 0.75 + pe2.spd * 0.25 : pe.spd;
+  const atk = Math.round(sp.base.atk * el.atk * peAtk * rMult);
+  const hp = Math.round(sp.base.hp * el.hp * peHp * rMult);
+  const spd = Math.round(sp.base.spd * el.spd * peSpd * rMult);
   return {
     templateId: template.id,
     speciesId: sp.id,
@@ -2181,6 +2251,8 @@ export function buildPetStats(template) {
     elementName: el.name,
     personalityId: pe.id,
     personalityName: pe.name,
+    personality2Id: pe2?.id || null,
+    personality2Name: pe2?.name || null,
     name: `${el.name}${sp.name}`,
     atk,
     hp,
@@ -2196,13 +2268,15 @@ export function buildPetStats(template) {
       species: sp.id,
       element: el.id,
       personality: pe.id,
+      personality2: pe2?.id || null,
     },
   };
 }
 
 export function petLabel(pet) {
   const r = rarityInfo(pet.rarity ?? 0).name;
-  return `${pet.name}（${r}·${pet.kind}·${pet.elementName}·${pet.personalityName}）`;
+  const pe2 = pet.personality2Name ? `/${pet.personality2Name}` : "";
+  return `${pet.name}（${r}·${pet.kind}·${pet.elementName}·${pet.personalityName}${pe2}）`;
 }
 
 /* ─── P1：牧場掛機產物 ─── */
@@ -2456,28 +2530,49 @@ export const DISPATCH_MISSIONS = [
     name: "潮灘覓食",
     durationMs: 90_000,
     needPets: 1,
-    reward: { feed: 8, stones: 12 },
-    desc: "1 寵 · 約 1.5 分 → 飼料／靈石",
+    needSite: null,
+    reward: { feed: 10, stones: 12, materials: { tide_dew: 2 } },
+    desc: "1 寵 · 約 1.5 分 → 飼料／潮露",
   },
   {
     id: "dust_hunt",
     name: "靈塵拾遺",
     durationMs: 150_000,
     needPets: 1,
-    reward: { dust: 10, stones: 10 },
-    desc: "1 寵 · 約 2.5 分 → 靈塵／靈石",
+    needSite: "ruins",
+    reward: { dust: 12, stones: 10, materials: { coral_shard: 2 } },
+    desc: "1 寵 · 需廢墟影堂 · 靈塵／珊瑚屑",
   },
   {
     id: "scrap_dive",
     name: "廢墟打撈",
     durationMs: 240_000,
     needPets: 2,
-    reward: { scrap: 2, stones: 25, feed: 4 },
-    desc: "2 寵 · 約 4 分 → 碎片／靈石",
+    needSite: "ruins",
+    reward: { scrap: 2, stones: 25, feed: 4, materials: { mist_silk: 1, coral_shard: 1 } },
+    desc: "2 寵 · 需廢墟影堂 · 碎片／霧絲",
+  },
+  {
+    id: "ink_scout",
+    name: "墨潮探查",
+    durationMs: 300_000,
+    needPets: 2,
+    needSite: "core",
+    reward: { dust: 8, stones: 30, materials: { abyss_ink: 2, mist_silk: 1 } },
+    desc: "2 寵 · 需心核道場 · 深淵墨",
+  },
+  {
+    id: "ember_rite",
+    name: "契火祭巡",
+    durationMs: 360_000,
+    needPets: 2,
+    needSite: "abyss",
+    reward: { stones: 40, materials: { seal_ember: 2, abyss_ink: 1 } },
+    desc: "2 寵 · 需暗潮心壇 · 契火",
   },
 ];
 
-export const DISPATCH_SLOT_MAX = 2;
+export const DISPATCH_SLOT_MAX = 3;
 
 /* ─── P9：潮印 soft prestige ─── */
 
@@ -2652,6 +2747,140 @@ export const PERSONALITY_COMBAT = {
 
 export function personalityCombatFor(personalityId) {
   return PERSONALITY_COMBAT[personalityId] || null;
+}
+
+/** 主 70% + 副 30% 混合性格戰鬥倍率 */
+export function personalityCombatForPet(pet) {
+  const a = personalityCombatFor(pet?.personalityId);
+  const b = personalityCombatFor(pet?.personality2Id);
+  if (!a && !b) return null;
+  if (!b) return a;
+  if (!a) return b;
+  const blend = (x, y) => 1 + ((x || 1) - 1) * 0.7 + ((y || 1) - 1) * 0.3;
+  return {
+    id: `${a.id}+${b.id}`,
+    label: `${a.label.split("：")[0]}/${b.label.split("：")[0]}`,
+    atkMult: blend(a.atkMult, b.atkMult),
+    hpMult: blend(a.hpMult, b.hpMult),
+    spdMult: blend(a.spdMult, b.spdMult),
+    sustainBias: !!(a.sustainBias || b.sustainBias),
+  };
+}
+
+/* ─── P10：材料／練功地點／主線解鎖 ─── */
+
+export const MATERIALS = {
+  tide_dew: { id: "tide_dew", name: "潮露", desc: "寵物升級催化" },
+  coral_shard: { id: "coral_shard", name: "珊瑚屑", desc: "繁殖必需" },
+  mist_silk: { id: "mist_silk", name: "霧絲", desc: "高階升級／技能" },
+  abyss_ink: { id: "abyss_ink", name: "深淵墨", desc: "雜交／高代繁殖" },
+  seal_ember: { id: "seal_ember", name: "契火", desc: "突破與進化" },
+};
+
+export const MATERIAL_IDS = Object.keys(MATERIALS);
+
+export function emptyMaterials() {
+  return Object.fromEntries(MATERIAL_IDS.map((id) => [id, 0]));
+}
+
+/** 升級耗材料（隨等級） */
+export function upgradeMatCost(level) {
+  const lv = Math.max(1, level | 0);
+  return {
+    tide_dew: 1 + Math.floor(lv / 4),
+    mist_silk: lv >= 10 ? 1 + Math.floor((lv - 10) / 8) : 0,
+  };
+}
+
+/** 繁殖耗材料（代數愈高愈貴） */
+export function breedMatCost(genA, genB) {
+  const avg = (Math.max(0, genA | 0) + Math.max(0, genB | 0)) / 2;
+  return {
+    coral_shard: 1 + Math.floor(avg),
+    abyss_ink: avg >= 1.5 ? 1 : 0,
+  };
+}
+
+/**
+ * 練功地點：擊殺對應秘境 BOSS（首通）解鎖
+ * drops: perSec 期望產出／秒
+ */
+export const TRAIN_SITES = [
+  {
+    id: "shore",
+    name: "潮岸練場",
+    needClear: null,
+    qiMult: 1,
+    desc: "基礎練功 · 潮露／少許飼料",
+    drops: [
+      { mat: "tide_dew", perSec: 0.035 },
+      { feed: 0.04 },
+    ],
+  },
+  {
+    id: "ruins",
+    name: "廢墟影堂",
+    needClear: "tide_1",
+    qiMult: 1.08,
+    desc: "通關一層解鎖 · 潮露／珊瑚屑",
+    drops: [
+      { mat: "tide_dew", perSec: 0.028 },
+      { mat: "coral_shard", perSec: 0.022 },
+      { dust: 0.02 },
+    ],
+  },
+  {
+    id: "deep",
+    name: "深層祭壇",
+    needClear: "tide_2",
+    qiMult: 1.15,
+    desc: "通關二層解鎖 · 霧絲／珊瑚",
+    drops: [
+      { mat: "coral_shard", perSec: 0.025 },
+      { mat: "mist_silk", perSec: 0.018 },
+      { feed: 0.025 },
+    ],
+  },
+  {
+    id: "core",
+    name: "心核道場",
+    needClear: "tide_3",
+    qiMult: 1.22,
+    desc: "通關心核解鎖 · 深淵墨／霧絲",
+    drops: [
+      { mat: "mist_silk", perSec: 0.022 },
+      { mat: "abyss_ink", perSec: 0.016 },
+      { dust: 0.03 },
+    ],
+  },
+  {
+    id: "abyss",
+    name: "暗潮心壇",
+    needClear: "tide_4",
+    qiMult: 1.3,
+    desc: "通關深層解鎖 · 契火／深淵墨",
+    drops: [
+      { mat: "abyss_ink", perSec: 0.02 },
+      { mat: "seal_ember", perSec: 0.012 },
+      { mat: "mist_silk", perSec: 0.015 },
+      { dust: 0.025 },
+    ],
+  },
+];
+
+export function trainSiteById(id) {
+  return TRAIN_SITES.find((s) => s.id === id) || TRAIN_SITES[0];
+}
+
+export function isTrainSiteUnlocked(state, siteId) {
+  const site = trainSiteById(siteId);
+  if (!site.needClear) return true;
+  return !!(state.clearedDungeons || {})[site.needClear];
+}
+
+/** 由通關狀態推算已解鎖地點 */
+export function unlockedTrainSiteIds(state) {
+  return TRAIN_SITES.filter((s) => isTrainSiteUnlocked(state, s.id)).map((s) => s.id);
 }
 
 /* ─── P1：羈絆／陣容加成 ─── */

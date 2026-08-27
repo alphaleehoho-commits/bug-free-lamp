@@ -57,6 +57,11 @@ import {
   tideSealCombatMult,
   tideSealGainForRealm,
   TIDE_SEAL_MIN_REALM,
+  TRAIN_SITES,
+  MATERIALS,
+  upgradeMatCost,
+  breedMatCost,
+  unlockedTrainSiteIds,
 } from "./data.js";
 
 function assert(cond, msg) {
@@ -75,8 +80,8 @@ assert(hybridRecipeForKinds("獸", "鱗").species === "tideling", "main 獸鱗")
 assert(hybridRecipeForKinds("光", "蟲").species === "stormmoth", "main 光蟲→嵐蛾");
 assert(hybridRecipeForKinds("獸", "蟲")?.species === "fangmite", "main 獸蟲→牙蟎");
 assert(hybridRecipeForKinds("鱗", "禽")?.species === "scalequill", "main 鱗禽→鱗羽");
-assert(hybridRecipeForKinds("甲", "蟲") == null, "no 甲蟲");
-assert(HYBRID_RECIPES.filter((r) => r.tier === "main").length >= 7, "mains");
+assert(hybridRecipeForKinds("甲", "蟲")?.species === "shellmite", "main 甲蟲→甲蟎");
+assert(HYBRID_RECIPES.filter((r) => r.tier === "main").length >= 8, "mains");
 assert(HYBRID_RECIPES.filter((r) => r.tier === "sub").length >= 4, "subs");
 
 assert(rollChildGeneration(0, 0) === 1, "0+0→1");
@@ -132,8 +137,10 @@ const matrix = hybridRecipeMatrix();
 assert(matrix.length === 36, "6×6 matrix");
 const tideCell = matrix.find((c) => c.kindA === "獸" && c.kindB === "鱗");
 assert(tideCell?.recipe?.species === "tideling", "matrix tideling");
-const noneCell = matrix.find((c) => c.kindA === "甲" && c.kindB === "蟲");
-assert(noneCell && !noneCell.recipe, "matrix none 甲蟲");
+const noneCell = matrix.find((c) => c.kindA === "光" && c.kindB === "光");
+assert(noneCell && noneCell.same, "matrix same diagonal");
+const shellCell = matrix.find((c) => c.kindA === "甲" && c.kindB === "蟲");
+assert(shellCell?.recipe?.species === "shellmite", "matrix shellmite");
 const fangCell = matrix.find((c) => c.kindA === "獸" && c.kindB === "蟲");
 assert(fangCell?.recipe?.species === "fangmite", "matrix fangmite");
 
@@ -227,8 +234,8 @@ assert(br1.ready && br1.next.id === 1, "break ready to stage1");
 assert(DUNGEONS.some((d) => d.id === "tide_4"), "tide_4");
 assert(dungeonWaves(DUNGEONS.find((d) => d.id === "tide_4")).length === 3, "t4 3 waves");
 assert(RECRUIT_POOL.length >= 6, "recruit pool");
-assert(Object.keys(HYBRID_SKILLS).length === 8, "hybrid skills");
-assert(SKILLS.tide_beast_rush && SKILLS.storm_lance && SKILLS.fang_burst && SKILLS.scale_glide, "hybrid skill defs");
+assert(Object.keys(HYBRID_SKILLS).length === 9, "hybrid skills");
+assert(SKILLS.tide_beast_rush && SKILLS.storm_lance && SKILLS.fang_burst && SKILLS.scale_glide && SKILLS.shell_spike, "hybrid skill defs");
 assert(
   petSkillIds({ skillId: "pounce", speciesId: "tideling", kind: "獸", fusionLevel: 1 }).includes(
     "tide_beast_rush"
@@ -301,6 +308,34 @@ assert(DISPATCH_MISSIONS.length >= 3, "dispatch missions");
 assert(tideSealGainForRealm(5) >= 1 && tideSealGainForRealm(4) === 0, "seal gain");
 assert(tideSealCombatMult(5) === 1.1, "seal mult");
 assert(TIDE_SEAL_MIN_REALM === 5, "seal min realm");
+
+/* P10: train sites, materials, dual personality, shellmite */
+assert(TRAIN_SITES.length >= 5 && MATERIALS.tide_dew, "train+mats");
+assert(unlockedTrainSiteIds({ clearedDungeons: {} }).includes("shore"), "shore free");
+assert(!unlockedTrainSiteIds({ clearedDungeons: {} }).includes("ruins"), "ruins locked");
+assert(unlockedTrainSiteIds({ clearedDungeons: { tide_1: true } }).includes("ruins"), "ruins unlock");
+assert(upgradeMatCost(1).tide_dew >= 1, "upgrade mats");
+assert(breedMatCost(0, 0).coral_shard >= 1, "breed mats");
+assert(DISPATCH_MISSIONS.length >= 5, "more dispatch");
+assert(SPECIES.shellmite?.breedOnly, "shellmite");
+fox.personality2Id = "steady";
+fin.personalityId = "wild";
+fin.personality2Id = "gentle";
+let pe2 = 0;
+for (let i = 0; i < 30; i++) {
+  const gg = rollBreedGenes(fox, fin);
+  if (gg.personality2) pe2 += 1;
+}
+assert(pe2 > 5, "second personality often rolls");
+const dual = buildPetStats({
+  id: "d",
+  species: "reefox",
+  element: "tide",
+  personality: "fierce",
+  personality2: "gentle",
+  cost: 1,
+});
+assert(dual.personality2Id === "gentle" && dual.personality2Name, "build dual pe");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

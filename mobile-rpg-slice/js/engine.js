@@ -60,6 +60,7 @@ import {
   rarityInfo,
   RARITY_MAX,
   SPECIES,
+  PERSONALITIES,
   petGeneration,
   genLabel,
   childGenerationOdds,
@@ -102,9 +103,19 @@ import {
   tideSealCombatMult,
   tideSealGainForRealm,
   GEAR_SETS,
+  emptyMaterials,
+  MATERIALS,
+  MATERIAL_IDS,
+  upgradeMatCost,
+  breedMatCost,
+  TRAIN_SITES,
+  trainSiteById,
+  isTrainSiteUnlocked,
+  unlockedTrainSiteIds,
+  personalityCombatForPet,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v17";
+const SAVE_KEY = "void-tide-pets-v18";
 
 function defaultMaster() {
   return {
@@ -137,6 +148,8 @@ function defaultState() {
     scrap: 0,
     feed: 0,
     dust: 0,
+    materials: emptyMaterials(),
+    trainSite: "shore",
     inventory: [],
     master: defaultMaster(),
     pets: [],
@@ -153,7 +166,8 @@ function defaultState() {
       "秘境改為波次戰：雜兵→精英→BOSS；滿足關卡條件有額外獎。",
       "契壇商肆可購待契約靈寵；秘境可選戰術與陣型；深層考驗血脈。",
       "每日挑戰規則輪換；週課與成就提供長期目標。",
-      "牧場可派遣；人物裝備有套裝；潮主後可鑄潮印重置階段。",
+      "牧場改為派遣取資；人物可選練功地點產材料。",
+      "通關秘境 BOSS 解鎖新練功地圖；材料用於升級／繁殖。",
     ],
     lastTick: Date.now(),
     combatsWon: 0,
@@ -222,6 +236,12 @@ function normalizePet(p) {
   if (next.rarity > RARITY_MAX) next.rarity = RARITY_MAX;
   if (!next.rarityName) next.rarityName = rarityInfo(next.rarity).name;
   next.generation = petGeneration(next);
+  if (next.personality2Id && PERSONALITIES[next.personality2Id]) {
+    next.personality2Name = PERSONALITIES[next.personality2Id].name;
+  } else {
+    next.personality2Id = next.personality2Id || null;
+    next.personality2Name = next.personality2Name || null;
+  }
   // 種族↔種類同步：舊熒鰭可能仍標鱗
   if (next.speciesId === "glowfin") {
     next.kind = "光";
@@ -247,8 +267,8 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v17") ||
       localStorage.getItem("void-tide-pets-v16") ||
-      localStorage.getItem("void-tide-pets-v15") ||
       localStorage.getItem("void-tide-pets-v12") ||
       localStorage.getItem("void-tide-pets-v11") ||
       localStorage.getItem("void-tide-pets-v10") ||
@@ -329,6 +349,8 @@ export function loadState() {
       ranch,
       feed: parsed.feed ?? 0,
       dust: parsed.dust ?? 0,
+      materials: { ...emptyMaterials(), ...(parsed.materials || {}) },
+      trainSite: TRAIN_SITES.some((s) => s.id === parsed.trainSite) ? parsed.trainSite : "shore",
       inventory,
       pending: Array.isArray(parsed.pending) ? parsed.pending : [],
       clearedDungeons: parsed.clearedDungeons || {},
@@ -384,25 +406,105 @@ export function resolveDungeon(state, dungeonId) {
   return generateDailyDungeon(dungeonId, key) || buildDungeonForTier(parseDungeonTier(dungeonId));
 }
 
-/** 牧場待命：按性格／元素慢產飼料／靈塵 */
-export function tickRanchIdle(state, elapsedSec) {
-  if (!state.ranch?.length || elapsedSec <= 0) return state;
-  if (state.feed == null) state.feed = 0;
-  if (state.dust == null) state.dust = 0;
-  let feedGain = 0;
-  let dustGain = 0;
-  const busy = dispatchBusyUids(state);
-  for (const p of state.ranch) {
-    if (busy.has(p.uid)) continue;
-    const pe = IDLE_BY_PERSONALITY[p.personalityId] || { feed: 0.04, dust: 0.04 };
-    const el = IDLE_BY_ELEMENT[p.elementId] || { feed: 1, dust: 1 };
-    const fus = 1 + (p.fusionLevel ?? 0) * 0.08;
-    feedGain += pe.feed * el.feed * fus * elapsedSec;
-    dustGain += pe.dust * el.dust * fus * elapsedSec;
-  }
-  state.feed += feedGain;
-  state.dust += dustGain;
+/** 牧場待命：已停用慢產，改走派遣 */
+export function tickRanchIdle(state, _elapsedSec) {
   return state;
+}
+
+function addMaterials(state, mats) {
+  if (!mats) return;
+  if (!state.materials) state.materials = emptyMaterials();
+  for (const [id, n] of Object.entries(mats)) {
+    if (!n) continue;
+    state.materials[id] = (state.materials[id] || 0) + n;
+  }
+}
+
+function spendMaterials(state, mats) {
+  if (!mats) return true;
+  if (!state.materials) state.materials = emptyMaterials();
+  for (const [id, n] of Object.entries(mats)) {
+    if (!n) continue;
+    if ((state.materials[id] || 0) < n) return false;
+  }
+  for (const [id, n] of Object.entries(mats)) {
+    if (!n) continue;
+    state.materials[id] -= n;
+  }
+  return true;
+}
+
+function formatMats(mats) {
+  if (!mats) return "";
+  return Object.entries(mats)
+    .filter(([, n]) => n > 0)
+    .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
+    .join("／");
+}
+
+/** 練功地點掛機產材料 */
+export function tickTrainSite(state, elapsedSec) {
+  if (elapsedSec <= 0) return { mats: {}, feed: 0, dust: 0 };
+  const site = trainSiteById(state.trainSite);
+  if (!isTrainSiteUnlocked(state, site.id)) {
+    state.trainSite = "shore";
+  }
+  const active = trainSiteById(state.trainSite);
+  if (!state.materials) state.materials = emptyMaterials();
+  const gained = {};
+  let feed = 0;
+  let dust = 0;
+  for (const drop of active.drops || []) {
+    if (drop.mat) {
+      const expected = (drop.perSec || 0) * elapsedSec;
+      let n = Math.floor(expected);
+      if (Math.random() < expected - n) n += 1;
+      if (n > 0) {
+        state.materials[drop.mat] = (state.materials[drop.mat] || 0) + n;
+        gained[drop.mat] = (gained[drop.mat] || 0) + n;
+      }
+    }
+    if (drop.feed) {
+      const f = drop.feed * elapsedSec;
+      state.feed = (state.feed || 0) + f;
+      feed += f;
+    }
+    if (drop.dust) {
+      const d = drop.dust * elapsedSec;
+      state.dust = (state.dust || 0) + d;
+      dust += d;
+    }
+  }
+  return { mats: gained, feed, dust, site: active };
+}
+
+export function setTrainSite(state, siteId) {
+  if (!TRAIN_SITES.some((s) => s.id === siteId)) {
+    return { ok: false, msg: "未知練功地點。" };
+  }
+  if (!isTrainSiteUnlocked(state, siteId)) {
+    const site = trainSiteById(siteId);
+    return { ok: false, msg: `尚未解鎖【${site.name}】（需通關對應秘境）。` };
+  }
+  state.trainSite = siteId;
+  return { ok: true, msg: `練功地：${trainSiteById(siteId).name}` };
+}
+
+export function trainSitesView(state) {
+  const cur = state.trainSite || "shore";
+  return TRAIN_SITES.map((s) => ({
+    ...s,
+    unlocked: isTrainSiteUnlocked(state, s.id),
+    selected: s.id === cur,
+  }));
+}
+
+export function materialsView(state) {
+  if (!state.materials) state.materials = emptyMaterials();
+  return MATERIAL_IDS.map((id) => ({
+    ...MATERIALS[id],
+    count: state.materials[id] || 0,
+  }));
 }
 
 export function tickCultivation(state, now = Date.now()) {
@@ -411,12 +513,16 @@ export function tickCultivation(state, now = Date.now()) {
   const qiBefore = state.qi;
   const feedBefore = state.feed || 0;
   const dustBefore = state.dust || 0;
+  const matsBefore = { ...(state.materials || emptyMaterials()) };
 
-  const ranchBonus = (state.ranch?.length || 0) * 0.04;
+  const ranchBonus = (state.ranch?.length || 0) * 0.02;
   const bondBonus = 1 + state.pets.length * 0.18 + ranchBonus;
-  const rate = realmInfo(state).rate * bondBonus;
+  const site = trainSiteById(state.trainSite);
+  const siteMult = isTrainSiteUnlocked(state, site.id) ? site.qiMult || 1 : 1;
+  const rate = realmInfo(state).rate * bondBonus * siteMult;
   state.qi += rate * elapsed;
   tickRanchIdle(state, elapsed);
+  const trainGain = tickTrainSite(state, elapsed);
 
   // 每日：掛機累積
   state.daily.idleSec = (state.daily.idleSec || 0) + elapsed;
@@ -428,11 +534,18 @@ export function tickCultivation(state, now = Date.now()) {
     const qiGain = state.qi - qiBefore;
     const feedGain = (state.feed || 0) - feedBefore;
     const dustGain = (state.dust || 0) - dustBefore;
+    const matBits = {};
+    for (const id of MATERIAL_IDS) {
+      const d = (state.materials?.[id] || 0) - (matsBefore[id] || 0);
+      if (d > 0) matBits[id] = d;
+    }
     state.offlineHint = {
       sec: Math.floor(elapsed),
       qi: qiGain,
       feed: feedGain,
       dust: dustGain,
+      materials: matBits,
+      siteName: trainGain.site?.name || site.name,
       at: now,
     };
   }
@@ -485,6 +598,7 @@ function applyReward(state, reward) {
   if (reward.scrap) state.scrap += reward.scrap;
   if (reward.feed) state.feed = (state.feed || 0) + reward.feed;
   if (reward.dust) state.dust = (state.dust || 0) + reward.dust;
+  if (reward.materials) addMaterials(state, reward.materials);
 }
 
 export function claimDaily(state, questId) {
@@ -785,6 +899,10 @@ export function tryBreakthrough(state) {
   if (costs.scrap) state.scrap -= costs.scrap;
   if (costs.dust) state.dust = (state.dust || 0) - costs.dust;
   if (costs.feed) state.feed = (state.feed || 0) - costs.feed;
+  if (costs.seal_ember) {
+    if (!state.materials) state.materials = emptyMaterials();
+    state.materials.seal_ember = (state.materials.seal_ember || 0) - costs.seal_ember;
+  }
 
   state.realm = next.id;
   state.master.atk += 1 + Math.floor(next.id / 2);
@@ -992,6 +1110,8 @@ export function dispatchView(state) {
     });
   const missions = DISPATCH_MISSIONS.map((m) => ({
     ...m,
+    locked: !!(m.needSite && !isTrainSiteUnlocked(state, m.needSite)),
+    lockLabel: m.needSite ? trainSiteById(m.needSite).name : null,
     slotsUsed: active.length,
     slotsMax: DISPATCH_SLOT_MAX,
   }));
@@ -1002,6 +1122,10 @@ export function startDispatch(state, missionId, petUids) {
   if (!state.dispatches) state.dispatches = [];
   const mission = DISPATCH_MISSIONS.find((m) => m.id === missionId);
   if (!mission) return { ok: false, msg: "任務不存在。" };
+  if (mission.needSite && !isTrainSiteUnlocked(state, mission.needSite)) {
+    const site = trainSiteById(mission.needSite);
+    return { ok: false, msg: `需解鎖練功地【${site.name}】。` };
+  }
   const active = state.dispatches.filter((d) => !d.claimed);
   if (active.length >= DISPATCH_SLOT_MAX) {
     return { ok: false, msg: `派遣欄已滿（${DISPATCH_SLOT_MAX}）。` };
@@ -1274,26 +1398,44 @@ export function upgradePet(state, uid, payWith = "stones") {
   if (!found) return { ok: false, msg: "找不到靈寵。" };
   const pet = found.pet;
   const level = pet.level ?? 1;
+  const matCost = upgradeMatCost(level);
+  if (!spendMaterials(state, matCost)) {
+    return { ok: false, msg: `材料不足（需 ${formatMats(matCost)}）。` };
+  }
   if (payWith === "feed") {
     const cost = upgradeFeedCost(level);
-    if ((state.feed || 0) < cost) return { ok: false, msg: `飼料不足（需 ${cost}）。` };
+    if ((state.feed || 0) < cost) {
+      addMaterials(state, matCost); // refund mats
+      return { ok: false, msg: `飼料不足（需 ${cost}）。` };
+    }
     state.feed -= cost;
     pet.atk += 2;
     pet.hp += 6;
     pet.spd += 1;
     pet.level = level + 1;
-    pushLog(state, `${pet.name} 以飼料升級至 Lv.${pet.level}（攻+2 血+6 速+1）。`);
+    const matNote = formatMats(matCost);
+    pushLog(
+      state,
+      `${pet.name} 以飼料升級至 Lv.${pet.level}（攻+2 血+6 速+1）${matNote ? `｜耗 ${matNote}` : ""}。`
+    );
     maybeAnnounceSecondSkill(state, pet, level);
     return { ok: true, msg: `${pet.name} → Lv.${pet.level}（飼料）` };
   }
   const cost = upgradeStoneCost(level);
-  if (state.stones < cost) return { ok: false, msg: `靈石不足（需 ${cost}）。` };
+  if (state.stones < cost) {
+    addMaterials(state, matCost);
+    return { ok: false, msg: `靈石不足（需 ${cost}）。` };
+  }
   state.stones -= cost;
   pet.atk += 2;
   pet.hp += 6;
   pet.spd += 1;
   pet.level = level + 1;
-  pushLog(state, `${pet.name} 升級至 Lv.${pet.level}（攻+2 血+6 速+1）。`);
+  const matNote = formatMats(matCost);
+  pushLog(
+    state,
+    `${pet.name} 升級至 Lv.${pet.level}（攻+2 血+6 速+1）${matNote ? `｜耗 ${matNote}` : ""}。`
+  );
   maybeAnnounceSecondSkill(state, pet, level);
   return { ok: true, msg: `${pet.name} → Lv.${pet.level}` };
 }
@@ -1807,7 +1949,7 @@ export function runDungeon(state, dungeonId) {
     const fAtk = formation.petAtkMult || 1;
     const fHp = formation.petHpMult || 1;
     const fSpd = formation.petSpdMult || 1;
-    const pe = personalityCombatFor(p.personalityId);
+    const pe = personalityCombatForPet(p);
     const pAtk = pe?.atkMult || 1;
     const pHp = pe?.hpMult || 1;
     const pSpd = pe?.spdMult || 1;
@@ -2018,6 +2160,12 @@ export function runDungeon(state, dungeonId) {
         state.stones += bonusStones;
         state.scrap += bonusScrap;
         state.clearedDungeons[dungeonId] = true;
+        // 主線：首通解鎖對應練功地圖
+        for (const site of TRAIN_SITES) {
+          if (site.needClear === dungeonId) {
+            pushLog(state, `主線推進：解鎖練功地【${site.name}】！`);
+          }
+        }
         transcript.push(
           `攻克【${d.name}】，獲靈石 ${d.reward.stones}、碎片 ${d.reward.scrap}。首通額外 +${bonusStones} 石／+${bonusScrap} 碎片！`
         );
@@ -2325,6 +2473,10 @@ export function tryBreed(state, uidA, uidB) {
   if (busy.has(uidA) || busy.has(uidB)) {
     return { ok: false, msg: "派遣中的靈寵不能繁殖。" };
   }
+  const matCost = breedMatCost(petGeneration(a), petGeneration(b));
+  if (!spendMaterials(state, matCost)) {
+    return { ok: false, msg: `材料不足（需 ${formatMats(matCost)}）。` };
+  }
 
   const genes = rollBreedGenes(a, b);
   state.stones -= BREED_STONE_COST;
@@ -2336,6 +2488,7 @@ export function tryBreed(state, uidA, uidB) {
       species: genes.species,
       element: genes.element,
       personality: genes.personality,
+      personality2: genes.personality2,
       rarity: genes.rarity,
       cost: 0,
     })
@@ -2378,14 +2531,16 @@ export function tryBreed(state, uidA, uidB) {
   if (genes.rarityUp) tags.push(`${child.rarityName}升階！`);
   else if (genes.rarity > 0) tags.push(child.rarityName);
   if (genes.mutated && !genes.hybrid) tags.push("元素變異");
+  if (genes.personality2) tags.push(`副性${PERSONALITIES[genes.personality2]?.name || ""}`);
   const tagNote = tags.length ? `（${tags.join("·")}）` : "";
   const innNote =
     born.atk || born.hp || born.spd
       ? `｜天生 +${born.atk}攻/${born.hp}血/${born.spd}速`
       : "";
+  const matNote = formatMats(matCost);
   pushLog(
     state,
-    `繁殖成功：${displayPetName(a)} × ${displayPetName(b)} → ${petLabel(child)}${tagNote}${innNote}｜耗 ${BREED_STONE_COST} 靈石。`
+    `繁殖成功：${displayPetName(a)} × ${displayPetName(b)} → ${petLabel(child)}${tagNote}${innNote}｜耗 ${BREED_STONE_COST} 石${matNote ? `／${matNote}` : ""}。`
   );
   checkAchievements(state);
   return {
@@ -2459,6 +2614,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v17");
   localStorage.removeItem("void-tide-pets-v16");
   localStorage.removeItem("void-tide-pets-v15");
   localStorage.removeItem("void-tide-pets-v14");
@@ -2543,6 +2699,10 @@ export {
   FORMATIONS,
   FORMATION_IDS,
   GEAR_SETS,
+  MATERIALS,
+  TRAIN_SITES,
+  upgradeMatCost,
+  breedMatCost,
   stageAt,
   nextStageAt,
   dungeonsForRealm,

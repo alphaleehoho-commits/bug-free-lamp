@@ -68,12 +68,19 @@ import {
   claimDispatch,
   tryTideSeal,
   tideSealView,
+  setTrainSite,
+  trainSitesView,
+  materialsView,
   dungeonDailyView,
   resolveDungeon,
   dungeonsForRealm,
   stageAt,
+  upgradeMatCost,
+  breedMatCost,
+  petGeneration,
   TACTICS,
   FORMATIONS,
+  MATERIALS,
 } from "./engine.js";
 
 const app = document.querySelector("#app");
@@ -152,6 +159,11 @@ function rewardBitsHtml(reward) {
   if (reward.feed) bits.push(`${reward.feed}飼料`);
   if (reward.dust) bits.push(`${reward.dust}靈塵`);
   if (reward.scrap) bits.push(`${reward.scrap}碎片`);
+  if (reward.materials) {
+    for (const [id, n] of Object.entries(reward.materials)) {
+      if (n) bits.push(`${MATERIALS[id]?.name || id}×${n}`);
+    }
+  }
   return bits.join("／");
 }
 
@@ -464,7 +476,13 @@ function offlineBanner() {
   const min = Math.max(1, Math.round(h.sec / 60));
   return `
     <div class="offline-banner" data-live="offline">
-      <p>離線約 ${min} 分鐘：靈契 +${Math.floor(h.qi)} · 飼料 +${h.feed.toFixed(1)} · 靈塵 +${h.dust.toFixed(1)}</p>
+      <p>離線約 ${min} 分鐘：靈契 +${Math.floor(h.qi)} · 飼料 +${h.feed.toFixed(1)} · 靈塵 +${h.dust.toFixed(1)}${
+        h.materials && Object.keys(h.materials).length
+          ? ` · 材料 ${Object.entries(h.materials)
+              .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
+              .join("／")}`
+          : ""
+      }${h.siteName ? `（${escapeHtml(h.siteName)}）` : ""}</p>
       <button type="button" data-act="clear-offline">知道了</button>
     </div>`;
 }
@@ -491,6 +509,19 @@ function cultivatePanel(qiPct, next, m) {
   const setNote = gBonus.setLabels?.length
     ? `套裝：${gBonus.setLabels.join("、")}`
     : "穿齊同套 2／3 件可啟動套裝加成";
+  const sites = trainSitesView(state);
+  const siteBtns = sites
+    .map((s) => {
+      const locked = !s.unlocked;
+      return `<button type="button" class="${s.selected ? "primary" : ""}" data-set-train="${s.id}" ${
+        locked ? "disabled" : ""
+      }>${escapeHtml(s.name)}${locked ? "🔒" : ""}</button>`;
+    })
+    .join("");
+  const siteCur = sites.find((s) => s.selected);
+  const mats = materialsView(state)
+    .map((m) => `<li><strong>${escapeHtml(m.name)}</strong> ×${m.count} <span class="muted">${escapeHtml(m.desc)}</span></li>`)
+    .join("");
 
   const slotSelects = MASTER_EQUIP_SLOTS.map((slot) => {
     const cur = eq[slot];
@@ -562,7 +593,12 @@ function cultivatePanel(qiPct, next, m) {
     <p class="meta">${escapeHtml(setNote)}</p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 現階【${escapeHtml(br.cur?.name || "")}】 → 【${escapeHtml(br.next.name)}】</p>
-    <p class="meta">牧場待命 ${ranchN} 隻慢產飼料／靈塵 · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
+    <p class="meta">牧場待命 ${ranchN} 隻（派遣取資，唔再慢產） · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
+    <h3>練功地點</h3>
+    <p class="meta">${escapeHtml(siteCur?.desc || "")} · 靈契倍率 ×${(siteCur?.qiMult || 1).toFixed(2)} · 通關秘境 BOSS 解鎖新地圖</p>
+    <div class="row tactics-row">${siteBtns}</div>
+    <h3>材料庫</h3>
+    <ul class="skill-list">${mats}</ul>
     <h3>突破門檻 · ${escapeHtml(br.next.name)}</h3>
     <p class="meta">靈契＋資源＋歷練條件齊備方可晉升；各項分開檢定。</p>
     <ul class="cond-list">${gateRows}</ul>
@@ -597,7 +633,7 @@ function petRow(p, extraBtn = "") {
     <li class="card-row">
       <div>
         <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
-        <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}</span>
+        <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}</span>
         <span class="muted">攻${p.atk} 血${p.hp} 速${p.spd} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
@@ -686,14 +722,19 @@ function petsListView() {
 
   const missionRows = dv.missions
     .map((m) => {
-      const can = dispatchPick.length === m.needPets && dv.slotsUsed < dv.slotsMax;
+      const can =
+        !m.locked && dispatchPick.length === m.needPets && dv.slotsUsed < dv.slotsMax;
       return `
       <li class="card-row">
         <div>
           <strong>${escapeHtml(m.name)}</strong>
-          <span class="muted">${escapeHtml(m.desc)} · 獎 ${escapeHtml(rewardBitsHtml(m.reward))}</span>
+          <span class="muted">${escapeHtml(m.desc)} · 獎 ${escapeHtml(rewardBitsHtml(m.reward))}${
+            m.locked ? ` · 需${escapeHtml(m.lockLabel)}` : ""
+          }</span>
         </div>
-        <button type="button" class="primary" data-start-dispatch="${m.id}" ${can ? "" : "disabled"}>派出</button>
+        <button type="button" class="primary" data-start-dispatch="${m.id}" ${can ? "" : "disabled"}>${
+          m.locked ? "未解鎖" : "派出"
+        }</button>
       </li>`;
     })
     .join("");
@@ -705,7 +746,7 @@ function petsListView() {
     <h3>出戰（${state.pets.length}/${ACTIVE_PET_MAX}）</h3>
     <ul class="list">${roster}</ul>
     <h3>牧場（${ranch.length}/${cap}）</h3>
-    <p class="meta">待命寵慢產飼料／靈塵；派遣中唔產、唔可出戰／繁殖。</p>
+    <p class="meta">待命寵唔再慢產；資源靠練功地點＋派遣。派遣中唔可出戰／繁殖。</p>
     <ul class="list">${ranchList}</ul>
     <h3>牧場派遣（${dv.slotsUsed}/${dv.slotsMax}）</h3>
     <p class="meta">先「選派」牧場寵，再點任務派出。已選 ${dispatchPick.length} 隻。</p>
@@ -746,11 +787,18 @@ function petsBreedView() {
   const pa = ranch.find((p) => p.uid === ua);
   const pb = ranch.find((p) => p.uid === ub);
   const hint = pa && pb ? breedPairHint(pa, pb) : null;
+  const bMat =
+    pa && pb
+      ? Object.entries(breedMatCost(petGeneration(pa), petGeneration(pb)))
+          .filter(([, n]) => n > 0)
+          .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
+          .join("／")
+      : "珊瑚屑×1";
 
   const ready = selected.size === 2 && bs.ready && ranch.length < ranchCap(state);
   return `
     <h2>繁殖 · 突變合配</h2>
-    <p class="lead">6 種族＝6 種類（熒鰭＝光）。主／次配方雜交；原生／1–3 代影響升代機率同能力。耗 ${BREED_STONE_COST} 靈石${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}。</p>
+    <p class="lead">主／次配方雜交；雙性格遺傳。耗 ${BREED_STONE_COST} 石＋${escapeHtml(bMat)}${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}。</p>
     ${breedGoalsBoardHtml(true)}
     ${hint ? `<p class="meta breed-hint">${escapeHtml(hint.note)}</p>` : ""}
     <ul class="list">${list}</ul>
@@ -801,18 +849,23 @@ function petsDetailView() {
     ? `【${escapeHtml(secondSkill?.name || "—")}】${secondSkill ? ` ${escapeHtml(secondSkill.desc)}（CD${secondSkill.cd}）` : ""}`
     : `未解鎖（融階≥1 或 Lv≥15）`;
 
+  const matUp = upgradeMatCost(lv);
+  const matUpBits = Object.entries(matUp)
+    .filter(([, n]) => n > 0)
+    .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
+    .join("／");
   return `
     <h2>${escapeHtml(displayPetName(pet))}</h2>
     <p class="lead">${escapeHtml(loc)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE} · 技能 Lv.${skillLevel}</p>
     <ul class="skill-list">
       <li><strong>種類</strong> — ${escapeHtml(pet.kind)} · ${escapeHtml(pet.speciesName)}${pet.breedOnly ? "（繁殖專屬）" : ""}</li>
       <li><strong>元素</strong> — ${escapeHtml(pet.elementName)}</li>
-      <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}</li>
+      <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}${pet.personality2Name ? `／副：${escapeHtml(pet.personality2Name)}` : "（無副性格）"}</li>
       <li><strong>天生數值</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}（基準 ${baseline.atk}/${baseline.hp}/${baseline.spd}，成長 +${innateBonus.atk}/${innateBonus.hp}/${innateBonus.spd}）</li>
       <li><strong>主技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】${skill ? ` ${escapeHtml(skill.desc)}（CD${skill.cd}）` : ""}</li>
       <li><strong>第二技能</strong> — ${secondLine}</li>
-      <li><strong>養成</strong> — 不穿裝備；融合吸收素材天生、繁殖遺傳溢出基礎</li>
-      <li><strong>升級</strong> — 靈石或飼料；技能用靈塵</li>
+      <li><strong>養成</strong> — 不穿裝備；升級需材料（練功／派遣取得）</li>
+      <li><strong>升級</strong> — 靈石或飼料＋${escapeHtml(matUpBits || "潮露")}；技能用靈塵</li>
       <li><strong>融合</strong> — ${escapeHtml(fuseHint)}</li>
     </ul>
     <div class="row gear-row">
@@ -1354,6 +1407,15 @@ function bind() {
   app.querySelectorAll("[data-set-formation]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const r = setFormation(state, btn.dataset.setFormation);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-set-train]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = setTrainSite(state, btn.dataset.setTrain);
       saveState(state);
       render();
       setFlash(r.msg);
