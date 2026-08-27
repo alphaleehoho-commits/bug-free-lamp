@@ -30,6 +30,8 @@ Idle → dungeon → bond → ranch → fuse/breed → element → P1 idle/gear/
 
 **P6:** tide_4 deep floor · daily dungeon mod · ranch shop (3 daily offers) · hybrid exclusive skills · gen combat mult · auto tactics (balanced/focus_boss/sustain).
 
+**P7:** infinite stage formula post-潮主 (潮主·N重) · formula breakthrough gates · dungeon tier scaling (tide_5+) · per-layer daily boss/condition/passive variants (seeded).
+
 **Balance:** Master from gear; pets from innate (fuse/breed). UI polish / combat animation deferred.
 
 ## Publish checklist (owner)
