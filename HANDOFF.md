@@ -50,4 +50,4 @@ Idle → dungeon → bond → ranch → fuse/breed → element → P1 idle/gear/
 
 ## Prompt for the next agent
 
-Continue 暗潮 PWA in `mobile-rpg-slice/`: idle, dungeon with streamed combat, element matchups, pending bonds, ranch, upgrade, fusion (2/4/8 + Lv gates), breeding. Save `void-tide-pets-v5`. Previously developed on a no-remote cloud VM; now on this private GitHub repo. Next: [your goal here].
+Continue 暗潮 PWA in `mobile-rpg-slice/`: idle, dungeon with streamed combat, element matchups, pending bonds, ranch dispatch, train sites + materials, upgrade/fuse/breed (dual personality). Save `void-tide-pets-v18`. Previously developed on a no-remote cloud VM; now on this private GitHub repo. Next: [your goal here].
