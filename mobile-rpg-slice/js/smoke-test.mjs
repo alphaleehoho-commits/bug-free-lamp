@@ -49,6 +49,14 @@ import {
   genCombatMult,
   TACTICS,
   petSkillIds,
+  partySynergy,
+  personalityCombatFor,
+  gearSetBonus,
+  GEAR_SETS,
+  DISPATCH_MISSIONS,
+  tideSealCombatMult,
+  tideSealGainForRealm,
+  TIDE_SEAL_MIN_REALM,
 } from "./data.js";
 
 function assert(cond, msg) {
@@ -272,6 +280,27 @@ assert(
   "ban flame"
 );
 assert(evaluateDungeonChallenge([{ elementId: "tide" }, { elementId: "gale" }], { maxPets: 2 }).ok, "max2 ok");
+
+/* P9: pet depth + dispatch + gear sets + tide seal */
+const synKin = partySynergy([
+  { uid: "p1", elementId: "tide", kind: "獸", speciesId: "reefox", generation: 1 },
+  { uid: "c1", elementId: "tide", kind: "獸", speciesId: "tideling", generation: 2, bornFrom: ["p1", "p2"] },
+]);
+assert(synKin.labels.some((l) => l.includes("親子")), "kinship bond");
+assert(synKin.atkMult > 1.07, "kinship atk");
+const synSp = partySynergy([
+  { uid: "a", elementId: "gale", kind: "禽", speciesId: "ashwing", generation: 1 },
+  { uid: "b", elementId: "flame", kind: "禽", speciesId: "ashwing", generation: 1 },
+]);
+assert(synSp.labels.some((l) => l.includes("同族血脈")), "same species");
+assert(personalityCombatFor("fierce")?.atkMult === 1.1, "fierce passive");
+assert(personalityCombatFor("gentle")?.sustainBias, "gentle sustain");
+assert(GEAR_SETS.tide && gearSetBonus(["tide_blade", "moss_vest"]).atk === 3, "set2");
+assert(gearSetBonus(["core_fang", "abyss_plate", "gloom_sigil"]).labels.some((l) => l.includes("三件")), "set3");
+assert(DISPATCH_MISSIONS.length >= 3, "dispatch missions");
+assert(tideSealGainForRealm(5) >= 1 && tideSealGainForRealm(4) === 0, "seal gain");
+assert(tideSealCombatMult(5) === 1.1, "seal mult");
+assert(TIDE_SEAL_MIN_REALM === 5, "seal min realm");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

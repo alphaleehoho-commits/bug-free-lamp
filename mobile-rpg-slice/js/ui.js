@@ -63,6 +63,11 @@ import {
   tacticsView,
   setFormation,
   formationView,
+  dispatchView,
+  startDispatch,
+  claimDispatch,
+  tryTideSeal,
+  tideSealView,
   dungeonDailyView,
   resolveDungeon,
   dungeonsForRealm,
@@ -83,6 +88,8 @@ let flashTone = "";
 let flashTimer = 0;
 let tab = "cultivate";
 let shellReady = false;
+/** @type {string[]} 牧場派遣選中 uid */
+let dispatchPick = [];
 
 /** @type {{ mode: 'list' | 'detail' | 'fuse' | 'breed', uid: string | null, fuseBase: string | null, fuseMats: string[], breedParents: string[] }} */
 let petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
@@ -480,6 +487,10 @@ function cultivatePanel(qiPct, next, m) {
   const totalHp = m.hp + gBonus.hp;
   const totalSpd = m.spd + gBonus.spd;
   const br = breakthroughView(state);
+  const seal = tideSealView(state);
+  const setNote = gBonus.setLabels?.length
+    ? `套裝：${gBonus.setLabels.join("、")}`
+    : "穿齊同套 2／3 件可啟動套裝加成";
 
   const slotSelects = MASTER_EQUIP_SLOTS.map((slot) => {
     const cur = eq[slot];
@@ -548,6 +559,7 @@ function cultivatePanel(qiPct, next, m) {
   return `
     <h2>契壇修行</h2>
     <p class="lead">人物 ${escapeHtml(m.name)} 戰力主要靠裝備。白板 攻${m.atk}/血${m.hp}/速${m.spd} → 裝備後 <strong>攻${totalAtk} 血${totalHp} 速${totalSpd}</strong></p>
+    <p class="meta">${escapeHtml(setNote)}</p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 現階【${escapeHtml(br.cur?.name || "")}】 → 【${escapeHtml(br.next.name)}】</p>
     <p class="meta">牧場待命 ${ranchN} 隻慢產飼料／靈塵 · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
@@ -557,7 +569,11 @@ function cultivatePanel(qiPct, next, m) {
     <div class="row">
       <button type="button" class="primary" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
       <button type="button" data-act="forge">靈紋鍛造</button>
+      <button type="button" data-act="tide-seal" ${seal.canSeal ? "" : "disabled"}>鑄潮印${
+        seal.canSeal ? `+${seal.nextGain}` : ""
+      }</button>
     </div>
+    <p class="meta">潮印 ${seal.seals}/${seal.max} · 全隊攻血 ×${seal.mult.toFixed(2)}（潮主後可鑄；重置階段保留寵／裝／圖鑑）</p>
     <h3>契壇商肆 · 今日</h3>
     <p class="meta">每日 3 格；購入入待契約（高成功率）。待契約滿則不可買。</p>
     <ul class="list">${shopRows}</ul>
@@ -594,6 +610,9 @@ function petRow(p, extraBtn = "") {
 function petsListView() {
   const cap = ranchCap(state);
   const ranch = state.ranch || [];
+  const dv = dispatchView(state);
+  const busy = new Set(dv.busyUids || []);
+  const pick = new Set(dispatchPick);
 
   const roster =
     state.pets
@@ -608,12 +627,17 @@ function petsListView() {
 
   const ranchList =
     ranch
-      .map((p) =>
-        petRow(
-          p,
-          `<button type="button" class="primary" data-deploy="${escapeHtml(p.uid)}">出戰</button>`
-        )
-      )
+      .map((p) => {
+        const onDisp = busy.has(p.uid);
+        const selected = pick.has(p.uid);
+        const extra = onDisp
+          ? `<span class="muted">派遣中</span>`
+          : `<button type="button" class="primary" data-deploy="${escapeHtml(p.uid)}">出戰</button>
+             <button type="button" class="${selected ? "primary" : ""}" data-dispatch-toggle="${escapeHtml(
+               p.uid
+             )}">${selected ? "已選派" : "選派"}</button>`;
+        return petRow(p, extra);
+      })
       .join("") ||
     `<li class="empty">牧場空。契約成功的靈寵會進入牧場（容量 ${cap}）。</li>`;
 
@@ -637,7 +661,42 @@ function petsListView() {
     `<li class="empty">尚無待契約靈寵。去秘境打本，隨機遇見後會出現喺呢度（最多 ${PENDING_BOND_MAX} 隻）。</li>`;
 
   const syn = partySynergy(state.pets);
-  const synNote = syn.labels.length ? `羈絆：${syn.labels.join("、")}` : "出戰 2+ 同元素／同種類可觸發羈絆";
+  const synNote = syn.labels.length
+    ? `羈絆：${syn.labels.join("、")}`
+    : "出戰 2+：同元素／種類／種族／同代／親子可觸發羈絆";
+
+  const activeDisp =
+    dv.active
+      .map((d) => {
+        const left = Math.ceil((d.leftMs || 0) / 1000);
+        return `
+        <li class="card-row">
+          <div>
+            <strong>${escapeHtml(d.missionName)}</strong>
+            <span class="muted">${escapeHtml(d.petNames)} · ${
+              d.ready ? "已歸來" : `剩餘 ${left}s`
+            }</span>
+          </div>
+          <button type="button" class="primary" data-claim-dispatch="${escapeHtml(d.dispatchId)}" ${
+            d.ready ? "" : "disabled"
+          }>領獎</button>
+        </li>`;
+      })
+      .join("") || `<li class="empty">尚無進行中派遣（${dv.slotsUsed}/${dv.slotsMax}）。</li>`;
+
+  const missionRows = dv.missions
+    .map((m) => {
+      const can = dispatchPick.length === m.needPets && dv.slotsUsed < dv.slotsMax;
+      return `
+      <li class="card-row">
+        <div>
+          <strong>${escapeHtml(m.name)}</strong>
+          <span class="muted">${escapeHtml(m.desc)} · 獎 ${escapeHtml(rewardBitsHtml(m.reward))}</span>
+        </div>
+        <button type="button" class="primary" data-start-dispatch="${m.id}" ${can ? "" : "disabled"}>派出</button>
+      </li>`;
+    })
+    .join("");
 
   return `
     <h2>靈寵</h2>
@@ -646,8 +705,12 @@ function petsListView() {
     <h3>出戰（${state.pets.length}/${ACTIVE_PET_MAX}）</h3>
     <ul class="list">${roster}</ul>
     <h3>牧場（${ranch.length}/${cap}）</h3>
-    <p class="meta">待命寵按性格／元素慢產飼料與靈塵。</p>
+    <p class="meta">待命寵慢產飼料／靈塵；派遣中唔產、唔可出戰／繁殖。</p>
     <ul class="list">${ranchList}</ul>
+    <h3>牧場派遣（${dv.slotsUsed}/${dv.slotsMax}）</h3>
+    <p class="meta">先「選派」牧場寵，再點任務派出。已選 ${dispatchPick.length} 隻。</p>
+    <ul class="list">${missionRows}</ul>
+    <ul class="list">${activeDisp}</ul>
     <h3>待契約</h3>
     <ul class="list">${pending}</ul>
     <div class="row" style="margin-top:0.85rem">
@@ -1108,6 +1171,11 @@ function bind() {
         saveState(state);
         render();
         setFlash(r.msg);
+      } else if (act === "tide-seal") {
+        const r = tryTideSeal(state);
+        saveState(state);
+        render();
+        setFlash(r.msg);
       } else if (act === "start-breed") {
         petView = { mode: "breed", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
         render();
@@ -1286,6 +1354,35 @@ function bind() {
   app.querySelectorAll("[data-set-formation]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const r = setFormation(state, btn.dataset.setFormation);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-dispatch-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const uid = btn.dataset.dispatchToggle;
+      const set = new Set(dispatchPick);
+      if (set.has(uid)) set.delete(uid);
+      else set.add(uid);
+      dispatchPick = [...set].slice(0, 3);
+      render();
+    });
+  });
+  app.querySelectorAll("[data-start-dispatch]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = startDispatch(state, btn.dataset.startDispatch, dispatchPick);
+      if (r.ok) dispatchPick = [];
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-claim-dispatch]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = claimDispatch(state, btn.dataset.claimDispatch);
       saveState(state);
       render();
       setFlash(r.msg);

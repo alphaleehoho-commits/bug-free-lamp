@@ -2376,8 +2376,125 @@ export const GEAR = {
     hp: 22,
     spd: 4,
     rarity: 3,
+    setId: "abyss",
   },
 };
+
+/** 為舊裝補 setId（潮／礁／淵三套） */
+GEAR.tide_blade.setId = "tide";
+GEAR.moss_vest.setId = "tide";
+GEAR.mist_charm.setId = "tide";
+GEAR.reef_cleaver.setId = "reef";
+GEAR.tide_mail.setId = "reef";
+GEAR.reef_ring.setId = "reef";
+GEAR.core_fang.setId = "abyss";
+GEAR.abyss_plate.setId = "abyss";
+
+/**
+ * 人物裝備套裝：同 set 穿 2／3 件觸發
+ */
+export const GEAR_SETS = {
+  tide: {
+    id: "tide",
+    name: "潮紋",
+    pieces: ["tide_blade", "moss_vest", "mist_charm"],
+    bonus2: { atk: 3, hp: 12, label: "潮紋·雙件（攻+3 血+12）" },
+    bonus3: { atk: 6, hp: 28, spd: 2, label: "潮紋·三件（攻血速↑）" },
+  },
+  reef: {
+    id: "reef",
+    name: "暗礁",
+    pieces: ["reef_cleaver", "tide_mail", "reef_ring"],
+    bonus2: { atk: 5, hp: 18, label: "暗礁·雙件（攻+5 血+18）" },
+    bonus3: { atk: 10, hp: 40, spd: 3, label: "暗礁·三件（攻血速↑）" },
+  },
+  abyss: {
+    id: "abyss",
+    name: "深淵",
+    pieces: ["core_fang", "abyss_plate", "gloom_sigil"],
+    bonus2: { atk: 8, hp: 25, label: "深淵·雙件（攻+8 血+25）" },
+    bonus3: { atk: 14, hp: 55, spd: 4, label: "深淵·三件（攻血速↑）" },
+  },
+};
+
+/** 依已裝備 gearId 列表計算套裝加成 */
+export function gearSetBonus(gearIds) {
+  const ids = (gearIds || []).filter(Boolean);
+  const bySet = {};
+  for (const id of ids) {
+    const g = GEAR[id];
+    if (!g?.setId) continue;
+    bySet[g.setId] = (bySet[g.setId] || 0) + 1;
+  }
+  let atk = 0;
+  let hp = 0;
+  let spd = 0;
+  const labels = [];
+  for (const [setId, n] of Object.entries(bySet)) {
+    const set = GEAR_SETS[setId];
+    if (!set) continue;
+    if (n >= 3 && set.bonus3) {
+      atk += set.bonus3.atk || 0;
+      hp += set.bonus3.hp || 0;
+      spd += set.bonus3.spd || 0;
+      labels.push(set.bonus3.label);
+    } else if (n >= 2 && set.bonus2) {
+      atk += set.bonus2.atk || 0;
+      hp += set.bonus2.hp || 0;
+      spd += set.bonus2.spd || 0;
+      labels.push(set.bonus2.label);
+    }
+  }
+  return { atk, hp, spd, labels };
+}
+
+/* ─── P9：牧場派遣 ─── */
+
+export const DISPATCH_MISSIONS = [
+  {
+    id: "forage",
+    name: "潮灘覓食",
+    durationMs: 90_000,
+    needPets: 1,
+    reward: { feed: 8, stones: 12 },
+    desc: "1 寵 · 約 1.5 分 → 飼料／靈石",
+  },
+  {
+    id: "dust_hunt",
+    name: "靈塵拾遺",
+    durationMs: 150_000,
+    needPets: 1,
+    reward: { dust: 10, stones: 10 },
+    desc: "1 寵 · 約 2.5 分 → 靈塵／靈石",
+  },
+  {
+    id: "scrap_dive",
+    name: "廢墟打撈",
+    durationMs: 240_000,
+    needPets: 2,
+    reward: { scrap: 2, stones: 25, feed: 4 },
+    desc: "2 寵 · 約 4 分 → 碎片／靈石",
+  },
+];
+
+export const DISPATCH_SLOT_MAX = 2;
+
+/* ─── P9：潮印 soft prestige ─── */
+
+/** 潮印永久加成：每枚全隊攻／血 +2%，上限 12 */
+export const TIDE_SEAL_MAX = 12;
+export const TIDE_SEAL_MIN_REALM = 5;
+
+export function tideSealCombatMult(seals) {
+  const n = Math.max(0, Math.min(TIDE_SEAL_MAX, seals | 0));
+  return 1 + n * 0.02;
+}
+
+export function tideSealGainForRealm(realm) {
+  const r = realm | 0;
+  if (r < TIDE_SEAL_MIN_REALM) return 0;
+  return 1 + Math.floor((r - TIDE_SEAL_MIN_REALM) / 2);
+}
 
 /** 秘境掉落（僅人物裝） */
 export const DUNGEON_GEAR_DROPS = {
@@ -2522,10 +2639,25 @@ export function fusionAbsorbRate(targetStage) {
   return 0.18 + n * 0.1; // 階1 28%、階2 38%、階3 48%
 }
 
+/**
+ * 性格戰鬥被動（每寵獨立套用；唔改白板成長公式）
+ */
+export const PERSONALITY_COMBAT = {
+  fierce: { id: "fierce", label: "烈性：攻擊 +10%，血量 −4%", atkMult: 1.1, hpMult: 0.96, spdMult: 1 },
+  steady: { id: "steady", label: "沉穩：血量 +12%，速度 −5%", atkMult: 1, hpMult: 1.12, spdMult: 0.95 },
+  sly: { id: "sly", label: "狡黠：速度 +10%，攻擊 +4%", atkMult: 1.04, hpMult: 1, spdMult: 1.1 },
+  gentle: { id: "gentle", label: "溫馴：血量 +6%，受治療／減傷技優先感（續航親和）", atkMult: 0.97, hpMult: 1.06, spdMult: 1, sustainBias: true },
+  wild: { id: "wild", label: "狂放：攻擊 +12%，血量 −8%", atkMult: 1.12, hpMult: 0.92, spdMult: 1.04 },
+};
+
+export function personalityCombatFor(personalityId) {
+  return PERSONALITY_COMBAT[personalityId] || null;
+}
+
 /* ─── P1：羈絆／陣容加成 ─── */
 
 /**
- * 出戰靈寵同元素／同 kind 觸發 buff
+ * 出戰靈寵羈絆：同元素／同 kind／同種族／同代／親子
  * @returns {{ atkMult: number, hpMult: number, spdMult: number, labels: string[] }}
  */
 export function partySynergy(pets) {
@@ -2538,12 +2670,21 @@ export function partySynergy(pets) {
 
   const byEl = {};
   const byKind = {};
+  const bySpecies = {};
+  const byGen = {};
+  const uids = new Set(list.map((p) => p.uid).filter(Boolean));
+
   for (const p of list) {
     byEl[p.elementId] = (byEl[p.elementId] || 0) + 1;
     byKind[p.kind] = (byKind[p.kind] || 0) + 1;
+    if (p.speciesId) bySpecies[p.speciesId] = (bySpecies[p.speciesId] || 0) + 1;
+    const g = petGeneration(p);
+    byGen[g] = (byGen[g] || 0) + 1;
   }
   const maxEl = Math.max(...Object.values(byEl));
   const maxKind = Math.max(...Object.values(byKind));
+  const maxSp = Math.max(0, ...Object.values(bySpecies));
+  const maxGen = Math.max(0, ...Object.values(byGen));
 
   if (maxEl >= 3) {
     atkMult *= 1.14;
@@ -2561,7 +2702,33 @@ export function partySynergy(pets) {
     labels.push("同種援護（血↑）");
   }
 
-  if (list.length >= 3 && maxEl < 2 && maxKind < 2) {
+  if (maxSp >= 2) {
+    atkMult *= 1.05;
+    hpMult *= 1.04;
+    labels.push("同族血脈（攻血↑）");
+  }
+
+  if (maxGen >= 2) {
+    spdMult *= 1.05;
+    labels.push("同代共鳴（速↑）");
+  }
+
+  // 親子：bornFrom 含出戰同伴 uid
+  let kinship = false;
+  for (const p of list) {
+    const parents = Array.isArray(p.bornFrom) ? p.bornFrom : [];
+    if (parents.some((id) => uids.has(id) && id !== p.uid)) {
+      kinship = true;
+      break;
+    }
+  }
+  if (kinship) {
+    atkMult *= 1.06;
+    hpMult *= 1.06;
+    labels.push("親子羈絆（攻血↑）");
+  }
+
+  if (list.length >= 3 && maxEl < 2 && maxKind < 2 && maxSp < 2 && !kinship) {
     spdMult *= 1.04;
     labels.push("雜陣靈動（速↑）");
   }
@@ -2784,6 +2951,12 @@ export const ACHIEVEMENTS = [
     name: "牙蟎初現",
     desc: "雜交出【牙蟎】",
     reward: { stones: 75, dust: 10 },
+  },
+  {
+    id: "tide_seal_1",
+    name: "潮印初鑄",
+    desc: "鑄成潮印 1 枚",
+    reward: { stones: 100, scrap: 2 },
   },
 ];
 

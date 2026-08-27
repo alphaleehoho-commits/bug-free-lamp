@@ -93,9 +93,18 @@ import {
   genCombatMult,
   weekKey,
   evaluateDungeonChallenge,
+  personalityCombatFor,
+  gearSetBonus,
+  DISPATCH_MISSIONS,
+  DISPATCH_SLOT_MAX,
+  TIDE_SEAL_MAX,
+  TIDE_SEAL_MIN_REALM,
+  tideSealCombatMult,
+  tideSealGainForRealm,
+  GEAR_SETS,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v16";
+const SAVE_KEY = "void-tide-pets-v17";
 
 function defaultMaster() {
   return {
@@ -144,6 +153,7 @@ function defaultState() {
       "秘境改為波次戰：雜兵→精英→BOSS；滿足關卡條件有額外獎。",
       "契壇商肆可購待契約靈寵；秘境可選戰術與陣型；深層考驗血脈。",
       "每日挑戰規則輪換；週課與成就提供長期目標。",
+      "牧場可派遣；人物裝備有套裝；潮主後可鑄潮印重置階段。",
     ],
     lastTick: Date.now(),
     combatsWon: 0,
@@ -167,6 +177,8 @@ function defaultState() {
       challengeWins: 0,
       maxWinStreak: 0,
       speciesBreeds: {},
+      dispatches: 0,
+      seals: 0,
     },
     /** P3 繁殖目標進度 */
     breedGoals: emptyBreedGoals(),
@@ -177,6 +189,9 @@ function defaultState() {
     dungeonDaily: null,
     /** P8 */
     formation: "balanced",
+    /** P9 */
+    dispatches: [],
+    tideSeals: 0,
   };
 }
 
@@ -232,8 +247,8 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v16") ||
       localStorage.getItem("void-tide-pets-v15") ||
-      localStorage.getItem("void-tide-pets-v14") ||
       localStorage.getItem("void-tide-pets-v12") ||
       localStorage.getItem("void-tide-pets-v11") ||
       localStorage.getItem("void-tide-pets-v10") ||
@@ -342,6 +357,8 @@ export function loadState() {
       shop: parsed.shop || emptyShop(),
       dungeonDaily: parsed.dungeonDaily || null,
       winStreak: parsed.winStreak || 0,
+      dispatches: Array.isArray(parsed.dispatches) ? parsed.dispatches : [],
+      tideSeals: parsed.tideSeals || 0,
     };
   } catch {
     return defaultState();
@@ -374,7 +391,9 @@ export function tickRanchIdle(state, elapsedSec) {
   if (state.dust == null) state.dust = 0;
   let feedGain = 0;
   let dustGain = 0;
+  const busy = dispatchBusyUids(state);
   for (const p of state.ranch) {
+    if (busy.has(p.uid)) continue;
     const pe = IDLE_BY_PERSONALITY[p.personalityId] || { feed: 0.04, dust: 0.04 };
     const el = IDLE_BY_ELEMENT[p.elementId] || { feed: 1, dust: 1 };
     const fus = 1 + (p.fusionLevel ?? 0) * 0.08;
@@ -545,6 +564,7 @@ export function checkAchievements(state) {
     else if (a.id === "challenge_win") ok = (state.stats.challengeWins || 0) >= 1;
     else if (a.id === "streak_5") ok = (state.stats.maxWinStreak || 0) >= 5;
     else if (a.id === "fangmite_once") ok = (state.stats.speciesBreeds?.fangmite || 0) >= 1;
+    else if (a.id === "tide_seal_1") ok = (state.tideSeals || 0) >= 1;
     if (!ok) continue;
     state.achievements[a.id] = true;
     applyReward(state, a.reward);
@@ -730,20 +750,26 @@ function resolveInvGear(state, itemUid) {
   return { item, def };
 }
 
-/** 人物裝備加成（含鍛造強化） */
+/** 人物裝備加成（含鍛造強化＋套裝） */
 export function masterGearBonus(state) {
   const eq = state.master?.equip || {};
   let atk = 0;
   let hp = 0;
   let spd = 0;
+  const gearIds = [];
   for (const slot of MASTER_EQUIP_SLOTS) {
     const r = resolveInvGear(state, eq[slot]);
     if (!r) continue;
+    gearIds.push(r.def.id);
     atk += (r.def.atk || 0) + (r.item.forgeAtk || 0);
     hp += (r.def.hp || 0) + (r.item.forgeHp || 0);
     spd += r.def.spd || 0;
   }
-  return { atk, hp, spd };
+  const setBonus = gearSetBonus(gearIds);
+  atk += setBonus.atk;
+  hp += setBonus.hp;
+  spd += setBonus.spd;
+  return { atk, hp, spd, setLabels: setBonus.labels };
 }
 
 export function tryBreakthrough(state) {
@@ -931,6 +957,150 @@ export function formationView(state) {
   }));
 }
 
+/** 派遣中（未領獎）的寵物 uid */
+export function dispatchBusyUids(state) {
+  const set = new Set();
+  for (const d of state.dispatches || []) {
+    if (d.claimed) continue;
+    for (const uid of d.petUids || []) set.add(uid);
+  }
+  return set;
+}
+
+export function dispatchView(state) {
+  if (!state.dispatches) state.dispatches = [];
+  const now = Date.now();
+  const busy = dispatchBusyUids(state);
+  const active = state.dispatches
+    .filter((d) => !d.claimed)
+    .map((d) => {
+      const mission = DISPATCH_MISSIONS.find((m) => m.id === d.missionId);
+      const left = Math.max(0, (d.readyAt || 0) - now);
+      return {
+        ...d,
+        missionName: mission?.name || d.missionId,
+        reward: mission?.reward || {},
+        ready: left <= 0,
+        leftMs: left,
+        petNames: (d.petUids || [])
+          .map((uid) => {
+            const hit = findOwnedPet(state, uid);
+            return hit ? displayPetName(hit.pet) : uid;
+          })
+          .join("、"),
+      };
+    });
+  const missions = DISPATCH_MISSIONS.map((m) => ({
+    ...m,
+    slotsUsed: active.length,
+    slotsMax: DISPATCH_SLOT_MAX,
+  }));
+  return { active, missions, busyUids: [...busy], slotsUsed: active.length, slotsMax: DISPATCH_SLOT_MAX };
+}
+
+export function startDispatch(state, missionId, petUids) {
+  if (!state.dispatches) state.dispatches = [];
+  const mission = DISPATCH_MISSIONS.find((m) => m.id === missionId);
+  if (!mission) return { ok: false, msg: "任務不存在。" };
+  const active = state.dispatches.filter((d) => !d.claimed);
+  if (active.length >= DISPATCH_SLOT_MAX) {
+    return { ok: false, msg: `派遣欄已滿（${DISPATCH_SLOT_MAX}）。` };
+  }
+  const uids = Array.isArray(petUids) ? [...new Set(petUids)] : [];
+  if (uids.length !== mission.needPets) {
+    return { ok: false, msg: `需要派出 ${mission.needPets} 隻牧場靈寵。` };
+  }
+  const busy = dispatchBusyUids(state);
+  for (const uid of uids) {
+    if (busy.has(uid)) return { ok: false, msg: "有靈寵已在派遣中。" };
+    if (state.pets.some((p) => p.uid === uid)) {
+      return { ok: false, msg: "請先將靈寵撤回牧場再派遣。" };
+    }
+    const hit = findOwnedPet(state, uid);
+    if (!hit || hit.list !== "ranch") return { ok: false, msg: "只能派遣牧場待命靈寵。" };
+  }
+  const now = Date.now();
+  state.dispatches.push({
+    dispatchId: `disp-${now}-${Math.floor(Math.random() * 999)}`,
+    missionId: mission.id,
+    petUids: uids,
+    readyAt: now + mission.durationMs,
+    claimed: false,
+  });
+  const names = uids
+    .map((uid) => displayPetName(findOwnedPet(state, uid).pet))
+    .join("、");
+  pushLog(state, `派遣【${mission.name}】：${names} 出發。`);
+  return { ok: true, msg: `已派出：${mission.name}` };
+}
+
+export function claimDispatch(state, dispatchId) {
+  if (!state.dispatches) state.dispatches = [];
+  const d = state.dispatches.find((x) => x.dispatchId === dispatchId);
+  if (!d) return { ok: false, msg: "派遣不存在。" };
+  if (d.claimed) return { ok: false, msg: "已領取。" };
+  if ((d.readyAt || 0) > Date.now()) {
+    const sec = Math.ceil((d.readyAt - Date.now()) / 1000);
+    return { ok: false, msg: `尚未歸來（${sec}s）。` };
+  }
+  const mission = DISPATCH_MISSIONS.find((m) => m.id === d.missionId);
+  d.claimed = true;
+  applyReward(state, mission?.reward);
+  if (!state.stats) state.stats = {};
+  state.stats.dispatches = (state.stats.dispatches || 0) + 1;
+  // 清走已領，避免列表膨脹
+  state.dispatches = state.dispatches.filter((x) => !x.claimed);
+  const bits = [];
+  if (mission?.reward?.stones) bits.push(`${mission.reward.stones}石`);
+  if (mission?.reward?.feed) bits.push(`${mission.reward.feed}飼料`);
+  if (mission?.reward?.dust) bits.push(`${mission.reward.dust}靈塵`);
+  if (mission?.reward?.scrap) bits.push(`${mission.reward.scrap}碎片`);
+  pushLog(state, `派遣【${mission?.name || d.missionId}】歸來：${bits.join("／")}。`);
+  return { ok: true, msg: `領取 ${bits.join("／")}` };
+}
+
+/**
+ * Soft prestige：潮主後鑄潮印，重置階段／靈契，保留寵／裝／圖鑑／通關
+ */
+export function tryTideSeal(state) {
+  const seals = state.tideSeals || 0;
+  if (seals >= TIDE_SEAL_MAX) return { ok: false, msg: `潮印已達上限（${TIDE_SEAL_MAX}）。` };
+  if ((state.realm || 0) < TIDE_SEAL_MIN_REALM) {
+    return { ok: false, msg: `需達潮主（階段 ${TIDE_SEAL_MIN_REALM}）方可鑄印。` };
+  }
+  const gain = tideSealGainForRealm(state.realm);
+  if (gain <= 0) return { ok: false, msg: "無法鑄印。" };
+  const from = realmInfo(state).name;
+  state.tideSeals = Math.min(TIDE_SEAL_MAX, seals + gain);
+  state.realm = 0;
+  state.qi = 0;
+  state.master.skillIds = masterSkillsForStage(0);
+  if (!state.stats) state.stats = {};
+  state.stats.seals = (state.stats.seals || 0) + gain;
+  pushLog(
+    state,
+    `潮印鑄成 +${gain}（現 ${state.tideSeals}）。自【${from}】重歸初契；靈寵／裝備／圖鑑保留。`
+  );
+  checkAchievements(state);
+  return {
+    ok: true,
+    msg: `鑄潮印 +${gain}（共 ${state.tideSeals}）· 階段已重置`,
+  };
+}
+
+export function tideSealView(state) {
+  const seals = state.tideSeals || 0;
+  const gain = tideSealGainForRealm(state.realm);
+  return {
+    seals,
+    max: TIDE_SEAL_MAX,
+    mult: tideSealCombatMult(seals),
+    canSeal: (state.realm || 0) >= TIDE_SEAL_MIN_REALM && seals < TIDE_SEAL_MAX,
+    nextGain: gain,
+    minRealm: TIDE_SEAL_MIN_REALM,
+  };
+}
+
 /** 在出戰／牧場中查找靈寵；回傳 { pet, list, index } */
 export function findOwnedPet(state, uid) {
   if (!state.pets) state.pets = [];
@@ -1022,6 +1192,9 @@ export function deployPet(state, uid) {
   if (!state.ranch) state.ranch = [];
   if (state.pets.length >= ACTIVE_PET_MAX) {
     return { ok: false, msg: `出戰欄已滿（最多 ${ACTIVE_PET_MAX} 隻）。` };
+  }
+  if (dispatchBusyUids(state).has(uid)) {
+    return { ok: false, msg: "該靈寵派遣中，無法出戰。" };
   }
   const i = state.ranch.findIndex((p) => p.uid === uid || p.templateId === uid);
   if (i < 0) return { ok: false, msg: "牧場中找不到這隻靈寵。" };
@@ -1470,7 +1643,9 @@ function act(actor, allies, foes, transcript, tactics = "balanced") {
   const skillChance = actor.role === "boss" ? 0.85 : actor.role === "elite" ? 0.78 : 0.72;
   if (ready.length && Math.random() < skillChance) {
     let skill;
-    if (tactics === "sustain" && actor.side === "ally") {
+    const preferSustain =
+      (tactics === "sustain" && actor.side === "ally") || (actor.side === "ally" && actor.sustainBias);
+    if (preferSustain) {
       const sustain = ready.filter((s) => s.type === "heal" || s.type === "guard");
       skill = sustain.length
         ? sustain[Math.floor(Math.random() * sustain.length)]
@@ -1584,8 +1759,9 @@ export function runDungeon(state, dungeonId) {
   const mGear = masterGearBonus(state);
   const synergy = partySynergy(state.pets);
   const dex = bestiaryStatus(state);
-  const atkMult = synergy.atkMult * dex.atkMult;
-  const hpMult = synergy.hpMult * dex.hpMult;
+  const sealMult = tideSealCombatMult(state.tideSeals || 0);
+  const atkMult = synergy.atkMult * dex.atkMult * sealMult;
+  const hpMult = synergy.hpMult * dex.hpMult * sealMult;
   const condEval = evaluateDungeonConditions(state.pets, d);
   const passives = condEval.filter((c) => c.passive);
   const challenges = condEval.filter((c) => !c.passive);
@@ -1622,6 +1798,7 @@ export function runDungeon(state, dungeonId) {
       atkBuffPct: 0,
     });
   }
+  const peNotes = [];
   for (const p of state.pets) {
     const skills = petSkillIds(p);
     const elemMult = dungeonElemAtkMult(combatPassives, p.elementId);
@@ -1630,13 +1807,18 @@ export function runDungeon(state, dungeonId) {
     const fAtk = formation.petAtkMult || 1;
     const fHp = formation.petHpMult || 1;
     const fSpd = formation.petSpdMult || 1;
+    const pe = personalityCombatFor(p.personalityId);
+    const pAtk = pe?.atkMult || 1;
+    const pHp = pe?.hpMult || 1;
+    const pSpd = pe?.spdMult || 1;
+    if (pe?.label) peNotes.push(`${displayPetName(p)}：${pe.label}`);
     allies.push({
       side: "ally",
       name: displayPetName(p),
-      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp),
-      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp),
-      atk: Math.round((p.atk + stageBonus) * atkMult * elemMult * gMult * fAtk),
-      spd: Math.round(p.spd * synergy.spdMult * fSpd),
+      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp),
+      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp),
+      atk: Math.round((p.atk + stageBonus) * atkMult * elemMult * gMult * fAtk * pAtk),
+      spd: Math.round(p.spd * synergy.spdMult * fSpd * pSpd),
       isMaster: false,
       elementId: p.elementId,
       skillLevel: p.skillLevel ?? 1,
@@ -1646,6 +1828,7 @@ export function runDungeon(state, dungeonId) {
       atkBuffTurns: 0,
       atkBuffPct: 0,
       generation: gen,
+      sustainBias: !!pe?.sustainBias,
     });
   }
 
@@ -1695,6 +1878,17 @@ export function runDungeon(state, dungeonId) {
   transcript.push(`—— 第 1 波・${waves[0].label} ——`);
   if (synergy.labels.length) {
     transcript.push(`陣容羈絆發動：${synergy.labels.join("、")}。`);
+  }
+  if (peNotes.length) {
+    transcript.push(`性格被動：${peNotes.join("；")}`);
+  }
+  if (mGear.setLabels?.length) {
+    transcript.push(`裝備套裝：${mGear.setLabels.join("、")}。`);
+  }
+  if ((state.tideSeals || 0) > 0) {
+    transcript.push(
+      `潮印 ×${state.tideSeals}（全隊攻血 ×${tideSealCombatMult(state.tideSeals).toFixed(2)}）。`
+    );
   }
   if (dex.label) {
     transcript.push(dex.label);
@@ -2127,6 +2321,10 @@ export function tryBreed(state, uidA, uidB) {
   const a = state.ranch.find((p) => p.uid === uidA);
   const b = state.ranch.find((p) => p.uid === uidB);
   if (!a || !b) return { ok: false, msg: "雙親必須都在牧場待命。" };
+  const busy = dispatchBusyUids(state);
+  if (busy.has(uidA) || busy.has(uidB)) {
+    return { ok: false, msg: "派遣中的靈寵不能繁殖。" };
+  }
 
   const genes = rollBreedGenes(a, b);
   state.stones -= BREED_STONE_COST;
@@ -2261,6 +2459,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v16");
   localStorage.removeItem("void-tide-pets-v15");
   localStorage.removeItem("void-tide-pets-v14");
   localStorage.removeItem("void-tide-pets-v12");
@@ -2343,6 +2542,7 @@ export {
   TACTIC_IDS,
   FORMATIONS,
   FORMATION_IDS,
+  GEAR_SETS,
   stageAt,
   nextStageAt,
   dungeonsForRealm,
