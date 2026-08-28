@@ -310,7 +310,49 @@ body {
   max-width: 4.8rem;
 }
 
-.flash-unlock {
+.tabs button.locked {
+  opacity: 0.45;
+}
+.panel-subnav button.is-locked {
+  opacity: 0.45;
+}
+
+.tutorial-banner {
+  margin: 0 0 0.4rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid rgba(109, 179, 217, 0.45);
+  background: linear-gradient(110deg, rgba(30, 70, 100, 0.35), rgba(40, 90, 75, 0.22));
+}
+.tutorial-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.15rem;
+}
+.tutorial-step {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #9fd4c0;
+  border: 1px solid rgba(126, 184, 163, 0.45);
+  border-radius: 999px;
+  padding: 0.05rem 0.35rem;
+}
+.tutorial-head strong {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  color: #d0f0e4;
+}
+.tutorial-hint {
+  margin: 0;
+  font-size: 0.64rem;
+  line-height: 1.35;
+  color: var(--fog);
+}
+.tutorial-deal {
+  color: #e8b86d;
+  font-weight: 600;
+}
   border-color: rgba(126, 184, 163, 0.7);
   background: linear-gradient(110deg, rgba(40, 90, 75, 0.5), rgba(50, 70, 110, 0.35));
   color: #d0f0e4;

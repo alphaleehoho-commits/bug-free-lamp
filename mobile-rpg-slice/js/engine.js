@@ -117,8 +117,14 @@ import {
   MATERIAL_USES,
   trainSiteUnlockHint,
 } from "./data.js";
+import {
+  normalizeTutorial,
+  advanceTutorialIfReady,
+  tutorialShopPrice,
+  markTutorialFlag,
+} from "./tutorial.js";
 
-const SAVE_KEY = "void-tide-pets-v21";
+const SAVE_KEY = "void-tide-pets-v22";
 
 function defaultMaster() {
   return {
@@ -159,18 +165,8 @@ function defaultState() {
     ranch: [],
     pending: [],
     log: [
-      "你沿著暗潮抵達荒廢契壇。",
-      "可先獨自踏入秘境；戰勝後或會遇見願意結契的靈寵。",
-      "契約成功的靈寵進入牧場；再從牧場派出戰（最多 3 隻）。",
-      "牧場待命會慢產飼料／靈塵；秘境掉落人物裝備。",
-      "人物靠裝備；靈寵靠天生基礎（融合／繁殖成長）。",
-      "圖鑑、每日任務與成就已開啟——見「圖鑑」頁。",
-      "繁殖目標：雜交出潮獸／嵐蛾、升代與稀有——圖鑑或繁殖頁可領獎。",
-      "秘境改為波次戰：雜兵→精英→BOSS；滿足關卡條件有額外獎。",
-      "契壇商肆可購靈寵直入牧場；秘境遇見野生靈寵需再契約。",
-      "每日挑戰規則輪換；週課與成就提供長期目標。",
-      "牧場改為派遣取資；人物可選練功地點產材料。",
-      "通關秘境 BOSS 解鎖新練功地圖；材料用於升級／繁殖。",
+      "你沿暗潮抵達荒廢契壇。",
+      "先在此累積靈契，教學會逐步解鎖功能。",
     ],
     lastTick: Date.now(),
     combatsWon: 0,
@@ -209,6 +205,7 @@ function defaultState() {
     /** P9 */
     dispatches: [],
     tideSeals: 0,
+    tutorial: { done: false, step: "cultivate_qi", flags: {} },
   };
 }
 
@@ -270,6 +267,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v21") ||
       localStorage.getItem("void-tide-pets-v20") ||
       localStorage.getItem("void-tide-pets-v19") ||
       localStorage.getItem("void-tide-pets-v18") ||
@@ -347,7 +345,7 @@ export function loadState() {
       }
     }
 
-    return {
+    const merged = {
       ...base,
       ...parsed,
       master,
@@ -387,7 +385,10 @@ export function loadState() {
       winStreak: parsed.winStreak || 0,
       dispatches: Array.isArray(parsed.dispatches) ? parsed.dispatches : [],
       tideSeals: parsed.tideSeals || 0,
+      tutorial: parsed.tutorial,
     };
+    normalizeTutorial(merged);
+    return merged;
   } catch {
     return defaultState();
   }
@@ -957,6 +958,7 @@ export function tryBreakthrough(state) {
     state.stones += 15 + state.realm * 8;
   }
   checkAchievements(state);
+  advanceTutorialIfReady(state);
   return { ok: true, msg: `階段：${next.name}${costNote}` };
 }
 
@@ -1033,10 +1035,17 @@ export function ensureShop(state, now = Date.now()) {
 
 export function shopView(state) {
   ensureShop(state);
+  const tutDeal =
+    state.tutorial &&
+    !state.tutorial.done &&
+    state.tutorial.step === "shop_pet" &&
+    !state.tutorial.flags?.shopBought;
   return state.shop.offers.map((o) => ({
     ...o,
     speciesName: SPECIES[o.species]?.name || o.name,
     bought: !!o.bought,
+    cost: tutorialShopPrice(state, o.cost),
+    tutorialDeal: tutDeal && !o.bought,
   }));
 }
 
@@ -1045,7 +1054,8 @@ export function buyShopOffer(state, offerId) {
   const offer = state.shop.offers.find((o) => o.offerId === offerId);
   if (!offer) return { ok: false, msg: "商品不存在。" };
   if (offer.bought) return { ok: false, msg: "已售出。" };
-  if (state.stones < offer.cost) return { ok: false, msg: `靈石不足（需 ${offer.cost}）。` };
+  const payCost = tutorialShopPrice(state, offer.cost);
+  if (state.stones < payCost) return { ok: false, msg: `靈石不足（需 ${payCost}）。` };
 
   if (!state.ranch) state.ranch = [];
   const owned = state.pets.length + state.ranch.length;
@@ -1067,17 +1077,21 @@ export function buyShopOffer(state, offerId) {
     uid: `shop-${offer.offerId}`,
     fromShop: true,
   });
-  state.stones -= offer.cost;
+  state.stones -= payCost;
   offer.bought = true;
   state.ranch.push(pet);
   if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
   state.stats.bonds += 1;
+  if (state.tutorial && !state.tutorial.done) {
+    state.tutorial.flags.shopBought = true;
+  }
   registerBestiary(state, pet);
   pushLog(
     state,
-    `商肆購入【${pet.name}】（${pet.kind}·${pet.elementName}）直入牧場，耗 ${offer.cost} 靈石。`
+    `商肆購入【${pet.name}】（${pet.kind}·${pet.elementName}）直入牧場，耗 ${payCost} 靈石。`
   );
   checkAchievements(state);
+  advanceTutorialIfReady(state);
   return { ok: true, msg: `購入 ${pet.name}（已入牧場，可派出戰）` };
 }
 
@@ -1318,7 +1332,8 @@ export function tryBondPending(state, encounterId, useFeed = false) {
   bumpDaily(state, "bond", 1);
 
   const roll = Math.random();
-  const chance = Math.min(0.95, (cand.bondRate || 0.5) + rateBonus);
+  const baseRate = cand.bondRate != null ? cand.bondRate : 0.5;
+  const chance = Math.min(0.95, baseRate + rateBonus);
   if (roll <= chance) {
     state.pending.splice(i, 1);
     const pet = normalizePet({
@@ -1372,6 +1387,7 @@ export function deployPet(state, uid) {
   const [pet] = state.ranch.splice(i, 1);
   state.pets.push(pet);
   pushLog(state, `派出 ${pet.name} 出戰。`);
+  advanceTutorialIfReady(state);
   return { ok: true, msg: `${pet.name} 已出戰` };
 }
 
@@ -1978,6 +1994,11 @@ export function runDungeon(state, dungeonId) {
 
   const waves = dungeonWaves(d);
   if (!waves.length) return { ok: false, msg: "此秘境無敵人。" };
+
+  if (state.tutorial && !state.tutorial.done) {
+    state.tutorial.flags.dungeonStarted = true;
+    advanceTutorialIfReady(state);
+  }
 
   const dailyPack = ensureDungeonDaily(state);
   const dailyMod = dailyPack?.mod || null;
@@ -2760,6 +2781,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v21");
   localStorage.removeItem("void-tide-pets-v20");
   localStorage.removeItem("void-tide-pets-v19");
   localStorage.removeItem("void-tide-pets-v18");
@@ -2785,6 +2807,7 @@ export function resetSave() {
 }
 
 function pushLog(state, line) {
+  if (!state.log) state.log = [];
   state.log.unshift(line);
   if (state.log.length > 60) state.log.length = 60;
 }

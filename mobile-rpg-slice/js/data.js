@@ -253,7 +253,13 @@ export function breakthroughView(state) {
   }
 
   for (const ch of gate.checks || []) {
-    const ev = evalBreakthroughCheck(state, ch);
+    const waived =
+      state.tutorial &&
+      !state.tutorial.done &&
+      next.id === 1 &&
+      ch.type === "combats" &&
+      (state.tutorial.step === "breakthrough" || (state.realm | 0) < 1);
+    const ev = waived ? { ok: true, progress: "教學豁免" } : evalBreakthroughCheck(state, ch);
     items.push({
       id: `chk_${ch.type}_${ch.dungeonId || ch.need || ch.gen || ""}`,
       label: ch.label,

@@ -68,6 +68,13 @@ import {
   dungeonNameForClear,
 } from "./data.js";
 import { affordMaterials, runDungeon, buyShopOffer, tryBondPending, ensureShop } from "./engine.js";
+import {
+  normalizeTutorial,
+  advanceTutorialIfReady,
+  tutorialActive,
+  tutorialShopPrice,
+  TUTORIAL_SHOP_COST,
+} from "./tutorial.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -420,7 +427,17 @@ const offerId = shopSt.shop.offers[0]?.offerId;
 assert(offerId, "shop offer");
 const buy = buyShopOffer(shopSt, offerId);
 assert(buy.ok && shopSt.ranch.length === 1 && shopSt.pending.length === 0, "shop to ranch");
-shopSt.pending.push({
+const pitySt = {
+  realm: 0,
+  qi: 0,
+  stones: 50,
+  pets: [],
+  ranch: [],
+  pending: [],
+  log: [],
+  stats: { bonds: 0 },
+};
+pitySt.pending.push({
   encounterId: "test-enc",
   name: "測試靈",
   kind: "獸",
@@ -433,10 +450,31 @@ shopSt.pending.push({
   spd: 5,
   speciesId: "reefox",
 });
-const stonesBefore = shopSt.stones;
-const pity = tryBondPending(shopSt, "test-enc");
-assert(pity.ok && !pity.success && shopSt.pending.length === 1, "pity keeps pending");
-assert(shopSt.stones === stonesBefore, "pity refunds bond cost");
+const stonesBefore = pitySt.stones;
+const origRandom = Math.random;
+Math.random = () => 0.99;
+const pity = tryBondPending(pitySt, "test-enc");
+Math.random = origRandom;
+assert(pity.ok && !pity.success && pitySt.pending.length === 1, "pity keeps pending");
+assert(pitySt.stones === stonesBefore, "pity refunds bond cost");
+
+/* P13: tutorial flow */
+const tut = { done: false, step: "cultivate_qi", flags: {} };
+const tutSt = { realm: 0, qi: 0, pets: [], ranch: [], combatsWon: 0, stones: 200, log: [], tutorial: tut };
+normalizeTutorial(tutSt);
+assert(tutorialActive(tutSt), "tutorial on for new");
+tutSt.qi = 40;
+const a1 = advanceTutorialIfReady(tutSt);
+assert(a1.advanced && tutSt.tutorial.step === "breakthrough", "qi step");
+tutSt.realm = 1;
+const a2 = advanceTutorialIfReady(tutSt);
+assert(a2.advanced && tutSt.tutorial.step === "shop_pet", "break step");
+assert(tutorialShopPrice(tutSt, 60) === TUTORIAL_SHOP_COST, "tutorial shop price");
+tutSt.stones = 200;
+ensureShop(tutSt);
+const buyTut = buyShopOffer(tutSt, tutSt.shop.offers[0].offerId);
+assert(buyTut.ok && tutSt.ranch.length === 1, "tutorial shop ranch");
+assert(tutSt.tutorial.step === "deploy", "shop step done");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

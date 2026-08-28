@@ -83,6 +83,18 @@ import {
   FORMATIONS,
   MATERIALS,
 } from "./engine.js";
+import {
+  tutorialActive,
+  tutorialBannerHtml,
+  syncTutorialNavigation,
+  advanceTutorialIfReady,
+  markTutorialFlag,
+  isTabLocked,
+  isCultivateSubLocked,
+  isPartySubLocked,
+  isDungeonSubLocked,
+  areTrainSitesLocked,
+} from "./tutorial.js";
 
 const app = document.querySelector("#app");
 
@@ -363,8 +375,13 @@ function stopPlayback() {
 }
 
 function switchTab(id) {
-  if (playback && !playback.done) return; // 戰鬥播放中唔切頁
+  if (playback && !playback.done) return;
+  if (isTabLocked(state, id)) return;
   tab = id;
+  if (id === "codex") {
+    const adv = markTutorialFlag(state, "codexVisited");
+    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+  }
   if (id !== "party") {
     petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
   }
@@ -372,11 +389,19 @@ function switchTab(id) {
 }
 
 function panelSubNav(group, items) {
+  const lockFn =
+    group === "cultivate"
+      ? isCultivateSubLocked
+      : group === "party"
+        ? isPartySubLocked
+        : group === "dungeon"
+          ? isDungeonSubLocked
+          : () => false;
   return `<nav class="panel-subnav" aria-label="子分頁">${items
-    .map(
-      ({ id, label }) =>
-        `<button type="button" class="${panelSub[group] === id ? "on" : ""}" data-panel-sub="${group}:${id}">${label}</button>`
-    )
+    .map(({ id, label }) => {
+      const locked = lockFn(state, id);
+      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${locked ? " is-locked" : ""}" data-panel-sub="${group}:${id}" ${locked ? "disabled" : ""}>${label}${locked ? "🔒" : ""}</button>`;
+    })
     .join("")}</nav>`;
 }
 
@@ -562,6 +587,30 @@ function skipPlayback() {
 
 function render() {
   state = tickCultivation(state);
+  const adv = advanceTutorialIfReady(state);
+  if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+
+  const nav = syncTutorialNavigation(state, { tab, panelSub });
+  tab = nav.tab;
+  panelSub = nav.panelSub;
+
+  if (tutorialActive(state)) {
+    const s = state.tutorial.step;
+    if (s === "codex" && tab === "codex") markTutorialFlag(state, "codexVisited");
+    if (s === "bond" && tab === "party" && panelSub.party === "bond") markTutorialFlag(state, "bondVisited");
+    if (s === "dispatch" && tab === "party" && panelSub.party === "dispatch") {
+      markTutorialFlag(state, "dispatchVisited");
+    }
+    if (s === "gear" && tab === "cultivate" && panelSub.cultivate === "gear") {
+      markTutorialFlag(state, "gearVisited");
+    }
+    if (s === "tactics" && tab === "dungeon" && panelSub.dungeon === "setup") {
+      markTutorialFlag(state, "tacticsVisited");
+    }
+    const adv2 = advanceTutorialIfReady(state);
+    if (adv2.advanced && adv2.unlockMsg) setFlash(adv2.unlockMsg, "unlock");
+  }
+
   const stage = realmInfo(state);
   const next = nextRealm(state);
   const qiPct = next ? Math.min(100, (state.qi / next.need) * 100) : 100;
@@ -597,6 +646,7 @@ function render() {
 
     <main class="panel">
       <div class="panel-body">
+      ${tutorialBannerHtml(state)}
       ${tab === "cultivate" ? cultivatePanel(qiPct, next, m) : ""}
       ${tab === "party" ? petsPanel() : ""}
       ${tab === "dungeon" ? dungeonPanel() : ""}
@@ -635,7 +685,8 @@ function offlineBanner() {
 }
 
 function tabBtn(id, label, busy) {
-  return `<button type="button" role="tab" class="${tab === id ? "on" : ""}" data-tab="${id}" ${busy && id !== "dungeon" ? "disabled" : ""}>${label}</button>`;
+  const locked = isTabLocked(state, id);
+  return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${locked ? " locked" : ""}" data-tab="${id}" ${busy && id !== "dungeon" ? "disabled" : ""} ${locked ? "disabled" : ""}>${label}${locked ? "🔒" : ""}</button>`;
 }
 
 function cultivatePanel(qiPct, next, m) {
@@ -659,7 +710,7 @@ function cultivatePanel(qiPct, next, m) {
   const sites = trainSitesView(state);
   const siteBtns = sites
     .map((s) => {
-      const locked = !s.unlocked;
+      const locked = !s.unlocked || areTrainSitesLocked(state);
       const lockNote = locked && s.unlockHint ? `<span class="lock-hint">${escapeHtml(s.unlockHint)}</span>` : "";
       return `<button type="button" class="${s.selected ? "primary" : ""} train-site-btn${locked ? " is-locked" : ""}" data-set-train="${s.id}" ${
         locked ? "disabled title=\"" + escapeHtml(s.unlockHint || "未解鎖") + "\"" : ""
@@ -707,7 +758,9 @@ function cultivatePanel(qiPct, next, m) {
         <li class="card-row">
           <div>
             <strong>${escapeHtml(o.speciesName || o.name)}</strong>
-            <span class="muted">${escapeHtml(o.kind)}·${escapeHtml(o.elementName)} · ${sold ? "已售" : `${o.cost} 靈石`}</span>
+            <span class="muted">${escapeHtml(o.kind)}·${escapeHtml(o.elementName)} · ${
+              sold ? "已售" : o.tutorialDeal ? `教學 ${o.cost} 靈石` : `${o.cost} 靈石`
+            }</span>
           </div>
           <button type="button" class="primary" data-shop-buy="${escapeHtml(o.offerId)}" ${
             sold || ranchFull ? "disabled" : ""
@@ -913,7 +966,7 @@ function petsListView() {
       ${nav}
       <h2>靈寵 · 牧場</h2>
       <p class="lead">牧場 ${ranch.length}/${cap}</p>
-      <div class="row"><button type="button" data-act="start-breed">繁殖</button></div>
+      <div class="row"><button type="button" data-act="start-breed" ${tutorialActive(state) ? "disabled" : ""}>繁殖</button></div>
       <ul class="list">${ranchList}</ul>`;
   }
   if (sub === "dispatch") {
@@ -1413,8 +1466,12 @@ function logPanel() {
 function bind() {
   app.querySelectorAll("[data-panel-sub]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (btn.disabled) return;
       const [group, id] = (btn.dataset.panelSub || "").split(":");
       if (!group || !id || panelSub[group] === id) return;
+      if (group === "cultivate" && isCultivateSubLocked(state, id)) return;
+      if (group === "party" && isPartySubLocked(state, id)) return;
+      if (group === "dungeon" && isDungeonSubLocked(state, id)) return;
       panelSub = { ...panelSub, [group]: id };
       render();
     });
