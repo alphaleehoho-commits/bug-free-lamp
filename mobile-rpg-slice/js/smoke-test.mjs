@@ -90,6 +90,7 @@ import {
   tutorialGlowClass,
   tutorialLiveSnapshot,
   maybeStartLateTutorial,
+  tutorialWaivesDungeonChallenge,
   LATE_TUTORIAL_MIN_REALM,
 } from "./tutorial.js";
 
@@ -583,6 +584,15 @@ const lateStart = {
 const late = maybeStartLateTutorial(lateStart);
 assert(late.started && lateStart.tutorial.step === "dispatch", "late tutorial at realm 2");
 assert(LATE_TUTORIAL_MIN_REALM === 2, "late realm gate");
+
+const tutDung = {
+  realm: 1,
+  pets: [{ uid: "p1", elementId: "gloom", speciesId: "x", atk: 1, hp: 1, spd: 1 }],
+  tutorial: { done: false, step: "dungeon_fight", flags: {} },
+};
+normalizeTutorial(tutDung);
+assert(tutorialWaivesDungeonChallenge(tutDung, "tide_1"), "tutorial waives tide_1 challenge");
+assert(!tutorialWaivesDungeonChallenge(tutDung, "tide_2"), "no waive on t2");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

@@ -101,6 +101,8 @@ import {
   tutorialHighlights,
   findTutorialTargetElements,
   maybeStartLateTutorial,
+  tutorialStepInfo,
+  tutorialWaivesDungeonChallenge,
 } from "./tutorial.js";
 
 const app = document.querySelector("#app");
@@ -153,7 +155,8 @@ function ensureSpotlight() {
     tutSpotlightEl = document.createElement("div");
     tutSpotlightEl.id = "tut-spotlight";
     tutSpotlightEl.hidden = true;
-    tutSpotlightEl.innerHTML = '<span class="tut-spotlight-ring"></span><span class="tut-spotlight-label"></span>';
+    tutSpotlightEl.innerHTML =
+      '<span class="tut-spotlight-ring"></span><div class="tut-spotlight-callout"><strong class="tut-spotlight-step"></strong><span class="tut-spotlight-hint"></span></div>';
     document.body.appendChild(tutSpotlightEl);
   }
   return tutSpotlightEl;
@@ -177,28 +180,39 @@ function onTutorialMisclick(ev) {
 
 function positionTutorialSpotlight(urgent = false) {
   const host = ensureSpotlight();
+  const banner = document.querySelector("[data-live=tutorial]");
   if (!tutorialActive(state)) {
     host.hidden = true;
+    banner?.classList.remove("is-spotlight-active");
     return;
   }
   const targets = findTutorialTargetElements(state, { tab, panelSub });
   app.querySelectorAll(".tut-glow").forEach((el) => el.classList.remove("tut-glow", "tut-flash-urgent"));
   if (!targets.length) {
     host.hidden = true;
+    banner?.classList.remove("is-spotlight-active");
     return;
   }
   const el = targets[0];
-  el.classList.add("tut-glow");
-  if (urgent || tutMisclickCount >= 2) el.classList.add("tut-flash-urgent");
+  const isUrgent = urgent || tutMisclickCount >= 2;
+  if (isUrgent) {
+    el.classList.add("tut-glow", "tut-flash-urgent");
+  }
   const r = el.getBoundingClientRect();
   host.hidden = false;
-  host.classList.toggle("is-urgent", urgent || tutMisclickCount >= 2);
-  host.style.top = `${Math.max(4, r.top - 5)}px`;
-  host.style.left = `${Math.max(4, r.left - 5)}px`;
-  host.style.width = `${r.width + 10}px`;
-  host.style.height = `${r.height + 10}px`;
-  const label = host.querySelector(".tut-spotlight-label");
-  if (label) label.textContent = urgent || tutMisclickCount >= 2 ? "點這裡" : "";
+  host.classList.toggle("is-urgent", isUrgent);
+  host.style.top = `${Math.max(4, r.top - 4)}px`;
+  host.style.left = `${Math.max(4, r.left - 4)}px`;
+  host.style.width = `${r.width + 8}px`;
+  host.style.height = `${r.height + 8}px`;
+
+  const info = tutorialStepInfo(state);
+  const stepEl = host.querySelector(".tut-spotlight-step");
+  const hintEl = host.querySelector(".tut-spotlight-hint");
+  if (stepEl) stepEl.textContent = `${info.index}/${info.total} ${info.title}`;
+  if (hintEl) hintEl.textContent = isUrgent ? "👆 點這裡" : info.hint;
+
+  banner?.classList.add("is-spotlight-active");
 }
 
 function tutGlow(spec) {
@@ -1638,6 +1652,7 @@ function dungeonPanel() {
   const curId = dungeonIds[dungeonIdx];
   const dCur = curId ? resolveDungeon(state, curId) : null;
   const stCur = dCur ? dungeonStatus(state, dCur.id) : null;
+  const tutWaiveDungeon = dCur ? tutorialWaivesDungeonChallenge(state, dCur.id) : false;
   const locked = dCur ? state.realm < dCur.needRealm : true;
   const cdSec = stCur ? Math.ceil(stCur.cooldownLeftMs / 1000) : 0;
   const onCd = cdSec > 0;
@@ -1648,26 +1663,30 @@ function dungeonPanel() {
   const trial = stCur?.trial;
   const conds = (stCur?.conditions || []).filter((c) => !c.passive);
   const passives = (stCur?.conditions || []).filter((c) => c.passive);
-  const condList = conds
-    .slice(0, 2)
-    .map((c) => condStatusRow(c.label.replace(/^條件[:：]?\s*/, ""), c.ok, rewardBitsHtml(c.bonus), c.reason))
-    .join("");
-  const trialRow = trial
-    ? condStatusRow(
-        trial.label.replace(/^試煉[:：]?\s*/, "試煉："),
-        stCur.trialMet,
-        `+${trial.bonus?.stones || 0}石`,
-        stCur.trialReason || "未滿足"
-      )
-    : "";
-  const challengeRow = stCur?.challenge
-    ? condStatusRow(
-        stCur.challenge.label.replace(/^挑戰[:：]?\s*/, "挑戰："),
-        stCur.challengeMet,
-        rewardBitsHtml(stCur.challenge.bonus),
-        stCur.challengeReason || "未滿足"
-      )
-    : "";
+  const condList = tutWaiveDungeon
+    ? `<li class="cond-item is-met is-tut-waive"><span class="cond-badge">教學</span><div class="cond-body"><strong>教學模式</strong><span class="muted">今日挑戰／試煉條件已豁免，可直接進攻</span></div></li>`
+    : conds
+        .slice(0, 2)
+        .map((c) => condStatusRow(c.label.replace(/^條件[:：]?\s*/, ""), c.ok, rewardBitsHtml(c.bonus), c.reason))
+        .join("");
+  const trialRow =
+    tutWaiveDungeon || !trial
+      ? ""
+      : condStatusRow(
+          trial.label.replace(/^試煉[:：]?\s*/, "試煉："),
+          stCur.trialMet,
+          `+${trial.bonus?.stones || 0}石`,
+          stCur.trialReason || "未滿足"
+        );
+  const challengeRow =
+    tutWaiveDungeon || !stCur?.challenge
+      ? ""
+      : condStatusRow(
+          stCur.challenge.label.replace(/^挑戰[:：]?\s*/, "挑戰："),
+          stCur.challengeMet,
+          rewardBitsHtml(stCur.challenge.bonus),
+          stCur.challengeReason || "未滿足"
+        );
   const passiveLine = passives.map((p) => p.label).join(" · ");
   const variantLine = dCur?.dailyVariantLabel
     ? `<span class="muted daily-variant">今日：${escapeHtml(dCur.dailyVariantLabel)}</span>`
@@ -1685,7 +1704,7 @@ function dungeonPanel() {
           </div>
           <button type="button" class="primary${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}" ${locked || onCd ? "disabled" : ""}>進攻</button>
         </div>
-        <ul class="cond-list">${challengeRow}${condList}${trialRow}</ul>
+        <ul class="cond-list">${tutWaiveDungeon ? condList : `${challengeRow}${condList}${trialRow}`}</ul>
       </li>`
     : `<li class="empty">尚無可挑戰秘境。</li>`;
   const pager =

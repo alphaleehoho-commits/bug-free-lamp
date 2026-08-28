@@ -27,12 +27,12 @@ export const TUTORIAL_STEPS = [
   {
     id: "dungeon_fight",
     title: "踏入秘境",
-    hint: "進入「秘境」，挑戰【潮汐廢墟 · 一層】。",
+    hint: "進入「秘境」，挑戰【潮汐廢墟 · 一層】（教學豁免今日挑戰限制）。",
   },
   {
     id: "dungeon_win",
     title: "攻克一層",
-    hint: "帶靈寵戰勝秘境一層，取得首通獎勵。",
+    hint: "帶靈寵戰勝秘境一層；教學中不檢查今日禁屬／試煉條件。",
   },
   {
     id: "codex",
@@ -548,6 +548,13 @@ export function findTutorialTargetElements(state, nav = {}) {
     });
   }
   return els;
+}
+
+export function tutorialWaivesDungeonChallenge(state, dungeonId) {
+  if (!tutorialActive(state)) return false;
+  const step = state.tutorial.step;
+  if (step !== "dungeon_fight" && step !== "dungeon_win") return false;
+  return dungeonId === "tide_1";
 }
 
 /** 供 UI 判斷教學狀態是否需重繪 */

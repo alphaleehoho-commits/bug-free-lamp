@@ -508,10 +508,16 @@ body {
 
 .tutorial-banner {
   margin: 0 0 0.4rem;
-  padding: 0.45rem 0.5rem;
+  padding: 0.5rem 0.55rem;
   border-radius: 8px;
   border: 1px solid rgba(109, 179, 217, 0.45);
   background: linear-gradient(110deg, rgba(30, 70, 100, 0.35), rgba(40, 90, 75, 0.22));
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.tutorial-banner.is-spotlight-active {
+  border-color: rgba(126, 184, 163, 0.85);
+  box-shadow: 0 0 0 1px rgba(126, 184, 163, 0.35), 0 4px 16px rgba(40, 90, 75, 0.25);
+  background: linear-gradient(110deg, rgba(35, 85, 110, 0.48), rgba(45, 100, 85, 0.32));
 }
 .tutorial-head {
   display: flex;
@@ -541,9 +547,13 @@ body {
 }
 .tutorial-hint {
   margin: 0;
-  font-size: 0.64rem;
-  line-height: 1.35;
-  color: var(--fog);
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: #c8dce6;
+}
+.tutorial-banner.is-spotlight-active .tutorial-hint {
+  color: #e6f2f8;
+  font-weight: 500;
 }
 .tut-cta-row {
   margin: 0.25rem 0 0.35rem;
@@ -580,7 +590,7 @@ body {
 }
 #tut-spotlight {
   position: fixed;
-  z-index: 450;
+  z-index: 440;
   pointer-events: none;
   box-sizing: border-box;
   border-radius: 12px;
@@ -591,28 +601,48 @@ body {
   width: 100%;
   height: 100%;
   border-radius: inherit;
-  border: 2px solid rgba(255, 224, 168, 0.95);
-  box-shadow: 0 0 0 3px rgba(232, 184, 109, 0.35), 0 0 18px rgba(232, 184, 109, 0.65);
-  animation: tut-ring 1.2s ease-in-out infinite;
+  border: 2px solid rgba(255, 224, 168, 0.55);
+  box-shadow: 0 0 0 2px rgba(232, 184, 109, 0.15);
+  animation: tut-ring 2s ease-in-out infinite;
 }
 #tut-spotlight.is-urgent .tut-spotlight-ring {
   animation: tut-ring-urgent 0.5s ease-in-out infinite;
   border-color: #fff3d0;
-  box-shadow: 0 0 0 5px rgba(255, 200, 80, 0.55), 0 0 24px rgba(255, 200, 80, 0.85);
+  box-shadow: 0 0 0 4px rgba(255, 200, 80, 0.45), 0 0 20px rgba(255, 200, 80, 0.65);
 }
-#tut-spotlight .tut-spotlight-label {
+#tut-spotlight .tut-spotlight-callout {
   position: absolute;
   left: 50%;
-  top: -1.35rem;
+  bottom: calc(100% + 6px);
   transform: translateX(-50%);
-  padding: 0.12rem 0.45rem;
-  border-radius: 999px;
-  background: rgba(232, 184, 109, 0.95);
-  color: #1a1208;
+  max-width: min(92vw, 320px);
+  padding: 0.28rem 0.45rem;
+  border-radius: 8px;
+  background: rgba(18, 32, 44, 0.94);
+  border: 1px solid rgba(126, 184, 163, 0.55);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  text-align: center;
+  line-height: 1.25;
+}
+#tut-spotlight .tut-spotlight-step {
+  display: block;
   font-size: 0.62rem;
   font-weight: 700;
-  white-space: nowrap;
-  letter-spacing: 0.06em;
+  color: #9fd4c0;
+  margin-bottom: 0.08rem;
+}
+#tut-spotlight .tut-spotlight-hint {
+  display: block;
+  font-size: 0.58rem;
+  color: #d8e8f0;
+}
+#tut-spotlight.is-urgent .tut-spotlight-hint {
+  color: #ffe0a8;
+  font-weight: 700;
+}
+.cond-item.is-tut-waive .cond-badge {
+  background: rgba(126, 184, 163, 0.35);
+  color: #d0f0e4;
 }
 @keyframes tut-ring {
   0%, 100% { opacity: 0.85; }

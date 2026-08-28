@@ -131,6 +131,7 @@ import {
   markTutorialFlag,
   skipTutorial,
   maybeStartLateTutorial,
+  tutorialWaivesDungeonChallenge,
 } from "./tutorial.js";
 
 const SAVE_KEY = "void-tide-pets-v25";
@@ -2046,7 +2047,8 @@ export function runDungeon(state, dungeonId) {
 
   const dailyPack = ensureDungeonDaily(state);
   const dailyMod = dailyPack?.mod || null;
-  const challenge = d.challenge || null;
+  const tutWaiveChallenge = tutorialWaivesDungeonChallenge(state, dungeonId);
+  const challenge = tutWaiveChallenge ? null : d.challenge || null;
   const tactics = TACTIC_IDS.includes(state.tactics) ? state.tactics : "balanced";
   const formationId = FORMATION_IDS.includes(state.formation) ? state.formation : "balanced";
   const formation = FORMATIONS[formationId] || FORMATIONS.balanced;
@@ -2054,14 +2056,14 @@ export function runDungeon(state, dungeonId) {
   const chalEval = evaluateDungeonChallenge(state.pets, challenge, {
     hasMaster: !challenge?.banMaster,
   });
-  // 強制入口限制：出戰人數／禁屬不符則拒進
-  if (challenge?.maxPets != null && state.pets.length > challenge.maxPets) {
+  // 強制入口限制：出戰人數／禁屬不符則拒進（教學秘境豁免）
+  if (!tutWaiveChallenge && challenge?.maxPets != null && state.pets.length > challenge.maxPets) {
     return {
       ok: false,
       msg: `今日挑戰要求出戰≤${challenge.maxPets}寵（現 ${state.pets.length}）。`,
     };
   }
-  if (challenge?.banElement) {
+  if (!tutWaiveChallenge && challenge?.banElement) {
     const banned = state.pets.filter((p) => p.elementId === challenge.banElement);
     if (banned.length) {
       const elName = { flame: "焰", gloom: "幽", tide: "潮", stone: "岩", gale: "嵐" }[
@@ -2602,6 +2604,7 @@ export function dungeonStatus(state, dungeonId) {
   const roles = countDungeonRoles(waves);
   const condEval = evaluateDungeonConditions(state.pets, d);
   const daily = dungeonDailyView(state);
+  const tutWaive = tutorialWaivesDungeonChallenge(state, dungeonId);
   const chalEval = evaluateDungeonChallenge(state.pets, d.challenge, {
     hasMaster: !d.challenge?.banMaster,
   });
@@ -2619,8 +2622,9 @@ export function dungeonStatus(state, dungeonId) {
     bossBonus: d.bossBonus || null,
     dailyMod: daily,
     challenge: d.challenge || null,
-    challengeMet: chalEval.ok,
-    challengeReason: chalEval.reason || "",
+    challengeMet: tutWaive ? true : chalEval.ok,
+    challengeReason: tutWaive ? "教學豁免" : chalEval.reason || "",
+    challengeWaived: tutWaive,
     dailyVariantLabel: d.dailyVariantLabel || null,
   };
 }
