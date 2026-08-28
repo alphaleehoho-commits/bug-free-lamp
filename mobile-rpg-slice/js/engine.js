@@ -2036,7 +2036,6 @@ export function runDungeon(state, dungeonId) {
 
   if (state.tutorial && !state.tutorial.done) {
     state.tutorial.flags.dungeonStarted = true;
-    advanceTutorialIfReady(state);
   }
 
   const dailyPack = ensureDungeonDaily(state);

@@ -279,7 +279,7 @@ function meetsAdvance(state, stepId) {
     case "dungeon_fight":
       return !!flags.dungeonStarted;
     case "dungeon_win":
-      return (state.combatsWon || 0) >= 1;
+      return !!flags.dungeonWonTutorial;
     case "codex":
       return !!flags.codexVisited;
     case "bond":
@@ -329,10 +329,9 @@ export function syncTutorialNavigation(state, nav) {
 
   if (step === "cultivate_qi") {
     next.tab = "cultivate";
-    next.panelSub = {
-      ...next.panelSub,
-      cultivate: tutorialQiReady(state) ? "advance" : "train",
-    };
+    if (next.panelSub.cultivate !== "gear") {
+      next.panelSub = { ...next.panelSub, cultivate: "train" };
+    }
   } else if (step === "breakthrough" || step === "shop_pet") {
     next.tab = "cultivate";
     next.panelSub = { ...next.panelSub, cultivate: "advance" };
@@ -428,6 +427,21 @@ function highlightMatches(h, spec) {
 export function tutorialGlowClass(state, spec, nav = {}) {
   if (!tutorialActive(state)) return "";
   return tutorialHighlights(state, nav).some((h) => highlightMatches(h, spec)) ? " tut-glow" : "";
+}
+
+/** 供 UI 判斷教學狀態是否需重繪 */
+export function tutorialLiveSnapshot(state) {
+  const t = state.tutorial || {};
+  const f = t.flags || {};
+  return [
+    t.step,
+    t.done,
+    tutorialQiReady(state),
+    f.dungeonStarted,
+    f.dungeonWonTutorial,
+    f.codexVisited,
+    f.bondVisited,
+  ].join("|");
 }
 
 export function markTutorialFlag(state, flag) {

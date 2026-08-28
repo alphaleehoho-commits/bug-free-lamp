@@ -97,6 +97,8 @@ import {
   skipTutorial,
   tutorialQiReady,
   tutorialGlowClass,
+  tutorialLiveSnapshot,
+  tutorialHighlights,
 } from "./tutorial.js";
 
 const app = document.querySelector("#app");
@@ -118,9 +120,53 @@ let shellReady = false;
 let dispatchPick = [];
 let pwaInstallEvt = null;
 let pwaDismissed = localStorage.getItem("void-tide-pwa-dismiss") === "1";
+let tutorialSnapCache = "";
 
 function tutGlow(spec) {
   return tutorialGlowClass(state, spec, { tab, panelSub });
+}
+
+function refreshTutorialGlow() {
+  if (!tutorialActive(state)) return;
+  const specs = tutorialHighlights(state, { tab, panelSub });
+  const matchEl = (el) => {
+    const tabId = el.dataset.tab;
+    const ps = el.dataset.panelSub;
+    const act = el.dataset.act;
+    const shop = el.dataset.shopBuy;
+    const dep = el.dataset.deploy;
+    const dun = el.dataset.dungeon;
+    return specs.some((h) => {
+      if (h.type === "tab" && tabId === h.id) return true;
+      if (h.type === "panel-sub" && ps === `${h.group}:${h.id}`) return true;
+      if (h.type === "act" && act === h.act) return true;
+      if (h.type === "shop-buy" && shop) return true;
+      if (h.type === "deploy" && dep) return true;
+      if (h.type === "dungeon" && dun && (!h.dungeonId || h.dungeonId === dun)) return true;
+      return false;
+    });
+  };
+  app.querySelectorAll(".tut-glow").forEach((el) => el.classList.remove("tut-glow"));
+  app
+    .querySelectorAll("[data-tab],[data-panel-sub],[data-act],[data-shop-buy],[data-deploy],[data-dungeon]")
+    .forEach((el) => {
+      if (matchEl(el)) el.classList.add("tut-glow");
+    });
+}
+
+function patchTutorialBanner() {
+  const cur = document.querySelector("[data-live=tutorial]");
+  if (!tutorialActive(state)) {
+    cur?.remove();
+    return;
+  }
+  const html = tutorialBannerHtml(state);
+  if (cur) {
+    const wrap = document.createElement("div");
+    wrap.innerHTML = html.trim();
+    cur.replaceWith(wrap.firstElementChild);
+  }
+  refreshTutorialGlow();
 }
 
 /** @type {{ mode: 'list' | 'detail' | 'fuse' | 'breed', uid: string | null, fuseBase: string | null, fuseMats: string[], breedParents: string[] }} */
@@ -240,11 +286,11 @@ function setFlash(msg, tone = "") {
     if (msg) {
       el.hidden = false;
       el.textContent = msg;
-      el.className = flashTone ? `flash flash-${flashTone}` : "flash";
+      el.className = flashTone ? `flash flash-truncate flash-${flashTone}` : "flash flash-truncate";
     } else {
       el.hidden = true;
       el.textContent = "";
-      el.className = "flash";
+      el.className = "flash flash-truncate";
       flashTone = "";
     }
   } else {
@@ -259,7 +305,7 @@ function setFlash(msg, tone = "") {
       if (f) {
         f.hidden = true;
         f.textContent = "";
-        f.className = "flash";
+        f.className = "flash flash-truncate";
       }
     }, 2600);
   }
@@ -505,6 +551,14 @@ function patchLive() {
   if (dust) dust.textContent = String(Math.floor(state.dust || 0));
   if (stageEl) stageEl.textContent = stage.name;
   if (wins) wins.textContent = `勝場 ${state.combatsWon}`;
+
+  const snap = tutorialLiveSnapshot(state);
+  if (snap !== tutorialSnapCache) {
+    tutorialSnapCache = snap;
+    patchTutorialBanner();
+  } else if (tutorialActive(state)) {
+    refreshTutorialGlow();
+  }
 }
 
 function combatPlaybackMeta(pb) {
@@ -555,10 +609,17 @@ function finishPlayback() {
     clearInterval(playback.timer);
     playback.timer = null;
   }
+  if (playback.result?.won && tutorialActive(state)) {
+    if (!state.tutorial.flags) state.tutorial.flags = {};
+    state.tutorial.flags.dungeonWonTutorial = true;
+  }
+  const adv = advanceTutorialIfReady(state);
   saveState(state);
   render();
   const unlocks = playback.result.unlockedSites || [];
-  if (unlocks.length) {
+  if (adv.advanced && adv.unlockMsg) {
+    setFlash(adv.unlockMsg, "unlock");
+  } else if (unlocks.length) {
     setFlash(`解鎖練功地【${unlocks.join("】【")}】！ ${playback.result.msg}`, "unlock");
   } else {
     setFlash(playback.result.msg);
@@ -698,7 +759,9 @@ function render() {
 
   bind();
   shellReady = true;
+  tutorialSnapCache = tutorialLiveSnapshot(state);
   saveState(state);
+  refreshTutorialGlow();
   if (playback) updatePlaybackDom();
 }
 
@@ -2002,12 +2065,18 @@ function bind() {
   app.querySelectorAll("[data-dungeon]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (playback && !playback.done) return;
+      if (tutorialActive(state) && state.tutorial.step === "dungeon_fight") {
+        if (!state.tutorial.flags) state.tutorial.flags = {};
+        state.tutorial.flags.dungeonStarted = true;
+      }
       const r = runDungeon(state, btn.dataset.dungeon);
       saveState(state);
       if (!r.ok) {
         setFlash(r.msg);
         return;
       }
+      const adv = advanceTutorialIfReady(state);
+      if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
       startPlayback(r);
     });
   });
@@ -2034,13 +2103,11 @@ setInterval(() => {
   if (playback && !playback.done) return;
   patchLive();
   const adv = advanceTutorialIfReady(state);
-  if (adv.advanced) {
+  const snap = tutorialLiveSnapshot(state);
+  if (adv.advanced || snap !== tutorialSnapCache) {
+    tutorialSnapCache = snap;
     saveState(state);
-    if (adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
-    render();
-    return;
-  }
-  if (tutorialActive(state) && tutorialQiReady(state) && panelSub.cultivate === "train") {
+    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
     render();
     return;
   }

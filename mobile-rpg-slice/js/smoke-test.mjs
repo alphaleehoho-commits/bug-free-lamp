@@ -88,6 +88,7 @@ import {
   syncTutorialNavigation,
   tutorialHighlights,
   tutorialGlowClass,
+  tutorialLiveSnapshot,
 } from "./tutorial.js";
 
 function assert(cond, msg) {
@@ -542,8 +543,8 @@ assert(tutorialQiReady(qiSt), "tutorial qi ready");
 assert(!isCultivateSubLocked(qiSt, "advance"), "advance unlocked when qi ready");
 
 assert((BREAKTHROUGH_GATES[1].checks || []).length === 0, "realm1 no combat gate");
-const br1 = breakthroughView({ realm: 0, qi: 50, stones: 30, combatsWon: 0, pets: [], ranch: [] });
-assert(br1.items.every((i) => i.ok), "realm1 breakthrough ready without combat win");
+const brGate1 = breakthroughView({ realm: 0, qi: 50, stones: 30, combatsWon: 0, pets: [], ranch: [] });
+assert(brGate1.items.every((i) => i.ok), "realm1 breakthrough ready without combat win");
 
 const navIn = { tab: "cultivate", panelSub: { cultivate: "train", party: "fight", dungeon: "field" } };
 const codexSt = { tutorial: { done: false, step: "codex", flags: {} } };
@@ -556,6 +557,14 @@ assert(tutorialGlowClass(codexSt, { type: "tab", id: "codex" }, navIn) === " tut
 const bondSt = { tutorial: { done: false, step: "bond", flags: {} } };
 const bondNav = syncTutorialNavigation(bondSt, navIn);
 assert(bondNav.tab === "cultivate", "bond step no auto party nav");
+
+const dungSt = {
+  tutorial: { done: false, step: "dungeon_win", flags: { dungeonStarted: true } },
+  combatsWon: 1,
+};
+assert(!advanceTutorialIfReady(dungSt).advanced, "dungeon win waits for tutorial flag");
+dungSt.tutorial.flags.dungeonWonTutorial = true;
+assert(advanceTutorialIfReady(dungSt).advanced && dungSt.tutorial.step === "codex", "dungeon win flag advances");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
