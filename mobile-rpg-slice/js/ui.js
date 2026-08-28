@@ -155,8 +155,7 @@ function ensureSpotlight() {
     tutSpotlightEl = document.createElement("div");
     tutSpotlightEl.id = "tut-spotlight";
     tutSpotlightEl.hidden = true;
-    tutSpotlightEl.innerHTML =
-      '<span class="tut-spotlight-ring"></span><div class="tut-spotlight-callout"><strong class="tut-spotlight-step"></strong><span class="tut-spotlight-hint"></span></div>';
+    tutSpotlightEl.innerHTML = '<span class="tut-spotlight-ring"></span>';
     document.body.appendChild(tutSpotlightEl);
   }
   return tutSpotlightEl;
@@ -205,13 +204,6 @@ function positionTutorialSpotlight(urgent = false) {
   host.style.left = `${Math.max(4, r.left - 4)}px`;
   host.style.width = `${r.width + 8}px`;
   host.style.height = `${r.height + 8}px`;
-
-  const info = tutorialStepInfo(state);
-  const stepEl = host.querySelector(".tut-spotlight-step");
-  const hintEl = host.querySelector(".tut-spotlight-hint");
-  if (stepEl) stepEl.textContent = `${info.index}/${info.total} ${info.title}`;
-  if (hintEl) hintEl.textContent = isUrgent ? "👆 點這裡" : info.hint;
-
   banner?.classList.add("is-spotlight-active");
 }
 
@@ -974,9 +966,18 @@ function cultivatePanel(qiPct, next, m) {
   const sub = panelSub.cultivate;
   const nav = panelSubNav("cultivate", [
     { id: "train", label: "練功" },
+    { id: "shop", label: "商肆" },
     { id: "gear", label: "裝備" },
     { id: "advance", label: "進階" },
   ]);
+
+  if (sub === "shop") {
+    return `
+      ${nav}
+      <h2>商肆 · 今日</h2>
+      <p class="lead">靈石 ${Math.floor(state.stones)} · 牧場 ${ranchN}／${ranchCap(state)}</p>
+      <ul class="list">${shopRows}</ul>`;
+  }
 
   if (sub === "gear") {
     return `
@@ -1015,8 +1016,6 @@ function cultivatePanel(qiPct, next, m) {
         <button type="button" class="primary${tutGlow({ type: "act", act: "break" })}" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
         <button type="button" data-act="tide-seal" ${seal.canSeal ? "" : "disabled"}>鑄潮印${seal.canSeal ? `+${seal.nextGain}` : ""}</button>
       </div>
-      <h3>商肆 · 今日</h3>
-      <ul class="list">${shopRows}</ul>
       <h3>人物技能</h3>
       <ul class="skill-list">${skills || "<li class='empty'>尚未解鎖</li>"}</ul>`;
   }

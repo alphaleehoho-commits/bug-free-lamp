@@ -610,35 +610,12 @@ body {
   border-color: #fff3d0;
   box-shadow: 0 0 0 4px rgba(255, 200, 80, 0.45), 0 0 20px rgba(255, 200, 80, 0.65);
 }
-#tut-spotlight .tut-spotlight-callout {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 6px);
-  transform: translateX(-50%);
-  max-width: min(92vw, 320px);
-  padding: 0.28rem 0.45rem;
-  border-radius: 8px;
-  background: rgba(18, 32, 44, 0.94);
-  border: 1px solid rgba(126, 184, 163, 0.55);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-  text-align: center;
-  line-height: 1.25;
+.tutorial-banner.is-spotlight-active .tutorial-step {
+  animation: tut-step-pulse 1.5s ease-in-out infinite;
 }
-#tut-spotlight .tut-spotlight-step {
-  display: block;
-  font-size: 0.62rem;
-  font-weight: 700;
-  color: #9fd4c0;
-  margin-bottom: 0.08rem;
-}
-#tut-spotlight .tut-spotlight-hint {
-  display: block;
-  font-size: 0.58rem;
-  color: #d8e8f0;
-}
-#tut-spotlight.is-urgent .tut-spotlight-hint {
-  color: #ffe0a8;
-  font-weight: 700;
+@keyframes tut-step-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(159, 212, 192, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(159, 212, 192, 0.15); }
 }
 .cond-item.is-tut-waive .cond-badge {
   background: rgba(126, 184, 163, 0.35);

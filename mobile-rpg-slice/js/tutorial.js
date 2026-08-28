@@ -125,13 +125,15 @@ export function tutorialStepInfo(state) {
   const cur = TUTORIAL_STEPS[idx] || TUTORIAL_STEPS[0];
   const inLate = isLateStep(t.step) || t.latePending;
   const total = inLate
-    ? CORE_TUTORIAL_STEPS.length + LATE_TUTORIAL_STEPS.length - 1
-    : CORE_TUTORIAL_STEPS.length - 1;
-  let index = Math.max(1, idx + 1);
+    ? CORE_TUTORIAL_STEPS.length + LATE_TUTORIAL_STEPS.length
+    : CORE_TUTORIAL_STEPS.length;
+  let index = 1;
   if (inLate && idx >= STEP_IDS.indexOf("dispatch")) {
     index = CORE_TUTORIAL_STEPS.length + (idx - STEP_IDS.indexOf("dispatch") + 1);
-  } else if (!inLate && idx >= 0) {
-    index = Math.min(idx + 1, CORE_TUTORIAL_STEPS.length);
+  } else if (idx >= 0 && idx < CORE_TUTORIAL_STEPS.length) {
+    index = idx + 1;
+  } else if (idx >= 0) {
+    index = Math.min(idx + 1, total);
   }
   return {
     ...cur,
@@ -145,7 +147,7 @@ export function tutorialStepInfo(state) {
 
 function locksForStep(stepId) {
   const allTabs = { party: true, dungeon: true, codex: true, log: true };
-  const allCult = { gear: true, advance: true };
+  const allCult = { gear: true, advance: true, shop: true };
   const allParty = { fight: true, ranch: true, dispatch: true, bond: true };
   const allDung = { setup: true };
 
@@ -161,7 +163,7 @@ function locksForStep(stepId) {
     case "breakthrough":
       return {
         tabs: { ...allTabs },
-        cultivateSub: { gear: true, advance: false },
+        cultivateSub: { gear: true, advance: false, shop: true },
         partySub: { ...allParty },
         dungeonSub: { ...allDung },
         trainSites: true,
@@ -169,7 +171,7 @@ function locksForStep(stepId) {
     case "shop_pet":
       return {
         tabs: { ...allTabs },
-        cultivateSub: { gear: true, advance: false },
+        cultivateSub: { gear: true, advance: true, shop: false },
         partySub: { ...allParty },
         dungeonSub: { ...allDung },
         trainSites: true,
@@ -417,9 +419,12 @@ export function syncTutorialNavigation(state, nav) {
     if (next.panelSub.cultivate !== "gear") {
       next.panelSub = { ...next.panelSub, cultivate: "train" };
     }
-  } else if (step === "breakthrough" || step === "shop_pet") {
+  } else if (step === "breakthrough") {
     next.tab = "cultivate";
     next.panelSub = { ...next.panelSub, cultivate: "advance" };
+  } else if (step === "shop_pet") {
+    next.tab = "cultivate";
+    next.panelSub = { ...next.panelSub, cultivate: "shop" };
   } else if (step === "deploy") {
     next.tab = "party";
     next.panelSub = { ...next.panelSub, party: "ranch" };
@@ -451,10 +456,10 @@ export function tutorialHighlights(state, nav = {}) {
       }
       return [{ type: "panel-sub", group: "cultivate", id: "advance" }];
     case "shop_pet":
-      if (tab === "cultivate" && ps.cultivate === "advance") {
+      if (tab === "cultivate" && ps.cultivate === "shop") {
         return [{ type: "shop-buy" }];
       }
-      return [{ type: "panel-sub", group: "cultivate", id: "advance" }];
+      return [{ type: "panel-sub", group: "cultivate", id: "shop" }];
     case "deploy":
       if (tab === "party" && ps.party === "ranch") return [{ type: "deploy" }];
       if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];

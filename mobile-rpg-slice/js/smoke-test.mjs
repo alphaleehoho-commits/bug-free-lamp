@@ -91,6 +91,7 @@ import {
   tutorialLiveSnapshot,
   maybeStartLateTutorial,
   tutorialWaivesDungeonChallenge,
+  tutorialStepInfo,
   LATE_TUTORIAL_MIN_REALM,
 } from "./tutorial.js";
 
@@ -593,6 +594,11 @@ const tutDung = {
 normalizeTutorial(tutDung);
 assert(tutorialWaivesDungeonChallenge(tutDung, "tide_1"), "tutorial waives tide_1 challenge");
 assert(!tutorialWaivesDungeonChallenge(tutDung, "tide_2"), "no waive on t2");
+
+const stepBond = { tutorial: { done: false, step: "bond", flags: {}, latePending: false } };
+normalizeTutorial(stepBond);
+const bondInfo = tutorialStepInfo(stepBond);
+assert(bondInfo.index === 8 && bondInfo.total === 8, "core tutorial 8/8 at bond");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
