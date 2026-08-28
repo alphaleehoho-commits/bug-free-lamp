@@ -113,9 +113,12 @@ import {
   isTrainSiteUnlocked,
   unlockedTrainSiteIds,
   personalityCombatForPet,
+  materialSourceLabel,
+  MATERIAL_USES,
+  trainSiteUnlockHint,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v18";
+const SAVE_KEY = "void-tide-pets-v19";
 
 function defaultMaster() {
   return {
@@ -267,6 +270,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v18") ||
       localStorage.getItem("void-tide-pets-v17") ||
       localStorage.getItem("void-tide-pets-v16") ||
       localStorage.getItem("void-tide-pets-v12") ||
@@ -442,6 +446,35 @@ function formatMats(mats) {
     .join("／");
 }
 
+/** P11：材料是否足夠（含缺口） */
+export function affordMaterials(state, cost) {
+  if (!state.materials) state.materials = emptyMaterials();
+  const items = Object.entries(cost || {})
+    .filter(([, n]) => n > 0)
+    .map(([id, need]) => {
+      const have = state.materials[id] || 0;
+      return {
+        id,
+        name: MATERIALS[id]?.name || id,
+        need,
+        have,
+        ok: have >= need,
+        short: Math.max(0, need - have),
+        source: materialSourceLabel(id),
+        use: MATERIAL_USES[id] || "",
+      };
+    });
+  return { ok: items.every((i) => i.ok), items };
+}
+
+export function materialHintsView(state) {
+  return materialsView(state).map((m) => ({
+    ...m,
+    source: materialSourceLabel(m.id),
+    use: MATERIAL_USES[m.id] || "",
+  }));
+}
+
 /** 練功地點掛機產材料 */
 export function tickTrainSite(state, elapsedSec) {
   if (elapsedSec <= 0) return { mats: {}, feed: 0, dust: 0 };
@@ -496,6 +529,7 @@ export function trainSitesView(state) {
     ...s,
     unlocked: isTrainSiteUnlocked(state, s.id),
     selected: s.id === cur,
+    unlockHint: trainSiteUnlockHint(s),
   }));
 }
 
@@ -2077,6 +2111,8 @@ export function runDungeon(state, dungeonId) {
   let challengeMet = false;
   /** @type {{ id: string, label: string, ok: boolean, reward: object, bits: string }[]} */
   let conditionResults = [];
+  /** @type {string[]} */
+  const unlockedSites = [];
 
   const checkSideDown = () => {
     if (allies.every((a) => a.hp <= 0)) return "lose";
@@ -2163,6 +2199,7 @@ export function runDungeon(state, dungeonId) {
         // 主線：首通解鎖對應練功地圖
         for (const site of TRAIN_SITES) {
           if (site.needClear === dungeonId) {
+            unlockedSites.push(site.name);
             pushLog(state, `主線推進：解鎖練功地【${site.name}】！`);
           }
         }
@@ -2368,6 +2405,7 @@ export function runDungeon(state, dungeonId) {
     waves: waves.length,
     conditionsMet: conditionResults.filter((c) => c.ok).map((c) => c.id),
     rewardBreakdown,
+    unlockedSites,
     msg,
   };
 }
@@ -2614,6 +2652,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v18");
   localStorage.removeItem("void-tide-pets-v17");
   localStorage.removeItem("void-tide-pets-v16");
   localStorage.removeItem("void-tide-pets-v15");

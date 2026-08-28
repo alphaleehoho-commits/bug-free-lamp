@@ -1,21 +1,16 @@
 # 暗潮 · Void Tide — Agent Handoff
 
-## Why another agent cannot load this
-
-This Cloud Agent run was started **without a linked GitHub repository** (`repoUrl: null`).
-All work lives only in the VM at `/agent` (local git branch `cursor/mobile-rpg-void-tide-49a4`).
-Other agents cannot see those files until the project is on a **private GitHub repo** and a new agent is started **from that repo**.
-
 ## Project
 
 - Path: `mobile-rpg-slice/`
 - Stack: vanilla HTML/CSS/JS PWA (portrait mobile)
-- Save key / SW cache: `void-tide-pets-v18`
-- Branch (latest): `cursor/train-sites-breed-depth-49a4`
+- Save key / SW cache: `void-tide-pets-v19`
+- Repo: private GitHub `bug-free-lamp` (branch `main` + feature branches)
 
 **Breed (dino-style):** hybrid species from cross-kind mates + rarity tiers (普通→傳說); fusion stays same-species stages. Bestiary grows with hybrids (incl. 甲蟎 shellmite). Species↔kind 1:1; generations 0–3; dual personality on breed.
 - Run: `cd mobile-rpg-slice && python3 -m http.server 8765`
 - Smoke: `cd mobile-rpg-slice && node js/smoke-test.mjs`
+- Pages: `https://alphaleehoho-commits.github.io/bug-free-lamp/` (needs GitHub Pages workflow if not yet enabled)
 
 ## Features in tree
 
@@ -39,15 +34,10 @@ Idle → dungeon → bond → ranch → fuse/breed → element → P1 idle/gear/
 
 **P10:** ranch idle drip **off** (ranch = dispatch only, 5 missions) · master **train sites** (潮岸→廢墟→深層→心核→暗潮心壇, unlock by dungeon first clear) · materials (潮露／珊瑚屑／霧絲／深淵墨／契火) gate upgrade/breed · hybrid 甲×蟲→甲蟎 · **second personality** on pets for breed diversity · combat passives blend primary/secondary.
 
+**P11:** material source hints (train sites + dispatch) · afford/short indicators on upgrade & breed · cultivate material guide list · train-site unlock hint on locked buttons · celebrate flash on first-clear site unlock after dungeon win.
+
 **Balance:** Master from gear; pets from innate (fuse/breed). Materials from train sites + dispatch. UI polish / combat animation deferred. Skip: pet ornaments, stamina/energy.
-
-## Publish checklist (owner)
-
-1. Create a **private** GitHub repo (suggested: `void-tide` or `an-chao-pets`). Prefer empty (no README) if pushing this history.
-2. Add `GITHUB_TOKEN` (repo create + push) as an environment secret, **or** push from your machine after downloading the tree.
-3. Push branch `cursor/mobile-rpg-void-tide-49a4` (or `main` after merge).
-4. Start the **next** Cloud Agent **attached to that private repo**.
 
 ## Prompt for the next agent
 
-Continue 暗潮 PWA in `mobile-rpg-slice/`: idle, dungeon with streamed combat, element matchups, pending bonds, ranch dispatch, train sites + materials, upgrade/fuse/breed (dual personality). Save `void-tide-pets-v18`. Previously developed on a no-remote cloud VM; now on this private GitHub repo. Next: [your goal here].
+Continue 暗潮 PWA in `mobile-rpg-slice/`: idle, dungeon with streamed combat, element matchups, pending bonds, ranch dispatch, train sites + materials, upgrade/fuse/breed (dual personality). Save `void-tide-pets-v19`. Next: GitHub Pages deploy workflow, or further UI polish / combat animation.

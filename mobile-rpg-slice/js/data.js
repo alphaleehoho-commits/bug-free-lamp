@@ -2883,6 +2883,65 @@ export function unlockedTrainSiteIds(state) {
   return TRAIN_SITES.filter((s) => isTrainSiteUnlocked(state, s.id)).map((s) => s.id);
 }
 
+/* ─── P11：材料提示／解鎖回饋 ─── */
+
+export const MATERIAL_USES = {
+  tide_dew: "升級",
+  coral_shard: "繁殖",
+  mist_silk: "高階升級",
+  abyss_ink: "繁殖／雜交",
+  seal_ember: "突破",
+};
+
+/** 材料來源索引（練功地／派遣） */
+export function buildMaterialSourceIndex() {
+  /** @type {Record<string, { sites: string[], missions: string[] }>} */
+  const idx = {};
+  const ensure = (id) => {
+    if (!idx[id]) idx[id] = { sites: [], missions: [] };
+    return idx[id];
+  };
+  for (const site of TRAIN_SITES) {
+    for (const drop of site.drops || []) {
+      if (drop.mat) {
+        const e = ensure(drop.mat);
+        if (!e.sites.includes(site.name)) e.sites.push(site.name);
+      }
+    }
+  }
+  for (const m of DISPATCH_MISSIONS) {
+    for (const id of Object.keys(m.reward?.materials || {})) {
+      const e = ensure(id);
+      if (!e.missions.includes(m.name)) e.missions.push(m.name);
+    }
+  }
+  return idx;
+}
+
+export const MATERIAL_SOURCE_INDEX = buildMaterialSourceIndex();
+
+export function materialSourceLabel(matId) {
+  const e = MATERIAL_SOURCE_INDEX[matId];
+  if (!e) return MATERIALS[matId]?.desc || "";
+  const parts = [];
+  if (e.sites.length) parts.push(`練功：${e.sites.join("／")}`);
+  if (e.missions.length) {
+    const ms = e.missions.slice(0, 2).join("／");
+    parts.push(`派遣：${ms}${e.missions.length > 2 ? "…" : ""}`);
+  }
+  return parts.join(" · ") || MATERIALS[matId]?.desc || "";
+}
+
+export function dungeonNameForClear(clearId) {
+  const d = DUNGEONS.find((x) => x.id === clearId);
+  return d?.name || clearId || "";
+}
+
+export function trainSiteUnlockHint(site) {
+  if (!site?.needClear) return null;
+  return `首通【${dungeonNameForClear(site.needClear)}】`;
+}
+
 /* ─── P1：羈絆／陣容加成 ─── */
 
 /**

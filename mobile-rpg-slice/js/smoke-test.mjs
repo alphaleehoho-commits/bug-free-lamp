@@ -62,7 +62,12 @@ import {
   upgradeMatCost,
   breedMatCost,
   unlockedTrainSiteIds,
+  materialSourceLabel,
+  MATERIAL_SOURCE_INDEX,
+  trainSiteUnlockHint,
+  dungeonNameForClear,
 } from "./data.js";
+import { affordMaterials } from "./engine.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -336,6 +341,16 @@ const dual = buildPetStats({
   cost: 1,
 });
 assert(dual.personality2Id === "gentle" && dual.personality2Name, "build dual pe");
+
+/* P11: material hints + unlock helpers */
+assert(MATERIAL_SOURCE_INDEX.tide_dew?.sites?.includes("潮岸練場"), "tide_dew shore");
+assert(MATERIAL_SOURCE_INDEX.coral_shard?.sites?.length >= 1, "coral sources");
+assert(materialSourceLabel("seal_ember").includes("暗潮心壇"), "ember source");
+assert(trainSiteUnlockHint(TRAIN_SITES.find((s) => s.id === "ruins"))?.includes("一層"), "ruins hint");
+assert(dungeonNameForClear("tide_1").includes("一層"), "dungeon name");
+const fakeMats = { materials: { tide_dew: 0, mist_silk: 2 } };
+const aff = affordMaterials(fakeMats, { tide_dew: 2, mist_silk: 1 });
+assert(!aff.ok && aff.items.find((i) => i.id === "tide_dew")?.short === 2, "afford short");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

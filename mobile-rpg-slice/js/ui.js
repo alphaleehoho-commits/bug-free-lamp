@@ -70,13 +70,15 @@ import {
   tideSealView,
   setTrainSite,
   trainSitesView,
-  materialsView,
+  materialHintsView,
   dungeonDailyView,
   resolveDungeon,
   dungeonsForRealm,
   stageAt,
   upgradeMatCost,
   breedMatCost,
+  affordMaterials,
+  materialHintsView,
   TACTICS,
   FORMATIONS,
   MATERIALS,
@@ -89,7 +91,7 @@ state = tickCultivation(state);
 saveState(state);
 
 let flash = "";
-/** @type {'' | 'celebrate' | 'hybrid' | 'legend'} */
+/** @type {'' | 'celebrate' | 'hybrid' | 'legend' | 'unlock'} */
 let flashTone = "";
 let flashTimer = 0;
 let tab = "cultivate";
@@ -299,10 +301,37 @@ function panelSubNav(group, items) {
     .join("")}</nav>`;
 }
 
+function matAffordHtml(cost) {
+  const a = affordMaterials(state, cost);
+  if (!a.items.length) return "";
+  return a.items
+    .map(
+      (i) =>
+        `<span class="mat-need ${i.ok ? "is-ok" : "is-short"}" title="${escapeHtml(i.source)}">${escapeHtml(i.name)}×${i.need}（${i.have}）</span>`
+    )
+    .join("／");
+}
+
 function matChipsHtml() {
-  return materialsView(state)
-    .map((m) => `<span class="chip"><strong>${escapeHtml(m.name)}</strong> ${m.count}</span>`)
+  return materialHintsView(state)
+    .map((m) => {
+      const empty = m.count <= 0;
+      return `<span class="chip ${empty ? "is-empty" : ""}" title="${escapeHtml(m.source)}"><strong>${escapeHtml(m.name)}</strong> ${m.count}<span class="chip-use">${escapeHtml(m.use)}</span></span>`;
+    })
     .join("");
+}
+
+function matHintListHtml() {
+  return `<ul class="mat-hint-list">${materialHintsView(state)
+    .map(
+      (m) => `
+    <li class="mat-hint ${m.count <= 0 ? "is-empty" : ""}">
+      <span class="mat-name">${escapeHtml(m.name)}</span>
+      <span class="mat-count">${m.count}</span>
+      <span class="mat-src">${escapeHtml(m.source)}</span>
+    </li>`
+    )
+    .join("")}</ul>`;
 }
 
 function patchLive() {
@@ -371,7 +400,12 @@ function finishPlayback() {
   }
   saveState(state);
   render();
-  setFlash(playback.result.msg);
+  const unlocks = playback.result.unlockedSites || [];
+  if (unlocks.length) {
+    setFlash(`解鎖練功地【${unlocks.join("】【")}】！ ${playback.result.msg}`, "unlock");
+  } else {
+    setFlash(playback.result.msg);
+  }
 }
 
 function advancePlayback() {
@@ -530,9 +564,10 @@ function cultivatePanel(qiPct, next, m) {
   const siteBtns = sites
     .map((s) => {
       const locked = !s.unlocked;
-      return `<button type="button" class="${s.selected ? "primary" : ""}" data-set-train="${s.id}" ${
-        locked ? "disabled" : ""
-      }>${escapeHtml(s.name)}${locked ? "🔒" : ""}</button>`;
+      const lockNote = locked && s.unlockHint ? `<span class="lock-hint">${escapeHtml(s.unlockHint)}</span>` : "";
+      return `<button type="button" class="${s.selected ? "primary" : ""} train-site-btn${locked ? " is-locked" : ""}" data-set-train="${s.id}" ${
+        locked ? "disabled title=\"" + escapeHtml(s.unlockHint || "未解鎖") + "\"" : ""
+      }>${escapeHtml(s.name)}${locked ? "🔒" : ""}${lockNote}</button>`;
     })
     .join("");
   const siteCur = sites.find((s) => s.selected);
@@ -649,8 +684,9 @@ function cultivatePanel(qiPct, next, m) {
     <h3>練功地點 ×${(siteCur?.qiMult || 1).toFixed(2)}</h3>
     <div class="row tactics-row">${siteBtns}</div>
     <p class="meta">${escapeHtml(siteCur?.desc || "")} · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
-    <h3>材料</h3>
+    <h3>材料 <span class="meta-inline">用途／來源</span></h3>
     <div class="chip-row">${matChipsHtml()}</div>
+    ${matHintListHtml()}
   `;
 }
 
@@ -837,16 +873,14 @@ function petsBreedView() {
   const hint = pa && pb ? breedPairHint(pa, pb) : null;
   const bMat =
     pa && pb
-      ? Object.entries(breedMatCost(petGeneration(pa), petGeneration(pb)))
-          .filter(([, n]) => n > 0)
-          .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
-          .join("／")
-      : "珊瑚屑×1";
+      ? breedMatCost(petGeneration(pa), petGeneration(pb))
+      : { coral_shard: 1 };
+  const bMatHtml = matAffordHtml(bMat);
 
   const ready = selected.size === 2 && bs.ready && ranch.length < ranchCap(state);
   return `
     <h2>繁殖</h2>
-    <p class="lead">${BREED_STONE_COST} 石＋${escapeHtml(bMat)}${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}</p>
+    <p class="lead">${BREED_STONE_COST} 石＋${bMatHtml || "珊瑚屑×1"}${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}</p>
     ${hint ? `<p class="meta breed-hint">${escapeHtml(hint.note)}</p>` : ""}
     <ul class="list">${list}</ul>
     <div class="row">
@@ -895,10 +929,7 @@ function petsDetailView() {
     : `未解鎖（融階≥1 或 Lv≥15）`;
 
   const matUp = upgradeMatCost(lv);
-  const matUpBits = Object.entries(matUp)
-    .filter(([, n]) => n > 0)
-    .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
-    .join("／");
+  const matUpHtml = matAffordHtml(matUp);
   return `
     <h2>${escapeHtml(displayPetName(pet))}</h2>
     <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
@@ -907,7 +938,7 @@ function petsDetailView() {
       <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}${pet.personality2Name ? `／${escapeHtml(pet.personality2Name)}` : ""}</li>
       <li><strong>戰力</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}</li>
       <li><strong>技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】Lv.${skillLevel}</li>
-      <li><strong>升級</strong> — ${upgradeCost}石／${feedCost}料＋${escapeHtml(matUpBits || "潮露")}</li>
+      <li><strong>升級</strong> — ${upgradeCost}石／${feedCost}料＋${matUpHtml || "潮露×1"}</li>
     </ul>
     <div class="row gear-row">
       <label>暱稱<input type="text" maxlength="${NICK_MAX_LEN}" data-nick-input value="${escapeHtml(pet.nick || "")}" placeholder="${escapeHtml(pet.name)}" /></label>
