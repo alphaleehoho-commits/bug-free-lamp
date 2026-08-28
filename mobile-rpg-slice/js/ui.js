@@ -93,6 +93,9 @@ let flash = "";
 let flashTone = "";
 let flashTimer = 0;
 let tab = "cultivate";
+/** @type {{ cultivate: string, party: string, dungeon: string, codex: string }} */
+let panelSub = { cultivate: "train", party: "fight", dungeon: "field", codex: "dex" };
+let dungeonIdx = 0;
 let shellReady = false;
 /** @type {string[]} 牧場派遣選中 uid */
 let dispatchPick = [];
@@ -287,6 +290,21 @@ function switchTab(id) {
   render();
 }
 
+function panelSubNav(group, items) {
+  return `<nav class="panel-subnav" aria-label="子分頁">${items
+    .map(
+      ({ id, label }) =>
+        `<button type="button" class="${panelSub[group] === id ? "on" : ""}" data-panel-sub="${group}:${id}">${label}</button>`
+    )
+    .join("")}</nav>`;
+}
+
+function matChipsHtml() {
+  return materialsView(state)
+    .map((m) => `<span class="chip"><strong>${escapeHtml(m.name)}</strong> ${m.count}</span>`)
+    .join("");
+}
+
 function patchLive() {
   if (playback && !playback.done) return;
   state = tickCultivation(state);
@@ -425,10 +443,8 @@ function render() {
   app.innerHTML = `
     <header class="top">
       <p class="brand">暗潮</p>
-      <p class="tag">靈寵修行 · 豎屏切片</p>
+      <p class="tag">靈寵修行</p>
     </header>
-
-    <section class="hero-strip" aria-hidden="true"></section>
 
     <div class="stats">
       <div><span>階段</span><strong data-live="stage">${stage.name}</strong></div>
@@ -450,11 +466,13 @@ function render() {
     </nav>
 
     <main class="panel">
+      <div class="panel-body">
       ${tab === "cultivate" ? cultivatePanel(qiPct, next, m) : ""}
       ${tab === "party" ? petsPanel() : ""}
       ${tab === "dungeon" ? dungeonPanel() : ""}
       ${tab === "codex" ? codexPanel() : ""}
       ${tab === "log" ? logPanel() : ""}
+      </div>
     </main>
 
     <footer class="foot">
@@ -518,9 +536,6 @@ function cultivatePanel(qiPct, next, m) {
     })
     .join("");
   const siteCur = sites.find((s) => s.selected);
-  const mats = materialsView(state)
-    .map((m) => `<li><strong>${escapeHtml(m.name)}</strong> ×${m.count} <span class="muted">${escapeHtml(m.desc)}</span></li>`)
-    .join("");
 
   const slotSelects = MASTER_EQUIP_SLOTS.map((slot) => {
     const cur = eq[slot];
@@ -542,25 +557,14 @@ function cultivatePanel(qiPct, next, m) {
 
   const invList =
     inv
+      .slice(0, 4)
       .map((x) => {
-        const wornNote = x.worn ? `（已裝·${SLOT_LABEL[x.worn.slot] || ""}）` : "";
-        const forgeNote = x.forgeAtk || x.forgeHp ? ` 鍛+${x.forgeAtk}/${x.forgeHp}` : "";
-        return `<li><strong>${escapeHtml(x.name)}</strong> · ${SLOT_LABEL[x.slot] || x.slot} · 攻${x.atk} 血${x.hp} 速${x.spd}${forgeNote}${wornNote}</li>`;
+        const wornNote = x.worn ? `（已裝）` : "";
+        const forgeNote = x.forgeAtk || x.forgeHp ? ` +${x.forgeAtk}/${x.forgeHp}` : "";
+        return `<li><strong>${escapeHtml(x.name)}</strong> · ${SLOT_LABEL[x.slot] || x.slot} 攻${x.atk}血${x.hp}${forgeNote}${wornNote}</li>`;
       })
-      .join("") || `<li class="empty">尚無裝備。秘境勝利或靈紋鍛造可取得。</li>`;
-
-  const gateRows = br.items
-    .map(
-      (it) => `
-      <li class="cond-item ${it.ok ? "is-met" : "is-miss"}">
-        <span class="cond-badge">${it.ok ? "達成" : "未達成"}</span>
-        <div class="cond-body">
-          <strong>${escapeHtml(it.label)}</strong>
-          <span class="muted">${escapeHtml(it.progress)}</span>
-        </div>
-      </li>`
-    )
-    .join("");
+      .join("") || `<li class="empty">尚無裝備。</li>`;
+  const invMore = inv.length > 4 ? `<p class="meta">另有 ${inv.length - 4} 件未顯示</p>` : "";
 
   const shopOffers = shopView(state);
   const pendingFull = (state.pending || []).length >= PENDING_BOND_MAX;
@@ -586,38 +590,67 @@ function cultivatePanel(qiPct, next, m) {
     ? `突破至${br.next.name}${br.costLabel ? `（耗${br.costLabel}）` : ""}`
     : "突破階段（條件未齊）";
 
+  const sub = panelSub.cultivate;
+  const nav = panelSubNav("cultivate", [
+    { id: "train", label: "練功" },
+    { id: "gear", label: "裝備" },
+    { id: "advance", label: "進階" },
+  ]);
+
+  if (sub === "gear") {
+    return `
+      ${nav}
+      <h2>契壇修行 · 裝備</h2>
+      <p class="lead">攻${totalAtk} 血${totalHp} 速${totalSpd} · ${escapeHtml(setNote)}</p>
+      <div class="row gear-row">${slotSelects}</div>
+      <h3>裝備庫（${inv.length}）</h3>
+      <ul class="skill-list">${invList}</ul>
+      ${invMore}
+      <div class="row">
+        <button type="button" data-act="forge">靈紋鍛造</button>
+      </div>`;
+  }
+
+  if (sub === "advance") {
+    const gateCompact = br.items.slice(0, 5);
+    const gateRowsCompact = gateCompact
+      .map(
+        (it) => `
+      <li class="cond-item ${it.ok ? "is-met" : "is-miss"}">
+        <span class="cond-badge">${it.ok ? "達成" : "未達"}</span>
+        <div class="cond-body">
+          <strong>${escapeHtml(it.label)}</strong>
+          <span class="muted">${escapeHtml(it.progress)}</span>
+        </div>
+      </li>`
+      )
+      .join("");
   return `
+      ${nav}
+      <h2>契壇修行 · 進階</h2>
+      <p class="lead">→【${escapeHtml(br.next.name)}】潮印 ${seal.seals}/${seal.max} · 全隊 ×${seal.mult.toFixed(2)}</p>
+      <ul class="cond-list">${gateRowsCompact}</ul>
+      <div class="row">
+        <button type="button" class="primary" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
+        <button type="button" data-act="tide-seal" ${seal.canSeal ? "" : "disabled"}>鑄潮印${seal.canSeal ? `+${seal.nextGain}` : ""}</button>
+      </div>
+      <h3>商肆 · 今日</h3>
+      <ul class="list">${shopRows}</ul>
+      <h3>人物技能</h3>
+      <ul class="skill-list">${skills || "<li class='empty'>尚未解鎖</li>"}</ul>`;
+  }
+
+  return `
+    ${nav}
     <h2>契壇修行</h2>
-    <p class="lead">人物 ${escapeHtml(m.name)} 戰力主要靠裝備。白板 攻${m.atk}/血${m.hp}/速${m.spd} → 裝備後 <strong>攻${totalAtk} 血${totalHp} 速${totalSpd}</strong></p>
-    <p class="meta">${escapeHtml(setNote)}</p>
+    <p class="lead">${escapeHtml(m.name)} · 攻${totalAtk}/血${totalHp}/速${totalSpd} · 牧場 ${ranchN}</p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
-    <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 現階【${escapeHtml(br.cur?.name || "")}】 → 【${escapeHtml(br.next.name)}】</p>
-    <p class="meta">牧場待命 ${ranchN} 隻（派遣取資，唔再慢產） · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
-    <h3>練功地點</h3>
-    <p class="meta">${escapeHtml(siteCur?.desc || "")} · 靈契倍率 ×${(siteCur?.qiMult || 1).toFixed(2)} · 通關秘境 BOSS 解鎖新地圖</p>
+    <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 【${escapeHtml(br.cur?.name || "")}】→【${escapeHtml(br.next.name)}】</p>
+    <h3>練功地點 ×${(siteCur?.qiMult || 1).toFixed(2)}</h3>
     <div class="row tactics-row">${siteBtns}</div>
-    <h3>材料庫</h3>
-    <ul class="skill-list">${mats}</ul>
-    <h3>突破門檻 · ${escapeHtml(br.next.name)}</h3>
-    <p class="meta">靈契＋資源＋歷練條件齊備方可晉升；各項分開檢定。</p>
-    <ul class="cond-list">${gateRows}</ul>
-    <div class="row">
-      <button type="button" class="primary" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
-      <button type="button" data-act="forge">靈紋鍛造</button>
-      <button type="button" data-act="tide-seal" ${seal.canSeal ? "" : "disabled"}>鑄潮印${
-        seal.canSeal ? `+${seal.nextGain}` : ""
-      }</button>
-    </div>
-    <p class="meta">潮印 ${seal.seals}/${seal.max} · 全隊攻血 ×${seal.mult.toFixed(2)}（潮主後可鑄；重置階段保留寵／裝／圖鑑）</p>
-    <h3>契壇商肆 · 今日</h3>
-    <p class="meta">每日 3 格；購入入待契約（高成功率）。待契約滿則不可買。</p>
-    <ul class="list">${shopRows}</ul>
-    <h3>人物技能</h3>
-    <ul class="skill-list">${skills || "<li class='empty'>尚未解鎖</li>"}</ul>
-    <h3>人物裝備（三槽）</h3>
-    <div class="row gear-row">${slotSelects}</div>
-    <h3>裝備庫存（${inv.length}）</h3>
-    <ul class="skill-list">${invList}</ul>
+    <p class="meta">${escapeHtml(siteCur?.desc || "")} · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
+    <h3>材料</h3>
+    <div class="chip-row">${matChipsHtml()}</div>
   `;
 }
 
@@ -662,6 +695,7 @@ function petsListView() {
 
   const ranchList =
     ranch
+      .slice(0, 4)
       .map((p) => {
         const onDisp = busy.has(p.uid);
         const selected = pick.has(p.uid);
@@ -695,11 +729,6 @@ function petsListView() {
     .join("") ||
     `<li class="empty">尚無待契約靈寵。去秘境打本，隨機遇見後會出現喺呢度（最多 ${PENDING_BOND_MAX} 隻）。</li>`;
 
-  const syn = partySynergy(state.pets);
-  const synNote = syn.labels.length
-    ? `羈絆：${syn.labels.join("、")}`
-    : "出戰 2+：同元素／種類／種族／同代／親子可觸發羈絆";
-
   const activeDisp =
     dv.active
       .map((d) => {
@@ -708,26 +737,24 @@ function petsListView() {
         <li class="card-row">
           <div>
             <strong>${escapeHtml(d.missionName)}</strong>
-            <span class="muted">${escapeHtml(d.petNames)} · ${
-              d.ready ? "已歸來" : `剩餘 ${left}s`
-            }</span>
+            <span class="muted">${escapeHtml(d.petNames)} · ${d.ready ? "已歸來" : `剩餘 ${left}s`}</span>
           </div>
           <button type="button" class="primary" data-claim-dispatch="${escapeHtml(d.dispatchId)}" ${
             d.ready ? "" : "disabled"
           }>領獎</button>
         </li>`;
       })
-      .join("") || `<li class="empty">尚無進行中派遣（${dv.slotsUsed}/${dv.slotsMax}）。</li>`;
+      .join("") || `<li class="empty">尚無進行中派遣。</li>`;
 
   const missionRows = dv.missions
+    .slice(0, 3)
     .map((m) => {
-      const can =
-        !m.locked && dispatchPick.length === m.needPets && dv.slotsUsed < dv.slotsMax;
+      const can = !m.locked && dispatchPick.length === m.needPets && dv.slotsUsed < dv.slotsMax;
       return `
       <li class="card-row">
         <div>
           <strong>${escapeHtml(m.name)}</strong>
-          <span class="muted">${escapeHtml(m.desc)} · 獎 ${escapeHtml(rewardBitsHtml(m.reward))}${
+          <span class="muted">${escapeHtml(m.desc)} · ${escapeHtml(rewardBitsHtml(m.reward))}${
             m.locked ? ` · 需${escapeHtml(m.lockLabel)}` : ""
           }</span>
         </div>
@@ -738,24 +765,46 @@ function petsListView() {
     })
     .join("");
 
+  const syn = partySynergy(state.pets);
+  const synNote = syn.labels.length ? syn.labels.join("、") : "同元素／種類／親子可羈絆";
+
+  const nav = panelSubNav("party", [
+    { id: "fight", label: "出戰" },
+    { id: "ranch", label: "牧場" },
+    { id: "dispatch", label: "派遣" },
+    { id: "bond", label: "待契" },
+  ]);
+  const sub = panelSub.party;
+
+  if (sub === "ranch") {
+    return `
+      ${nav}
+      <h2>靈寵 · 牧場</h2>
+      <p class="lead">牧場 ${ranch.length}/${cap}</p>
+      <div class="row"><button type="button" data-act="start-breed">繁殖</button></div>
+      <ul class="list">${ranchList}</ul>`;
+  }
+  if (sub === "dispatch") {
+    return `
+      ${nav}
+      <h2>靈寵 · 派遣</h2>
+      <p class="lead">槽位 ${dv.slotsUsed}/${dv.slotsMax} · 已選 ${dispatchPick.length} 隻</p>
+      <ul class="list">${missionRows}</ul>
+      <ul class="list">${activeDisp}</ul>`;
+  }
+  if (sub === "bond") {
+    return `
+      ${nav}
+      <h2>靈寵 · 待契約</h2>
+      <p class="lead">待契約 ${(state.pending || []).length}/${PENDING_BOND_MAX}</p>
+      <ul class="list">${pending}</ul>`;
+  }
+
   return `
-    <h2>靈寵</h2>
-    <p class="lead">契約入牧場，再派出戰。牧場 ${ranch.length}/${cap} · 待契約 ${(state.pending || []).length}/${PENDING_BOND_MAX}</p>
-    <p class="meta">${escapeHtml(synNote)}</p>
-    <h3>出戰（${state.pets.length}/${ACTIVE_PET_MAX}）</h3>
+    ${nav}
+    <h2>靈寵 · 出戰</h2>
+    <p class="lead">${state.pets.length}/${ACTIVE_PET_MAX} · ${escapeHtml(synNote)}</p>
     <ul class="list">${roster}</ul>
-    <h3>牧場（${ranch.length}/${cap}）</h3>
-    <p class="meta">待命寵唔再慢產；資源靠練功地點＋派遣。派遣中唔可出戰／繁殖。</p>
-    <ul class="list">${ranchList}</ul>
-    <h3>牧場派遣（${dv.slotsUsed}/${dv.slotsMax}）</h3>
-    <p class="meta">先「選派」牧場寵，再點任務派出。已選 ${dispatchPick.length} 隻。</p>
-    <ul class="list">${missionRows}</ul>
-    <ul class="list">${activeDisp}</ul>
-    <h3>待契約</h3>
-    <ul class="list">${pending}</ul>
-    <div class="row" style="margin-top:0.85rem">
-      <button type="button" data-act="start-breed">繁殖</button>
-    </div>
   `;
 }
 
@@ -796,17 +845,14 @@ function petsBreedView() {
 
   const ready = selected.size === 2 && bs.ready && ranch.length < ranchCap(state);
   return `
-    <h2>繁殖 · 突變合配</h2>
-    <p class="lead">主／次配方雜交；雙性格遺傳。耗 ${BREED_STONE_COST} 石＋${escapeHtml(bMat)}${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}。</p>
-    ${breedGoalsBoardHtml(true)}
+    <h2>繁殖</h2>
+    <p class="lead">${BREED_STONE_COST} 石＋${escapeHtml(bMat)}${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}</p>
     ${hint ? `<p class="meta breed-hint">${escapeHtml(hint.note)}</p>` : ""}
     <ul class="list">${list}</ul>
-    <div class="row" style="margin-top:0.85rem">
-      <button type="button" class="primary" data-breed-confirm ${ready ? "" : "disabled"}>確認繁殖（${selected.size}/2）</button>
-      <button type="button" data-pet-back>返回列表</button>
-    </div>
-    ${recipeBoardHtml()}
-  `;
+    <div class="row">
+      <button type="button" class="primary" data-breed-confirm ${ready ? "" : "disabled"}>確認（${selected.size}/2）</button>
+      <button type="button" data-pet-back>返回</button>
+    </div>`;
 }
 
 function petsDetailView() {
@@ -855,44 +901,33 @@ function petsDetailView() {
     .join("／");
   return `
     <h2>${escapeHtml(displayPetName(pet))}</h2>
-    <p class="lead">${escapeHtml(loc)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv} · 融階 ${fus}/${FUSION_MAX_STAGE} · 技能 Lv.${skillLevel}</p>
+    <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
     <ul class="skill-list">
-      <li><strong>種類</strong> — ${escapeHtml(pet.kind)} · ${escapeHtml(pet.speciesName)}${pet.breedOnly ? "（繁殖專屬）" : ""}</li>
-      <li><strong>元素</strong> — ${escapeHtml(pet.elementName)}</li>
-      <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}${pet.personality2Name ? `／副：${escapeHtml(pet.personality2Name)}` : "（無副性格）"}</li>
-      <li><strong>天生數值</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}（基準 ${baseline.atk}/${baseline.hp}/${baseline.spd}，成長 +${innateBonus.atk}/${innateBonus.hp}/${innateBonus.spd}）</li>
-      <li><strong>主技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】${skill ? ` ${escapeHtml(skill.desc)}（CD${skill.cd}）` : ""}</li>
-      <li><strong>第二技能</strong> — ${secondLine}</li>
-      <li><strong>養成</strong> — 不穿裝備；升級需材料（練功／派遣取得）</li>
-      <li><strong>升級</strong> — 靈石或飼料＋${escapeHtml(matUpBits || "潮露")}；技能用靈塵</li>
-      <li><strong>融合</strong> — ${escapeHtml(fuseHint)}</li>
+      <li><strong>屬性</strong> — ${escapeHtml(pet.kind)}·${escapeHtml(pet.elementName)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span></li>
+      <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}${pet.personality2Name ? `／${escapeHtml(pet.personality2Name)}` : ""}</li>
+      <li><strong>戰力</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}</li>
+      <li><strong>技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】Lv.${skillLevel}</li>
+      <li><strong>升級</strong> — ${upgradeCost}石／${feedCost}料＋${escapeHtml(matUpBits || "潮露")}</li>
     </ul>
     <div class="row gear-row">
-      <label>暱稱（最多 ${NICK_MAX_LEN} 字）
-        <input type="text" maxlength="${NICK_MAX_LEN}" data-nick-input value="${escapeHtml(pet.nick || "")}" placeholder="${escapeHtml(pet.name)}" />
-      </label>
+      <label>暱稱<input type="text" maxlength="${NICK_MAX_LEN}" data-nick-input value="${escapeHtml(pet.nick || "")}" placeholder="${escapeHtml(pet.name)}" /></label>
       <button type="button" data-rename="${escapeHtml(pet.uid)}">命名</button>
     </div>
     <div class="row">
-      <button type="button" class="primary" data-upgrade="${escapeHtml(pet.uid)}">升級（${upgradeCost} 石）</button>
-      <button type="button" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升級（${feedCost}）</button>
+      <button type="button" class="primary" data-upgrade="${escapeHtml(pet.uid)}">升級</button>
+      <button type="button" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升</button>
+      <button type="button" data-upgrade-skill="${escapeHtml(pet.uid)}" ${skillMaxed ? "disabled" : ""}>技能</button>
     </div>
-    <div class="row" style="margin-top:0.5rem">
-      <button type="button" data-upgrade-skill="${escapeHtml(pet.uid)}" ${skillMaxed ? "disabled" : ""}>${skillMaxed ? "技能已滿" : `技能升級（${dustCost} 靈塵）`}</button>
+    <div class="row">
+      <button type="button" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>
       ${
         deployed
-          ? `<button type="button" data-undeploy="${escapeHtml(pet.uid)}">撤回牧場</button>`
-          : `<button type="button" data-deploy="${escapeHtml(pet.uid)}">派出戰</button>`
+          ? `<button type="button" data-undeploy="${escapeHtml(pet.uid)}">撤回</button>`
+          : `<button type="button" data-deploy="${escapeHtml(pet.uid)}">出戰</button>`
       }
-    </div>
-    <div class="row" style="margin-top:0.5rem">
-      <button type="button" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>
-      <button type="button" data-release="${escapeHtml(pet.uid)}">放歸（返還資源）</button>
-    </div>
-    <div class="row" style="margin-top:0.85rem">
-      <button type="button" data-pet-back>返回列表</button>
-    </div>
-  `;
+      <button type="button" data-release="${escapeHtml(pet.uid)}">放歸</button>
+      <button type="button" data-pet-back>返回</button>
+    </div>`;
 }
 
 function petsFuseView() {
@@ -977,6 +1012,7 @@ function codexPanel() {
     .join("");
 
   const ach = achievementsView(state)
+    .slice(0, 4)
     .map(
       (a) => `
       <li class="card-row">
@@ -990,17 +1026,26 @@ function codexPanel() {
     .join("");
 
   return `
-    <h2>靈寵圖鑑</h2>
-    <p class="lead">種族×元素共 ${dex.total} 格（含繁殖專屬種）· 已錄 ${dex.discovered}${dex.label ? ` · ${escapeHtml(dex.label)}` : " · 每 5 格全隊攻／血 +2%"}</p>
-    <ul class="codex-grid">${cells}</ul>
-    ${breedGoalsBoardHtml(false)}
-    <h3>每日任務</h3>
+    ${panelSubNav("codex", [
+      { id: "dex", label: "圖鑑" },
+      { id: "tasks", label: "任務" },
+      { id: "recipe", label: "配方" },
+    ])}
+    ${
+      panelSub.codex === "dex"
+        ? `<h2>靈寵圖鑑</h2>
+    <p class="lead">已錄 ${dex.discovered}/${dex.total}${dex.label ? ` · ${escapeHtml(dex.label)}` : ""}</p>
+    <ul class="codex-grid">${cells}</ul>`
+        : panelSub.codex === "tasks"
+          ? `<h2>任務</h2>
+    ${breedGoalsBoardHtml(true)}
+    <h3>每日</h3>
     <ul class="list">${dailies}</ul>
     <h3>成就</h3>
-    <ul class="list">${ach}</ul>
-    <div class="row" style="margin-top:0.85rem">
-      <button type="button" data-act="notify-perm">開啟離線通知（可選）</button>
-    </div>
+    <ul class="list">${ach}</ul>`
+          : `<h2>繁殖配方</h2>
+    ${recipeBoardHtml()}`
+    }
   `;
 }
 
@@ -1098,63 +1143,6 @@ function dungeonPanel() {
     `;
   }
 
-  const list = dungeonsForRealm(state.realm)
-    .map((dungeonId) => {
-    const d = resolveDungeon(state, dungeonId);
-    if (!d) return "";
-    const locked = state.realm < d.needRealm;
-    const st = dungeonStatus(state, d.id);
-    const cdSec = st ? Math.ceil(st.cooldownLeftMs / 1000) : 0;
-    const onCd = cdSec > 0;
-    const clearNote = st?.cleared ? "已通" : `首通+${d.firstClearBonus?.stones || 0}石`;
-    const roles = st?.roles;
-    const waveN = roles?.waves || dungeonWaves(d).length;
-    const roleBits = roles
-      ? `${waveN}波 · 普${roles.normal}/精${roles.elite}/BOSS${roles.boss}`
-      : `${waveN}波`;
-    const trial = st?.trial;
-    const conds = (st?.conditions || []).filter((c) => !c.passive);
-    const passives = (st?.conditions || []).filter((c) => c.passive);
-    const condList = conds
-      .map((c) => condStatusRow(c.label.replace(/^條件[:：]?\s*/, ""), c.ok, rewardBitsHtml(c.bonus), c.reason))
-      .join("");
-    const trialRow = trial
-      ? condStatusRow(
-          trial.label.replace(/^試煉[:：]?\s*/, "試煉："),
-          st.trialMet,
-          `+${trial.bonus?.stones || 0}石${trial.bonus?.scrap ? `／${trial.bonus.scrap}碎片` : ""}`,
-          st.trialReason || "出戰未滿足"
-        )
-      : "";
-    const challengeRow = st?.challenge
-      ? condStatusRow(
-          st.challenge.label.replace(/^挑戰[:：]?\s*/, "挑戰："),
-          st.challengeMet,
-          rewardBitsHtml(st.challenge.bonus),
-          st.challengeReason || "出戰未滿足"
-        )
-      : "";
-    const passiveLine = passives.map((p) => p.label).join(" · ");
-    const variantLine = d.dailyVariantLabel
-      ? `<span class="muted daily-variant">今日變體：${escapeHtml(d.dailyVariantLabel)}</span>`
-      : "";
-    return `
-      <li class="dungeon-card">
-        <div class="dungeon-head">
-          <div>
-            <strong>${escapeHtml(d.name)}</strong>
-            ${variantLine}
-            <span class="muted">${escapeHtml(roleBits)} · 基礎獎 ${d.reward.stones} 石 / ${d.reward.scrap} 碎片 · ${clearNote}${locked ? ` · 需${escapeHtml(stageAt(d.needRealm).name)}` : ""}${onCd ? ` · 冷卻 ${cdSec}s` : ""}</span>
-            ${passiveLine ? `<span class="muted">${escapeHtml(passiveLine)}</span>` : ""}
-          </div>
-          <button type="button" class="primary" data-dungeon="${d.id}" ${locked || onCd ? "disabled" : ""}>進攻</button>
-        </div>
-        <p class="meta cond-caption">挑戰條件（各項分開結算 · 每日輪換）</p>
-        <ul class="cond-list">${challengeRow}${condList}${trialRow}</ul>
-      </li>`;
-  })
-    .join("");
-
   const dailyMod = dungeonDailyView(state);
   const tactics = tacticsView(state);
   const tacticBtns = tactics
@@ -1177,32 +1165,125 @@ function dungeonPanel() {
     .join("");
   const formCur = formations.find((f) => f.selected);
 
+  const dungeonIds = dungeonsForRealm(state.realm).filter((id) => resolveDungeon(state, id));
+  if (dungeonIdx >= dungeonIds.length) dungeonIdx = 0;
+  const curId = dungeonIds[dungeonIdx];
+  const dCur = curId ? resolveDungeon(state, curId) : null;
+  const stCur = dCur ? dungeonStatus(state, dCur.id) : null;
+  const locked = dCur ? state.realm < dCur.needRealm : true;
+  const cdSec = stCur ? Math.ceil(stCur.cooldownLeftMs / 1000) : 0;
+  const onCd = cdSec > 0;
+  const clearNote = stCur?.cleared ? "已通" : `首通+${dCur?.firstClearBonus?.stones || 0}石`;
+  const roles = stCur?.roles;
+  const waveN = roles?.waves || (dCur ? dungeonWaves(dCur).length : 0);
+  const roleBits = roles ? `${waveN}波 普${roles.normal}/精${roles.elite}/王${roles.boss}` : `${waveN}波`;
+  const trial = stCur?.trial;
+  const conds = (stCur?.conditions || []).filter((c) => !c.passive);
+  const passives = (stCur?.conditions || []).filter((c) => c.passive);
+  const condList = conds
+    .slice(0, 2)
+    .map((c) => condStatusRow(c.label.replace(/^條件[:：]?\s*/, ""), c.ok, rewardBitsHtml(c.bonus), c.reason))
+    .join("");
+  const trialRow = trial
+    ? condStatusRow(
+        trial.label.replace(/^試煉[:：]?\s*/, "試煉："),
+        stCur.trialMet,
+        `+${trial.bonus?.stones || 0}石`,
+        stCur.trialReason || "未滿足"
+      )
+    : "";
+  const challengeRow = stCur?.challenge
+    ? condStatusRow(
+        stCur.challenge.label.replace(/^挑戰[:：]?\s*/, "挑戰："),
+        stCur.challengeMet,
+        rewardBitsHtml(stCur.challenge.bonus),
+        stCur.challengeReason || "未滿足"
+      )
+    : "";
+  const passiveLine = passives.map((p) => p.label).join(" · ");
+  const variantLine = dCur?.dailyVariantLabel
+    ? `<span class="muted daily-variant">今日：${escapeHtml(dCur.dailyVariantLabel)}</span>`
+    : "";
+  const dungeonCard = dCur
+    ? `<li class="dungeon-card">
+        <div class="dungeon-head">
+          <div>
+            <strong>${escapeHtml(dCur.name)}</strong>
+            ${variantLine}
+            <span class="muted">${escapeHtml(roleBits)} · ${dCur.reward.stones}石 · ${clearNote}${
+              locked ? ` · 需${escapeHtml(stageAt(dCur.needRealm).name)}` : ""
+            }${onCd ? ` · CD ${cdSec}s` : ""}</span>
+            ${passiveLine ? `<span class="muted">${escapeHtml(passiveLine)}</span>` : ""}
+          </div>
+          <button type="button" class="primary" data-dungeon="${dCur.id}" ${locked || onCd ? "disabled" : ""}>進攻</button>
+        </div>
+        <ul class="cond-list">${challengeRow}${condList}${trialRow}</ul>
+      </li>`
+    : `<li class="empty">尚無可挑戰秘境。</li>`;
+  const pager =
+    dungeonIds.length > 1
+      ? `<div class="dungeon-pager">
+          <button type="button" data-dungeon-prev ${dungeonIdx <= 0 ? "disabled" : ""}>上一層</button>
+          <span>${dungeonIdx + 1} / ${dungeonIds.length}</span>
+          <button type="button" data-dungeon-next ${dungeonIdx >= dungeonIds.length - 1 ? "disabled" : ""}>下一層</button>
+        </div>`
+      : "";
+
   return `
-    <h2>潮汐秘境</h2>
-    <p class="lead">波次：雜兵→精英→BOSS。每日變體＋挑戰規則。選戰術／陣型後仍自動戰鬥。</p>
+    ${panelSubNav("dungeon", [
+      { id: "field", label: "秘境" },
+      { id: "setup", label: "戰術" },
+    ])}
+    ${
+      panelSub.dungeon === "setup"
+        ? `<h2>戰術／陣型</h2>
+    <p class="meta">${escapeHtml(tacticCur?.desc || "")}</p>
+    <div class="row tactics-row">${tacticBtns}</div>
+    <p class="meta">${escapeHtml(formCur?.desc || "")}</p>
+    <div class="row tactics-row">${formBtns}</div>
     ${
       dailyMod
         ? `<ul class="cond-list"><li class="cond-item is-met"><span class="cond-badge">今日</span><div class="cond-body"><strong>${escapeHtml(
             dailyMod.label
-          )}</strong><span class="muted">全關共用</span></div></li></ul>`
+          )}</strong></div></li></ul>`
         : ""
+    }`
+        : `<h2>潮汐秘境</h2>
+    <p class="lead">波次自動戰鬥 · 逐層翻頁</p>
+    <ul class="list dungeon-list">${dungeonCard}</ul>
+    ${pager}`
     }
-    <h3>戰術偏好</h3>
-    <p class="meta">${escapeHtml(tacticCur?.desc || "")}</p>
-    <div class="row tactics-row">${tacticBtns}</div>
-    <h3>出戰陣型</h3>
-    <p class="meta">${escapeHtml(formCur?.desc || "")}</p>
-    <div class="row tactics-row">${formBtns}</div>
-    <ul class="list dungeon-list">${list}</ul>
   `;
 }
 
 function logPanel() {
   const lines = state.log.map((l) => `<li>${escapeHtml(l)}</li>`).join("");
-  return `<h2>見聞錄</h2><ul class="log">${lines}</ul>`;
+  return `<h2>見聞錄</h2><div class="log-scroll"><ul class="log">${lines || "<li class='empty'>尚無見聞。</li>"}</ul></div>`;
 }
 
 function bind() {
+  app.querySelectorAll("[data-panel-sub]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const [group, id] = (btn.dataset.panelSub || "").split(":");
+      if (!group || !id || panelSub[group] === id) return;
+      panelSub = { ...panelSub, [group]: id };
+      render();
+    });
+  });
+  app.querySelectorAll("[data-dungeon-prev]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled || dungeonIdx <= 0) return;
+      dungeonIdx -= 1;
+      render();
+    });
+  });
+  app.querySelectorAll("[data-dungeon-next]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      dungeonIdx += 1;
+      render();
+    });
+  });
   app.querySelectorAll("[data-tab]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
