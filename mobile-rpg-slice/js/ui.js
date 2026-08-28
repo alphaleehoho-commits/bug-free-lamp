@@ -77,7 +77,6 @@ import {
   stageAt,
   upgradeMatCost,
   breedMatCost,
-  petGeneration,
   TACTICS,
   FORMATIONS,
   MATERIALS,
