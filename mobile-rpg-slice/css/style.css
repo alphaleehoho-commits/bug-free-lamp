@@ -527,6 +527,13 @@ body {
   line-height: 1.35;
   color: var(--fog);
 }
+.tut-cta-row {
+  margin: 0.25rem 0 0.35rem;
+}
+.tut-cta-row button {
+  width: 100%;
+  font-size: 0.72rem;
+}
 .tutorial-deal {
   color: #e8b86d;
   font-weight: 600;

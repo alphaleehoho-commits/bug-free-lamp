@@ -228,7 +228,17 @@ export function isTabLocked(state, tabId) {
 }
 
 export function isCultivateSubLocked(state, subId) {
+  if (subId === "advance" && tutorialQiReady(state)) return false;
   return !!tutorialLocks(state).cultivateSub[subId];
+}
+
+/** 教學第一步：靈契已達突破所需 */
+export function tutorialQiReady(state) {
+  if (!tutorialActive(state)) return false;
+  const step = state.tutorial.step;
+  if (step !== "cultivate_qi" && step !== "breakthrough") return false;
+  const next = nextStageAt(state.realm);
+  return state.qi >= next.need;
 }
 
 export function isPartySubLocked(state, subId) {
@@ -326,9 +336,15 @@ export function syncTutorialNavigation(state, nav) {
 
   if (["cultivate_qi", "breakthrough", "shop_pet", "gear"].includes(step)) {
     next.tab = "cultivate";
-    if (step === "breakthrough" || step === "shop_pet") next.panelSub = { ...next.panelSub, cultivate: "advance" };
-    else if (step === "gear") next.panelSub = { ...next.panelSub, cultivate: "gear" };
-    else next.panelSub = { ...next.panelSub, cultivate: "train" };
+    if (step === "breakthrough" || step === "shop_pet") {
+      next.panelSub = { ...next.panelSub, cultivate: "advance" };
+    } else if (step === "gear") {
+      next.panelSub = { ...next.panelSub, cultivate: "gear" };
+    } else if (step === "cultivate_qi" && tutorialQiReady(state)) {
+      next.panelSub = { ...next.panelSub, cultivate: "advance" };
+    } else {
+      next.panelSub = { ...next.panelSub, cultivate: "train" };
+    }
   } else if (step === "deploy" || step === "bond" || step === "dispatch") {
     next.tab = "party";
     if (step === "deploy") next.panelSub = { ...next.panelSub, party: "ranch" };
@@ -361,6 +377,10 @@ export function skipTutorial(state) {
 export function tutorialBannerHtml(state) {
   if (!tutorialActive(state)) return "";
   const info = tutorialStepInfo(state);
+  let hint = info.hint;
+  if (info.stepId === "cultivate_qi" && tutorialQiReady(state)) {
+    hint = "靈契已滿！點上方「進階」分頁，突破至【通靈初期】。";
+  }
   return `
     <div class="tutorial-banner" data-live="tutorial">
       <div class="tutorial-head">
@@ -368,6 +388,6 @@ export function tutorialBannerHtml(state) {
         <strong>${info.title}</strong>
         <button type="button" class="ghost tutorial-skip" data-act="skip-tutorial">跳過教學</button>
       </div>
-      <p class="tutorial-hint">${info.hint}</p>
+      <p class="tutorial-hint">${hint}</p>
     </div>`;
 }

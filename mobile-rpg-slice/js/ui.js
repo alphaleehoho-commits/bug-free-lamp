@@ -95,6 +95,7 @@ import {
   isDungeonSubLocked,
   areTrainSitesLocked,
   skipTutorial,
+  tutorialQiReady,
 } from "./tutorial.js";
 
 const app = document.querySelector("#app");
@@ -891,6 +892,11 @@ function cultivatePanel(qiPct, next, m) {
     <p class="lead">${escapeHtml(m.name)} · 攻${totalAtk}/血${totalHp}/速${totalSpd} · 牧場 ${ranchN}</p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 【${escapeHtml(br.cur?.name || "")}】→【${escapeHtml(br.next.name)}】</p>
+    ${
+      tutorialQiReady(state)
+        ? `<div class="row tut-cta-row"><button type="button" class="primary" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
+        : ""
+    }
     <h3>練功地點 ×${(siteCur?.qiMult || 1).toFixed(2)}</h3>
     <div class="row tactics-row">${siteBtns}</div>
     ${trainLockNote}
@@ -2018,7 +2024,19 @@ window.addEventListener("beforeinstallprompt", (e) => {
 });
 
 setInterval(() => {
+  if (playback && !playback.done) return;
   patchLive();
+  const adv = advanceTutorialIfReady(state);
+  if (adv.advanced) {
+    saveState(state);
+    if (adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+    render();
+    return;
+  }
+  if (tutorialActive(state) && tutorialQiReady(state) && panelSub.cultivate === "train") {
+    render();
+    return;
+  }
   saveState(state);
 }, 1000);
 

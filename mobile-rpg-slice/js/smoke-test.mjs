@@ -82,6 +82,8 @@ import {
   tutorialActive,
   tutorialShopPrice,
   skipTutorial,
+  tutorialQiReady,
+  isCultivateSubLocked,
   TUTORIAL_SHOP_COST,
 } from "./tutorial.js";
 
@@ -530,6 +532,11 @@ const bg3 = BREAKTHROUGH_GATES[3];
 assert(bg3.costs.dust === 8 && bg3.checks.find((c) => c.type === "bonds")?.need === 2, "bt gate 3");
 const dailyHybrid = BREED_GOALS.find((g) => g.id === "daily_hybrid");
 assert(dailyHybrid?.type === "breed_cross_kind", "daily hybrid cross kind");
+
+const qiSt = { realm: 0, qi: 50, pets: [], ranch: [], tutorial: { done: false, step: "cultivate_qi", flags: {} } };
+normalizeTutorial(qiSt);
+assert(tutorialQiReady(qiSt), "tutorial qi ready");
+assert(!isCultivateSubLocked(qiSt, "advance"), "advance unlocked when qi ready");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
