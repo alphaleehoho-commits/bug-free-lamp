@@ -118,7 +118,7 @@ import {
   trainSiteUnlockHint,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v19";
+const SAVE_KEY = "void-tide-pets-v20";
 
 function defaultMaster() {
   return {
@@ -270,6 +270,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v19") ||
       localStorage.getItem("void-tide-pets-v18") ||
       localStorage.getItem("void-tide-pets-v17") ||
       localStorage.getItem("void-tide-pets-v16") ||
@@ -1729,7 +1730,32 @@ function pickFoe(foes, tactics = "balanced") {
   return live.reduce((a, b) => (a.hp <= b.hp ? a : b));
 }
 
-function dealStrike(actor, target, power, transcript, skillName) {
+let _combatUid = 0;
+
+function tagCombatUnits(units, prefix) {
+  for (const u of units) {
+    if (!u.uid) u.uid = `${prefix}${++_combatUid}`;
+  }
+  return units;
+}
+
+function unitRosterEntry(u) {
+  return {
+    uid: u.uid,
+    name: u.name,
+    side: u.side,
+    elementId: u.elementId,
+    hp: u.hp,
+    maxHp: u.maxHp,
+    role: u.role || null,
+  };
+}
+
+function pushCombatText(events, text) {
+  events.push({ type: "text", text });
+}
+
+function dealStrike(actor, target, power, transcript, events, skillName) {
   if (!target) return;
   const pMult = skillPowerMult(actor.skillLevel || 1);
   let dmg = Math.max(1, Math.floor(actor.atk * power * pMult) + Math.floor(Math.random() * 4) - 1);
@@ -1746,12 +1772,24 @@ function dealStrike(actor, target, power, transcript, skillName) {
   let verb = "普通攻擊";
   if (skillName) verb = `施展【${skillName}】`;
   else if (power !== 1) verb = "餘波擊中";
-  transcript.push(
-    `${actor.name} ${verb} → ${target.name}，造成 ${mitigated} 傷害${elemNote}${target.hp === 0 ? "（擊破）" : ""}${guardNote}。`
-  );
+  const line = `${actor.name} ${verb} → ${target.name}，造成 ${mitigated} 傷害${elemNote}${target.hp === 0 ? "（擊破）" : ""}${guardNote}。`;
+  transcript.push(line);
+  if (events) {
+    events.push({
+      type: "strike",
+      text: line,
+      actorUid: actor.uid,
+      targetUid: target.uid,
+      dmg: mitigated,
+      elemTag: tag,
+      targetHp: target.hp,
+      targetMaxHp: target.maxHp,
+      ko: target.hp === 0,
+    });
+  }
 }
 
-function useSkill(actor, skill, allies, foes, transcript, tactics = "balanced") {
+function useSkill(actor, skill, allies, foes, transcript, events, tactics = "balanced") {
   const cdMap = actor.skillCd;
   if ((cdMap[skill.id] || 0) > 0) return false;
   const pMult = skillPowerMult(actor.skillLevel || 1);
@@ -1760,39 +1798,65 @@ function useSkill(actor, skill, allies, foes, transcript, tactics = "balanced") 
   if (skill.type === "strike") {
     const t = pickFoe(foes, tactics);
     if (!t) return false;
-    dealStrike(actor, t, skill.power, transcript, skill.name);
+    dealStrike(actor, t, skill.power, transcript, events, skill.name);
   } else if (skill.type === "cleave") {
     const live = foes.filter((f) => f.hp > 0);
     if (!live.length) return false;
     const targets = skill.id === "tide_spray" ? live.slice(0, 2) : live;
-    transcript.push(`${actor.name} 施展【${skill.name}】！`);
-    for (const t of targets) dealStrike(actor, t, skill.power, transcript, null);
+    const line = `${actor.name} 施展【${skill.name}】！`;
+    transcript.push(line);
+    pushCombatText(events, line);
+    for (const t of targets) dealStrike(actor, t, skill.power, transcript, events, null);
   } else if (skill.type === "heal") {
     const t = lowestHp(allies);
     if (!t) return false;
     const heal = Math.max(8, Math.floor(t.maxHp * power) + actor.atk);
     t.hp = Math.min(t.maxHp, t.hp + heal);
-    transcript.push(`${actor.name} 施展【${skill.name}】，為 ${t.name} 回復 ${heal} 生命。`);
+    const line = `${actor.name} 施展【${skill.name}】，為 ${t.name} 回復 ${heal} 生命。`;
+    transcript.push(line);
+    if (events) {
+      events.push({
+        type: "heal",
+        text: line,
+        targetUid: t.uid,
+        heal,
+        targetHp: t.hp,
+        targetMaxHp: t.maxHp,
+      });
+    }
   } else if (skill.type === "guard") {
     actor.guardTurns = 2;
     const heal = Math.max(5, Math.floor(actor.maxHp * power));
     actor.hp = Math.min(actor.maxHp, actor.hp + heal);
-    transcript.push(`${actor.name} 施展【${skill.name}】，減傷並回復 ${heal}。`);
+    const line = `${actor.name} 施展【${skill.name}】，減傷並回復 ${heal}。`;
+    transcript.push(line);
+    if (events) {
+      events.push({
+        type: "heal",
+        text: line,
+        targetUid: actor.uid,
+        heal,
+        targetHp: actor.hp,
+        targetMaxHp: actor.maxHp,
+      });
+    }
   } else if (skill.type === "debuff") {
     const t = pickFoe(foes, tactics);
     if (!t) return false;
-    dealStrike(actor, t, skill.power, transcript, skill.name);
+    dealStrike(actor, t, skill.power, transcript, events, skill.name);
     t.atk = Math.max(1, Math.floor(t.atk * 0.85));
-    transcript.push(`${t.name} 的攻擊因蝕咬而下降。`);
+    const line = `${t.name} 的攻擊因蝕咬而下降。`;
+    transcript.push(line);
+    pushCombatText(events, line);
   } else if (skill.type === "buff") {
     const pct = power;
     for (const a of allies.filter((x) => x.hp > 0)) {
       a.atkBuffTurns = 3;
       a.atkBuffPct = pct;
     }
-    transcript.push(
-      `${actor.name} 施展【${skill.name}】，友方攻擊提升 ${Math.round(pct * 100)}%（3 回合）！`
-    );
+    const line = `${actor.name} 施展【${skill.name}】，友方攻擊提升 ${Math.round(pct * 100)}%（3 回合）！`;
+    transcript.push(line);
+    pushCombatText(events, line);
   } else {
     return false;
   }
@@ -1809,7 +1873,7 @@ function tickCooldowns(unit) {
   if (unit.atkBuffTurns > 0) unit.atkBuffTurns -= 1;
 }
 
-function act(actor, allies, foes, transcript, tactics = "balanced") {
+function act(actor, allies, foes, transcript, events, tactics = "balanced") {
   const skills = (actor.skills || [])
     .map((id) => SKILLS[id])
     .filter(Boolean)
@@ -1829,9 +1893,9 @@ function act(actor, allies, foes, transcript, tactics = "balanced") {
     } else {
       skill = ready[Math.floor(Math.random() * ready.length)];
     }
-    if (useSkill(actor, skill, allies, foes, transcript, tactics)) return;
+    if (useSkill(actor, skill, allies, foes, transcript, events, tactics)) return;
   }
-  dealStrike(actor, pickFoe(foes, tactics), 1, transcript, null);
+  dealStrike(actor, pickFoe(foes, tactics), 1, transcript, events, null);
 }
 
 function spawnCombatFoe(e, dailyMod = null, challenge = null) {
@@ -2025,24 +2089,34 @@ export function runDungeon(state, dungeonId) {
   let foes = spawnWaveFoes(waves[0], dailyMod, challenge);
   const roles = countDungeonRoles(waves);
 
+  _combatUid = 0;
+  tagCombatUnits(allies, "a");
+  tagCombatUnits(foes, "f");
+  const combatEvents = [];
+  const say = (text) => {
+    transcript.push(text);
+    pushCombatText(combatEvents, text);
+  };
+
   const lead =
     state.pets.length > 0
       ? `御靈師率靈寵進入【${d.name}】。（潮克焰→嵐→岩→幽→潮）`
       : `你獨自踏入【${d.name}】，潮霧裡似有靈息。`;
   const transcript = [lead];
-  transcript.push(
+  pushCombatText(combatEvents, lead);
+  say(
     `本關 ${waves.length} 波 · ${roles.total} 敵（普通${roles.normal}／精英${roles.elite}／BOSS${roles.boss}）。`
   );
-  transcript.push(
+  say(
     `戰術【${TACTICS[tactics]?.name || tactics}】· 陣型【${formation.name}】· 自動戰鬥。`
   );
   if (challenge?.label) {
-    transcript.push(
+    say(
       `${challenge.label}${chalEval.ok ? "（條件已滿足，勝利可領挑戰獎）" : `（${chalEval.reason || "未滿足"}）`}`
     );
-    if (challenge.banMaster) transcript.push("挑戰生效：人物未出戰。");
+    if (challenge.banMaster) say("挑戰生效：人物未出戰。");
   }
-  if (dailyMod?.label) transcript.push(dailyMod.label);
+  if (dailyMod?.label) say(dailyMod.label);
   const genNotes = state.pets
     .map((p) => {
       const g = petGeneration(p);
@@ -2050,42 +2124,53 @@ export function runDungeon(state, dungeonId) {
       return m > 1 ? `${displayPetName(p)}${genLabel(g)}攻血×${m.toFixed(2)}` : null;
     })
     .filter(Boolean);
-  if (genNotes.length) transcript.push(`血脈代數加成：${genNotes.join("、")}。`);
-  transcript.push(`—— 第 1 波・${waves[0].label} ——`);
+  if (genNotes.length) say(`血脈代數加成：${genNotes.join("、")}。`);
+  say(`—— 第 1 波・${waves[0].label} ——`);
+  combatEvents.push({
+    type: "wave",
+    text: `—— 第 1 波・${waves[0].label} ——`,
+    waveIndex: 1,
+    label: waves[0].label,
+    foes: foes.map(unitRosterEntry),
+  });
   if (synergy.labels.length) {
-    transcript.push(`陣容羈絆發動：${synergy.labels.join("、")}。`);
+    say(`陣容羈絆發動：${synergy.labels.join("、")}。`);
   }
   if (peNotes.length) {
-    transcript.push(`性格被動：${peNotes.join("；")}`);
+    say(`性格被動：${peNotes.join("；")}`);
   }
   if (mGear.setLabels?.length) {
-    transcript.push(`裝備套裝：${mGear.setLabels.join("、")}。`);
+    say(`裝備套裝：${mGear.setLabels.join("、")}。`);
   }
   if ((state.tideSeals || 0) > 0) {
-    transcript.push(
+    say(
       `潮印 ×${state.tideSeals}（全隊攻血 ×${tideSealCombatMult(state.tideSeals).toFixed(2)}）。`
     );
   }
   if (dex.label) {
-    transcript.push(dex.label);
+    say(dex.label);
   }
   for (const p of passives) {
-    transcript.push(p.label);
+    say(p.label);
   }
   for (const c of challenges) {
-    transcript.push(
+    say(
       c.ok ? `關卡條件已滿足：${c.label}` : `關卡條件未啟：${c.label}。${c.reason}`
     );
   }
   const trial = dungeonTrialFor(dungeonId);
   const trialCheck = trial ? partyMeetsTrial(state.pets, trial) : null;
   if (trial) {
-    transcript.push(
+    say(
       trialCheck.ok
         ? `雜交試煉條件已滿足（${trial.label}）——勝利可領額外獎。`
         : `雜交試煉未啟：${trial.label}。${trialCheck.reason}`
     );
   }
+  const combatStart = {
+    allies: allies.map(unitRosterEntry),
+    foes: foes.map(unitRosterEntry),
+  };
   bumpDaily(state, "dungeon", 1);
   let round = 0;
   const maxRounds = 55;
@@ -2123,8 +2208,16 @@ export function runDungeon(state, dungeonId) {
   const advanceOrWin = () => {
     if (waveIndex + 1 < waves.length) {
       waveIndex += 1;
-      foes = spawnWaveFoes(waves[waveIndex], dailyMod, challenge);
-      transcript.push(`—— 第 ${waveIndex + 1} 波・${waves[waveIndex].label} 湧出！——`);
+      foes = tagCombatUnits(spawnWaveFoes(waves[waveIndex], dailyMod, challenge), "f");
+      const waveLine = `—— 第 ${waveIndex + 1} 波・${waves[waveIndex].label} 湧出！——`;
+      say(waveLine);
+      combatEvents.push({
+        type: "wave",
+        text: waveLine,
+        waveIndex: waveIndex + 1,
+        label: waves[waveIndex].label,
+        foes: foes.map(unitRosterEntry),
+      });
       return false;
     }
     return true;
@@ -2143,8 +2236,8 @@ export function runDungeon(state, dungeonId) {
         if (actor.hp <= 0) break;
         const down = checkSideDown();
         if (down) break;
-        if (actor.side === "ally") act(actor, allies, foes, transcript, tactics);
-        else act(actor, foes, allies, transcript, "balanced");
+        if (actor.side === "ally") act(actor, allies, foes, transcript, combatEvents, tactics);
+        else act(actor, foes, allies, transcript, combatEvents, "balanced");
       }
       tickCooldowns(actor);
 
@@ -2152,7 +2245,7 @@ export function runDungeon(state, dungeonId) {
       if (down === "lose") {
         ended = true;
         state.winStreak = 0;
-        transcript.push(`折戟【${d.name}】……退回契壇休養。`);
+        say(`折戟【${d.name}】……退回契壇休養。`);
         break;
       }
       if (down === "wave") {
@@ -2185,7 +2278,7 @@ export function runDungeon(state, dungeonId) {
         state.scrap += dailyScrapBonus;
       }
       if (dailyStoneBonus || dailyScrapBonus) {
-        transcript.push(
+        say(
           `今日修飾結算：+${dailyStoneBonus}石／+${dailyScrapBonus}碎片。`
         );
       }
@@ -2203,11 +2296,11 @@ export function runDungeon(state, dungeonId) {
             pushLog(state, `主線推進：解鎖練功地【${site.name}】！`);
           }
         }
-        transcript.push(
+        say(
           `攻克【${d.name}】，獲靈石 ${d.reward.stones}、碎片 ${d.reward.scrap}。首通額外 +${bonusStones} 石／+${bonusScrap} 碎片！`
         );
       } else {
-        transcript.push(
+        say(
           `攻克【${d.name}】，獲靈石 ${d.reward.stones}、靈晶碎片 ${d.reward.scrap}。`
         );
       }
@@ -2227,9 +2320,9 @@ export function runDungeon(state, dungeonId) {
         if (challengeStones) bits.push(`${challengeStones}石`);
         if (challengeScrap) bits.push(`${challengeScrap}碎片`);
         if (challengeDust) bits.push(`${challengeDust}靈塵`);
-        transcript.push(`挑戰達成【${challenge.label}】→ +${bits.join("／")}`);
+        say(`挑戰達成【${challenge.label}】→ +${bits.join("／")}`);
       } else if (challenge) {
-        transcript.push(`挑戰未達成【${challenge.label}】→ 無挑戰獎`);
+        say(`挑戰未達成【${challenge.label}】→ 無挑戰獎`);
       }
 
       checkAchievements(state);
@@ -2237,14 +2330,14 @@ export function runDungeon(state, dungeonId) {
       if (eliteCleared && d.eliteBonus) {
         roleStones += d.eliteBonus.stones || 0;
         roleScrap += d.eliteBonus.scrap || 0;
-        transcript.push(
+        say(
           `擊破精英！額外 +${d.eliteBonus.stones || 0} 石${d.eliteBonus.scrap ? `／+${d.eliteBonus.scrap} 碎片` : ""}。`
         );
       }
       if (bossCleared && d.bossBonus) {
         roleStones += d.bossBonus.stones || 0;
         roleScrap += d.bossBonus.scrap || 0;
-        transcript.push(
+        say(
           `擊破 BOSS！額外 +${d.bossBonus.stones || 0} 石${d.bossBonus.scrap ? `／+${d.bossBonus.scrap} 碎片` : ""}。`
         );
       }
@@ -2268,9 +2361,9 @@ export function runDungeon(state, dungeonId) {
           condFeed += c.bonus.feed || 0;
           condDust += c.bonus.dust || 0;
           applyReward(state, c.bonus);
-          transcript.push(`條件達成【${c.label}】→ 分開結算 +${bits.join("／")}`);
+          say(`條件達成【${c.label}】→ 分開結算 +${bits.join("／")}`);
         } else {
-          transcript.push(`條件未達成【${c.label}】→ 無額外獎${c.reason ? `（${c.reason}）` : ""}`);
+          say(`條件未達成【${c.label}】→ 無額外獎${c.reason ? `（${c.reason}）` : ""}`);
         }
         conditionResults.push({
           id: c.id,
@@ -2287,11 +2380,11 @@ export function runDungeon(state, dungeonId) {
           trialScrap = trial.bonus.scrap || 0;
           state.stones += trialStones;
           state.scrap += trialScrap;
-          transcript.push(
+          say(
             `試煉達成【${trial.label}】→ 分開結算 +${trialStones}石${trialScrap ? `／+${trialScrap}碎片` : ""}`
           );
         } else {
-          transcript.push(
+          say(
             `試煉未達成【${trial.label}】→ 無額外獎${trialCheck?.reason ? `（${trialCheck.reason}）` : ""}`
           );
         }
@@ -2306,13 +2399,13 @@ export function runDungeon(state, dungeonId) {
         state.inventory.push(drop);
         const gname = GEAR[drop.gearId]?.name || drop.gearId;
         const why = bossCleared ? "（BOSS 掉落加成）" : eliteCleared ? "（精英掉落加成）" : "";
-        transcript.push(`拾獲裝備【${gname}】${why}！可至修行頁穿戴。`);
+        say(`拾獲裝備【${gname}】${why}！可至修行頁穿戴。`);
       }
     }
   }
 
   if (!ended) {
-    transcript.push("戰鬥逾時，撤退。");
+    say("戰鬥逾時，撤退。");
   }
 
   // 冷卻：無論勝負都進入（防無限刷）
@@ -2322,14 +2415,15 @@ export function runDungeon(state, dungeonId) {
   const encResult = maybeEncounterAfterDungeon(state, dungeonId, won);
   const encounter = encResult.encounter;
   if (encounter) {
-    transcript.push(
+    say(
       `潮霧中浮現野生${encounter.name}（${encounter.kind}·${encounter.elementName}·${encounter.personalityName}），成功率約 ${Math.round(encounter.bondRate * 100)}%——可至靈寵頁嘗試契約。`
     );
   } else if (encResult.blocked) {
-    transcript.push(`待契約欄已滿（${PENDING_BOND_MAX}），未再遇見新靈。`);
+    say(`待契約欄已滿（${PENDING_BOND_MAX}），未再遇見新靈。`);
   }
 
   const lines = transcript.slice(0, 80);
+  const eventsOut = combatEvents.slice(0, 80);
   const baseStones = won ? d.reward.stones : 0;
   const totalStones = won
     ? baseStones +
@@ -2399,6 +2493,8 @@ export function runDungeon(state, dungeonId) {
     won,
     rounds: round,
     transcript: lines,
+    combatEvents: eventsOut,
+    combatStart,
     encounter,
     trialMet: !!(trial && trialCheck?.ok),
     challengeMet,
@@ -2652,6 +2748,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v19");
   localStorage.removeItem("void-tide-pets-v18");
   localStorage.removeItem("void-tide-pets-v17");
   localStorage.removeItem("void-tide-pets-v16");

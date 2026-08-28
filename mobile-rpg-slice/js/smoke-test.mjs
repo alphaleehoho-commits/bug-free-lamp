@@ -67,7 +67,7 @@ import {
   trainSiteUnlockHint,
   dungeonNameForClear,
 } from "./data.js";
-import { affordMaterials } from "./engine.js";
+import { affordMaterials, runDungeon } from "./engine.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -351,6 +351,46 @@ assert(dungeonNameForClear("tide_1").includes("一層"), "dungeon name");
 const fakeMats = { materials: { tide_dew: 0, mist_silk: 2 } };
 const aff = affordMaterials(fakeMats, { tide_dew: 2, mist_silk: 1 });
 assert(!aff.ok && aff.items.find((i) => i.id === "tide_dew")?.short === 2, "afford short");
+
+/* P12: combat events */
+const combatFox = buildPetStats({
+  id: "p1",
+  species: "reefox",
+  element: "tide",
+  personality: "gentle",
+  cost: 1,
+});
+combatFox.uid = "p1";
+const combatSt = {
+  realm: 0,
+  qi: 0,
+  stones: 200,
+  scrap: 0,
+  feed: 0,
+  dust: 0,
+  pets: [combatFox],
+  ranch: [],
+  pending: [],
+  clearedDungeons: {},
+  dungeonReadyAt: {},
+  master: { name: "潮行者", atk: 6, hp: 90, spd: 7, equip: {} },
+  tactics: "balanced",
+  formation: "balanced",
+  stats: {},
+  bestiary: {},
+  tideSeals: 0,
+  log: [],
+  combatsWon: 0,
+  winStreak: 0,
+};
+const combatRes = runDungeon(combatSt, "tide_1");
+assert(combatRes.ok && combatRes.combatEvents?.length > 5, "combat events");
+assert(combatRes.combatStart?.allies?.length >= 1, "combat roster allies");
+assert(combatRes.combatEvents.some((e) => e.type === "strike" || e.type === "text"), "strike or text");
+const strikeEv = combatRes.combatEvents.find((e) => e.type === "strike");
+if (strikeEv) {
+  assert(strikeEv.targetUid && strikeEv.elemTag !== undefined, "strike fields");
+}
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

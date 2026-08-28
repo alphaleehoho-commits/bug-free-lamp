@@ -671,6 +671,73 @@ button.linkish strong { color: var(--jade); }
 }
 .row-actions button { white-space: nowrap; padding: 0.28rem 0.4rem; font-size: 0.62rem; }
 .combat-bar { margin: 0.2rem 0 0.3rem; }
+.combat-roster {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25rem;
+  margin: 0.15rem 0 0.35rem;
+}
+.combat-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.combat-unit {
+  font-size: 0.55rem;
+  line-height: 1.2;
+  padding: 0.12rem 0.2rem;
+  border-radius: 5px;
+  border: 1px solid rgba(126, 168, 160, 0.15);
+  background: rgba(0, 0, 0, 0.2);
+}
+.combat-unit.is-down { opacity: 0.38; }
+.combat-unit.is-hit { animation: combatHit 0.42s ease-out; }
+.combat-unit[data-element="tide"] .cu-bar i { background: linear-gradient(90deg, #4a90a8, #6db3d9); }
+.combat-unit[data-element="flame"] .cu-bar i { background: linear-gradient(90deg, #a86048, #e89070); }
+.combat-unit[data-element="gale"] .cu-bar i { background: linear-gradient(90deg, #6888a8, #a8c4d8); }
+.combat-unit[data-element="stone"] .cu-bar i { background: linear-gradient(90deg, #887848, #b8a878); }
+.combat-unit[data-element="gloom"] .cu-bar i { background: linear-gradient(90deg, #685888, #a888c8); }
+.cu-name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fog);
+  margin-bottom: 0.08rem;
+}
+.cu-bar {
+  height: 0.28rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.cu-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--jade), var(--ember-soft));
+  transition: width 0.28s ease-out;
+}
+.combat .log-adv { color: #9fd4c0; }
+.combat .log-dis { color: #e8a090; }
+.combat .log-heal { color: #7eb8a3; }
+.combat .log-ko { color: #e8b86d; font-weight: 600; }
+.skip-summary {
+  font-size: 0.62rem;
+  color: var(--jade-bright);
+  margin: 0.15rem 0 0.25rem;
+  padding: 0.25rem 0.35rem;
+  border-radius: 6px;
+  border: 1px solid rgba(126, 184, 163, 0.35);
+  background: rgba(40, 90, 75, 0.22);
+}
+@keyframes combatHit {
+  0% { transform: translateX(0); filter: brightness(1.5); }
+  25% { transform: translateX(-3px); }
+  50% { transform: translateX(3px); }
+  100% { transform: translateX(0); filter: brightness(1); }
+}
+.combat-bar { margin: 0.2rem 0 0.3rem; }
 .combat-bar i {
   transition: width 0.35s linear;
   background: linear-gradient(90deg, var(--jade), var(--ember-soft));

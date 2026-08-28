@@ -106,16 +106,95 @@ let dispatchPick = [];
 let petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
 
 /** @type {null | {
+ *  events: object[],
  *  lines: string[],
  *  shown: string[],
  *  index: number,
  *  result: object,
  *  timer: number | null,
- *  done: boolean
+ *  done: boolean,
+ *  skipped: boolean,
+ *  unitHp: Map<string, number>,
+ *  allyUnits: object[],
+ *  foeUnits: object[],
  * }} */
 let playback = null;
 
 const LINE_MS = 520;
+
+function initCombatHp(result) {
+  const hp = new Map();
+  const allies = [];
+  const foes = [];
+  for (const u of result.combatStart?.allies || []) {
+    hp.set(u.uid, u.hp);
+    allies.push({ ...u });
+  }
+  for (const u of result.combatStart?.foes || []) {
+    hp.set(u.uid, u.hp);
+    foes.push({ ...u });
+  }
+  return { hp, allies, foes };
+}
+
+function applyCombatEvent(event, pb) {
+  if (!event || !pb) return;
+  if (event.type === "strike" || event.type === "heal") {
+    pb.unitHp.set(event.targetUid, event.targetHp);
+    pb.lastHitUid = event.type === "strike" ? event.targetUid : null;
+  } else if (event.type === "wave" && event.foes) {
+    pb.foeUnits = event.foes.map((f) => ({ ...f }));
+    for (const f of event.foes) pb.unitHp.set(f.uid, f.hp);
+    pb.lastHitUid = null;
+  } else {
+    pb.lastHitUid = null;
+  }
+}
+
+function combatLogClass(event) {
+  if (!event) return "";
+  if (event.type === "heal") return "log-heal";
+  if (event.type === "strike") {
+    if (event.elemTag === "克制") return "log-adv";
+    if (event.elemTag === "被克") return "log-dis";
+    if (event.ko) return "log-ko";
+  }
+  return "";
+}
+
+function combatUnitBar(u, pb) {
+  const hp = pb.unitHp.get(u.uid) ?? u.hp;
+  const pct = u.maxHp > 0 ? Math.max(0, Math.min(100, Math.round((hp / u.maxHp) * 100))) : 0;
+  const dead = hp <= 0;
+  return `<div class="combat-unit ${dead ? "is-down" : ""}" data-combat-uid="${escapeHtml(u.uid)}" data-element="${escapeHtml(
+    u.elementId || ""
+  )}">
+    <span class="cu-name">${escapeHtml(u.name)}</span>
+    <div class="cu-bar"><i style="width:${pct}%"></i></div>
+  </div>`;
+}
+
+function renderCombatRoster(pb) {
+  return `<div class="combat-roster" data-live="combat-roster">
+    <div class="combat-side allies">${pb.allyUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>
+    <div class="combat-side foes">${pb.foeUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>
+  </div>`;
+}
+
+function patchCombatRosterDom(pb) {
+  const root = document.querySelector("[data-live=combat-roster]");
+  if (!root) return;
+  root.innerHTML = `
+    <div class="combat-side allies">${pb.allyUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>
+    <div class="combat-side foes">${pb.foeUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>`;
+  if (pb.lastHitUid) {
+    const hit = root.querySelector(`[data-combat-uid="${pb.lastHitUid}"]`);
+    if (hit) {
+      hit.classList.add("is-hit");
+      setTimeout(() => hit.classList.remove("is-hit"), 420);
+    }
+  }
+}
 
 function setFlash(msg, tone = "") {
   flash = msg;
@@ -362,9 +441,9 @@ function patchLive() {
   if (wins) wins.textContent = `勝場 ${state.combatsWon}`;
 }
 
-function updatePlaybackDom() {
+function updatePlaybackDom(latestEvent = null) {
   if (!playback) return;
-  const total = Math.max(1, playback.lines.length);
+  const total = Math.max(1, playback.events.length);
   const pct = Math.min(100, Math.round((playback.index / total) * 100));
   const bar = document.querySelector("[data-live=combat-bar]");
   const meta = document.querySelector("[data-live=combat-meta]");
@@ -375,12 +454,14 @@ function updatePlaybackDom() {
       ? `${playback.result.msg}（${playback.result.rounds} 回合）`
       : `戰鬥進行中… ${playback.index}/${total}`;
   }
+  patchCombatRosterDom(playback);
   if (list && playback.shown.length) {
-    const last = playback.shown[playback.shown.length - 1];
-    // 只 append 最新一條，避免整表重繪閃爍
+    const idx = playback.shown.length - 1;
+    const event = playback.events[idx] || latestEvent;
+    const last = playback.shown[idx];
     if (!list.dataset.lastLine || list.dataset.lastLine !== last) {
       const li = document.createElement("li");
-      li.className = "log-line-in";
+      li.className = `log-line-in ${combatLogClass(event)}`.trim();
       li.textContent = last;
       list.prepend(li);
       list.dataset.lastLine = last;
@@ -410,55 +491,70 @@ function finishPlayback() {
 
 function advancePlayback() {
   if (!playback || playback.done) return;
-  if (playback.index >= playback.lines.length) {
+  if (playback.index >= playback.events.length) {
     finishPlayback();
     return;
   }
-  const line = playback.lines[playback.index];
-  playback.shown.push(line);
+  const event = playback.events[playback.index];
+  applyCombatEvent(event, playback);
+  playback.shown.push(event.text);
   playback.index += 1;
-  // 見聞逐條記入
-  state.log.unshift(line);
+  state.log.unshift(event.text);
   if (state.log.length > 60) state.log.length = 60;
-  updatePlaybackDom();
-  if (playback.index >= playback.lines.length) finishPlayback();
+  updatePlaybackDom(event);
+  if (playback.index >= playback.events.length) finishPlayback();
 }
 
 function startPlayback(result) {
   stopPlayback();
   tab = "dungeon";
+  const events =
+    result.combatEvents ||
+    (result.transcript || []).map((text) => ({ type: "text", text }));
+  const hpState = initCombatHp(result);
   playback = {
-    lines: result.transcript || [],
+    events,
+    lines: events.map((e) => e.text),
     shown: [],
     index: 0,
     result,
     timer: null,
     done: false,
+    skipped: false,
+    unitHp: hpState.hp,
+    allyUnits: hpState.allies,
+    foeUnits: hpState.foes,
+    lastHitUid: null,
   };
   render();
-  // 立即出第一條，其餘定時
   advancePlayback();
   playback.timer = setInterval(advancePlayback, LINE_MS);
 }
 
 function skipPlayback() {
   if (!playback || playback.done) return;
-  while (playback.index < playback.lines.length) {
-    const line = playback.lines[playback.index];
-    playback.shown.push(line);
-    state.log.unshift(line);
+  playback.skipped = true;
+  while (playback.index < playback.events.length) {
+    const event = playback.events[playback.index];
+    applyCombatEvent(event, playback);
+    playback.shown.push(event.text);
+    state.log.unshift(event.text);
     playback.index += 1;
   }
   if (state.log.length > 60) state.log.length = 60;
   finishPlayback();
-  // 補齊 DOM 列表
   const list = document.querySelector("[data-live=combat-log]");
   if (list) {
     list.innerHTML = playback.shown
       .slice()
       .reverse()
       .slice(0, 40)
-      .map((t) => `<li>${escapeHtml(t)}</li>`)
+      .map((t, i) => {
+        const revIdx = playback.shown.length - 1 - i;
+        const ev = playback.events[revIdx];
+        const cls = combatLogClass(ev);
+        return `<li class="${cls}">${escapeHtml(t)}</li>`;
+      })
       .join("");
   }
   updatePlaybackDom();
@@ -1093,14 +1189,25 @@ function dungeonPanel() {
   if (playback) {
     const pct = Math.min(
       100,
-      Math.round((playback.index / Math.max(1, playback.lines.length)) * 100)
+      Math.round((playback.index / Math.max(1, playback.events.length)) * 100)
     );
     const lines = playback.shown
       .slice()
       .reverse()
-      .map((t) => `<li>${escapeHtml(t)}</li>`)
+      .map((t, i) => {
+        const revIdx = playback.shown.length - 1 - i;
+        const ev = playback.events[revIdx];
+        const cls = combatLogClass(ev);
+        return `<li class="${cls}">${escapeHtml(t)}</li>`;
+      })
       .join("");
     const bd = playback.result?.rewardBreakdown;
+    const skipSummary =
+      playback.skipped && playback.done
+        ? `<p class="skip-summary">已跳過 ${playback.events.length} 條戰報 · ${
+            playback.result.won ? "勝利" : "戰敗"
+          } · ${escapeHtml(playback.result.msg)}</p>`
+        : "";
     const breakdownHtml =
       playback.done && bd && playback.result.won
         ? `<ul class="cond-list reward-breakdown">
@@ -1166,12 +1273,14 @@ function dungeonPanel() {
         : "";
     return `
       <h2>戰報</h2>
+      ${renderCombatRoster(playback)}
       <p class="lead" data-live="combat-meta">${
         playback.done
           ? `${escapeHtml(playback.result.msg)}（${playback.result.rounds} 回合）`
-          : `戰鬥進行中… ${playback.index}/${playback.lines.length}`
+          : `戰鬥進行中… ${playback.index}/${playback.events.length}`
       }</p>
       <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
+      ${skipSummary}
       <div class="combat-scroll" data-live="combat-scroll">
         <ul class="combat" data-live="combat-log">${lines}</ul>
       </div>
