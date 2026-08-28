@@ -130,6 +130,7 @@ import {
   tutorialShopPrice,
   markTutorialFlag,
   skipTutorial,
+  maybeStartLateTutorial,
 } from "./tutorial.js";
 
 const SAVE_KEY = "void-tide-pets-v25";
@@ -984,7 +985,12 @@ export function tryBreakthrough(state) {
   }
   checkAchievements(state);
   advanceTutorialIfReady(state);
-  return { ok: true, msg: `階段：${next.name}${costNote}` };
+  const late = maybeStartLateTutorial(state);
+  return {
+    ok: true,
+    msg: `階段：${next.name}${costNote}${late.started ? ` · ${late.msg}` : ""}`,
+    lateTutorial: late,
+  };
 }
 
 function MASTER_UNLOCK_MSG(stage) {

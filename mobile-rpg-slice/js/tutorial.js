@@ -68,6 +68,26 @@ export const TUTORIAL_STEPS = [
 
 const STEP_IDS = TUTORIAL_STEPS.map((s) => s.id);
 
+/** 初期必做步驟（至待契約） */
+export const CORE_TUTORIAL_STEPS = [
+  "cultivate_qi",
+  "breakthrough",
+  "shop_pet",
+  "deploy",
+  "dungeon_fight",
+  "dungeon_win",
+  "codex",
+  "bond",
+];
+
+/** 進階功能教學 — 達【通靈後期】realm≥2 才開始 */
+export const LATE_TUTORIAL_STEPS = ["dispatch", "gear", "tactics"];
+export const LATE_TUTORIAL_MIN_REALM = 2;
+
+function isLateStep(stepId) {
+  return LATE_TUTORIAL_STEPS.includes(stepId);
+}
+
 export function defaultTutorial() {
   return { done: false, step: "cultivate_qi", flags: {} };
 }
@@ -89,6 +109,8 @@ export function normalizeTutorial(state) {
     state.tutorial.step = state.tutorial.done ? "complete" : "cultivate_qi";
   }
   if (state.tutorial.done) state.tutorial.step = "complete";
+  if (state.tutorial.latePending == null) state.tutorial.latePending = false;
+  if (state.tutorial.lateCompleted == null) state.tutorial.lateCompleted = false;
   return state.tutorial;
 }
 
@@ -101,13 +123,23 @@ export function tutorialStepInfo(state) {
   const t = normalizeTutorial(state);
   const idx = STEP_IDS.indexOf(t.step);
   const cur = TUTORIAL_STEPS[idx] || TUTORIAL_STEPS[0];
-  const total = TUTORIAL_STEPS.length - 1;
+  const inLate = isLateStep(t.step) || t.latePending;
+  const total = inLate
+    ? CORE_TUTORIAL_STEPS.length + LATE_TUTORIAL_STEPS.length - 1
+    : CORE_TUTORIAL_STEPS.length - 1;
+  let index = Math.max(1, idx + 1);
+  if (inLate && idx >= STEP_IDS.indexOf("dispatch")) {
+    index = CORE_TUTORIAL_STEPS.length + (idx - STEP_IDS.indexOf("dispatch") + 1);
+  } else if (!inLate && idx >= 0) {
+    index = Math.min(idx + 1, CORE_TUTORIAL_STEPS.length);
+  }
   return {
     ...cur,
-    index: Math.max(1, idx + 1),
+    index,
     total,
     stepId: t.step,
     done: t.done,
+    phase: inLate ? "late" : "core",
   };
 }
 
@@ -297,6 +329,51 @@ function meetsAdvance(state, stepId) {
   }
 }
 
+function resolveNextStepId(state, cur) {
+  const idx = STEP_IDS.indexOf(cur);
+  if (idx < 0) return "complete";
+  let nextId = STEP_IDS[Math.min(idx + 1, STEP_IDS.length - 1)];
+  if (nextId === cur) return cur;
+  if (cur === "bond" && (state.realm | 0) < LATE_TUTORIAL_MIN_REALM) {
+    return "complete";
+  }
+  if (isLateStep(nextId) && (state.realm | 0) < LATE_TUTORIAL_MIN_REALM) {
+    return "complete";
+  }
+  return nextId;
+}
+
+/** realm 達標後啟動派遣／裝備／戰術教學 */
+export function maybeStartLateTutorial(state) {
+  normalizeTutorial(state);
+  if ((state.realm | 0) < LATE_TUTORIAL_MIN_REALM) return { started: false };
+  if (state.tutorial.lateCompleted) return { started: false };
+  const flags = state.tutorial.flags || {};
+  const pending = LATE_TUTORIAL_STEPS.filter((id) => {
+    if (id === "dispatch") return !flags.dispatchVisited;
+    if (id === "gear") return !flags.gearVisited;
+    if (id === "tactics") return !flags.tacticsVisited;
+    return false;
+  });
+  if (!pending.length) {
+    state.tutorial.lateCompleted = true;
+    state.tutorial.latePending = false;
+    return { started: false };
+  }
+  if (tutorialActive(state) && isLateStep(state.tutorial.step)) {
+    return { started: false };
+  }
+  state.tutorial.done = false;
+  state.tutorial.step = pending[0];
+  state.tutorial.latePending = true;
+  const info = TUTORIAL_STEPS.find((s) => s.id === pending[0]);
+  return {
+    started: true,
+    msg: `進階教學：${info?.title || pending[0]}`,
+    stepId: pending[0],
+  };
+}
+
 /**
  * 自動推進教學步驟；回傳 { advanced, unlockMsg }
  */
@@ -305,8 +382,7 @@ export function advanceTutorialIfReady(state) {
   const cur = state.tutorial.step;
   if (!meetsAdvance(state, cur)) return { advanced: false, unlockMsg: null };
 
-  const idx = STEP_IDS.indexOf(cur);
-  const nextId = STEP_IDS[Math.min(idx + 1, STEP_IDS.length - 1)];
+  const nextId = resolveNextStepId(state, cur);
   if (nextId === cur) return { advanced: false, unlockMsg: null };
 
   state.tutorial.step = nextId;
@@ -315,7 +391,16 @@ export function advanceTutorialIfReady(state) {
 
   if (nextId === "complete") {
     state.tutorial.done = true;
-    unlockMsg = "初階教學完成！所有功能已解鎖。";
+    if (isLateStep(cur) || state.tutorial.latePending) {
+      state.tutorial.lateCompleted = true;
+      state.tutorial.latePending = false;
+      unlockMsg = "進階教學完成！";
+    } else if ((state.realm | 0) < LATE_TUTORIAL_MIN_REALM) {
+      state.tutorial.latePending = true;
+      unlockMsg = "初階教學完成！升階後將解鎖進階功能引導。";
+    } else {
+      unlockMsg = "初階教學完成！所有功能已解鎖。";
+    }
   }
 
   return { advanced: true, unlockMsg, nextId };
@@ -429,6 +514,42 @@ export function tutorialGlowClass(state, spec, nav = {}) {
   return tutorialHighlights(state, nav).some((h) => highlightMatches(h, spec)) ? " tut-glow" : "";
 }
 
+export function tutorialTargetSelector(spec) {
+  switch (spec.type) {
+    case "tab":
+      return `[data-tab="${spec.id}"]`;
+    case "panel-sub":
+      return `[data-panel-sub="${spec.group}:${spec.id}"]`;
+    case "act":
+      return `[data-act="${spec.act}"]`;
+    case "shop-buy":
+      return "[data-shop-buy]:not([disabled])";
+    case "deploy":
+      return "[data-deploy]:not([disabled])";
+    case "dungeon":
+      return spec.dungeonId
+        ? `[data-dungeon="${spec.dungeonId}"]:not([disabled])`
+        : "[data-dungeon]:not([disabled])";
+    default:
+      return null;
+  }
+}
+
+/** 浮動引導環：回傳應高亮的 DOM 元素 */
+export function findTutorialTargetElements(state, nav = {}) {
+  if (typeof document === "undefined") return [];
+  const specs = tutorialHighlights(state, nav);
+  const els = [];
+  for (const spec of specs) {
+    const sel = tutorialTargetSelector(spec);
+    if (!sel) continue;
+    document.querySelectorAll(sel).forEach((el) => {
+      if (!el.disabled && !el.hidden) els.push(el);
+    });
+  }
+  return els;
+}
+
 /** 供 UI 判斷教學狀態是否需重繪 */
 export function tutorialLiveSnapshot(state) {
   const t = state.tutorial || {};
@@ -465,8 +586,13 @@ export function tutorialBannerHtml(state) {
   if (info.stepId === "cultivate_qi" && tutorialQiReady(state)) {
     hint = "靈契已滿！點上方「進階」分頁，突破至【通靈初期】。";
   }
+  const phaseNote =
+    info.phase === "late"
+      ? `<p class="tutorial-phase">進階引導 · 達【通靈後期】解鎖</p>`
+      : "";
   return `
     <div class="tutorial-banner" data-live="tutorial">
+      ${phaseNote}
       <div class="tutorial-head">
         <span class="tutorial-step">${info.index}/${info.total}</span>
         <strong>${info.title}</strong>

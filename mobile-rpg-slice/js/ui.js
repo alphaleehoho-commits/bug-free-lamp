@@ -99,6 +99,8 @@ import {
   tutorialGlowClass,
   tutorialLiveSnapshot,
   tutorialHighlights,
+  findTutorialTargetElements,
+  maybeStartLateTutorial,
 } from "./tutorial.js";
 
 const app = document.querySelector("#app");
@@ -121,43 +123,97 @@ let dispatchPick = [];
 let pwaInstallEvt = null;
 let pwaDismissed = localStorage.getItem("void-tide-pwa-dismiss") === "1";
 let tutorialSnapCache = "";
+let tutMisclickCount = 0;
+let tutSpotlightEl = null;
+let flashHostEl = null;
+
+function ensureFlashHost() {
+  if (flashHostEl?.isConnected) return flashHostEl;
+  flashHostEl = document.getElementById("flash-toast");
+  if (!flashHostEl) {
+    flashHostEl = document.createElement("div");
+    flashHostEl.id = "flash-toast";
+    flashHostEl.className = "flash-toast-host";
+    flashHostEl.hidden = true;
+    flashHostEl.setAttribute("aria-live", "polite");
+    const p = document.createElement("p");
+    p.className = "flash flash-truncate";
+    p.dataset.live = "flash";
+    p.hidden = true;
+    flashHostEl.appendChild(p);
+    document.body.appendChild(flashHostEl);
+  }
+  return flashHostEl;
+}
+
+function ensureSpotlight() {
+  if (tutSpotlightEl?.isConnected) return tutSpotlightEl;
+  tutSpotlightEl = document.getElementById("tut-spotlight");
+  if (!tutSpotlightEl) {
+    tutSpotlightEl = document.createElement("div");
+    tutSpotlightEl.id = "tut-spotlight";
+    tutSpotlightEl.hidden = true;
+    tutSpotlightEl.innerHTML = '<span class="tut-spotlight-ring"></span><span class="tut-spotlight-label"></span>';
+    document.body.appendChild(tutSpotlightEl);
+  }
+  return tutSpotlightEl;
+}
+
+function isTutorialTargetClick(target) {
+  const targets = findTutorialTargetElements(state, { tab, panelSub });
+  return targets.some((el) => el === target || el.contains(target));
+}
+
+function onTutorialMisclick(ev) {
+  if (!tutorialActive(state)) return;
+  if (ev.target.closest?.(".tutorial-skip")) return;
+  if (isTutorialTargetClick(ev.target)) {
+    tutMisclickCount = 0;
+    return;
+  }
+  tutMisclickCount += 1;
+  if (tutMisclickCount >= 2) positionTutorialSpotlight(true);
+}
+
+function positionTutorialSpotlight(urgent = false) {
+  const host = ensureSpotlight();
+  if (!tutorialActive(state)) {
+    host.hidden = true;
+    return;
+  }
+  const targets = findTutorialTargetElements(state, { tab, panelSub });
+  app.querySelectorAll(".tut-glow").forEach((el) => el.classList.remove("tut-glow", "tut-flash-urgent"));
+  if (!targets.length) {
+    host.hidden = true;
+    return;
+  }
+  const el = targets[0];
+  el.classList.add("tut-glow");
+  if (urgent || tutMisclickCount >= 2) el.classList.add("tut-flash-urgent");
+  const r = el.getBoundingClientRect();
+  host.hidden = false;
+  host.classList.toggle("is-urgent", urgent || tutMisclickCount >= 2);
+  host.style.top = `${Math.max(4, r.top - 5)}px`;
+  host.style.left = `${Math.max(4, r.left - 5)}px`;
+  host.style.width = `${r.width + 10}px`;
+  host.style.height = `${r.height + 10}px`;
+  const label = host.querySelector(".tut-spotlight-label");
+  if (label) label.textContent = urgent || tutMisclickCount >= 2 ? "點這裡" : "";
+}
 
 function tutGlow(spec) {
   return tutorialGlowClass(state, spec, { tab, panelSub });
 }
 
 function refreshTutorialGlow() {
-  if (!tutorialActive(state)) return;
-  const specs = tutorialHighlights(state, { tab, panelSub });
-  const matchEl = (el) => {
-    const tabId = el.dataset.tab;
-    const ps = el.dataset.panelSub;
-    const act = el.dataset.act;
-    const shop = el.dataset.shopBuy;
-    const dep = el.dataset.deploy;
-    const dun = el.dataset.dungeon;
-    return specs.some((h) => {
-      if (h.type === "tab" && tabId === h.id) return true;
-      if (h.type === "panel-sub" && ps === `${h.group}:${h.id}`) return true;
-      if (h.type === "act" && act === h.act) return true;
-      if (h.type === "shop-buy" && shop) return true;
-      if (h.type === "deploy" && dep) return true;
-      if (h.type === "dungeon" && dun && (!h.dungeonId || h.dungeonId === dun)) return true;
-      return false;
-    });
-  };
-  app.querySelectorAll(".tut-glow").forEach((el) => el.classList.remove("tut-glow"));
-  app
-    .querySelectorAll("[data-tab],[data-panel-sub],[data-act],[data-shop-buy],[data-deploy],[data-dungeon]")
-    .forEach((el) => {
-      if (matchEl(el)) el.classList.add("tut-glow");
-    });
+  positionTutorialSpotlight(false);
 }
 
 function patchTutorialBanner() {
   const cur = document.querySelector("[data-live=tutorial]");
   if (!tutorialActive(state)) {
     cur?.remove();
+    ensureSpotlight().hidden = true;
     return;
   }
   const html = tutorialBannerHtml(state);
@@ -166,7 +222,7 @@ function patchTutorialBanner() {
     wrap.innerHTML = html.trim();
     cur.replaceWith(wrap.firstElementChild);
   }
-  refreshTutorialGlow();
+  positionTutorialSpotlight(false);
 }
 
 /** @type {{ mode: 'list' | 'detail' | 'fuse' | 'breed', uid: string | null, fuseBase: string | null, fuseMats: string[], breedParents: string[] }} */
@@ -281,33 +337,25 @@ function patchCombatRosterDom(pb) {
 function setFlash(msg, tone = "") {
   flash = msg;
   flashTone = tone || "";
-  const el = document.querySelector("[data-live=flash]");
-  if (el) {
-    if (msg) {
-      el.hidden = false;
-      el.textContent = msg;
-      el.className = flashTone ? `flash flash-truncate flash-${flashTone}` : "flash flash-truncate";
-    } else {
-      el.hidden = true;
-      el.textContent = "";
-      el.className = "flash flash-truncate";
-      flashTone = "";
-    }
+  const host = ensureFlashHost();
+  const el = host.querySelector("[data-live=flash]");
+  if (msg) {
+    host.hidden = false;
+    host.className = `flash-toast-host is-visible${flashTone ? ` flash-tone-${flashTone}` : ""}`;
+    el.hidden = false;
+    el.textContent = msg;
+    el.className = flashTone ? `flash flash-truncate flash-${flashTone}` : "flash flash-truncate";
   } else {
-    render();
+    host.hidden = true;
+    host.className = "flash-toast-host";
+    el.hidden = true;
+    el.textContent = "";
+    el.className = "flash flash-truncate";
+    flashTone = "";
   }
   clearTimeout(flashTimer);
   if (msg) {
-    flashTimer = setTimeout(() => {
-      flash = "";
-      flashTone = "";
-      const f = document.querySelector("[data-live=flash]");
-      if (f) {
-        f.hidden = true;
-        f.textContent = "";
-        f.className = "flash flash-truncate";
-      }
-    }, 2600);
+    flashTimer = setTimeout(() => setFlash(""), 2800);
   }
 }
 
@@ -448,7 +496,8 @@ function switchTab(id) {
   if (playback && !playback.done) return;
   if (isTabLocked(state, id)) return;
   tab = id;
-  if (id === "codex") {
+  tutMisclickCount = 0;
+  if (id === "codex" && tutorialActive(state) && state.tutorial.step === "codex") {
     const adv = markTutorialFlag(state, "codexVisited");
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
   }
@@ -459,16 +508,18 @@ function switchTab(id) {
 }
 
 function markTutorialSubVisit(group, id) {
-  if (group === "party" && id === "bond") {
+  tutMisclickCount = 0;
+  const step = state.tutorial?.step;
+  if (group === "party" && id === "bond" && step === "bond") {
     const adv = markTutorialFlag(state, "bondVisited");
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
-  } else if (group === "party" && id === "dispatch") {
+  } else if (group === "party" && id === "dispatch" && step === "dispatch") {
     const adv = markTutorialFlag(state, "dispatchVisited");
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
-  } else if (group === "cultivate" && id === "gear") {
+  } else if (group === "cultivate" && id === "gear" && step === "gear") {
     const adv = markTutorialFlag(state, "gearVisited");
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
-  } else if (group === "dungeon" && id === "setup") {
+  } else if (group === "dungeon" && id === "setup" && step === "tactics") {
     const adv = markTutorialFlag(state, "tacticsVisited");
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
   }
@@ -609,11 +660,14 @@ function finishPlayback() {
     clearInterval(playback.timer);
     playback.timer = null;
   }
+  let adv = { advanced: false, unlockMsg: null };
   if (playback.result?.won && tutorialActive(state)) {
     if (!state.tutorial.flags) state.tutorial.flags = {};
     state.tutorial.flags.dungeonWonTutorial = true;
+    if (state.tutorial.step === "dungeon_win") {
+      adv = advanceTutorialIfReady(state);
+    }
   }
-  const adv = advanceTutorialIfReady(state);
   saveState(state);
   render();
   const unlocks = playback.result.unlockedSites || [];
@@ -699,8 +753,6 @@ function skipPlayback() {
 
 function render() {
   state = tickCultivation(state);
-  const adv = advanceTutorialIfReady(state);
-  if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
 
   const nav = syncTutorialNavigation(state, { tab, panelSub });
   tab = nav.tab;
@@ -728,7 +780,6 @@ function render() {
       <div><span>靈塵</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
     </div>
 
-    <p class="flash flash-truncate${flashTone ? ` flash-${flashTone}` : ""}" data-live="flash" ${flash ? "" : "hidden"}>${escapeHtml(flash)}</p>
     ${offlineBanner()}
     ${installBanner()}
 
@@ -759,9 +810,10 @@ function render() {
 
   bind();
   shellReady = true;
+  if (tutorialSnapCache !== tutorialLiveSnapshot(state)) tutMisclickCount = 0;
   tutorialSnapCache = tutorialLiveSnapshot(state);
   saveState(state);
-  refreshTutorialGlow();
+  positionTutorialSpotlight(false);
   if (playback) updatePlaybackDom();
 }
 
@@ -1719,7 +1771,11 @@ function bind() {
         const r = tryBreakthrough(state);
         saveState(state);
         render();
-        setFlash(r.msg);
+        if (r.lateTutorial?.started && r.lateTutorial.msg) {
+          setFlash(r.msg, "unlock");
+        } else {
+          setFlash(r.msg);
+        }
       } else if (act === "forge") {
         const r = forgeHint(state);
         saveState(state);
@@ -2065,7 +2121,9 @@ function bind() {
   app.querySelectorAll("[data-dungeon]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (playback && !playback.done) return;
-      if (tutorialActive(state) && state.tutorial.step === "dungeon_fight") {
+      tutMisclickCount = 0;
+      const wasFight = tutorialActive(state) && state.tutorial.step === "dungeon_fight";
+      if (wasFight) {
         if (!state.tutorial.flags) state.tutorial.flags = {};
         state.tutorial.flags.dungeonStarted = true;
       }
@@ -2075,7 +2133,10 @@ function bind() {
         setFlash(r.msg);
         return;
       }
-      const adv = advanceTutorialIfReady(state);
+      let adv = { advanced: false, unlockMsg: null };
+      if (wasFight) {
+        adv = advanceTutorialIfReady(state);
+      }
       if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
       startPlayback(r);
     });
@@ -2091,7 +2152,20 @@ function escapeHtml(s) {
 }
 
 render();
+ensureFlashHost();
+ensureSpotlight();
+if (flash) setFlash(flash, flashTone);
+const lateBoot = maybeStartLateTutorial(state);
+if (lateBoot.started) {
+  saveState(state);
+  render();
+  setFlash(lateBoot.msg, "unlock");
+}
 maybeNotifyOffline(state.offlineHint);
+
+document.addEventListener("click", onTutorialMisclick, true);
+document.addEventListener("touchend", onTutorialMisclick, true);
+window.addEventListener("resize", () => positionTutorialSpotlight(false));
 
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();

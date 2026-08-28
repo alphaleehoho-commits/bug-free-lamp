@@ -89,6 +89,8 @@ import {
   tutorialHighlights,
   tutorialGlowClass,
   tutorialLiveSnapshot,
+  maybeStartLateTutorial,
+  LATE_TUTORIAL_MIN_REALM,
 } from "./tutorial.js";
 
 function assert(cond, msg) {
@@ -565,6 +567,22 @@ const dungSt = {
 assert(!advanceTutorialIfReady(dungSt).advanced, "dungeon win waits for tutorial flag");
 dungSt.tutorial.flags.dungeonWonTutorial = true;
 assert(advanceTutorialIfReady(dungSt).advanced && dungSt.tutorial.step === "codex", "dungeon win flag advances");
+
+const bondDone = {
+  realm: 0,
+  tutorial: { done: false, step: "bond", flags: { bondVisited: false }, latePending: false, lateCompleted: false },
+};
+bondDone.tutorial.flags.bondVisited = true;
+const bondAdv = advanceTutorialIfReady(bondDone);
+assert(bondAdv.nextId === "complete" && bondDone.tutorial.done && bondDone.tutorial.latePending, "bond skips late until realm 2");
+
+const lateStart = {
+  realm: 2,
+  tutorial: { done: true, step: "complete", flags: {}, latePending: true, lateCompleted: false },
+};
+const late = maybeStartLateTutorial(lateStart);
+assert(late.started && lateStart.tutorial.step === "dispatch", "late tutorial at realm 2");
+assert(LATE_TUTORIAL_MIN_REALM === 2, "late realm gate");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
