@@ -353,6 +353,7 @@ body {
   color: #e8b86d;
   font-weight: 600;
 }
+.flash-unlock {
   border-color: rgba(126, 184, 163, 0.7);
   background: linear-gradient(110deg, rgba(40, 90, 75, 0.5), rgba(50, 70, 110, 0.35));
   color: #d0f0e4;
