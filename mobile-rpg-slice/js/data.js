@@ -3122,6 +3122,20 @@ export const DAILY_QUESTS = [
     need: 1,
     reward: { stones: 35, dust: 4 },
   },
+  {
+    id: "dispatch",
+    name: "外派歸來",
+    desc: "領取 1 次牧場派遣獎勵",
+    need: 1,
+    reward: { stones: 22, materials: { tide_dew: 1 } },
+  },
+  {
+    id: "fuse",
+    name: "融靈一試",
+    desc: "完成 1 次融合",
+    need: 1,
+    reward: { stones: 26, scrap: 1 },
+  },
 ];
 
 /** 成就（一次性） */
@@ -3251,6 +3265,18 @@ export const ACHIEVEMENTS = [
     name: "潮印初鑄",
     desc: "鑄成潮印 1 枚",
     reward: { stones: 100, scrap: 2 },
+  },
+  {
+    id: "dispatch_once",
+    name: "初派有成",
+    desc: "完成 1 次派遣領獎",
+    reward: { stones: 35, feed: 6 },
+  },
+  {
+    id: "dispatch_5",
+    name: "五度外派",
+    desc: "累計派遣領獎 5 次",
+    reward: { stones: 55, dust: 8 },
   },
 ];
 

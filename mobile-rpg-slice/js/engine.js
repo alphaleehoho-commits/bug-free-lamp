@@ -122,9 +122,10 @@ import {
   advanceTutorialIfReady,
   tutorialShopPrice,
   markTutorialFlag,
+  skipTutorial,
 } from "./tutorial.js";
 
-const SAVE_KEY = "void-tide-pets-v22";
+const SAVE_KEY = "void-tide-pets-v23";
 
 function defaultMaster() {
   return {
@@ -141,7 +142,7 @@ function defaultMaster() {
 function emptyDaily(now = Date.now()) {
   return {
     date: todayKey(now),
-    progress: { idle: 0, dungeon: 0, bond: 0, breed: 0, win: 0 },
+    progress: { idle: 0, dungeon: 0, bond: 0, breed: 0, win: 0, dispatch: 0, fuse: 0 },
     /** questId → true */
     claimed: {},
     /** 累積掛機秒數（當日） */
@@ -267,6 +268,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v22") ||
       localStorage.getItem("void-tide-pets-v21") ||
       localStorage.getItem("void-tide-pets-v20") ||
       localStorage.getItem("void-tide-pets-v19") ||
@@ -605,7 +607,9 @@ function ensureDaily(dailyOrState, now = Date.now()) {
     if (!state.daily || state.daily.date !== key) {
       state.daily = emptyDaily(now);
     }
-    if (!state.daily.progress) state.daily.progress = { idle: 0, dungeon: 0, bond: 0, breed: 0, win: 0 };
+    if (!state.daily.progress) {
+      state.daily.progress = { idle: 0, dungeon: 0, bond: 0, breed: 0, win: 0, dispatch: 0, fuse: 0 };
+    }
     if (!state.daily.claimed) state.daily.claimed = {};
     return state.daily;
   }
@@ -614,7 +618,16 @@ function ensureDaily(dailyOrState, now = Date.now()) {
   if (!daily || daily.date !== key) return emptyDaily(now);
   return {
     date: daily.date,
-    progress: { idle: 0, dungeon: 0, bond: 0, breed: 0, win: 0, ...(daily.progress || {}) },
+    progress: {
+      idle: 0,
+      dungeon: 0,
+      bond: 0,
+      breed: 0,
+      win: 0,
+      dispatch: 0,
+      fuse: 0,
+      ...(daily.progress || {}),
+    },
     claimed: { ...(daily.claimed || {}) },
     idleSec: daily.idleSec || 0,
   };
@@ -716,6 +729,8 @@ export function checkAchievements(state) {
     else if (a.id === "streak_5") ok = (state.stats.maxWinStreak || 0) >= 5;
     else if (a.id === "fangmite_once") ok = (state.stats.speciesBreeds?.fangmite || 0) >= 1;
     else if (a.id === "tide_seal_1") ok = (state.tideSeals || 0) >= 1;
+    else if (a.id === "dispatch_once") ok = (state.stats.dispatches || 0) >= 1;
+    else if (a.id === "dispatch_5") ok = (state.stats.dispatches || 0) >= 5;
     if (!ok) continue;
     state.achievements[a.id] = true;
     applyReward(state, a.reward);
@@ -1234,6 +1249,8 @@ export function claimDispatch(state, dispatchId) {
   if (mission?.reward?.dust) bits.push(`${mission.reward.dust}靈塵`);
   if (mission?.reward?.scrap) bits.push(`${mission.reward.scrap}碎片`);
   pushLog(state, `派遣【${mission?.name || d.missionId}】歸來：${bits.join("／")}。`);
+  bumpDaily(state, "dispatch", 1);
+  checkAchievements(state);
   return { ok: true, msg: `領取 ${bits.join("／")}` };
 }
 
@@ -1671,6 +1688,7 @@ export function fusePets(state, baseUid, matUids) {
   );
   if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
   state.stats.fusions += 1;
+  bumpDaily(state, "fuse", 1);
   if (targetStage === SECOND_SKILL_UNLOCK.fusionLevel) {
     const secondId = KIND_SECOND_SKILLS[base.kind];
     const sn = SKILLS[secondId]?.name;
@@ -1776,6 +1794,7 @@ function unitRosterEntry(u) {
     hp: u.hp,
     maxHp: u.maxHp,
     role: u.role || null,
+    actions: u.actions || 1,
   };
 }
 
@@ -2258,6 +2277,9 @@ export function runDungeon(state, dungeonId) {
 
   while (round < maxRounds && !ended) {
     round += 1;
+    const roundLine = `—— 第 ${round} 回合 ——`;
+    say(roundLine);
+    combatEvents.push({ type: "round", text: roundLine, round });
     const order = [...allies, ...foes]
       .filter((u) => u.hp > 0)
       .sort((a, b) => b.spd - a.spd || a.name.localeCompare(b.name));
@@ -2781,6 +2803,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v22");
   localStorage.removeItem("void-tide-pets-v21");
   localStorage.removeItem("void-tide-pets-v20");
   localStorage.removeItem("void-tide-pets-v19");
@@ -2811,6 +2834,8 @@ function pushLog(state, line) {
   state.log.unshift(line);
   if (state.log.length > 60) state.log.length = 60;
 }
+
+export { skipTutorial } from "./tutorial.js";
 
 export {
   STAGES,

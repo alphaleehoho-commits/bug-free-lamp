@@ -350,6 +350,14 @@ export function markTutorialFlag(state, flag) {
   return advanceTutorialIfReady(state);
 }
 
+/** 跳過教學，解鎖全部功能 */
+export function skipTutorial(state) {
+  normalizeTutorial(state);
+  state.tutorial.done = true;
+  state.tutorial.step = "complete";
+  return { ok: true, msg: "已跳過新手教學，所有功能已解鎖。" };
+}
+
 export function tutorialBannerHtml(state) {
   if (!tutorialActive(state)) return "";
   const info = tutorialStepInfo(state);
@@ -358,6 +366,7 @@ export function tutorialBannerHtml(state) {
       <div class="tutorial-head">
         <span class="tutorial-step">${info.index}/${info.total}</span>
         <strong>${info.title}</strong>
+        <button type="button" class="ghost tutorial-skip" data-act="skip-tutorial">跳過教學</button>
       </div>
       <p class="tutorial-hint">${info.hint}</p>
     </div>`;

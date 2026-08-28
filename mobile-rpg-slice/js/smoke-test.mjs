@@ -73,6 +73,7 @@ import {
   advanceTutorialIfReady,
   tutorialActive,
   tutorialShopPrice,
+  skipTutorial,
   TUTORIAL_SHOP_COST,
 } from "./tutorial.js";
 
@@ -282,8 +283,8 @@ const d3b = generateDailyDungeon("tide_3", "2026-08-26");
 assert(d3a.dailyVariantLabel === d3b.dailyVariantLabel, "same day same variant");
 
 /* P8: goals, challenge, formation, new hybrids */
-assert(DAILY_QUESTS.length >= 5, "5 daily quests");
-assert(ACHIEVEMENTS.length >= 16, "expanded achievements");
+assert(DAILY_QUESTS.length >= 7, "7 daily quests");
+assert(ACHIEVEMENTS.length >= 18, "expanded achievements");
 assert(typeof weekKey() === "string" && weekKey().includes("-W"), "weekKey");
 assert(FORMATIONS.vanguard && FORMATION_IDS.length === 3, "formations");
 assert(DUNGEON_CHALLENGE_RULES.length >= 5, "challenge rules");
@@ -475,6 +476,13 @@ ensureShop(tutSt);
 const buyTut = buyShopOffer(tutSt, tutSt.shop.offers[0].offerId);
 assert(buyTut.ok && tutSt.ranch.length === 1, "tutorial shop ranch");
 assert(tutSt.tutorial.step === "deploy", "shop step done");
+
+const skipSt = { realm: 0, qi: 0, pets: [], ranch: [], combatsWon: 0, stones: 200, log: [], tutorial: { done: false, step: "cultivate_qi", flags: {} } };
+normalizeTutorial(skipSt);
+assert(tutorialActive(skipSt), "skip pre active");
+const skipR = skipTutorial(skipSt);
+assert(skipR.ok && !tutorialActive(skipSt), "skip tutorial unlocks");
+assert(skipSt.tutorial.done && skipSt.tutorial.step === "complete", "skip marks complete");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

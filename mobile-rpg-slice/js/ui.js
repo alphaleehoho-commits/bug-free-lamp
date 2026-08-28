@@ -94,6 +94,7 @@ import {
   isPartySubLocked,
   isDungeonSubLocked,
   areTrainSitesLocked,
+  skipTutorial,
 } from "./tutorial.js";
 
 const app = document.querySelector("#app");
@@ -113,6 +114,8 @@ let dungeonIdx = 0;
 let shellReady = false;
 /** @type {string[]} 牧場派遣選中 uid */
 let dispatchPick = [];
+let pwaInstallEvt = null;
+let pwaDismissed = localStorage.getItem("void-tide-pwa-dismiss") === "1";
 
 /** @type {{ mode: 'list' | 'detail' | 'fuse' | 'breed', uid: string | null, fuseBase: string | null, fuseMats: string[], breedParents: string[] }} */
 let petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
@@ -151,7 +154,9 @@ function initCombatHp(result) {
 
 function applyCombatEvent(event, pb) {
   if (!event || !pb) return;
-  if (event.type === "strike" || event.type === "heal") {
+  if (event.type === "round") {
+    pb.currentRound = event.round || pb.currentRound;
+  } else if (event.type === "strike" || event.type === "heal") {
     pb.unitHp.set(event.targetUid, event.targetHp);
     pb.lastHitUid = event.type === "strike" ? event.targetUid : null;
   } else if (event.type === "wave" && event.foes) {
@@ -165,6 +170,7 @@ function applyCombatEvent(event, pb) {
 
 function combatLogClass(event) {
   if (!event) return "";
+  if (event.type === "round") return "log-round";
   if (event.type === "heal") return "log-heal";
   if (event.type === "strike") {
     if (event.elemTag === "克制") return "log-adv";
@@ -174,14 +180,26 @@ function combatLogClass(event) {
   return "";
 }
 
+function combatLogLineHtml(text, event) {
+  const cls = combatLogClass(event);
+  let badge = "";
+  if (event?.type === "strike" && event.elemTag) {
+    const kind = event.elemTag === "克制" ? "adv" : "dis";
+    badge = `<span class="elem-badge elem-${kind}">${escapeHtml(event.elemTag)}</span>`;
+  }
+  return `<li class="${cls}">${badge}${escapeHtml(text)}</li>`;
+}
+
 function combatUnitBar(u, pb) {
   const hp = pb.unitHp.get(u.uid) ?? u.hp;
   const pct = u.maxHp > 0 ? Math.max(0, Math.min(100, Math.round((hp / u.maxHp) * 100))) : 0;
   const dead = hp <= 0;
-  return `<div class="combat-unit ${dead ? "is-down" : ""}" data-combat-uid="${escapeHtml(u.uid)}" data-element="${escapeHtml(
+  const doubleAct = u.role === "boss" || (u.actions || 1) > 1;
+  const actBadge = doubleAct ? `<span class="cu-act" title="可連續行動">雙動</span>` : "";
+  return `<div class="combat-unit ${dead ? "is-down" : ""}${doubleAct ? " is-boss-act" : ""}" data-combat-uid="${escapeHtml(u.uid)}" data-element="${escapeHtml(
     u.elementId || ""
   )}">
-    <span class="cu-name">${escapeHtml(u.name)}</span>
+    <span class="cu-name">${actBadge}${escapeHtml(u.name)}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
 }
@@ -466,6 +484,13 @@ function patchLive() {
   if (wins) wins.textContent = `勝場 ${state.combatsWon}`;
 }
 
+function combatPlaybackMeta(pb) {
+  const total = Math.max(1, pb.events.length);
+  const roundNote = pb.currentRound ? `第 ${pb.currentRound} 回合 · ` : "";
+  if (pb.done) return `${pb.result.msg}（${pb.result.rounds} 回合）`;
+  return `${roundNote}戰鬥進行中… ${pb.index}/${total}`;
+}
+
 function updatePlaybackDom(latestEvent = null) {
   if (!playback) return;
   const total = Math.max(1, playback.events.length);
@@ -474,11 +499,7 @@ function updatePlaybackDom(latestEvent = null) {
   const meta = document.querySelector("[data-live=combat-meta]");
   const list = document.querySelector("[data-live=combat-log]");
   if (bar) bar.style.width = `${pct}%`;
-  if (meta) {
-    meta.textContent = playback.done
-      ? `${playback.result.msg}（${playback.result.rounds} 回合）`
-      : `戰鬥進行中… ${playback.index}/${total}`;
-  }
+  if (meta) meta.textContent = combatPlaybackMeta(playback);
   patchCombatRosterDom(playback);
   if (list && playback.shown.length) {
     const idx = playback.shown.length - 1;
@@ -487,7 +508,14 @@ function updatePlaybackDom(latestEvent = null) {
     if (!list.dataset.lastLine || list.dataset.lastLine !== last) {
       const li = document.createElement("li");
       li.className = `log-line-in ${combatLogClass(event)}`.trim();
-      li.textContent = last;
+      if (event?.type === "strike" && event.elemTag) {
+        const kind = event.elemTag === "克制" ? "adv" : "dis";
+        const badge = document.createElement("span");
+        badge.className = `elem-badge elem-${kind}`;
+        badge.textContent = event.elemTag;
+        li.appendChild(badge);
+      }
+      li.append(document.createTextNode(last));
       list.prepend(li);
       list.dataset.lastLine = last;
       while (list.children.length > 40) list.removeChild(list.lastChild);
@@ -550,6 +578,7 @@ function startPlayback(result) {
     allyUnits: hpState.allies,
     foeUnits: hpState.foes,
     lastHitUid: null,
+    currentRound: 0,
   };
   render();
   advancePlayback();
@@ -577,8 +606,7 @@ function skipPlayback() {
       .map((t, i) => {
         const revIdx = playback.shown.length - 1 - i;
         const ev = playback.events[revIdx];
-        const cls = combatLogClass(ev);
-        return `<li class="${cls}">${escapeHtml(t)}</li>`;
+        return combatLogLineHtml(t, ev);
       })
       .join("");
   }
@@ -633,8 +661,9 @@ function render() {
       <div><span>靈塵</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
     </div>
 
-    <p class="flash${flashTone ? ` flash-${flashTone}` : ""}" data-live="flash" ${flash ? "" : "hidden"}>${escapeHtml(flash)}</p>
+    <p class="flash flash-truncate${flashTone ? ` flash-${flashTone}` : ""}" data-live="flash" ${flash ? "" : "hidden"}>${escapeHtml(flash)}</p>
     ${offlineBanner()}
+    ${installBanner()}
 
     <nav class="tabs" role="tablist">
       ${tabBtn("cultivate", "修行", busy)}
@@ -667,19 +696,48 @@ function render() {
   if (playback) updatePlaybackDom();
 }
 
+function dispatchMatBits(mission) {
+  const hintMap = Object.fromEntries(materialHintsView(state).map((m) => [m.id, m.source]));
+  const mats = mission.reward?.materials || {};
+  return Object.entries(mats)
+    .map(([id, n]) => {
+      const name = MATERIALS[id]?.name || id;
+      return `<span class="mat-need" title="${escapeHtml(hintMap[id] || "")}">${escapeHtml(name)}×${n}</span>`;
+    })
+    .join(" ");
+}
+
+function installBanner() {
+  if (pwaDismissed || !pwaInstallEvt) return "";
+  return `
+    <div class="install-banner" data-live="install-banner">
+      <p>可將暗潮加入主畫面，離線也能掛機修行。</p>
+      <div class="row">
+        <button type="button" class="primary" data-act="pwa-install">安裝</button>
+        <button type="button" class="ghost" data-act="pwa-dismiss">稍後</button>
+      </div>
+    </div>`;
+}
+
 function offlineBanner() {
   const h = state.offlineHint;
   if (!h) return "";
   const min = Math.max(1, Math.round(h.sec / 60));
+  const matLine =
+    h.materials && Object.keys(h.materials).length
+      ? Object.entries(h.materials)
+          .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
+          .join("／")
+      : "";
+  const detail = `靈契 +${Math.floor(h.qi)} · 飼料 +${h.feed.toFixed(1)} · 靈塵 +${h.dust.toFixed(1)}${
+    matLine ? ` · ${matLine}` : ""
+  }${h.siteName ? `（${h.siteName}）` : ""}`;
   return `
     <div class="offline-banner" data-live="offline">
-      <p>離線約 ${min} 分鐘：靈契 +${Math.floor(h.qi)} · 飼料 +${h.feed.toFixed(1)} · 靈塵 +${h.dust.toFixed(1)}${
-        h.materials && Object.keys(h.materials).length
-          ? ` · 材料 ${Object.entries(h.materials)
-              .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
-              .join("／")}`
-          : ""
-      }${h.siteName ? `（${escapeHtml(h.siteName)}）` : ""}</p>
+      <div class="offline-body">
+        <strong>離線約 ${min} 分鐘</strong>
+        <p class="offline-detail">${escapeHtml(detail)}</p>
+      </div>
       <button type="button" data-act="clear-offline">知道了</button>
     </div>`;
 }
@@ -711,13 +769,16 @@ function cultivatePanel(qiPct, next, m) {
   const siteBtns = sites
     .map((s) => {
       const locked = !s.unlocked || areTrainSitesLocked(state);
-      const lockNote = locked && s.unlockHint ? `<span class="lock-hint">${escapeHtml(s.unlockHint)}</span>` : "";
       return `<button type="button" class="${s.selected ? "primary" : ""} train-site-btn${locked ? " is-locked" : ""}" data-set-train="${s.id}" ${
-        locked ? "disabled title=\"" + escapeHtml(s.unlockHint || "未解鎖") + "\"" : ""
-      }>${escapeHtml(s.name)}${locked ? "🔒" : ""}${lockNote}</button>`;
+        locked ? `disabled title="${escapeHtml(s.unlockHint || "未解鎖")}"` : ""
+      }>${escapeHtml(s.name)}${locked ? "🔒" : ""}</button>`;
     })
     .join("");
   const siteCur = sites.find((s) => s.selected);
+  const nextLocked = sites.find((s) => !s.unlocked);
+  const trainLockNote = nextLocked
+    ? `<p class="train-lock-note">🔒 ${escapeHtml(nextLocked.unlockHint || `解鎖【${nextLocked.name}】`)}</p>`
+    : "";
 
   const slotSelects = MASTER_EQUIP_SLOTS.map((slot) => {
     const cur = eq[slot];
@@ -832,6 +893,7 @@ function cultivatePanel(qiPct, next, m) {
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 【${escapeHtml(br.cur?.name || "")}】→【${escapeHtml(br.next.name)}】</p>
     <h3>練功地點 ×${(siteCur?.qiMult || 1).toFixed(2)}</h3>
     <div class="row tactics-row">${siteBtns}</div>
+    ${trainLockNote}
     <p class="meta">${escapeHtml(siteCur?.desc || "")} · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
     <h3>材料 <span class="meta-inline">用途／來源</span></h3>
     <div class="chip-row">${matChipsHtml()}</div>
@@ -935,13 +997,14 @@ function petsListView() {
     .slice(0, 3)
     .map((m) => {
       const can = !m.locked && dispatchPick.length === m.needPets && dv.slotsUsed < dv.slotsMax;
+      const matBits = dispatchMatBits(m);
       return `
       <li class="card-row">
         <div>
           <strong>${escapeHtml(m.name)}</strong>
           <span class="muted">${escapeHtml(m.desc)} · ${escapeHtml(rewardBitsHtml(m.reward))}${
-            m.locked ? ` · 需${escapeHtml(m.lockLabel)}` : ""
-          }</span>
+            matBits ? ` · ${matBits}` : ""
+          }${m.locked ? ` · 需${escapeHtml(m.lockLabel)}` : ""}</span>
         </div>
         <button type="button" class="primary" data-start-dispatch="${m.id}" ${can ? "" : "disabled"}>${
           m.locked ? "未解鎖" : "派出"
@@ -1250,8 +1313,7 @@ function dungeonPanel() {
       .map((t, i) => {
         const revIdx = playback.shown.length - 1 - i;
         const ev = playback.events[revIdx];
-        const cls = combatLogClass(ev);
-        return `<li class="${cls}">${escapeHtml(t)}</li>`;
+        return combatLogLineHtml(t, ev);
       })
       .join("");
     const bd = playback.result?.rewardBreakdown;
@@ -1327,11 +1389,7 @@ function dungeonPanel() {
     return `
       <h2>戰報</h2>
       ${renderCombatRoster(playback)}
-      <p class="lead" data-live="combat-meta">${
-        playback.done
-          ? `${escapeHtml(playback.result.msg)}（${playback.result.rounds} 回合）`
-          : `戰鬥進行中… ${playback.index}/${playback.events.length}`
-      }</p>
+      <p class="lead" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
       <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
       ${skipSummary}
       <div class="combat-scroll" data-live="combat-scroll">
@@ -1521,6 +1579,25 @@ function bind() {
       } else if (act === "clear-offline") {
         clearOfflineHint(state);
         saveState(state);
+        render();
+      } else if (act === "skip-tutorial") {
+        const r = skipTutorial(state);
+        saveState(state);
+        render();
+        setFlash(r.msg, "unlock");
+      } else if (act === "pwa-install") {
+        if (!pwaInstallEvt) {
+          setFlash("此裝置暫不支援安裝。");
+          return;
+        }
+        pwaInstallEvt.prompt();
+        pwaInstallEvt.userChoice.finally(() => {
+          pwaInstallEvt = null;
+          render();
+        });
+      } else if (act === "pwa-dismiss") {
+        pwaDismissed = true;
+        localStorage.setItem("void-tide-pwa-dismiss", "1");
         render();
       } else if (act === "notify-perm") {
         if (typeof Notification === "undefined") {
@@ -1852,6 +1929,13 @@ function escapeHtml(s) {
 
 render();
 maybeNotifyOffline(state.offlineHint);
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  pwaInstallEvt = e;
+  if (!pwaDismissed) render();
+});
+
 setInterval(() => {
   patchLive();
   saveState(state);
