@@ -67,7 +67,7 @@ import {
   trainSiteUnlockHint,
   dungeonNameForClear,
 } from "./data.js";
-import { affordMaterials, runDungeon } from "./engine.js";
+import { affordMaterials, runDungeon, buyShopOffer, tryBondPending, ensureShop } from "./engine.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -391,6 +391,52 @@ const strikeEv = combatRes.combatEvents.find((e) => e.type === "strike");
 if (strikeEv) {
   assert(strikeEv.targetUid && strikeEv.elemTag !== undefined, "strike fields");
 }
+
+/* P12b: shop direct ranch + newbie bond pity */
+const shopSt = {
+  realm: 0,
+  qi: 0,
+  stones: 200,
+  scrap: 0,
+  feed: 0,
+  dust: 0,
+  pets: [],
+  ranch: [],
+  pending: [],
+  clearedDungeons: {},
+  dungeonReadyAt: {},
+  master: { name: "潮行者", atk: 6, hp: 90, spd: 7, equip: {} },
+  tactics: "balanced",
+  formation: "balanced",
+  stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+  bestiary: {},
+  tideSeals: 0,
+  log: [],
+  combatsWon: 0,
+  winStreak: 0,
+};
+ensureShop(shopSt);
+const offerId = shopSt.shop.offers[0]?.offerId;
+assert(offerId, "shop offer");
+const buy = buyShopOffer(shopSt, offerId);
+assert(buy.ok && shopSt.ranch.length === 1 && shopSt.pending.length === 0, "shop to ranch");
+shopSt.pending.push({
+  encounterId: "test-enc",
+  name: "測試靈",
+  kind: "獸",
+  elementName: "潮",
+  elementId: "tide",
+  bondRate: 0,
+  cost: 20,
+  atk: 5,
+  hp: 30,
+  spd: 5,
+  speciesId: "reefox",
+});
+const stonesBefore = shopSt.stones;
+const pity = tryBondPending(shopSt, "test-enc");
+assert(pity.ok && !pity.success && shopSt.pending.length === 1, "pity keeps pending");
+assert(shopSt.stones === stonesBefore, "pity refunds bond cost");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

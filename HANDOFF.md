@@ -4,7 +4,7 @@
 
 - Path: `mobile-rpg-slice/`
 - Stack: vanilla HTML/CSS/JS PWA (portrait mobile)
-- Save key / SW cache: `void-tide-pets-v20`
+- Save key / SW cache: `void-tide-pets-v21`
 - Repo: private GitHub `bug-free-lamp` (branch `main` + feature branches)
 
 **Breed (dino-style):** hybrid species from cross-kind mates + rarity tiers (普通→傳說); fusion stays same-species stages. Bestiary grows with hybrids (incl. 甲蟎 shellmite). Species↔kind 1:1; generations 0–3; dual personality on breed.
@@ -38,8 +38,10 @@ Idle → dungeon → bond → ranch → fuse/breed → element → P1 idle/gear/
 
 **P12:** combat playback HP bars (ally/foe) · element-colored bars · log tint for 克制/被克/heal/KO · hit shake animation · skip summary banner.
 
+**P12b:** shop purchase → direct ranch (no double bond gamble) · newbie bond pity (0 pets: failed bond refunds cost, keeps pending) · Pages root redirect + `.nojekyll` + workflow `_site` build.
+
 **Balance:** Master from gear; pets from innate (fuse/breed). Materials from train sites + dispatch. UI polish deferred further. Skip: pet ornaments, stamina/energy.
 
 ## Prompt for the next agent
 
-Continue 暗潮 PWA in `mobile-rpg-slice/`: idle, dungeon with streamed combat, element matchups, pending bonds, ranch dispatch, train sites + materials, upgrade/fuse/breed (dual personality). Save `void-tide-pets-v20`. Pages via GitHub Actions (Settings → Pages → GitHub Actions). Next: further UI polish or new content.
+Continue 暗潮 PWA in `mobile-rpg-slice/`: idle, dungeon with streamed combat, element matchups, pending bonds, ranch dispatch, train sites + materials, upgrade/fuse/breed (dual personality). Save `void-tide-pets-v21`. Pages root should open PWA (index.html redirect + Actions `_site` artifact).

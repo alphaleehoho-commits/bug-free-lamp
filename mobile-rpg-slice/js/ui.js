@@ -698,7 +698,7 @@ function cultivatePanel(qiPct, next, m) {
   const invMore = inv.length > 4 ? `<p class="meta">另有 ${inv.length - 4} 件未顯示</p>` : "";
 
   const shopOffers = shopView(state);
-  const pendingFull = (state.pending || []).length >= PENDING_BOND_MAX;
+  const ranchFull = (state.ranch?.length || 0) + state.pets.length >= ranchCap(state);
   const shopRows =
     shopOffers
       .map((o) => {
@@ -710,8 +710,8 @@ function cultivatePanel(qiPct, next, m) {
             <span class="muted">${escapeHtml(o.kind)}·${escapeHtml(o.elementName)} · ${sold ? "已售" : `${o.cost} 靈石`}</span>
           </div>
           <button type="button" class="primary" data-shop-buy="${escapeHtml(o.offerId)}" ${
-            sold || pendingFull ? "disabled" : ""
-          }>${sold ? "已售" : pendingFull ? "待契滿" : "購入"}</button>
+            sold || ranchFull ? "disabled" : ""
+          }>${sold ? "已售" : ranchFull ? "牧場滿" : "購入"}</button>
         </li>`;
       })
       .join("") || `<li class="empty">今日商肆無貨。</li>`;

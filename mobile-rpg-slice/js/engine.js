@@ -118,7 +118,7 @@ import {
   trainSiteUnlockHint,
 } from "./data.js";
 
-const SAVE_KEY = "void-tide-pets-v20";
+const SAVE_KEY = "void-tide-pets-v21";
 
 function defaultMaster() {
   return {
@@ -167,7 +167,7 @@ function defaultState() {
       "圖鑑、每日任務與成就已開啟——見「圖鑑」頁。",
       "繁殖目標：雜交出潮獸／嵐蛾、升代與稀有——圖鑑或繁殖頁可領獎。",
       "秘境改為波次戰：雜兵→精英→BOSS；滿足關卡條件有額外獎。",
-      "契壇商肆可購待契約靈寵；秘境可選戰術與陣型；深層考驗血脈。",
+      "契壇商肆可購靈寵直入牧場；秘境遇見野生靈寵需再契約。",
       "每日挑戰規則輪換；週課與成就提供長期目標。",
       "牧場改為派遣取資；人物可選練功地點產材料。",
       "通關秘境 BOSS 解鎖新練功地圖；材料用於升級／繁殖。",
@@ -270,6 +270,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v20") ||
       localStorage.getItem("void-tide-pets-v19") ||
       localStorage.getItem("void-tide-pets-v18") ||
       localStorage.getItem("void-tide-pets-v17") ||
@@ -1041,13 +1042,17 @@ export function shopView(state) {
 
 export function buyShopOffer(state, offerId) {
   ensureShop(state);
-  if ((state.pending || []).length >= PENDING_BOND_MAX) {
-    return { ok: false, msg: `待契約已滿（${PENDING_BOND_MAX}），無法購入。` };
-  }
   const offer = state.shop.offers.find((o) => o.offerId === offerId);
   if (!offer) return { ok: false, msg: "商品不存在。" };
   if (offer.bought) return { ok: false, msg: "已售出。" };
   if (state.stones < offer.cost) return { ok: false, msg: `靈石不足（需 ${offer.cost}）。` };
+
+  if (!state.ranch) state.ranch = [];
+  const owned = state.pets.length + state.ranch.length;
+  const cap = ranchCap(state);
+  if (owned >= cap) {
+    return { ok: false, msg: `牧場已滿（${cap}）。可先放歸或升階擴容。` };
+  }
 
   const template = {
     id: `shop-${offer.species}-${offer.element}`,
@@ -1056,24 +1061,24 @@ export function buyShopOffer(state, offerId) {
     personality: offer.personality,
     cost: Math.max(20, Math.floor(offer.cost * 0.35)),
   };
-  const pet = buildPetStats(template);
-  const enc = {
-    ...pet,
-    encounterId: `shop-enc-${offer.offerId}`,
-    bondRate: 0.72,
-    metDungeon: "shop",
-    status: "pending",
+  const built = buildPetStats(template);
+  const pet = normalizePet({
+    ...built,
+    uid: `shop-${offer.offerId}`,
     fromShop: true,
-  };
+  });
   state.stones -= offer.cost;
   offer.bought = true;
-  if (!state.pending) state.pending = [];
-  state.pending.push(enc);
+  state.ranch.push(pet);
+  if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
+  state.stats.bonds += 1;
+  registerBestiary(state, pet);
   pushLog(
     state,
-    `商肆購入【${enc.name}】（${enc.kind}·${enc.elementName}）入待契約，耗 ${offer.cost} 靈石。`
+    `商肆購入【${pet.name}】（${pet.kind}·${pet.elementName}）直入牧場，耗 ${offer.cost} 靈石。`
   );
-  return { ok: true, msg: `購入 ${enc.name}（待契約）` };
+  checkAchievements(state);
+  return { ok: true, msg: `購入 ${pet.name}（已入牧場，可派出戰）` };
 }
 
 export function setTactics(state, tacticId) {
@@ -1330,6 +1335,13 @@ export function tryBondPending(state, encounterId, useFeed = false) {
     pushLog(state, `契約成功${feedNote}：${petLabel(pet)} 進入牧場｜技能【${pet.skillName}】。`);
     checkAchievements(state);
     return { ok: true, success: true, msg: `契約成功！${pet.name} 已入牧場` };
+  }
+
+  const ownedBeforeFail = state.pets.length + (state.ranch?.length || 0);
+  if (ownedBeforeFail === 0) {
+    state.stones += cand.cost;
+    pushLog(state, `契約未穩——${cand.name} 仍在潮霧邊緣（尚無靈寵：本次不扣契約費，可再試）。`);
+    return { ok: true, success: false, msg: `${cand.name} 未結契，可再試（新手保護）` };
   }
 
   state.pending.splice(i, 1);
@@ -2748,6 +2760,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v20");
   localStorage.removeItem("void-tide-pets-v19");
   localStorage.removeItem("void-tide-pets-v18");
   localStorage.removeItem("void-tide-pets-v17");

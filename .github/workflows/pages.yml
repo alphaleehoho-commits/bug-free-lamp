@@ -22,8 +22,13 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Build site artifact
+        run: |
+          mkdir -p _site
+          cp -r mobile-rpg-slice/* _site/
+          touch _site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: mobile-rpg-slice
+          path: _site
       - uses: actions/deploy-pages@v4
         id: deployment

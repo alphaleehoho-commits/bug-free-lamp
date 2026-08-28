@@ -4,7 +4,7 @@
 
 ## 玩
 
-GitHub Pages：`https://alphaleehoho-commits.github.io/bug-free-lamp/`
+GitHub Pages：`https://alphaleehoho-commits.github.io/bug-free-lamp/`（根路徑自動進入遊戲）
 
 本地：`cd mobile-rpg-slice && python3 -m http.server 8765`
 
