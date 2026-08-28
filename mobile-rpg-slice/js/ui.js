@@ -96,6 +96,7 @@ import {
   areTrainSitesLocked,
   skipTutorial,
   tutorialQiReady,
+  tutorialGlowClass,
 } from "./tutorial.js";
 
 const app = document.querySelector("#app");
@@ -117,6 +118,10 @@ let shellReady = false;
 let dispatchPick = [];
 let pwaInstallEvt = null;
 let pwaDismissed = localStorage.getItem("void-tide-pwa-dismiss") === "1";
+
+function tutGlow(spec) {
+  return tutorialGlowClass(state, spec, { tab, panelSub });
+}
 
 /** @type {{ mode: 'list' | 'detail' | 'fuse' | 'breed', uid: string | null, fuseBase: string | null, fuseMats: string[], breedParents: string[] }} */
 let petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
@@ -407,6 +412,22 @@ function switchTab(id) {
   render();
 }
 
+function markTutorialSubVisit(group, id) {
+  if (group === "party" && id === "bond") {
+    const adv = markTutorialFlag(state, "bondVisited");
+    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+  } else if (group === "party" && id === "dispatch") {
+    const adv = markTutorialFlag(state, "dispatchVisited");
+    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+  } else if (group === "cultivate" && id === "gear") {
+    const adv = markTutorialFlag(state, "gearVisited");
+    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+  } else if (group === "dungeon" && id === "setup") {
+    const adv = markTutorialFlag(state, "tacticsVisited");
+    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+  }
+}
+
 function panelSubNav(group, items) {
   const lockFn =
     group === "cultivate"
@@ -419,7 +440,8 @@ function panelSubNav(group, items) {
   return `<nav class="panel-subnav" aria-label="子分頁">${items
     .map(({ id, label }) => {
       const locked = lockFn(state, id);
-      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${locked ? " is-locked" : ""}" data-panel-sub="${group}:${id}" ${locked ? "disabled" : ""}>${label}${locked ? "🔒" : ""}</button>`;
+      const glow = tutGlow({ type: "panel-sub", group, id });
+      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${locked ? " is-locked" : ""}${glow}" data-panel-sub="${group}:${id}" ${locked ? "disabled" : ""}>${label}${locked ? "🔒" : ""}</button>`;
     })
     .join("")}</nav>`;
 }
@@ -623,23 +645,6 @@ function render() {
   tab = nav.tab;
   panelSub = nav.panelSub;
 
-  if (tutorialActive(state)) {
-    const s = state.tutorial.step;
-    if (s === "codex" && tab === "codex") markTutorialFlag(state, "codexVisited");
-    if (s === "bond" && tab === "party" && panelSub.party === "bond") markTutorialFlag(state, "bondVisited");
-    if (s === "dispatch" && tab === "party" && panelSub.party === "dispatch") {
-      markTutorialFlag(state, "dispatchVisited");
-    }
-    if (s === "gear" && tab === "cultivate" && panelSub.cultivate === "gear") {
-      markTutorialFlag(state, "gearVisited");
-    }
-    if (s === "tactics" && tab === "dungeon" && panelSub.dungeon === "setup") {
-      markTutorialFlag(state, "tacticsVisited");
-    }
-    const adv2 = advanceTutorialIfReady(state);
-    if (adv2.advanced && adv2.unlockMsg) setFlash(adv2.unlockMsg, "unlock");
-  }
-
   const stage = realmInfo(state);
   const next = nextRealm(state);
   const qiPct = next ? Math.min(100, (state.qi / next.need) * 100) : 100;
@@ -745,7 +750,8 @@ function offlineBanner() {
 
 function tabBtn(id, label, busy) {
   const locked = isTabLocked(state, id);
-  return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${locked ? " locked" : ""}" data-tab="${id}" ${busy && id !== "dungeon" ? "disabled" : ""} ${locked ? "disabled" : ""}>${label}${locked ? "🔒" : ""}</button>`;
+  const glow = tutGlow({ type: "tab", id });
+  return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${locked ? " locked" : ""}${glow}" data-tab="${id}" ${busy && id !== "dungeon" ? "disabled" : ""} ${locked ? "disabled" : ""}>${label}${locked ? "🔒" : ""}</button>`;
 }
 
 function cultivatePanel(qiPct, next, m) {
@@ -824,7 +830,7 @@ function cultivatePanel(qiPct, next, m) {
               sold ? "已售" : o.tutorialDeal ? `教學 ${o.cost} 靈石` : `${o.cost} 靈石`
             }</span>
           </div>
-          <button type="button" class="primary" data-shop-buy="${escapeHtml(o.offerId)}" ${
+          <button type="button" class="primary${tutGlow({ type: "shop-buy" })}" data-shop-buy="${escapeHtml(o.offerId)}" ${
             sold || ranchFull ? "disabled" : ""
           }>${sold ? "已售" : ranchFull ? "牧場滿" : "購入"}</button>
         </li>`;
@@ -877,7 +883,7 @@ function cultivatePanel(qiPct, next, m) {
       <p class="lead">→【${escapeHtml(br.next.name)}】潮印 ${seal.seals}/${seal.max} · 全隊 ×${seal.mult.toFixed(2)}</p>
       <ul class="cond-list">${gateRowsCompact}</ul>
       <div class="row">
-        <button type="button" class="primary" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
+        <button type="button" class="primary${tutGlow({ type: "act", act: "break" })}" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
         <button type="button" data-act="tide-seal" ${seal.canSeal ? "" : "disabled"}>鑄潮印${seal.canSeal ? `+${seal.nextGain}` : ""}</button>
       </div>
       <h3>商肆 · 今日</h3>
@@ -894,7 +900,7 @@ function cultivatePanel(qiPct, next, m) {
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 【${escapeHtml(br.cur?.name || "")}】→【${escapeHtml(br.next.name)}】</p>
     ${
       tutorialQiReady(state)
-        ? `<div class="row tut-cta-row"><button type="button" class="primary" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
+        ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
         : ""
     }
     <h3>練功地點 ×${(siteCur?.qiMult || 1).toFixed(2)}</h3>
@@ -954,7 +960,7 @@ function petsListView() {
         const selected = pick.has(p.uid);
         const extra = onDisp
           ? `<span class="muted">派遣中</span>`
-          : `<button type="button" class="primary" data-deploy="${escapeHtml(p.uid)}">出戰</button>
+          : `<button type="button" class="primary${tutGlow({ type: "deploy" })}" data-deploy="${escapeHtml(p.uid)}">出戰</button>
              <button type="button" class="${selected ? "primary" : ""}" data-dispatch-toggle="${escapeHtml(
                p.uid
              )}">${selected ? "已選派" : "選派"}</button>`;
@@ -1562,7 +1568,7 @@ function dungeonPanel() {
             }${onCd ? ` · CD ${cdSec}s` : ""}</span>
             ${passiveLine ? `<span class="muted">${escapeHtml(passiveLine)}</span>` : ""}
           </div>
-          <button type="button" class="primary" data-dungeon="${dCur.id}" ${locked || onCd ? "disabled" : ""}>進攻</button>
+          <button type="button" class="primary${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}" ${locked || onCd ? "disabled" : ""}>進攻</button>
         </div>
         <ul class="cond-list">${challengeRow}${condList}${trialRow}</ul>
       </li>`
@@ -1618,6 +1624,7 @@ function bind() {
       if (group === "party" && isPartySubLocked(state, id)) return;
       if (group === "dungeon" && isDungeonSubLocked(state, id)) return;
       panelSub = { ...panelSub, [group]: id };
+      markTutorialSubVisit(group, id);
       render();
     });
   });

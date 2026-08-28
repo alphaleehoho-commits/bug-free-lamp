@@ -12,7 +12,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "breakthrough",
     title: "突破初階",
-    hint: "打開「進階」分頁，突破至【通靈初期】（教學豁免秘境勝場條件）。",
+    hint: "打開「進階」分頁，突破至【通靈初期】。",
   },
   {
     id: "shop_pet",
@@ -253,13 +253,6 @@ export function areTrainSitesLocked(state) {
   return !!tutorialLocks(state).trainSites;
 }
 
-/** 教學中首次突破豁免秘境勝場 */
-export function tutorialWaivesBreakthroughCheck(state, targetRealmId, check) {
-  if (!tutorialActive(state)) return false;
-  if (state.tutorial.step !== "breakthrough" && state.realm < 1) return false;
-  return targetRealmId === 1 && check.type === "combats";
-}
-
 export const TUTORIAL_SHOP_COST = 35;
 
 export function tutorialShopPrice(state, offerCost) {
@@ -328,36 +321,113 @@ export function advanceTutorialIfReady(state) {
   return { advanced: true, unlockMsg, nextId };
 }
 
-/** 引導 UI 預設分頁（僅在教學中強制） */
+/** 引導 UI 預設分頁（僅強制需操作的步驟，參觀步驟由玩家自行點選） */
 export function syncTutorialNavigation(state, nav) {
   if (!tutorialActive(state)) return nav;
   const step = state.tutorial.step;
   const next = { ...nav };
 
-  if (["cultivate_qi", "breakthrough", "shop_pet", "gear"].includes(step)) {
+  if (step === "cultivate_qi") {
     next.tab = "cultivate";
-    if (step === "breakthrough" || step === "shop_pet") {
-      next.panelSub = { ...next.panelSub, cultivate: "advance" };
-    } else if (step === "gear") {
-      next.panelSub = { ...next.panelSub, cultivate: "gear" };
-    } else if (step === "cultivate_qi" && tutorialQiReady(state)) {
-      next.panelSub = { ...next.panelSub, cultivate: "advance" };
-    } else {
-      next.panelSub = { ...next.panelSub, cultivate: "train" };
-    }
-  } else if (step === "deploy" || step === "bond" || step === "dispatch") {
+    next.panelSub = {
+      ...next.panelSub,
+      cultivate: tutorialQiReady(state) ? "advance" : "train",
+    };
+  } else if (step === "breakthrough" || step === "shop_pet") {
+    next.tab = "cultivate";
+    next.panelSub = { ...next.panelSub, cultivate: "advance" };
+  } else if (step === "deploy") {
     next.tab = "party";
-    if (step === "deploy") next.panelSub = { ...next.panelSub, party: "ranch" };
-    if (step === "bond") next.panelSub = { ...next.panelSub, party: "bond" };
-    if (step === "dispatch") next.panelSub = { ...next.panelSub, party: "dispatch" };
-  } else if (step === "dungeon_fight" || step === "dungeon_win" || step === "tactics") {
+    next.panelSub = { ...next.panelSub, party: "ranch" };
+  } else if (step === "dungeon_fight" || step === "dungeon_win") {
     next.tab = "dungeon";
-    next.panelSub = { ...next.panelSub, dungeon: step === "tactics" ? "setup" : "field" };
-  } else if (step === "codex") {
-    next.tab = "codex";
+    next.panelSub = { ...next.panelSub, dungeon: "field" };
   }
 
   return next;
+}
+
+/** 教學中下一個應點擊的 UI 元素（依目前分頁決定優先目標） */
+export function tutorialHighlights(state, nav = {}) {
+  if (!tutorialActive(state)) return [];
+  const step = state.tutorial.step;
+  const tab = nav.tab || "";
+  const ps = nav.panelSub || {};
+
+  switch (step) {
+    case "cultivate_qi":
+      if (tutorialQiReady(state)) {
+        if (tab === "cultivate" && ps.cultivate === "advance") return [];
+        return [{ type: "panel-sub", group: "cultivate", id: "advance" }];
+      }
+      return [];
+    case "breakthrough":
+      if (tab === "cultivate" && ps.cultivate === "advance") {
+        return [{ type: "act", act: "break" }];
+      }
+      return [{ type: "panel-sub", group: "cultivate", id: "advance" }];
+    case "shop_pet":
+      if (tab === "cultivate" && ps.cultivate === "advance") {
+        return [{ type: "shop-buy" }];
+      }
+      return [{ type: "panel-sub", group: "cultivate", id: "advance" }];
+    case "deploy":
+      if (tab === "party" && ps.party === "ranch") return [{ type: "deploy" }];
+      if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
+      return [{ type: "tab", id: "party" }];
+    case "dungeon_fight":
+    case "dungeon_win":
+      if (tab === "dungeon" && ps.dungeon === "field") {
+        return [{ type: "dungeon", dungeonId: "tide_1" }];
+      }
+      if (tab === "dungeon") return [{ type: "panel-sub", group: "dungeon", id: "field" }];
+      return [{ type: "tab", id: "dungeon" }];
+    case "codex":
+      return [{ type: "tab", id: "codex" }];
+    case "bond":
+      if (tab === "party" && ps.party === "bond") return [];
+      if (tab === "party") return [{ type: "panel-sub", group: "party", id: "bond" }];
+      return [{ type: "tab", id: "party" }];
+    case "dispatch":
+      if (tab === "party" && ps.party === "dispatch") return [];
+      if (tab === "party") return [{ type: "panel-sub", group: "party", id: "dispatch" }];
+      return [{ type: "tab", id: "party" }];
+    case "gear":
+      if (tab === "cultivate" && ps.cultivate === "gear") return [];
+      if (tab === "cultivate") return [{ type: "panel-sub", group: "cultivate", id: "gear" }];
+      return [{ type: "tab", id: "cultivate" }];
+    case "tactics":
+      if (tab === "dungeon" && ps.dungeon === "setup") return [];
+      if (tab === "dungeon") return [{ type: "panel-sub", group: "dungeon", id: "setup" }];
+      return [{ type: "tab", id: "dungeon" }];
+    default:
+      return [];
+  }
+}
+
+function highlightMatches(h, spec) {
+  if (h.type !== spec.type) return false;
+  switch (h.type) {
+    case "tab":
+      return h.id === spec.id;
+    case "panel-sub":
+      return h.group === spec.group && h.id === spec.id;
+    case "act":
+      return h.act === spec.act;
+    case "shop-buy":
+    case "deploy":
+      return true;
+    case "dungeon":
+      return !spec.dungeonId || !h.dungeonId || h.dungeonId === spec.dungeonId;
+    default:
+      return false;
+  }
+}
+
+/** 教學引導高亮 class */
+export function tutorialGlowClass(state, spec, nav = {}) {
+  if (!tutorialActive(state)) return "";
+  return tutorialHighlights(state, nav).some((h) => highlightMatches(h, spec)) ? " tut-glow" : "";
 }
 
 export function markTutorialFlag(state, flag) {

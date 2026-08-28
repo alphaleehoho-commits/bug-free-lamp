@@ -40,7 +40,7 @@ export function nextStageAt(realmId) {
 export const BREAKTHROUGH_GATES = {
   1: {
     costs: { stones: 25 },
-    checks: [{ type: "combats", need: 1, label: "秘境勝場 ≥ 1" }],
+    checks: [],
   },
   2: {
     costs: { stones: 45, scrap: 1 },
@@ -253,13 +253,7 @@ export function breakthroughView(state) {
   }
 
   for (const ch of gate.checks || []) {
-    const waived =
-      state.tutorial &&
-      !state.tutorial.done &&
-      next.id === 1 &&
-      ch.type === "combats" &&
-      (state.tutorial.step === "breakthrough" || (state.realm | 0) < 1);
-    const ev = waived ? { ok: true, progress: "教學豁免" } : evalBreakthroughCheck(state, ch);
+    const ev = evalBreakthroughCheck(state, ch);
     items.push({
       id: `chk_${ch.type}_${ch.dungeonId || ch.need || ch.gen || ""}`,
       label: ch.label,

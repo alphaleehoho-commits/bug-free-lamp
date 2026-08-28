@@ -85,6 +85,9 @@ import {
   tutorialQiReady,
   isCultivateSubLocked,
   TUTORIAL_SHOP_COST,
+  syncTutorialNavigation,
+  tutorialHighlights,
+  tutorialGlowClass,
 } from "./tutorial.js";
 
 function assert(cond, msg) {
@@ -537,6 +540,22 @@ const qiSt = { realm: 0, qi: 50, pets: [], ranch: [], tutorial: { done: false, s
 normalizeTutorial(qiSt);
 assert(tutorialQiReady(qiSt), "tutorial qi ready");
 assert(!isCultivateSubLocked(qiSt, "advance"), "advance unlocked when qi ready");
+
+assert((BREAKTHROUGH_GATES[1].checks || []).length === 0, "realm1 no combat gate");
+const br1 = breakthroughView({ realm: 0, qi: 50, stones: 30, combatsWon: 0, pets: [], ranch: [] });
+assert(br1.items.every((i) => i.ok), "realm1 breakthrough ready without combat win");
+
+const navIn = { tab: "cultivate", panelSub: { cultivate: "train", party: "fight", dungeon: "field" } };
+const codexSt = { tutorial: { done: false, step: "codex", flags: {} } };
+const navOut = syncTutorialNavigation(codexSt, navIn);
+assert(navOut.tab === "cultivate" && navOut.panelSub.cultivate === "train", "codex step no auto tab jump");
+const codexHi = tutorialHighlights(codexSt, navIn);
+assert(codexHi.length === 1 && codexHi[0].type === "tab" && codexHi[0].id === "codex", "codex highlight tab");
+assert(tutorialGlowClass(codexSt, { type: "tab", id: "codex" }, navIn) === " tut-glow", "codex glow");
+
+const bondSt = { tutorial: { done: false, step: "bond", flags: {} } };
+const bondNav = syncTutorialNavigation(bondSt, navIn);
+assert(bondNav.tab === "cultivate", "bond step no auto party nav");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
