@@ -25,6 +25,10 @@ import {
   rollBreedGenes,
   BREED_STONE_COST,
   BREED_COOLDOWN_MS,
+  BOND_FAIL_RATE_BONUS,
+  BOND_FAIL_RATE_CAP,
+  FORGE_SCRAP_COST,
+  BOND_COST_MAX,
   IDLE_BY_PERSONALITY,
   IDLE_BY_ELEMENT,
   BOND_FEED_COST,
@@ -128,7 +132,7 @@ import {
   skipTutorial,
 } from "./tutorial.js";
 
-const SAVE_KEY = "void-tide-pets-v24";
+const SAVE_KEY = "void-tide-pets-v25";
 
 function defaultMaster() {
   return {
@@ -157,10 +161,10 @@ function defaultState() {
   return {
     realm: 0,
     qi: 0,
-    stones: 160,
+    stones: 180,
     scrap: 0,
-    feed: 0,
-    dust: 0,
+    feed: 6,
+    dust: 8,
     materials: emptyMaterials(),
     trainSite: "shore",
     inventory: [],
@@ -271,6 +275,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v24") ||
       localStorage.getItem("void-tide-pets-v23") ||
       localStorage.getItem("void-tide-pets-v22") ||
       localStorage.getItem("void-tide-pets-v21") ||
@@ -840,7 +845,6 @@ export function progressBreedGoalsFromChild(state, child, genes) {
   ensureBreedGoalsState(state);
   bumpBreedGoalProgress(state, "daily_breed", 1);
   if (genes?.hybrid) {
-    bumpBreedGoalProgress(state, "daily_hybrid", 1);
     bumpBreedGoalProgress(state, "weekly_hybrid", 1);
     for (const g of BREED_GOALS) {
       if (g.type === "hybrid_species" && g.species === child.speciesId) {
@@ -1356,7 +1360,8 @@ export function tryBondPending(state, encounterId, useFeed = false) {
 
   const roll = Math.random();
   const baseRate = cand.bondRate != null ? cand.bondRate : 0.5;
-  const chance = Math.min(0.95, baseRate + rateBonus);
+  const failBonus = Math.min(BOND_FAIL_RATE_CAP, (cand.bondFails || 0) * BOND_FAIL_RATE_BONUS);
+  const chance = Math.min(0.95, baseRate + rateBonus + failBonus);
   if (roll <= chance) {
     state.pending.splice(i, 1);
     const pet = normalizePet({
@@ -1376,10 +1381,19 @@ export function tryBondPending(state, encounterId, useFeed = false) {
   }
 
   const ownedBeforeFail = state.pets.length + (state.ranch?.length || 0);
-  if (ownedBeforeFail === 0) {
+  if (ownedBeforeFail <= 1) {
     state.stones += cand.cost;
-    pushLog(state, `契約未穩——${cand.name} 仍在潮霧邊緣（尚無靈寵：本次不扣契約費，可再試）。`);
-    return { ok: true, success: false, msg: `${cand.name} 未結契，可再試（新手保護）` };
+    cand.bondFails = (cand.bondFails || 0) + 1;
+    const bonusPct = Math.round(Math.min(BOND_FAIL_RATE_CAP, cand.bondFails * BOND_FAIL_RATE_BONUS) * 100);
+    pushLog(
+      state,
+      `契約未穩——${cand.name} 仍在潮霧邊緣（靈寵不足：退還契約費${bonusPct ? `，下次成功率 +${bonusPct}%` : ""}）。`
+    );
+    return {
+      ok: true,
+      success: false,
+      msg: `${cand.name} 未結契，可再試${bonusPct ? `（+${bonusPct}%）` : ""}`,
+    };
   }
 
   state.pending.splice(i, 1);
@@ -2326,6 +2340,10 @@ export function runDungeon(state, dungeonId) {
       state.winStreak = (state.winStreak || 0) + 1;
       if (!state.stats) state.stats = {};
       state.stats.maxWinStreak = Math.max(state.stats.maxWinStreak || 0, state.winStreak);
+      const streakBonus = state.winStreak >= 2 ? Math.min(12, (state.winStreak - 1) * 3) : 0;
+      if (streakBonus > 0) {
+        state.stones += streakBonus;
+      }
       bumpDaily(state, "win", 1);
       progressDungeonWinGoals(state);
       dailyStoneBonus = 0;
@@ -2361,8 +2379,9 @@ export function runDungeon(state, dungeonId) {
           `攻克【${d.name}】，獲靈石 ${d.reward.stones}、碎片 ${d.reward.scrap}。首通額外 +${bonusStones} 石／+${bonusScrap} 碎片！`
         );
       } else {
+        const streakNote = streakBonus > 0 ? ` · 連勝 +${streakBonus} 石` : "";
         say(
-          `攻克【${d.name}】，獲靈石 ${d.reward.stones}、靈晶碎片 ${d.reward.scrap}。`
+          `攻克【${d.name}】，獲靈石 ${d.reward.stones}、靈晶碎片 ${d.reward.scrap}${streakNote}。`
         );
       }
 
@@ -2602,7 +2621,7 @@ export function dungeonStatus(state, dungeonId) {
 }
 
 export function forgeHint(state) {
-  const need = 3;
+  const need = FORGE_SCRAP_COST;
   if (state.scrap < need) {
     return { ok: false, msg: `靈紋鍛造需要 ${need} 碎片（現有 ${state.scrap}）。` };
   }
@@ -2729,6 +2748,9 @@ export function tryBreed(state, uidA, uidB) {
     state.stats.gen3Breeds = (state.stats.gen3Breeds || 0) + 1;
   }
   registerBestiary(state, child);
+  if (a.kind !== b.kind) {
+    bumpBreedGoalProgress(state, "daily_hybrid", 1);
+  }
   progressBreedGoalsFromChild(state, child, genes);
   bumpDaily(state, "breed", 1);
 
@@ -2936,6 +2958,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v24");
   localStorage.removeItem("void-tide-pets-v23");
   localStorage.removeItem("void-tide-pets-v22");
   localStorage.removeItem("void-tide-pets-v21");
@@ -2986,6 +3009,10 @@ export {
   FUSION_RULES,
   BREED_STONE_COST,
   BREED_COOLDOWN_MS,
+  FORGE_SCRAP_COST,
+  BOND_FAIL_RATE_BONUS,
+  BOND_FAIL_RATE_CAP,
+  BOND_COST_MAX,
   BOND_FEED_COST,
   BOND_FEED_BONUS,
   SKILL_MAX_LEVEL,

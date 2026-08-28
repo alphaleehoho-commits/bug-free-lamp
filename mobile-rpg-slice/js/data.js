@@ -43,7 +43,7 @@ export const BREAKTHROUGH_GATES = {
     checks: [{ type: "combats", need: 1, label: "秘境勝場 ≥ 1" }],
   },
   2: {
-    costs: { stones: 50, scrap: 1 },
+    costs: { stones: 45, scrap: 1 },
     checks: [
       { type: "cleared", dungeonId: "tide_1", label: "通關【潮汐廢墟·一層】" },
       { type: "bonds", need: 1, label: "成功契約 ≥ 1" },
@@ -51,16 +51,16 @@ export const BREAKTHROUGH_GATES = {
     ],
   },
   3: {
-    costs: { stones: 100, scrap: 2, dust: 10 },
+    costs: { stones: 90, scrap: 2, dust: 8 },
     checks: [
       { type: "cleared", dungeonId: "tide_1", label: "通關【一層】" },
       { type: "combats", need: 5, label: "累計秘境勝場 ≥ 5" },
-      { type: "bonds", need: 3, label: "成功契約 ≥ 3" },
+      { type: "bonds", need: 2, label: "成功契約 ≥ 2" },
       { type: "gear_equipped", need: 1, label: "人物穿戴 ≥ 1 件裝備" },
     ],
   },
   4: {
-    costs: { stones: 200, scrap: 3, dust: 20, feed: 15 },
+    costs: { stones: 180, scrap: 3, dust: 18, feed: 12 },
     checks: [
       { type: "cleared", dungeonId: "tide_2", label: "通關【二層】" },
       { type: "fusions", need: 1, label: "完成融合 ≥ 1" },
@@ -69,11 +69,11 @@ export const BREAKTHROUGH_GATES = {
     ],
   },
   5: {
-    costs: { stones: 400, scrap: 5, dust: 40, feed: 30 },
+    costs: { stones: 360, scrap: 5, dust: 36, feed: 26 },
     checks: [
       { type: "cleared", dungeonId: "tide_4", label: "通關【潮汐深層】" },
       { type: "min_gen", gen: 2, label: "擁有 ≥ 2 代寵" },
-      { type: "breeds", need: 3, label: "繁殖次數 ≥ 3" },
+      { type: "breeds", need: 2, label: "繁殖次數 ≥ 2" },
       { type: "bestiary", need: 10, label: "圖鑑登錄 ≥ 10 格" },
       { type: "gear_equipped", need: 3, label: "三槽滿裝" },
     ],
@@ -766,7 +766,7 @@ export function ranchCapForStage(stageId) {
 /** 升級耗靈石（獨立於融合，只跟寵物自身等級） */
 export function upgradeStoneCost(level) {
   const lv = Math.max(1, level | 0);
-  return 10 + lv * 12 + lv * lv * 2;
+  return 8 + lv * 10 + Math.floor(lv * lv * 1.8);
 }
 
 /** 融合最高階 */
@@ -797,12 +797,12 @@ export function fusionMaterialNeed(targetStage) {
 
 /**
  * 融合耗靈石（隨目標融階＋所需隻數遞增）
- * 階1→40, 階2→240, 階3→960
+ * 階1→32, 階2→192, 階3→768
  */
 export function fusionStoneCost(targetStage) {
   const n = Math.max(1, Math.min(FUSION_MAX_STAGE, targetStage | 0));
   const rule = FUSION_RULES[n];
-  return 10 * n * (n + 1) * rule.totalPets;
+  return 8 * n * (n + 1) * rule.totalPets;
 }
 
 /** 性格 → 契約成功率 */
@@ -810,9 +810,18 @@ export const BOND_RATE_BY_PERSONALITY = {
   gentle: 0.78,
   steady: 0.68,
   sly: 0.55,
-  fierce: 0.45,
-  wild: 0.32,
+  fierce: 0.48,
+  wild: 0.38,
 };
+
+/** 契約靈石上限（秘境遇寵） */
+export const BOND_COST_MAX = 42;
+/** 每次同隻失敗契約累加成功率 */
+export const BOND_FAIL_RATE_BONUS = 0.1;
+export const BOND_FAIL_RATE_CAP = 0.3;
+
+/** 靈紋鍛造耗碎片 */
+export const FORGE_SCRAP_COST = 2;
 
 function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -831,8 +840,8 @@ function pickWeighted(weightMap) {
 }
 
 /** 繁殖：靈石消耗、冷卻 */
-export const BREED_STONE_COST = 55;
-export const BREED_COOLDOWN_MS = 40_000;
+export const BREED_STONE_COST = 45;
+export const BREED_COOLDOWN_MS = 30_000;
 export const BREED_ELEMENT_MUTATION_RATE = 0.1;
 
 /**
@@ -1107,7 +1116,7 @@ export function rollWildEncounter(dungeonId = "wild", dungeonDef = null) {
     ? pickWeighted(elWeights) || pick(Object.keys(ELEMENTS))
     : pick(Object.keys(ELEMENTS));
   const personalityId = pick(Object.keys(PERSONALITIES));
-  const baseCost = 28 + Math.floor(Math.random() * 30);
+  const baseCost = Math.min(BOND_COST_MAX, 24 + Math.floor(Math.random() * 19));
   const pet = buildPetStats({
     id: `enc-${dungeonId}-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
     species: speciesId,
@@ -1127,18 +1136,18 @@ export function rollWildEncounter(dungeonId = "wild", dungeonDef = null) {
 }
 
 export const RECRUIT_POOL = [
-  { species: "reefox", element: "tide", personality: "sly", weight: 4, cost: 55 },
-  { species: "reefox", element: "flame", personality: "fierce", weight: 2, cost: 60 },
-  { species: "tidecarp", element: "tide", personality: "gentle", weight: 4, cost: 58 },
-  { species: "tidecarp", element: "stone", personality: "steady", weight: 2, cost: 62 },
-  { species: "ashwing", element: "gale", personality: "fierce", weight: 3, cost: 60 },
-  { species: "ashwing", element: "flame", personality: "sly", weight: 2, cost: 65 },
-  { species: "mossback", element: "stone", personality: "steady", weight: 3, cost: 58 },
-  { species: "mossback", element: "tide", personality: "gentle", weight: 2, cost: 60 },
-  { species: "nightmoth", element: "gloom", personality: "wild", weight: 3, cost: 72 },
-  { species: "nightmoth", element: "gale", personality: "sly", weight: 2, cost: 75 },
-  { species: "glowfin", element: "flame", personality: "fierce", weight: 3, cost: 68 },
-  { species: "glowfin", element: "tide", personality: "gentle", weight: 2, cost: 70 },
+  { species: "reefox", element: "tide", personality: "sly", weight: 4, cost: 48 },
+  { species: "reefox", element: "flame", personality: "fierce", weight: 2, cost: 52 },
+  { species: "tidecarp", element: "tide", personality: "gentle", weight: 4, cost: 50 },
+  { species: "tidecarp", element: "stone", personality: "steady", weight: 2, cost: 54 },
+  { species: "ashwing", element: "gale", personality: "fierce", weight: 3, cost: 52 },
+  { species: "ashwing", element: "flame", personality: "sly", weight: 2, cost: 56 },
+  { species: "mossback", element: "stone", personality: "steady", weight: 3, cost: 50 },
+  { species: "mossback", element: "tide", personality: "gentle", weight: 2, cost: 52 },
+  { species: "nightmoth", element: "gloom", personality: "wild", weight: 3, cost: 62 },
+  { species: "nightmoth", element: "gale", personality: "sly", weight: 2, cost: 65 },
+  { species: "glowfin", element: "flame", personality: "fierce", weight: 3, cost: 58 },
+  { species: "glowfin", element: "tide", personality: "gentle", weight: 2, cost: 60 },
 ];
 
 export const SHOP_OFFER_COUNT = 3;
@@ -1398,8 +1407,8 @@ export const DUNGEONS = [
         label: "關卡：焰屬友方攻擊 +12%",
       },
     ],
-    reward: { stones: 28, scrap: 1 },
-    firstClearBonus: { stones: 40, scrap: 1 },
+    reward: { stones: 32, scrap: 1 },
+    firstClearBonus: { stones: 45, scrap: 1 },
     eliteBonus: { stones: 8, scrap: 1 },
     bossBonus: null,
     encounterWeights: {
@@ -1480,8 +1489,8 @@ export const DUNGEONS = [
         label: "關卡：嵐屬友方攻擊 +10%",
       },
     ],
-    reward: { stones: 55, scrap: 2 },
-    firstClearBonus: { stones: 80, scrap: 2 },
+    reward: { stones: 64, scrap: 2 },
+    firstClearBonus: { stones: 92, scrap: 2 },
     eliteBonus: { stones: 12, scrap: 1 },
     bossBonus: { stones: 22, scrap: 1 },
     encounterWeights: {
@@ -1578,8 +1587,8 @@ export const DUNGEONS = [
         label: "關卡：嵐屬友方攻擊 +15%（剋岩）",
       },
     ],
-    reward: { stones: 120, scrap: 4 },
-    firstClearBonus: { stones: 150, scrap: 3 },
+    reward: { stones: 138, scrap: 4 },
+    firstClearBonus: { stones: 172, scrap: 3 },
     eliteBonus: { stones: 18, scrap: 1 },
     bossBonus: { stones: 40, scrap: 2 },
     encounterWeights: {
@@ -2903,10 +2912,11 @@ export const TRAIN_SITES = [
     name: "潮岸練場",
     needClear: null,
     qiMult: 1,
-    desc: "基礎練功 · 潮露／少許飼料",
+    desc: "基礎練功 · 潮露／飼料／少許靈塵",
     drops: [
       { mat: "tide_dew", perSec: 0.035 },
       { feed: 0.04 },
+      { dust: 0.012 },
     ],
   },
   {
@@ -3420,11 +3430,11 @@ export const BREED_GOALS = [
   {
     id: "daily_hybrid",
     cadence: "daily",
-    type: "hybrid_any",
+    type: "breed_cross_kind",
     need: 1,
-    name: "今日雜交",
-    desc: "雜交出任意新種族 1 隻",
-    reward: { stones: 40, dust: 6 },
+    name: "今日雜配",
+    desc: "完成 1 次異種繁殖（不論是否雜交成功）",
+    reward: { stones: 32, dust: 5 },
   },
   {
     id: "weekly_hybrid",

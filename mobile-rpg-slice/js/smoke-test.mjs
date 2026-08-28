@@ -68,6 +68,12 @@ import {
   dungeonNameForClear,
   genAwakenBonus,
   breedStatInheritancePreview,
+  BREED_STONE_COST,
+  BREED_COOLDOWN_MS,
+  FORGE_SCRAP_COST,
+  BOND_COST_MAX,
+  fusionStoneCost,
+  upgradeStoneCost,
 } from "./data.js";
 import { affordMaterials, runDungeon, buyShopOffer, tryBondPending, ensureShop, breedPreview, petLineage } from "./engine.js";
 import {
@@ -510,6 +516,20 @@ assert(linA.children.length === 1, "lineage children");
 
 const inh = breedStatInheritancePreview(foxA, finB, { rarity: 1, generation: 2, hybrid: true });
 assert(inh.atk >= 0 && inh.hp >= 0, "inherit preview");
+
+/* P16: balance pass */
+assert(BREED_STONE_COST === 45, "breed cost");
+assert(BREED_COOLDOWN_MS === 30_000, "breed cd");
+assert(FORGE_SCRAP_COST === 2, "forge scrap");
+assert(fusionStoneCost(2) === 192, "fuse stage2 cost");
+assert(upgradeStoneCost(1) === 19, "upgrade lv1");
+assert(BOND_COST_MAX === 42, "bond cap");
+const t1 = DUNGEONS.find((d) => d.id === "tide_1");
+assert(t1?.reward?.stones === 32, "t1 stones");
+const bg3 = BREAKTHROUGH_GATES[3];
+assert(bg3.costs.dust === 8 && bg3.checks.find((c) => c.type === "bonds")?.need === 2, "bt gate 3");
+const dailyHybrid = BREED_GOALS.find((g) => g.id === "daily_hybrid");
+assert(dailyHybrid?.type === "breed_cross_kind", "daily hybrid cross kind");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
