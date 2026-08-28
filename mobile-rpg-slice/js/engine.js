@@ -46,6 +46,7 @@ import {
   SLOT_LABEL,
   fusionAbsorbRate,
   breedStatInheritance,
+  breedStatInheritancePreview,
   petSpeciesBaseline,
   bestiaryKey,
   bestiaryTotal,
@@ -92,6 +93,8 @@ import {
   FORMATION_IDS,
   HYBRID_SKILLS,
   genCombatMult,
+  genAwakenBonus,
+  BREED_ELEMENT_MUTATION_RATE,
   weekKey,
   evaluateDungeonChallenge,
   personalityCombatFor,
@@ -125,7 +128,7 @@ import {
   skipTutorial,
 } from "./tutorial.js";
 
-const SAVE_KEY = "void-tide-pets-v23";
+const SAVE_KEY = "void-tide-pets-v24";
 
 function defaultMaster() {
   return {
@@ -268,6 +271,7 @@ export function loadState() {
   try {
     const raw =
       localStorage.getItem(SAVE_KEY) ||
+      localStorage.getItem("void-tide-pets-v23") ||
       localStorage.getItem("void-tide-pets-v22") ||
       localStorage.getItem("void-tide-pets-v21") ||
       localStorage.getItem("void-tide-pets-v20") ||
@@ -731,6 +735,8 @@ export function checkAchievements(state) {
     else if (a.id === "tide_seal_1") ok = (state.tideSeals || 0) >= 1;
     else if (a.id === "dispatch_once") ok = (state.stats.dispatches || 0) >= 1;
     else if (a.id === "dispatch_5") ok = (state.stats.dispatches || 0) >= 5;
+    else if (a.id === "gen3_born") ok = (state.stats.gen3Breeds || 0) >= 1;
+    else if (a.id === "glintfox_once") ok = (state.stats.speciesBreeds?.glintfox || 0) >= 1;
     if (!ok) continue;
     state.achievements[a.id] = true;
     applyReward(state, a.reward);
@@ -2686,6 +2692,15 @@ export function tryBreed(state, uidA, uidB) {
   child.atk += born.atk;
   child.hp += born.hp;
   child.spd += born.spd;
+  const awaken = genAwakenBonus(genes.generation);
+  if (awaken) {
+    child.atk += awaken.atk;
+    child.hp += awaken.hp;
+    child.spd += awaken.spd;
+    if (awaken.skillLevel && (child.skillLevel ?? 1) < awaken.skillLevel) {
+      child.skillLevel = awaken.skillLevel;
+    }
+  }
   child.uid = `${child.templateId}-born`;
   child.bornFrom = [a.uid, b.uid];
   child.generation = genes.generation;
@@ -2710,6 +2725,9 @@ export function tryBreed(state, uidA, uidB) {
     state.stats.speciesBreeds[child.speciesId] =
       (state.stats.speciesBreeds[child.speciesId] || 0) + 1;
   }
+  if (genes.generation >= 3) {
+    state.stats.gen3Breeds = (state.stats.gen3Breeds || 0) + 1;
+  }
   registerBestiary(state, child);
   progressBreedGoalsFromChild(state, child, genes);
   bumpDaily(state, "breed", 1);
@@ -2721,6 +2739,7 @@ export function tryBreed(state, uidA, uidB) {
   else if (genes.rarity > 0) tags.push(child.rarityName);
   if (genes.mutated && !genes.hybrid) tags.push("元素變異");
   if (genes.personality2) tags.push(`副性${PERSONALITIES[genes.personality2]?.name || ""}`);
+  if (awaken?.label) tags.push(awaken.label);
   const tagNote = tags.length ? `（${tags.join("·")}）` : "";
   const innNote =
     born.atk || born.hp || born.spd
@@ -2741,7 +2760,121 @@ export function tryBreed(state, uidA, uidB) {
     rarity: genes.rarity,
     rarityUp: genes.rarityUp,
     generation: genes.generation,
-    celebrate: !!(genes.hybrid || genes.rarityUp || genes.rarity >= 2 || genes.generation >= 2),
+    celebrate: !!(
+      genes.hybrid ||
+      genes.rarityUp ||
+      genes.rarity >= 2 ||
+      genes.generation >= 2 ||
+      awaken?.label
+    ),
+  };
+}
+
+/** UI：繁殖預覽（不 roll，只估算） */
+export function breedPreview(petA, petB) {
+  const base = breedPairHint(petA, petB);
+  if (!base) return null;
+  const genMult = genPowerMult(base.genA, base.genB);
+  const elemRate = Math.min(0.35, BREED_ELEMENT_MUTATION_RATE * genMult);
+  const matCost = breedMatCost(base.genA, base.genB);
+  const odds = childGenerationOdds(base.genA, base.genB);
+  const loGen = Math.min(...odds.map((o) => o.gen));
+  const hiGen = Math.max(...odds.map((o) => o.gen));
+  const parentMaxRarity = Math.max(petA.rarity ?? 0, petB.rarity ?? 0);
+  const statLo = breedStatInheritancePreview(petA, petB, {
+    rarity: parentMaxRarity,
+    generation: loGen,
+    hybrid: !!base.hybridName,
+  });
+  const statHi = breedStatInheritancePreview(petA, petB, {
+    rarity: parentMaxRarity,
+    generation: hiGen,
+    hybrid: !!base.hybridName,
+  });
+  const loAwaken = genAwakenBonus(loGen);
+  const hiAwaken = genAwakenBonus(hiGen);
+
+  const outcomes = [];
+  if (base.sameSpecies) {
+    outcomes.push({
+      label: `同種【${SPECIES[petA.speciesId]?.name || petA.name}】`,
+      pct: null,
+      kind: "same",
+    });
+  } else if (base.hybridName) {
+    outcomes.push({
+      label: `雜交【${base.hybridName}】`,
+      pct: Math.round(base.hybridChance * 100),
+      kind: "hybrid",
+    });
+    outcomes.push({
+      label: "遺傳父母物種",
+      pct: Math.round((1 - base.hybridChance) * 100),
+      kind: "inherit",
+    });
+  } else {
+    outcomes.push({ label: "遺傳父母物種", pct: 100, kind: "inherit" });
+  }
+
+  const spA = SPECIES[petA.speciesId]?.name || petA.name;
+  const spB = SPECIES[petB.speciesId]?.name || petB.name;
+  let awakenNote = null;
+  if (hiGen >= 3) awakenNote = "若出三代：血脈覺醒（額外天生＋技能 Lv.2 起點）";
+  else if (hiGen >= 2) awakenNote = "若出二代：額外天生強化";
+
+  return {
+    ...base,
+    parentNames: [displayPetName(petA), displayPetName(petB)],
+    speciesHint: base.sameSpecies ? spA : `${spA}／${spB}`,
+    elemRate,
+    matCost,
+    genOdds: odds,
+    outcomes,
+    statPreview: {
+      atk: [statLo.atk + (loAwaken?.atk || 0), statHi.atk + (hiAwaken?.atk || 0)],
+      hp: [statLo.hp + (loAwaken?.hp || 0), statHi.hp + (hiAwaken?.hp || 0)],
+      spd: [statLo.spd + (loAwaken?.spd || 0), statHi.spd + (hiAwaken?.spd || 0)],
+    },
+    awakenNote,
+    stoneCost: BREED_STONE_COST,
+  };
+}
+
+/** UI：血統（父母／子代） */
+export function petLineage(state, uid) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return null;
+  const pet = found.pet;
+  const parents = (pet.bornFrom || []).map((id) => {
+    const hit = findOwnedPet(state, id);
+    if (hit) {
+      return {
+        uid: id,
+        name: displayPetName(hit.pet),
+        generation: petGeneration(hit.pet),
+        speciesName: SPECIES[hit.pet.speciesId]?.name || hit.pet.name,
+        exists: true,
+      };
+    }
+    return { uid: id, name: "已放歸", exists: false };
+  });
+  const children = [];
+  for (const p of [...(state.pets || []), ...(state.ranch || [])]) {
+    if ((p.bornFrom || []).includes(uid)) {
+      children.push({
+        uid: p.uid,
+        name: displayPetName(p),
+        generation: petGeneration(p),
+        speciesName: SPECIES[p.speciesId]?.name || p.name,
+        deployed: (state.pets || []).some((x) => x.uid === p.uid),
+      });
+    }
+  }
+  return {
+    generation: petGeneration(pet),
+    parents,
+    children,
+    hasLineage: parents.length > 0 || children.length > 0,
   };
 }
 
@@ -2803,6 +2936,7 @@ export function breedStatus(state) {
 
 export function resetSave() {
   localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem("void-tide-pets-v23");
   localStorage.removeItem("void-tide-pets-v22");
   localStorage.removeItem("void-tide-pets-v21");
   localStorage.removeItem("void-tide-pets-v20");

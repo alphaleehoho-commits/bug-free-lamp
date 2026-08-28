@@ -399,6 +399,20 @@ export const SPECIES = {
     breedOnly: true,
     base: { atk: 13, hp: 150, spd: 8 },
   },
+  glintfox: {
+    id: "glintfox",
+    name: "耀狐",
+    kind: "獸",
+    breedOnly: true,
+    base: { atk: 17, hp: 92, spd: 13 },
+  },
+  prismback: {
+    id: "prismback",
+    name: "稜背",
+    kind: "甲",
+    breedOnly: true,
+    base: { atk: 11, hp: 158, spd: 7 },
+  },
 };
 
 /** 野生／秘境可遇種族（排除繁殖專屬） */
@@ -699,6 +713,24 @@ export const SKILLS = {
     power: 0.5,
     desc: "甲蟎專屬：甲刺反震",
   },
+  glint_beam: {
+    id: "glint_beam",
+    name: "耀光穿",
+    owner: "pet",
+    type: "strike",
+    cd: 2,
+    power: 1.88,
+    desc: "耀狐專屬：光焰貫穿",
+  },
+  prism_shell: {
+    id: "prism_shell",
+    name: "稜殼",
+    owner: "pet",
+    type: "guard",
+    cd: 3,
+    power: 0.48,
+    desc: "稜背專屬：稜光護盾",
+  },
 };
 
 /** 人物依階段解鎖技能 */
@@ -837,6 +869,8 @@ export const HYBRID_RECIPES = [
   { kinds: ["獸", "蟲"], species: "fangmite", chance: 0.25, tier: "main" },
   { kinds: ["鱗", "禽"], species: "scalequill", chance: 0.25, tier: "main" },
   { kinds: ["甲", "蟲"], species: "shellmite", chance: 0.24, tier: "main" },
+  { kinds: ["光", "獸"], species: "glintfox", chance: 0.24, tier: "main" },
+  { kinds: ["光", "甲"], species: "prismback", chance: 0.24, tier: "main" },
   // —— 次配方（較低機率／後門）——
   { kinds: ["鱗", "蟲"], species: "mistcarp", chance: 0.18, tier: "sub" },
   { kinds: ["甲", "禽"], species: "ironback", chance: 0.16, tier: "sub" },
@@ -1281,7 +1315,21 @@ export const HYBRID_SKILLS = {
   fangmite: "fang_burst",
   scalequill: "scale_glide",
   shellmite: "shell_spike",
+  glintfox: "glint_beam",
+  prismback: "prism_shell",
 };
+
+/** 高代子代出生加成（P15B） */
+export function genAwakenBonus(generation) {
+  const g = Math.max(0, generation | 0);
+  if (g >= 3) {
+    return { atk: 4, hp: 10, spd: 2, skillLevel: 2, label: "三代血脈覺醒" };
+  }
+  if (g >= 2) {
+    return { atk: 2, hp: 5, spd: 1, skillLevel: null, label: "二代強化" };
+  }
+  return null;
+}
 
 /** 代數出戰攻／血倍率 */
 export function genCombatMult(generation) {
@@ -2734,6 +2782,44 @@ export function breedStatInheritance(parentA, parentB, childGenes) {
   return { atk, hp, spd };
 }
 
+/** UI 預覽：天生繼承（不含隨機突變 roll） */
+export function breedStatInheritancePreview(parentA, parentB, childGenes) {
+  const baseA = petSpeciesBaseline(parentA.speciesId, parentA.elementId, parentA.personalityId);
+  const baseB = petSpeciesBaseline(parentB.speciesId, parentB.elementId, parentB.personalityId);
+  const excess = (p, base) => ({
+    atk: Math.max(0, (p.atk || 0) - base.atk),
+    hp: Math.max(0, (p.hp || 0) - base.hp),
+    spd: Math.max(0, (p.spd || 0) - base.spd),
+  });
+  const ea = excess(parentA, baseA);
+  const eb = excess(parentB, baseB);
+  const avg = {
+    atk: (ea.atk + eb.atk) / 2,
+    hp: (ea.hp + eb.hp) / 2,
+    spd: (ea.spd + eb.spd) / 2,
+  };
+  let atk = Math.floor(avg.atk * BREED_INHERIT_RATE);
+  let hp = Math.floor(avg.hp * BREED_INHERIT_RATE);
+  let spd = Math.floor(avg.spd * BREED_INHERIT_RATE);
+  const r = childGenes?.rarity ?? 0;
+  const gen = childGenes?.generation ?? 1;
+  const genMul = 1 + Math.max(0, gen) * 0.08;
+  atk = Math.floor(atk * genMul);
+  hp = Math.floor(hp * genMul);
+  spd = Math.floor(spd * genMul);
+  if (r >= 1) {
+    atk += r * 2;
+    hp += r * 5;
+    spd += Math.floor(r * 0.8);
+  }
+  if (childGenes?.hybrid) {
+    atk += 2;
+    hp += 4;
+    spd += 1;
+  }
+  return { atk, hp, spd };
+}
+
 /** 融合吸收素材天生數值比例（隨融階升高） */
 export function fusionAbsorbRate(targetStage) {
   const n = Math.max(1, Math.min(3, targetStage | 0));
@@ -3277,6 +3363,18 @@ export const ACHIEVEMENTS = [
     name: "五度外派",
     desc: "累計派遣領獎 5 次",
     reward: { stones: 55, dust: 8 },
+  },
+  {
+    id: "gen3_born",
+    name: "三代血脈",
+    desc: "繁殖出 1 隻三代靈寵",
+    reward: { stones: 70, materials: { abyss_ink: 2 } },
+  },
+  {
+    id: "glintfox_once",
+    name: "耀狐初現",
+    desc: "雜交出【耀狐】",
+    reward: { stones: 65, dust: 10 },
   },
 ];
 

@@ -16,6 +16,8 @@ import {
   forgeHint,
   tryBreed,
   breedStatus,
+  breedPreview,
+  petLineage,
   dungeonStatus,
   resetSave,
   realmInfo,
@@ -33,7 +35,6 @@ import {
   achievementsView,
   bestiaryStatus,
   displayPetName,
-  breedPairHint,
   rarityInfo,
   genLabel,
   petGeneration,
@@ -1056,6 +1057,82 @@ function petsListView() {
   `;
 }
 
+function statRangeHtml(range) {
+  if (!range) return "—";
+  const [lo, hi] = range;
+  return lo === hi ? `+${lo}` : `+${lo}～${hi}`;
+}
+
+function breedPreviewHtml(preview, matAfford) {
+  if (!preview) return "";
+  const outcomeRows = preview.outcomes
+    .map(
+      (o) =>
+        `<li class="breed-outcome breed-outcome-${o.kind}"><span>${escapeHtml(o.label)}</span>${
+          o.pct != null ? `<strong>${o.pct}%</strong>` : ""
+        }</li>`
+    )
+    .join("");
+  const genChips = preview.genOdds
+    .map((o) => `<span class="breed-chip">${escapeHtml(genLabel(o.gen))} ${o.pct}%</span>`)
+    .join("");
+  const sp = preview.statPreview;
+  return `
+    <div class="breed-preview">
+      <h3>繁殖預覽</h3>
+      <p class="meta">${escapeHtml(preview.parentNames[0])} × ${escapeHtml(preview.parentNames[1])}</p>
+      <ul class="breed-outcomes">${outcomeRows}</ul>
+      <div class="breed-chip-row">${genChips}</div>
+      <p class="meta">物種池：${escapeHtml(preview.speciesHint)} · 屬性突變 ~${Math.round(
+        preview.elemRate * 100
+      )}%</p>
+      <p class="meta">天生溢出（估）：攻${statRangeHtml(sp.atk)}／血${statRangeHtml(sp.hp)}／速${statRangeHtml(
+        sp.spd
+      )}</p>
+      ${preview.awakenNote ? `<p class="breed-awaken">${escapeHtml(preview.awakenNote)}</p>` : ""}
+      <p class="meta">消耗：${preview.stoneCost} 靈石${matAfford ? ` · ${matAfford}` : ""}</p>
+    </div>`;
+}
+
+function lineageHtml(lineage) {
+  if (!lineage?.hasLineage) {
+    return `<h3>血統</h3><p class="meta">原生靈寵，無繁殖紀錄。</p>`;
+  }
+  const parentRows =
+    lineage.parents.length > 0
+      ? lineage.parents
+          .map((p) => {
+            if (p.exists) {
+              return `<li><button type="button" class="linkish" data-pet-detail="${escapeHtml(p.uid)}">${escapeHtml(
+                p.name
+              )}</button> <span class="muted">${escapeHtml(p.speciesName)} · ${escapeHtml(genLabel(p.generation))}</span></li>`;
+            }
+            return `<li><span class="muted">${escapeHtml(p.name)}</span></li>`;
+          })
+          .join("")
+      : `<li class="muted">無父母紀錄</li>`;
+  const childRows =
+    lineage.children.length > 0
+      ? lineage.children
+          .map(
+            (c) =>
+              `<li><button type="button" class="linkish" data-pet-detail="${escapeHtml(c.uid)}">${escapeHtml(
+                c.name
+              )}</button> <span class="muted">${escapeHtml(c.speciesName)} · ${escapeHtml(genLabel(c.generation))}${
+                c.deployed ? " · 出戰" : ""
+              }</span></li>`
+          )
+          .join("")
+      : `<li class="muted">尚無子代</li>`;
+  return `
+    <h3>血統</h3>
+    <p class="meta">本體 ${escapeHtml(genLabel(lineage.generation))}</p>
+    <p class="meta"><strong>父母</strong></p>
+    <ul class="lineage-list">${parentRows}</ul>
+    <p class="meta"><strong>子代</strong>（${lineage.children.length}）</p>
+    <ul class="lineage-list">${childRows}</ul>`;
+}
+
 function petsBreedView() {
   const bs = breedStatus(state);
   const ranch = state.ranch || [];
@@ -1066,10 +1143,13 @@ function petsBreedView() {
       .map((p) => {
         const on = selected.has(p.uid);
         const r = rarityInfo(p.rarity ?? 0);
+        const lineBadge = p.bornFrom?.length
+          ? `<span class="lineage-tag" title="有繁殖血統">血</span>`
+          : "";
         return `
         <li class="card-row">
           <div>
-            <strong>${escapeHtml(displayPetName(p))}</strong>
+            <strong>${lineBadge}${escapeHtml(displayPetName(p))}</strong>
             <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
               petGeneration(p)
             )} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}</span>
@@ -1082,7 +1162,7 @@ function petsBreedView() {
   const [ua, ub] = petView.breedParents || [];
   const pa = ranch.find((p) => p.uid === ua);
   const pb = ranch.find((p) => p.uid === ub);
-  const hint = pa && pb ? breedPairHint(pa, pb) : null;
+  const preview = pa && pb ? breedPreview(pa, pb) : null;
   const bMat =
     pa && pb
       ? breedMatCost(petGeneration(pa), petGeneration(pb))
@@ -1092,8 +1172,8 @@ function petsBreedView() {
   const ready = selected.size === 2 && bs.ready && ranch.length < ranchCap(state);
   return `
     <h2>繁殖</h2>
-    <p class="lead">${BREED_STONE_COST} 石＋${bMatHtml || "珊瑚屑×1"}${bs.ready ? "" : ` · 冷卻 ${cdSec}s`}</p>
-    ${hint ? `<p class="meta breed-hint">${escapeHtml(hint.note)}</p>` : ""}
+    ${preview ? breedPreviewHtml(preview, bMatHtml) : `<p class="lead">${BREED_STONE_COST} 石＋材料 · 選擇雙親預覽結果</p>`}
+    ${!bs.ready ? `<p class="meta">冷卻 ${cdSec}s</p>` : ""}
     <ul class="list">${list}</ul>
     <div class="row">
       <button type="button" class="primary" data-breed-confirm ${ready ? "" : "disabled"}>確認（${selected.size}/2）</button>
@@ -1142,6 +1222,7 @@ function petsDetailView() {
 
   const matUp = upgradeMatCost(lv);
   const matUpHtml = matAffordHtml(matUp);
+  const lineage = petLineage(state, pet.uid);
   return `
     <h2>${escapeHtml(displayPetName(pet))}</h2>
     <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
@@ -1152,6 +1233,7 @@ function petsDetailView() {
       <li><strong>技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】Lv.${skillLevel}</li>
       <li><strong>升級</strong> — ${upgradeCost}石／${feedCost}料＋${matUpHtml || "潮露×1"}</li>
     </ul>
+    ${lineageHtml(lineage)}
     <div class="row gear-row">
       <label>暱稱<input type="text" maxlength="${NICK_MAX_LEN}" data-nick-input value="${escapeHtml(pet.nick || "")}" placeholder="${escapeHtml(pet.name)}" /></label>
       <button type="button" data-rename="${escapeHtml(pet.uid)}">命名</button>

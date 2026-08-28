@@ -66,8 +66,10 @@ import {
   MATERIAL_SOURCE_INDEX,
   trainSiteUnlockHint,
   dungeonNameForClear,
+  genAwakenBonus,
+  breedStatInheritancePreview,
 } from "./data.js";
-import { affordMaterials, runDungeon, buyShopOffer, tryBondPending, ensureShop } from "./engine.js";
+import { affordMaterials, runDungeon, buyShopOffer, tryBondPending, ensureShop, breedPreview, petLineage } from "./engine.js";
 import {
   normalizeTutorial,
   advanceTutorialIfReady,
@@ -94,7 +96,9 @@ assert(hybridRecipeForKinds("光", "蟲").species === "stormmoth", "main 光蟲�
 assert(hybridRecipeForKinds("獸", "蟲")?.species === "fangmite", "main 獸蟲→牙蟎");
 assert(hybridRecipeForKinds("鱗", "禽")?.species === "scalequill", "main 鱗禽→鱗羽");
 assert(hybridRecipeForKinds("甲", "蟲")?.species === "shellmite", "main 甲蟲→甲蟎");
-assert(HYBRID_RECIPES.filter((r) => r.tier === "main").length >= 8, "mains");
+assert(hybridRecipeForKinds("光", "獸")?.species === "glintfox", "main 光獸→耀狐");
+assert(hybridRecipeForKinds("光", "甲")?.species === "prismback", "main 光甲→稜背");
+assert(HYBRID_RECIPES.filter((r) => r.tier === "main").length >= 11, "mains");
 assert(HYBRID_RECIPES.filter((r) => r.tier === "sub").length >= 4, "subs");
 
 assert(rollChildGeneration(0, 0) === 1, "0+0→1");
@@ -247,7 +251,7 @@ assert(br1.ready && br1.next.id === 1, "break ready to stage1");
 assert(DUNGEONS.some((d) => d.id === "tide_4"), "tide_4");
 assert(dungeonWaves(DUNGEONS.find((d) => d.id === "tide_4")).length === 3, "t4 3 waves");
 assert(RECRUIT_POOL.length >= 6, "recruit pool");
-assert(Object.keys(HYBRID_SKILLS).length === 9, "hybrid skills");
+assert(Object.keys(HYBRID_SKILLS).length >= 11, "hybrid skills");
 assert(SKILLS.tide_beast_rush && SKILLS.storm_lance && SKILLS.fang_burst && SKILLS.scale_glide && SKILLS.shell_spike, "hybrid skill defs");
 assert(
   petSkillIds({ skillId: "pounce", speciesId: "tideling", kind: "獸", fusionLevel: 1 }).includes(
@@ -284,7 +288,7 @@ assert(d3a.dailyVariantLabel === d3b.dailyVariantLabel, "same day same variant")
 
 /* P8: goals, challenge, formation, new hybrids */
 assert(DAILY_QUESTS.length >= 7, "7 daily quests");
-assert(ACHIEVEMENTS.length >= 18, "expanded achievements");
+assert(ACHIEVEMENTS.length >= 20, "expanded achievements");
 assert(typeof weekKey() === "string" && weekKey().includes("-W"), "weekKey");
 assert(FORMATIONS.vanguard && FORMATION_IDS.length === 3, "formations");
 assert(DUNGEON_CHALLENGE_RULES.length >= 5, "challenge rules");
@@ -483,6 +487,29 @@ assert(tutorialActive(skipSt), "skip pre active");
 const skipR = skipTutorial(skipSt);
 assert(skipR.ok && !tutorialActive(skipSt), "skip tutorial unlocks");
 assert(skipSt.tutorial.done && skipSt.tutorial.step === "complete", "skip marks complete");
+
+const ga = genAwakenBonus(3);
+assert(ga?.skillLevel === 2 && ga.atk > 0, "gen3 awaken");
+const gb = genAwakenBonus(2);
+assert(gb && !gb.skillLevel, "gen2 awaken no skill bump");
+
+const foxA = { uid: "a", speciesId: "reefox", kind: "獸", elementId: "tide", personalityId: "sly", atk: 20, hp: 100, spd: 12, rarity: 1, generation: 1 };
+const finB = { uid: "b", speciesId: "glowfin", kind: "光", elementId: "flame", personalityId: "fierce", atk: 18, hp: 95, spd: 11, rarity: 0, generation: 1 };
+const prev = breedPreview(foxA, finB);
+assert(prev?.hybridName === "耀狐" && prev.outcomes.length >= 2, "breed preview hybrid");
+assert(prev.statPreview.atk[1] >= prev.statPreview.atk[0], "stat preview range");
+
+const lineSt = {
+  pets: [{ uid: "c1", speciesId: "glintfox", name: "耀狐", bornFrom: ["a", "b"], generation: 2 }],
+  ranch: [{ uid: "a", speciesId: "reefox", name: "礁狐", generation: 1 }],
+};
+const lin = petLineage(lineSt, "c1");
+assert(lin.parents.length === 2 && lin.children.length === 0, "lineage parents");
+const linA = petLineage(lineSt, "a");
+assert(linA.children.length === 1, "lineage children");
+
+const inh = breedStatInheritancePreview(foxA, finB, { rarity: 1, generation: 2, hybrid: true });
+assert(inh.atk >= 0 && inh.hp >= 0, "inherit preview");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
