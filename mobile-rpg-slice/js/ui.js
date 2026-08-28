@@ -79,7 +79,6 @@ import {
   upgradeMatCost,
   breedMatCost,
   affordMaterials,
-  materialHintsView,
   TACTICS,
   FORMATIONS,
   MATERIALS,
