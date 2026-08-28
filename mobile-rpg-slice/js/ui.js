@@ -211,7 +211,7 @@ function breedGoalsBoardHtml(compact = false) {
       </li>`;
   };
   if (compact) {
-    const open = goals.filter((g) => !g.claimed).slice(0, 4);
+    const open = goals.filter((g) => !g.claimed).slice(0, 2);
     const rows = open.map(renderGoal).join("") || `<li class="empty">繁殖目標已全部領完。</li>`;
     return `
       <h3>繁殖目標</h3>
@@ -998,6 +998,7 @@ function codexPanel() {
     .join("");
 
   const dailies = dailyView(state)
+    .slice(0, 3)
     .map((q) => {
       const status = q.claimed ? "已領" : q.done ? "可領" : `${q.progress}/${q.need}`;
       return `
@@ -1012,7 +1013,7 @@ function codexPanel() {
     .join("");
 
   const ach = achievementsView(state)
-    .slice(0, 4)
+    .slice(0, 3)
     .map(
       (a) => `
       <li class="card-row">
@@ -1044,7 +1045,15 @@ function codexPanel() {
     <h3>成就</h3>
     <ul class="list">${ach}</ul>`
           : `<h2>繁殖配方</h2>
-    ${recipeBoardHtml()}`
+    <ul class="recipe-sum">${hybridRecipeSummary()
+      .filter((r) => r.tier === "main")
+      .map(
+        (r) =>
+          `<li><strong>${escapeHtml(r.kindsLabel)}</strong> → ${escapeHtml(r.name)} <span class="muted">${Math.round(
+            r.chance * 100
+          )}%</span></li>`
+      )
+      .join("")}</ul>`
     }
   `;
 }
