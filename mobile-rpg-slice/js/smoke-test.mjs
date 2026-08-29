@@ -419,6 +419,24 @@ const strikeEv = combatRes.combatEvents.find((e) => e.type === "strike");
 if (strikeEv) {
   assert(strikeEv.targetUid && strikeEv.elemTag !== undefined, "strike fields");
 }
+const firstEv = combatRes.combatEvents[0];
+assert(
+  firstEv?.type === "wave" || firstEv?.type === "round",
+  "combat log starts at wave/round"
+);
+assert(
+  !combatRes.combatEvents.some((e) => /關卡條件|雜交試煉|挑戰.*條件/.test(e.text || "")),
+  "no condition checks in combat events"
+);
+const roundTexts = combatRes.combatEvents.filter((e) => e.type === "round").map((e) => e.text);
+assert(
+  roundTexts.length === new Set(roundTexts).size,
+  "no duplicate round lines"
+);
+assert(
+  (combatRes.transcript || []).some((t) => /關卡條件|戰術|本關/.test(t)),
+  "preamble stays in transcript"
+);
 
 /* P12b: shop direct ranch + newbie bond pity */
 const shopSt = {

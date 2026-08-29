@@ -2171,31 +2171,55 @@ export function runDungeon(state, dungeonId) {
   _combatUid = 0;
   tagCombatUnits(allies, "a");
   tagCombatUnits(foes, "f");
+  const transcript = [];
   const combatEvents = [];
+  /** 見聞紀錄；不進戰報播放（開戰前條件判定等） */
+  const note = (text) => {
+    transcript.push(text);
+  };
+  /** 見聞 + 戰報播放 */
   const say = (text) => {
     transcript.push(text);
     pushCombatText(combatEvents, text);
+  };
+  const pushWave = (waveIdx, label, foeList) => {
+    const waveLine =
+      waveIdx === 1
+        ? `—— 第 1 波・${label} ——`
+        : `—— 第 ${waveIdx} 波・${label} 湧出！——`;
+    transcript.push(waveLine);
+    combatEvents.push({
+      type: "wave",
+      text: waveLine,
+      waveIndex: waveIdx,
+      label,
+      foes: foeList.map(unitRosterEntry),
+    });
+  };
+  const pushRound = (r) => {
+    const roundLine = `—— 第 ${r} 回合 ——`;
+    transcript.push(roundLine);
+    combatEvents.push({ type: "round", text: roundLine, round: r });
   };
 
   const lead =
     state.pets.length > 0
       ? `御靈師率靈寵進入【${d.name}】。（潮克焰→嵐→岩→幽→潮）`
       : `你獨自踏入【${d.name}】，潮霧裡似有靈息。`;
-  const transcript = [lead];
-  pushCombatText(combatEvents, lead);
-  say(
+  note(lead);
+  note(
     `本關 ${waves.length} 波 · ${roles.total} 敵（普通${roles.normal}／精英${roles.elite}／BOSS${roles.boss}）。`
   );
-  say(
+  note(
     `戰術【${TACTICS[tactics]?.name || tactics}】· 陣型【${formation.name}】· 自動戰鬥。`
   );
   if (challenge?.label) {
-    say(
+    note(
       `${challenge.label}${chalEval.ok ? "（條件已滿足，勝利可領挑戰獎）" : `（${chalEval.reason || "未滿足"}）`}`
     );
-    if (challenge.banMaster) say("挑戰生效：人物未出戰。");
+    if (challenge.banMaster) note("挑戰生效：人物未出戰。");
   }
-  if (dailyMod?.label) say(dailyMod.label);
+  if (dailyMod?.label) note(dailyMod.label);
   const genNotes = state.pets
     .map((p) => {
       const g = petGeneration(p);
@@ -2203,49 +2227,43 @@ export function runDungeon(state, dungeonId) {
       return m > 1 ? `${displayPetName(p)}${genLabel(g)}攻血×${m.toFixed(2)}` : null;
     })
     .filter(Boolean);
-  if (genNotes.length) say(`血脈代數加成：${genNotes.join("、")}。`);
-  say(`—— 第 1 波・${waves[0].label} ——`);
-  combatEvents.push({
-    type: "wave",
-    text: `—— 第 1 波・${waves[0].label} ——`,
-    waveIndex: 1,
-    label: waves[0].label,
-    foes: foes.map(unitRosterEntry),
-  });
+  if (genNotes.length) note(`血脈代數加成：${genNotes.join("、")}。`);
   if (synergy.labels.length) {
-    say(`陣容羈絆發動：${synergy.labels.join("、")}。`);
+    note(`陣容羈絆發動：${synergy.labels.join("、")}。`);
   }
   if (peNotes.length) {
-    say(`性格被動：${peNotes.join("；")}`);
+    note(`性格被動：${peNotes.join("；")}`);
   }
   if (mGear.setLabels?.length) {
-    say(`裝備套裝：${mGear.setLabels.join("、")}。`);
+    note(`裝備套裝：${mGear.setLabels.join("、")}。`);
   }
   if ((state.tideSeals || 0) > 0) {
-    say(
+    note(
       `潮印 ×${state.tideSeals}（全隊攻血 ×${tideSealCombatMult(state.tideSeals).toFixed(2)}）。`
     );
   }
   if (dex.label) {
-    say(dex.label);
+    note(dex.label);
   }
   for (const p of passives) {
-    say(p.label);
+    note(p.label);
   }
   for (const c of challenges) {
-    say(
+    note(
       c.ok ? `關卡條件已滿足：${c.label}` : `關卡條件未啟：${c.label}。${c.reason}`
     );
   }
   const trial = dungeonTrialFor(dungeonId);
   const trialCheck = trial ? partyMeetsTrial(state.pets, trial) : null;
   if (trial) {
-    say(
+    note(
       trialCheck.ok
         ? `雜交試煉條件已滿足（${trial.label}）——勝利可領額外獎。`
         : `雜交試煉未啟：${trial.label}。${trialCheck.reason}`
     );
   }
+  /* 戰報從第 1 波開始，略過開戰前條件判定 */
+  pushWave(1, waves[0].label, foes);
   const combatStart = {
     allies: allies.map(unitRosterEntry),
     foes: foes.map(unitRosterEntry),
@@ -2288,15 +2306,7 @@ export function runDungeon(state, dungeonId) {
     if (waveIndex + 1 < waves.length) {
       waveIndex += 1;
       foes = tagCombatUnits(spawnWaveFoes(waves[waveIndex], dailyMod, challenge), "f");
-      const waveLine = `—— 第 ${waveIndex + 1} 波・${waves[waveIndex].label} 湧出！——`;
-      say(waveLine);
-      combatEvents.push({
-        type: "wave",
-        text: waveLine,
-        waveIndex: waveIndex + 1,
-        label: waves[waveIndex].label,
-        foes: foes.map(unitRosterEntry),
-      });
+      pushWave(waveIndex + 1, waves[waveIndex].label, foes);
       return false;
     }
     return true;
@@ -2304,9 +2314,7 @@ export function runDungeon(state, dungeonId) {
 
   while (round < maxRounds && !ended) {
     round += 1;
-    const roundLine = `—— 第 ${round} 回合 ——`;
-    say(roundLine);
-    combatEvents.push({ type: "round", text: roundLine, round });
+    pushRound(round);
     const order = [...allies, ...foes]
       .filter((u) => u.hp > 0)
       .sort((a, b) => b.spd - a.spd || a.name.localeCompare(b.name));
@@ -2364,7 +2372,7 @@ export function runDungeon(state, dungeonId) {
         state.scrap += dailyScrapBonus;
       }
       if (dailyStoneBonus || dailyScrapBonus) {
-        say(
+        note(
           `今日修飾結算：+${dailyStoneBonus}石／+${dailyScrapBonus}碎片。`
         );
       }
@@ -2382,12 +2390,12 @@ export function runDungeon(state, dungeonId) {
             pushLog(state, `主線推進：解鎖練功地【${site.name}】！`);
           }
         }
-        say(
+        note(
           `攻克【${d.name}】，獲靈石 ${d.reward.stones}、碎片 ${d.reward.scrap}。首通額外 +${bonusStones} 石／+${bonusScrap} 碎片！`
         );
       } else {
         const streakNote = streakBonus > 0 ? ` · 連勝 +${streakBonus} 石` : "";
-        say(
+        note(
           `攻克【${d.name}】，獲靈石 ${d.reward.stones}、靈晶碎片 ${d.reward.scrap}${streakNote}。`
         );
       }
@@ -2407,9 +2415,9 @@ export function runDungeon(state, dungeonId) {
         if (challengeStones) bits.push(`${challengeStones}石`);
         if (challengeScrap) bits.push(`${challengeScrap}碎片`);
         if (challengeDust) bits.push(`${challengeDust}靈塵`);
-        say(`挑戰達成【${challenge.label}】→ +${bits.join("／")}`);
+        note(`挑戰達成【${challenge.label}】→ +${bits.join("／")}`);
       } else if (challenge) {
-        say(`挑戰未達成【${challenge.label}】→ 無挑戰獎`);
+        note(`挑戰未達成【${challenge.label}】→ 無挑戰獎`);
       }
 
       checkAchievements(state);
@@ -2417,14 +2425,14 @@ export function runDungeon(state, dungeonId) {
       if (eliteCleared && d.eliteBonus) {
         roleStones += d.eliteBonus.stones || 0;
         roleScrap += d.eliteBonus.scrap || 0;
-        say(
+        note(
           `擊破精英！額外 +${d.eliteBonus.stones || 0} 石${d.eliteBonus.scrap ? `／+${d.eliteBonus.scrap} 碎片` : ""}。`
         );
       }
       if (bossCleared && d.bossBonus) {
         roleStones += d.bossBonus.stones || 0;
         roleScrap += d.bossBonus.scrap || 0;
-        say(
+        note(
           `擊破 BOSS！額外 +${d.bossBonus.stones || 0} 石${d.bossBonus.scrap ? `／+${d.bossBonus.scrap} 碎片` : ""}。`
         );
       }
@@ -2448,9 +2456,9 @@ export function runDungeon(state, dungeonId) {
           condFeed += c.bonus.feed || 0;
           condDust += c.bonus.dust || 0;
           applyReward(state, c.bonus);
-          say(`條件達成【${c.label}】→ 分開結算 +${bits.join("／")}`);
+          note(`條件達成【${c.label}】→ 分開結算 +${bits.join("／")}`);
         } else {
-          say(`條件未達成【${c.label}】→ 無額外獎${c.reason ? `（${c.reason}）` : ""}`);
+          note(`條件未達成【${c.label}】→ 無額外獎${c.reason ? `（${c.reason}）` : ""}`);
         }
         conditionResults.push({
           id: c.id,
@@ -2467,11 +2475,11 @@ export function runDungeon(state, dungeonId) {
           trialScrap = trial.bonus.scrap || 0;
           state.stones += trialStones;
           state.scrap += trialScrap;
-          say(
+          note(
             `試煉達成【${trial.label}】→ 分開結算 +${trialStones}石${trialScrap ? `／+${trialScrap}碎片` : ""}`
           );
         } else {
-          say(
+          note(
             `試煉未達成【${trial.label}】→ 無額外獎${trialCheck?.reason ? `（${trialCheck.reason}）` : ""}`
           );
         }

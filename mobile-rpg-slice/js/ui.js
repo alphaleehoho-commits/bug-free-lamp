@@ -621,7 +621,12 @@ function patchLive() {
 function combatPlaybackMeta(pb) {
   const total = Math.max(1, pb.events.length);
   const roundNote = pb.currentRound ? `第 ${pb.currentRound} 回合 · ` : "";
-  if (pb.done) return `${pb.result.msg}（${pb.result.rounds} 回合）`;
+  if (pb.done) {
+    const rounds = pb.result?.rounds ?? 0;
+    if (pb.result?.won) return `勝利（${rounds} 回合）`;
+    if (pb.result?.msg?.includes("撤退")) return `撤退（${rounds} 回合）`;
+    return `戰敗（${rounds} 回合）`;
+  }
   return `${roundNote}戰鬥進行中… ${pb.index}/${total}`;
 }
 
@@ -735,26 +740,12 @@ function skipPlayback() {
   while (playback.index < playback.events.length) {
     const event = playback.events[playback.index];
     applyCombatEvent(event, playback);
-    playback.shown.push(event.text);
-    state.log.unshift(event.text);
     playback.index += 1;
   }
-  if (state.log.length > 60) state.log.length = 60;
+  /* 跳過後不列出戰報，直接顯示最終結算 */
+  playback.shown = [];
   finishPlayback();
-  const list = document.querySelector("[data-live=combat-log]");
-  if (list) {
-    list.innerHTML = playback.shown
-      .slice()
-      .reverse()
-      .slice(0, 40)
-      .map((t, i) => {
-        const revIdx = playback.shown.length - 1 - i;
-        const ev = playback.events[revIdx];
-        return combatLogLineHtml(t, ev);
-      })
-      .join("");
-  }
-  updatePlaybackDom();
+  render();
 }
 
 function render() {
@@ -1538,12 +1529,6 @@ function dungeonPanel() {
       })
       .join("");
     const bd = playback.result?.rewardBreakdown;
-    const skipSummary =
-      playback.skipped && playback.done
-        ? `<p class="skip-summary">已跳過 ${playback.events.length} 條戰報 · ${
-            playback.result.won ? "勝利" : "戰敗"
-          } · ${escapeHtml(playback.result.msg)}</p>`
-        : "";
     const breakdownHtml =
       playback.done && bd && playback.result.won
         ? `<ul class="cond-list reward-breakdown">
@@ -1607,15 +1592,18 @@ function dungeonPanel() {
             <li class="cond-item is-met"><span class="cond-badge">合計</span><div class="cond-body"><strong>+${bd.totalStones} 靈石</strong><span class="muted">各項分開累加</span></div></li>
           </ul>`
         : "";
+    /* 結束後只顯示結算，不保留戰報流水 */
+    const logBlock = playback.done
+      ? ""
+      : `<div class="combat-scroll" data-live="combat-scroll">
+        <ul class="combat" data-live="combat-log">${lines}</ul>
+      </div>`;
     return `
-      <h2>戰報</h2>
+      <h2>${playback.done ? "結算" : "戰報"}</h2>
       ${renderCombatRoster(playback)}
       <p class="lead" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
       <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
-      ${skipSummary}
-      <div class="combat-scroll" data-live="combat-scroll">
-        <ul class="combat" data-live="combat-log">${lines}</ul>
-      </div>
+      ${logBlock}
       ${breakdownHtml}
       <div class="row">
         <button type="button" data-act="skip-combat" ${playback.done ? "hidden" : ""}>跳過動畫</button>
