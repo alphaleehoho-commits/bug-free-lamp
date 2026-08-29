@@ -79,6 +79,7 @@ import {
   claimPathQuest,
   useBreedTicket,
   useBloodCatalyst,
+  useTemperOil,
 } from "./engine.js";
 import {
   tutorialActive,
@@ -1300,7 +1301,7 @@ function petsDetailView() {
     <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
     <ul class="skill-list">
       <li><strong>屬性</strong> — ${escapeHtml(pet.kind)}·${escapeHtml(pet.elementName)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span></li>
-      <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}${pet.personality2Name ? `／${escapeHtml(pet.personality2Name)}` : ""}</li>
+      <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}${pet.personality2Name ? `／${escapeHtml(pet.personality2Name)}` : ""}${pet.bloodlineName && pet.bloodlineName !== "無紋" ? ` · 血脈${escapeHtml(pet.bloodlineName)}` : ""}</li>
       <li><strong>戰力</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}</li>
       <li><strong>技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】Lv.${skillLevel}</li>
       <li><strong>升級</strong> — ${upgradeCost}石／${feedCost}料＋${matUpHtml || "潮露×1"}</li>
@@ -1314,6 +1315,7 @@ function petsDetailView() {
       <button type="button" class="primary" data-upgrade="${escapeHtml(pet.uid)}">升級</button>
       <button type="button" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升</button>
       <button type="button" data-upgrade-skill="${escapeHtml(pet.uid)}" ${skillMaxed ? "disabled" : ""}>技能</button>
+      <button type="button" data-temper-oil="${escapeHtml(pet.uid)}" ${(state.materials?.temper_oil || 0) < 1 ? "disabled" : ""}>洗性格${(state.materials?.temper_oil || 0) > 0 ? `（${state.materials.temper_oil}）` : ""}</button>
     </div>
     <div class="row">
       <button type="button" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>
@@ -1470,12 +1472,23 @@ function codexPanel() {
     <h3>成就</h3>
     <ul class="list">${ach}</ul>`
           : `<h2>繁殖配方</h2>
+    <h3>雜交（種類對）</h3>
     <ul class="recipe-sum">${hybridRecipeSummary()
       .filter((r) => r.tier === "main")
       .map(
         (r) =>
           `<li><strong>${escapeHtml(r.kindsLabel)}</strong> → ${escapeHtml(r.name)} <span class="muted">${Math.round(
             r.chance * 100
+          )}%</span></li>`
+      )
+      .join("")}</ul>
+    <h3>三代種（雜交×雜交）</h3>
+    <ul class="recipe-sum">${hybridRecipeSummary()
+      .filter((r) => r.tier === "tertiary")
+      .map(
+        (r) =>
+          `<li><strong>${escapeHtml(r.kindsLabel)}</strong> → ${escapeHtml(r.name)} <span class="muted">約${Math.round(
+            (r.chance || 0.15) * 100
           )}%</span></li>`
       )
       .join("")}</ul>`
@@ -1905,6 +1918,15 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = upgradePetSkill(state, btn.dataset.upgradeSkill);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-temper-oil]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = useTemperOil(state, btn.dataset.temperOil);
       saveState(state);
       render();
       setFlash(r.msg);

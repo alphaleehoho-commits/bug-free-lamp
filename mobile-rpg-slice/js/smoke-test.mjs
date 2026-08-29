@@ -13,6 +13,8 @@ import {
   genLabel,
   hybridRecipeForKinds,
   HYBRID_RECIPES,
+  TERTIARY_RECIPES,
+  tertiaryRecipesForParents,
   KIND_SKILLS,
   BREED_GOALS,
   hybridRecipeSummary,
@@ -80,7 +82,16 @@ import {
   fusionStoneCost,
   upgradeStoneCost,
 } from "./data.js";
-import { affordMaterials, runDungeon, buyShopOffer, tryBondPending, ensureShop, breedPreview, petLineage } from "./engine.js";
+import {
+  affordMaterials,
+  runDungeon,
+  buyShopOffer,
+  tryBondPending,
+  ensureShop,
+  breedPreview,
+  petLineage,
+  useTemperOil,
+} from "./engine.js";
 import {
   normalizeTutorial,
   advanceTutorialIfReady,
@@ -175,8 +186,84 @@ assert(BREED_GOALS.filter((x) => x.cadence === "weekly").length >= 3, "weekly go
 assert(BREED_GOALS.filter((x) => x.cadence === "once").length >= 4, "once goals");
 
 const summary = hybridRecipeSummary();
-assert(summary.length === HYBRID_RECIPES.length, "recipe summary");
+assert(summary.filter((r) => r.tier === "main").length === HYBRID_RECIPES.filter((r) => r.tier === "main").length, "main recipe summary");
+assert(summary.some((r) => r.tier === "tertiary" && r.species === "abyssreign"), "tertiary in summary");
 assert(summary.every((r) => r.name && r.kindsLabel), "summary labels");
+assert(Object.keys(SPECIES).filter((id) => SPECIES[id].tertiary).length >= 8, "8+ tertiary species");
+assert(TERTIARY_RECIPES.length >= 8, "tertiary recipes");
+assert(tertiaryRecipesForParents("tideling", "mistcarp").length >= 1, "tideling×mistcarp tertiary");
+assert(PATH_QUESTS.some((q) => q.id === "nurture_tertiary"), "tertiary path quest");
+assert(bestiaryTotal() >= 13200, "bestiary 48×5×5×11");
+
+const tidePet = {
+  uid: "t1",
+  speciesId: "tideling",
+  kind: "鱗",
+  name: "潮靈",
+  breedOnly: true,
+  generation: 2,
+  elementId: "tide",
+  personalityId: "sly",
+  atk: 22,
+  hp: 110,
+  spd: 12,
+  rarity: 1,
+};
+const mistPet = {
+  uid: "m1",
+  speciesId: "mistcarp",
+  kind: "鱗",
+  name: "霧鯉",
+  breedOnly: true,
+  generation: 2,
+  elementId: "mist",
+  personalityId: "steady",
+  atk: 18,
+  hp: 120,
+  spd: 10,
+  rarity: 1,
+};
+const tertPrev = breedPreview(tidePet, mistPet);
+assert(tertPrev?.tier === "tertiary" && tertPrev.hybridName === "淵君", "tertiary breed preview");
+assert(tertPrev.outcomes.some((o) => o.kind === "tertiary"), "tertiary outcome row");
+
+let tertHit = false;
+for (let i = 0; i < 80; i++) {
+  const g = rollBreedGenes(tidePet, mistPet);
+  if (g.tertiary && g.species === "abyssreign") {
+    tertHit = true;
+    break;
+  }
+}
+assert(tertHit, "roll tertiary abyssreign within 80 tries");
+
+const temperSt = {
+  materials: { temper_oil: 1 },
+  pets: [
+    {
+      uid: "wash1",
+      name: "試洗",
+      speciesId: "reefox",
+      kind: "獸",
+      elementId: "tide",
+      personalityId: "fierce",
+      personalityName: "烈性",
+      atk: 20,
+      hp: 100,
+      spd: 12,
+      rarity: 0,
+      generation: 0,
+      genes: { personality: "fierce" },
+    },
+  ],
+  ranch: [],
+  bestiary: {},
+  log: [],
+};
+const wash = useTemperOil(temperSt, "wash1");
+assert(wash.ok && temperSt.materials.temper_oil === 0, "temper oil consume");
+assert(temperSt.pets[0].personalityId !== "fierce", "temper oil new personality");
+assert(!useTemperOil(temperSt, "wash1").ok, "temper oil empty fails");
 
 const matrix = hybridRecipeMatrix();
 assert(matrix.length === 36, "6×6 matrix");

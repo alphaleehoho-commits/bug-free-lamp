@@ -534,6 +534,71 @@ export const SPECIES = {
     breedOnly: true,
     base: { atk: 17, hp: 84, spd: 15 },
   },
+  // —— 三代種（雙親皆雜交，較低機率）——
+  abyssreign: {
+    id: "abyssreign",
+    name: "淵君",
+    kind: "鱗",
+    breedOnly: true,
+    tertiary: true,
+    base: { atk: 20, hp: 135, spd: 12 },
+  },
+  voidglint: {
+    id: "voidglint",
+    name: "虛耀",
+    kind: "光",
+    breedOnly: true,
+    tertiary: true,
+    base: { atk: 19, hp: 110, spd: 14 },
+  },
+  duskiron: {
+    id: "duskiron",
+    name: "暮鐵",
+    kind: "甲",
+    breedOnly: true,
+    tertiary: true,
+    base: { atk: 16, hp: 175, spd: 8 },
+  },
+  coralstorm: {
+    id: "coralstorm",
+    name: "珊嵐",
+    kind: "禽",
+    breedOnly: true,
+    tertiary: true,
+    base: { atk: 18, hp: 100, spd: 16 },
+  },
+  deepfang: {
+    id: "deepfang",
+    name: "深牙",
+    kind: "蟲",
+    breedOnly: true,
+    tertiary: true,
+    base: { atk: 21, hp: 92, spd: 15 },
+  },
+  tideprism: {
+    id: "tideprism",
+    name: "潮稜",
+    kind: "獸",
+    breedOnly: true,
+    tertiary: true,
+    base: { atk: 19, hp: 118, spd: 13 },
+  },
+  nightscale: {
+    id: "nightscale",
+    name: "夜鱗",
+    kind: "鱗",
+    breedOnly: true,
+    tertiary: true,
+    base: { atk: 17, hp: 128, spd: 12 },
+  },
+  galevoid: {
+    id: "galevoid",
+    name: "嵐虛",
+    kind: "禽",
+    breedOnly: true,
+    tertiary: true,
+    base: { atk: 20, hp: 96, spd: 17 },
+  },
 };
 
 /** 野生／秘境可遇種族（排除繁殖專屬） */
@@ -1087,6 +1152,62 @@ export const HYBRID_RECIPES = [
   { kinds: ["甲", "禽"], species: "stonefinch", chance: 0.1, tier: "sub" },
 ];
 
+/**
+ * 三代種配方：雙親皆為雜交種時觸發（species 對 或 kind 對）
+ * parents: 無序物種對；bothHybrid 已隱含
+ */
+export const TERTIARY_RECIPES = [
+  { parents: ["tideling", "mistcarp"], species: "abyssreign", chance: 0.2 },
+  { parents: ["tideling", "voidcarp"], species: "abyssreign", chance: 0.16 },
+  { parents: ["glintfox", "stormmoth"], species: "voidglint", chance: 0.18 },
+  { parents: ["glintfox", "prismoth"], species: "voidglint", chance: 0.15 },
+  { parents: ["duskfly", "ironback"], species: "duskiron", chance: 0.18 },
+  { parents: ["ironback", "stormshell"], species: "duskiron", chance: 0.14 },
+  { parents: ["coralmane", "stormshell"], species: "coralstorm", chance: 0.17 },
+  { parents: ["reefwing", "mistwing"], species: "coralstorm", chance: 0.14 },
+  { parents: ["gloomfang", "deepquill"], species: "deepfang", chance: 0.17 },
+  { parents: ["fangmite", "prismoth"], species: "deepfang", chance: 0.14 },
+  { parents: ["tideling", "prismback"], species: "tideprism", chance: 0.16 },
+  { parents: ["glintfox", "ironback"], species: "tideprism", chance: 0.13 },
+  { parents: ["scalequill", "shellmite"], species: "nightscale", chance: 0.16 },
+  { parents: ["voidcarp", "shellmite"], species: "nightscale", chance: 0.13 },
+  { parents: ["galebeast", "mistwing"], species: "galevoid", chance: 0.16 },
+  { parents: ["reefwing", "voidcarp"], species: "galevoid", chance: 0.12 },
+];
+
+function speciesPairKey(a, b) {
+  return [a, b].sort().join("|");
+}
+
+const TERTIARY_BY_PARENTS = (() => {
+  const map = {};
+  for (const r of TERTIARY_RECIPES) {
+    if (!r.chance || !SPECIES[r.species]) continue;
+    const key = speciesPairKey(r.parents[0], r.parents[1]);
+    if (!map[key]) map[key] = [];
+    map[key].push(r);
+  }
+  return map;
+})();
+
+export function tertiaryRecipesForParents(spA, spB) {
+  if (!spA || !spB || spA === spB) return [];
+  return TERTIARY_BY_PARENTS[speciesPairKey(spA, spB)] || [];
+}
+
+function pickTertiaryRecipe(spA, spB, genMult = 1) {
+  const list = tertiaryRecipesForParents(spA, spB);
+  if (!list.length) return null;
+  const weighted = {};
+  for (const r of list) {
+    weighted[r.species] = Math.min(0.55, r.chance * genMult);
+  }
+  const total = Object.values(weighted).reduce((a, b) => a + b, 0);
+  if (Math.random() > Math.min(0.7, total)) return null;
+  const species = pickWeighted(weighted);
+  return list.find((r) => r.species === species) || list[0];
+}
+
 function kindPairKey(k1, k2) {
   return [k1, k2].sort().join("|");
 }
@@ -1253,13 +1374,30 @@ export function rollBreedGenes(parentA, parentB) {
   let mutated = false;
   let hybrid = false;
   let newSpecies = false;
+  let tertiary = false;
+  let recipeUsed = null;
 
-  const recipe = !sameSpecies && kindA !== kindB ? pickHybridRecipe(kindA, kindB, genMult) : null;
-  if (recipe && SPECIES[recipe.species]) {
-    species = recipe.species;
-    hybrid = true;
-    newSpecies = true;
-    mutated = true;
+  const bothHybrid = !!(spA?.breedOnly && spB?.breedOnly);
+  if (bothHybrid && !sameSpecies) {
+    const tRecipe = pickTertiaryRecipe(ga.species, gb.species, genMult);
+    if (tRecipe && SPECIES[tRecipe.species]) {
+      species = tRecipe.species;
+      hybrid = true;
+      tertiary = true;
+      newSpecies = true;
+      mutated = true;
+      recipeUsed = { ...tRecipe, tier: "tertiary" };
+    }
+  }
+  if (!tertiary) {
+    const recipe = !sameSpecies && kindA !== kindB ? pickHybridRecipe(kindA, kindB, genMult) : null;
+    if (recipe && SPECIES[recipe.species]) {
+      species = recipe.species;
+      hybrid = true;
+      newSpecies = true;
+      mutated = true;
+      recipeUsed = recipe;
+    }
   }
 
   const elemRate = Math.min(0.35, BREED_ELEMENT_MUTATION_RATE * genMult);
@@ -1337,11 +1475,12 @@ export function rollBreedGenes(parentA, parentB) {
     genB,
     mutated,
     hybrid,
+    tertiary,
     newSpecies,
     rarityUp,
     sameSpecies,
-    recipeTier: recipe?.tier || null,
-    hybridChance: recipe ? Math.min(0.85, recipe.chance * genMult) : 0,
+    recipeTier: recipeUsed?.tier || null,
+    hybridChance: recipeUsed ? Math.min(0.85, recipeUsed.chance * genMult) : 0,
   };
 }
 
@@ -1584,6 +1723,15 @@ export const HYBRID_SKILLS = {
   shellmite: "shell_spike",
   glintfox: "glint_beam",
   prismback: "prism_shell",
+  /* 三代種沿用相近技能 */
+  abyssreign: "mist_surge",
+  voidglint: "glint_beam",
+  duskiron: "iron_bulwark",
+  coralstorm: "storm_lance",
+  deepfang: "fang_burst",
+  tideprism: "tide_beast_rush",
+  nightscale: "scale_glide",
+  galevoid: "reef_dive",
 };
 
 /** 高代子代出生加成（P15B） */
@@ -3674,6 +3822,16 @@ export const PATH_QUESTS = [
     reward: { stones: 160, materials: { seal_ember: 2, breed_ticket: 1 } },
   },
   {
+    track: "nurture",
+    trackName: "育成",
+    id: "nurture_tertiary",
+    name: "三代新種",
+    desc: "擁有三代種（雜交×雜交）≥ 1",
+    type: "tertiary_owned",
+    need: 1,
+    reward: { stones: 200, materials: { blood_catalyst: 2, temper_oil: 2 } },
+  },
+  {
     track: "challenge",
     trackName: "挑戰",
     id: "chal_wins8",
@@ -3736,6 +3894,11 @@ export function evalPathQuest(state, quest) {
     const owned = [...(state.pets || []), ...(state.ranch || [])];
     const maxG = owned.reduce((m, p) => Math.max(m, petGeneration(p)), 0);
     return { ok: maxG >= quest.need, progress: `最高${maxG}代`, current: maxG };
+  }
+  if (quest.type === "tertiary_owned") {
+    const owned = [...(state.pets || []), ...(state.ranch || [])];
+    const n = owned.filter((p) => SPECIES[p.speciesId]?.tertiary).length;
+    return { ok: n >= quest.need, progress: `${n}/${quest.need}`, current: n };
   }
   if (quest.type === "combats") {
     const n = state.combatsWon || 0;
@@ -4097,13 +4260,28 @@ export function hybridRecipeMatrix() {
   return cells;
 }
 
-/** 主配方列表（繁殖頁摘要） */
+/** 主配方＋三代種列表（繁殖頁摘要） */
 export function hybridRecipeSummary() {
-  return HYBRID_RECIPES.map((r) => ({
+  const mains = HYBRID_RECIPES.map((r) => ({
     ...r,
     name: SPECIES[r.species]?.name || r.species,
     kindsLabel: `${r.kinds[0]}×${r.kinds[1]}`,
   }));
+  const tert = TERTIARY_RECIPES.map((r) => ({
+    ...r,
+    tier: "tertiary",
+    name: SPECIES[r.species]?.name || r.species,
+    kindsLabel: `${SPECIES[r.parents[0]]?.name || r.parents[0]}×${SPECIES[r.parents[1]]?.name || r.parents[1]}`,
+  }));
+  /* 去重三代種顯示 */
+  const seen = new Set();
+  const tertUnique = [];
+  for (const r of tert) {
+    if (seen.has(r.species)) continue;
+    seen.add(r.species);
+    tertUnique.push(r);
+  }
+  return [...mains, ...tertUnique];
 }
 
 /**
