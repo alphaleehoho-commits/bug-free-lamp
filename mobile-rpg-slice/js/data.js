@@ -3582,6 +3582,49 @@ export function trainSiteUnlockHint(site) {
   return `首通【${dungeonNameForClear(site.needClear)}】`;
 }
 
+/** 某 bulk 材料的主要練功地（第一個產出該料的專精地） */
+export function primaryTrainSiteForMat(matId) {
+  if (!matId || !MATERIALS[matId] || MATERIALS[matId].tier === "dungeon") return null;
+  return TRAIN_SITES.find((s) => (s.drops || []).some((d) => d.mat === matId)) || null;
+}
+
+/** 缺料時建議去邊個練功地（或標明秘境專屬） */
+export function suggestTrainForShortage(state, cost) {
+  const items = Object.entries(cost || {})
+    .filter(([, n]) => n > 0)
+    .map(([id, need]) => {
+      const have = state?.materials?.[id] || 0;
+      return { id, need, have, short: Math.max(0, need - have) };
+    })
+    .filter((x) => x.short > 0);
+  if (!items.length) return null;
+  for (const it of items) {
+    if (MATERIALS[it.id]?.tier === "dungeon") {
+      return {
+        matId: it.id,
+        matName: MATERIALS[it.id].name,
+        dungeonOnly: true,
+        short: it.short,
+      };
+    }
+    const site = primaryTrainSiteForMat(it.id);
+    if (!site) continue;
+    const unlocked = isTrainSiteUnlocked(state, site.id);
+    return {
+      matId: it.id,
+      matName: MATERIALS[it.id]?.name || it.id,
+      short: it.short,
+      siteId: site.id,
+      siteName: site.name,
+      focus: site.focus || "",
+      unlocked,
+      unlockHint: trainSiteUnlockHint(site),
+      alreadyThere: (state.trainSite || "shore") === site.id,
+    };
+  }
+  return null;
+}
+
 /* ─── P1：羈絆／陣容加成 ─── */
 
 /**

@@ -319,7 +319,7 @@ body {
 }
 .mat-hint {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 0.12rem 0.2rem;
   align-items: baseline;
   font-size: 0.55rem;
@@ -336,6 +336,27 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.mat-hint .mat-goto {
+  grid-column: 1 / -1;
+  justify-self: start;
+  font-size: 0.55rem;
+  padding: 0;
+  min-height: 0;
+}
+.flash-with-act {
+  pointer-events: auto;
+}
+button.flash-act {
+  margin-left: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.72rem;
+  border-radius: 8px;
+  border: 1px solid rgba(232, 168, 96, 0.55);
+  background: rgba(196, 92, 62, 0.35);
+  color: #f3e6d8;
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 .train-lock-note {
