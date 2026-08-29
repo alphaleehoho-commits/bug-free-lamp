@@ -75,6 +75,7 @@ import {
   genLabel,
   childGenerationOdds,
   hybridRecipeForKinds,
+  tertiaryRecipesForParents,
   genPowerMult,
   BREED_GOALS,
   hybridRecipeSummary,
@@ -2639,6 +2640,41 @@ export function useBloodCatalyst(state) {
   return { ok: true, msg: "繁殖冷卻減半" };
 }
 
+/** 性格洗劑：重抽主性格（耗 1） */
+export function useTemperOil(state, uid) {
+  if ((state.materials?.temper_oil || 0) < 1) {
+    return { ok: false, msg: "沒有性格洗劑。" };
+  }
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  const pet = found.pet;
+  const oldId = pet.personalityId;
+  const others = Object.keys(PERSONALITIES).filter((id) => id !== oldId);
+  if (!others.length) return { ok: false, msg: "無可替換性格。" };
+  const newId = others[Math.floor(Math.random() * others.length)];
+  const oldPe = PERSONALITIES[oldId];
+  const newPe = PERSONALITIES[newId];
+  state.materials.temper_oil -= 1;
+  /* 按性格倍率差調整白板 */
+  if (oldPe && newPe) {
+    pet.atk = Math.max(1, Math.round((pet.atk / (oldPe.atk || 1)) * newPe.atk));
+    pet.hp = Math.max(1, Math.round((pet.hp / (oldPe.hp || 1)) * newPe.hp));
+    pet.spd = Math.max(1, Math.round((pet.spd / (oldPe.spd || 1)) * newPe.spd));
+  }
+  pet.personalityId = newId;
+  pet.personalityName = newPe.name;
+  if (pet.personality2Id === newId) {
+    pet.personality2Id = null;
+    pet.personality2Name = null;
+  }
+  if (pet.genes) {
+    pet.genes = { ...pet.genes, personality: newId };
+  }
+  registerBestiary(state, pet);
+  pushLog(state, `【${displayPetName(pet)}】使用性格洗劑：${oldPe?.name || oldId} → ${newPe.name}。`);
+  return { ok: true, msg: `${pet.name} 性格 → ${newPe.name}` };
+}
+
 export function pathQuestsView(state) {
   if (!state.pathQuests) state.pathQuests = emptyPathQuests();
   const claimed = state.pathQuests.claimed || {};
@@ -2760,6 +2796,7 @@ export function tryBreed(state, uidA, uidB) {
   }
   state.stats.breeds += 1;
   if (genes.hybrid) state.stats.hybrids = (state.stats.hybrids || 0) + 1;
+  if (genes.tertiary) state.stats.tertiaryBreeds = (state.stats.tertiaryBreeds || 0) + 1;
   if (genes.rarity >= 3) state.stats.legendBreeds = (state.stats.legendBreeds || 0) + 1;
   if (genes.hybrid && child.speciesId) {
     if (!state.stats.speciesBreeds) state.stats.speciesBreeds = {};
@@ -2779,6 +2816,7 @@ export function tryBreed(state, uidA, uidB) {
   const tags = [];
   tags.push(genLabel(genes.generation));
   if (genes.hybrid) tags.push("雜交新種！");
+  if (genes.tertiary) tags.push("三代種！");
   if (genes.rarityUp) tags.push(`${child.rarityName}升階！`);
   else if (genes.rarity > 0) tags.push(child.rarityName);
   if (genes.mutated && !genes.hybrid) tags.push("元素變異");
@@ -2846,10 +2884,13 @@ export function breedPreview(petA, petB) {
       kind: "same",
     });
   } else if (base.hybridName) {
+    const outcomeKind = base.tier === "tertiary" ? "tertiary" : "hybrid";
+    const outcomeLabel =
+      base.tier === "tertiary" ? `三代種【${base.hybridName}】` : `雜交【${base.hybridName}】`;
     outcomes.push({
-      label: `雜交【${base.hybridName}】`,
+      label: outcomeLabel,
       pct: Math.round(base.hybridChance * 100),
-      kind: "hybrid",
+      kind: outcomeKind,
     });
     outcomes.push({
       label: "遺傳父母物種",
@@ -2937,7 +2978,22 @@ export function breedPairHint(petA, petB) {
   let hybridName = null;
   let hybridChance = 0;
   let tier = null;
-  if (!same && kindA !== kindB) {
+  const bothHybrid = !!(SPECIES[petA.speciesId]?.breedOnly && SPECIES[petB.speciesId]?.breedOnly);
+  if (!same && bothHybrid) {
+    const tertList = tertiaryRecipesForParents(petA.speciesId, petB.speciesId);
+    if (tertList.length) {
+      const best = tertList.reduce((a, b) => (a.chance >= b.chance ? a : b));
+      if (SPECIES[best.species]) {
+        hybridName = SPECIES[best.species].name;
+        hybridChance = Math.min(
+          0.7,
+          tertList.reduce((s, r) => s + Math.min(0.55, r.chance * genMult), 0)
+        );
+        tier = "tertiary";
+      }
+    }
+  }
+  if (!hybridName && !same && kindA !== kindB) {
     const recipe = hybridRecipeForKinds(kindA, kindB);
     if (recipe && SPECIES[recipe.species]) {
       hybridName = SPECIES[recipe.species].name;
@@ -2949,6 +3005,8 @@ export function breedPairHint(petA, petB) {
   let note;
   if (same) {
     note = `同種：較易升稀有 · 子代 ${genOddsText}`;
+  } else if (hybridName && tier === "tertiary") {
+    note = `三代種：約 ${Math.round(hybridChance * 100)}% 【${hybridName}】· 子代 ${genOddsText}`;
   } else if (hybridName) {
     const tierTag = tier === "main" ? "主配方" : "次配方";
     note = `異種${tierTag}：約 ${Math.round(hybridChance * 100)}% 雜交【${hybridName}】· 子代 ${genOddsText}`;
