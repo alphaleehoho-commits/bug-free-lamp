@@ -40,6 +40,7 @@ import {
   KIND_SECOND_SKILLS,
   SECOND_SKILL_UNLOCK,
   rollGearDrop,
+  rollDungeonMatDrop,
   partySynergy,
   MASTER_EQUIP_SLOTS,
   dungeonWaves,
@@ -53,12 +54,16 @@ import {
   breedStatInheritancePreview,
   petSpeciesBaseline,
   bestiaryKey,
+  bestiaryKeyFromPet,
+  bestiarySpeciesSummary,
   bestiaryTotal,
   bestiaryEntries,
   bestiaryCombatBonus,
   releaseRefund,
   NICK_MAX_LEN,
   DAILY_QUESTS,
+  PATH_QUESTS,
+  evalPathQuest,
   ACHIEVEMENTS,
   todayKey,
   OFFLINE_HINT_SEC,
@@ -117,6 +122,10 @@ import {
   breedMatCost,
   TRAIN_SITES,
   trainSiteById,
+  makeStarterPet,
+  normalizeBloodmarks,
+  bloodlineLabel,
+  bloodmarkCombatMult,
   isTrainSiteUnlocked,
   unlockedTrainSiteIds,
   personalityCombatForPet,
@@ -139,11 +148,11 @@ const SAVE_KEY = "void-tide-pets-v25";
 function defaultMaster() {
   return {
     name: "潮行者",
-    /** 人物白板偏弱，主要靠裝備拉高戰力 */
+    /** 敘事殼：唔再出戰；數值僅供顯示 */
     atk: 6,
     hp: 90,
     spd: 7,
-    skillIds: masterSkillsForStage(0),
+    skillIds: [],
     equip: { weapon: null, armor: null, accessory: null },
   };
 }
@@ -159,24 +168,29 @@ function emptyDaily(now = Date.now()) {
   };
 }
 
+function emptyPathQuests() {
+  return { claimed: {} };
+}
+
 function defaultState() {
+  const starter = makeStarterPet();
   return {
     realm: 0,
     qi: 0,
-    stones: 180,
+    stones: 120,
     scrap: 0,
-    feed: 6,
+    feed: 8,
     dust: 8,
     materials: emptyMaterials(),
     trainSite: "shore",
     inventory: [],
     master: defaultMaster(),
     pets: [],
-    ranch: [],
+    ranch: [starter],
     pending: [],
     log: [
-      "你沿暗潮抵達荒廢契壇。",
-      "先在此累積靈契，教學會逐步解鎖功能。",
+      "你沿暗潮抵達荒廢契壇，潮霧中已有一隻靈寵相隨。",
+      "先認寵、出戰，再踏入秘境——契壇會逐步解鎖。",
     ],
     lastTick: Date.now(),
     combatsWon: 0,
@@ -186,8 +200,11 @@ function defaultState() {
     dungeonReadyAt: {},
     breedReadyAt: 0,
     /** P2 */
-    bestiary: {},
+    bestiary: {
+      [bestiaryKeyFromPet(starter)]: true,
+    },
     daily: emptyDaily(),
+    pathQuests: emptyPathQuests(),
     achievements: {},
     stats: {
       bonds: 0,
@@ -215,7 +232,7 @@ function defaultState() {
     /** P9 */
     dispatches: [],
     tideSeals: 0,
-    tutorial: { done: false, step: "cultivate_qi", flags: {} },
+    tutorial: { done: false, step: "meet_pet", flags: {} },
   };
 }
 
@@ -252,6 +269,8 @@ function normalizePet(p) {
     next.personality2Id = next.personality2Id || null;
     next.personality2Name = next.personality2Name || null;
   }
+  next.bloodmarks = normalizeBloodmarks(next.bloodmarks);
+  next.bloodlineName = bloodlineLabel(next.bloodmarks);
   // 種族↔種類同步：舊熒鰭可能仍標鱗
   if (next.speciesId === "glowfin") {
     next.kind = "光";
@@ -339,23 +358,29 @@ export function loadState() {
       pets = pets.slice(0, ACTIVE_PET_MAX);
     }
 
-    // 清掉已刪除／寵物專用舊裝備；無效槽位卸下
-    let inventory = Array.isArray(parsed.inventory) ? parsed.inventory.filter((it) => GEAR[it.gearId]) : [];
-    const validUids = new Set(inventory.map((x) => x.uid));
-    for (const slot of MASTER_EQUIP_SLOTS) {
-      if (master.equip[slot] && !validUids.has(master.equip[slot])) master.equip[slot] = null;
-      else if (master.equip[slot]) {
-        const it = inventory.find((x) => x.uid === master.equip[slot]);
-        if (it && GEAR[it.gearId]?.slot !== slot) master.equip[slot] = null;
+    // 人物裝備廢止：庫存折算為寵用素材
+    let inventory = [];
+    const oldInv = Array.isArray(parsed.inventory) ? parsed.inventory : [];
+    const matBonus = emptyMaterials();
+    for (const it of oldInv) {
+      if (GEAR[it.gearId]) {
+        matBonus.coral_shard = (matBonus.coral_shard || 0) + 1;
+        matBonus.tide_dew = (matBonus.tide_dew || 0) + 1;
       }
     }
+    master.equip = { weapon: null, armor: null, accessory: null };
+    master.skillIds = [];
 
-    // 以現有靈寵回填圖鑑（舊存檔）
+    // 以現有靈寵回填圖鑑（含性格／血脈）
     const bestiary = { ...(parsed.bestiary || {}) };
     for (const p of [...pets, ...ranch]) {
-      if (p?.speciesId && p?.elementId) {
-        bestiary[bestiaryKey(p.speciesId, p.elementId)] = true;
-      }
+      const key = bestiaryKeyFromPet(p);
+      if (key) bestiary[key] = true;
+    }
+
+    const mergedMats = { ...emptyMaterials(), ...(parsed.materials || {}) };
+    for (const id of MATERIAL_IDS) {
+      mergedMats[id] = (mergedMats[id] || 0) + (matBonus[id] || 0);
     }
 
     const merged = {
@@ -366,7 +391,7 @@ export function loadState() {
       ranch,
       feed: parsed.feed ?? 0,
       dust: parsed.dust ?? 0,
-      materials: { ...emptyMaterials(), ...(parsed.materials || {}) },
+      materials: mergedMats,
       trainSite: TRAIN_SITES.some((s) => s.id === parsed.trainSite) ? parsed.trainSite : "shore",
       inventory,
       pending: Array.isArray(parsed.pending) ? parsed.pending : [],
@@ -376,6 +401,9 @@ export function loadState() {
       breedingUnlocked: true,
       bestiary,
       daily: ensureDaily(parsed.daily),
+      pathQuests: parsed.pathQuests?.claimed
+        ? { claimed: { ...parsed.pathQuests.claimed } }
+        : emptyPathQuests(),
       achievements: parsed.achievements || {},
       stats: {
         bonds: parsed.stats?.bonds || 0,
@@ -682,12 +710,16 @@ export function claimDaily(state, questId) {
 }
 
 export function registerBestiary(state, pet) {
-  if (!pet?.speciesId || !pet?.elementId) return false;
+  const key = bestiaryKeyFromPet(pet);
+  if (!key) return false;
   if (!state.bestiary) state.bestiary = {};
-  const key = bestiaryKey(pet.speciesId, pet.elementId);
   if (state.bestiary[key]) return false;
   state.bestiary[key] = true;
-  pushLog(state, `圖鑑登錄：${pet.elementName || ""}${pet.speciesName || pet.name}。`);
+  const blood = pet.bloodlineName && pet.bloodlineName !== "無紋" ? `·${pet.bloodlineName}` : "";
+  pushLog(
+    state,
+    `圖鑑登錄：${pet.elementName || ""}${pet.speciesName || pet.name}·${pet.personalityName || ""}${blood}。`
+  );
   checkAchievements(state);
   return true;
 }
@@ -1334,7 +1366,7 @@ export function maybeEncounterAfterDungeon(state, dungeonId, won) {
   if (Math.random() > rate) return { blocked: false, encounter: null };
 
   const dungeonDef = DUNGEONS.find((x) => x.id === dungeonId) || null;
-  const enc = rollWildEncounter(dungeonId, dungeonDef);
+  const enc = rollWildEncounter(dungeonId, dungeonDef, state.realm || 0);
   state.pending.push(enc);
   return { blocked: false, encounter: enc };
 }
@@ -1580,37 +1612,13 @@ function isItemEquipped(state, itemUid) {
   return null;
 }
 
-/** 人物裝備／卸下 */
-export function equipMaster(state, itemUid, slot) {
-  if (!state.inventory) state.inventory = [];
-  if (!state.master.equip) state.master.equip = { weapon: null, armor: null, accessory: null };
-  if (!MASTER_EQUIP_SLOTS.includes(slot)) return { ok: false, msg: "無效槽位。" };
-  const resolved = resolveInvGear(state, itemUid);
-  if (!resolved) return { ok: false, msg: "庫存中找不到這件裝備。" };
-  const { def } = resolved;
-  if (def.slot !== slot) {
-    return { ok: false, msg: `這件應裝在${SLOT_LABEL[def.slot] || def.slot}槽。` };
-  }
-
-  const worn = isItemEquipped(state, itemUid);
-  if (worn && worn.slot !== slot) {
-    return { ok: false, msg: "這件已被穿戴。" };
-  }
-
-  state.master.equip[slot] = itemUid;
-  pushLog(state, `裝備【${def.name}】於人物${SLOT_LABEL[slot]}槽。`);
-  return { ok: true, msg: `已裝備 ${def.name}` };
+/** 人物裝備已廢止 */
+export function equipMaster(_state, _itemUid, _slot) {
+  return { ok: false, msg: "人物裝備已廢止——重心在靈寵。" };
 }
 
-export function unequipMaster(state, slot) {
-  if (!state.master.equip) return { ok: false, msg: "無裝備。" };
-  if (!MASTER_EQUIP_SLOTS.includes(slot)) return { ok: false, msg: "無效槽位。" };
-  const uid = state.master.equip[slot];
-  if (!uid) return { ok: false, msg: "該槽為空。" };
-  const r = resolveInvGear(state, uid);
-  state.master.equip[slot] = null;
-  pushLog(state, `卸下人物${SLOT_LABEL[slot]}${r ? `【${r.def.name}】` : ""}。`);
-  return { ok: true, msg: "已卸下" };
+export function unequipMaster(_state, _slot) {
+  return { ok: false, msg: "人物裝備已廢止。" };
 }
 
 export function inventoryView(state) {
@@ -2045,6 +2053,10 @@ export function runDungeon(state, dungeonId) {
     state.tutorial.flags.dungeonStarted = true;
   }
 
+  if (!state.pets.length) {
+    return { ok: false, msg: "請先派出至少一隻靈寵再進秘境。" };
+  }
+
   const dailyPack = ensureDungeonDaily(state);
   const dailyMod = dailyPack?.mod || null;
   const tutWaiveChallenge = tutorialWaivesDungeonChallenge(state, dungeonId);
@@ -2053,9 +2065,7 @@ export function runDungeon(state, dungeonId) {
   const formationId = FORMATION_IDS.includes(state.formation) ? state.formation : "balanced";
   const formation = FORMATIONS[formationId] || FORMATIONS.balanced;
 
-  const chalEval = evaluateDungeonChallenge(state.pets, challenge, {
-    hasMaster: !challenge?.banMaster,
-  });
+  const chalEval = evaluateDungeonChallenge(state.pets, challenge, {});
   // 強制入口限制：出戰人數／禁屬不符則拒進（教學秘境豁免）
   if (!tutWaiveChallenge && challenge?.maxPets != null && state.pets.length > challenge.maxPets) {
     return {
@@ -2074,8 +2084,6 @@ export function runDungeon(state, dungeonId) {
   }
 
   const stageBonus = state.realm * 2;
-  const masterSkills = masterSkillsForStage(state.realm);
-  const mGear = masterGearBonus(state);
   const synergy = partySynergy(state.pets);
   const dex = bestiaryStatus(state);
   const sealMult = tideSealCombatMult(state.tideSeals || 0);
@@ -2097,26 +2105,7 @@ export function runDungeon(state, dungeonId) {
     });
   }
 
-  const includeMaster = !challenge?.banMaster;
   const allies = [];
-  if (includeMaster) {
-    allies.push({
-      side: "ally",
-      name: state.master.name,
-      hp: Math.round((state.master.hp + state.realm * 10 + mGear.hp) * hpMult),
-      maxHp: Math.round((state.master.hp + state.realm * 10 + mGear.hp) * hpMult),
-      atk: Math.round((state.master.atk + stageBonus + mGear.atk) * atkMult),
-      spd: Math.round((state.master.spd + Math.floor(state.realm / 2) + mGear.spd) * synergy.spdMult),
-      isMaster: true,
-      elementId: "tide",
-      skillLevel: 1,
-      skills: masterSkills,
-      skillCd: Object.fromEntries(masterSkills.map((id) => [id, 0])),
-      guardTurns: 0,
-      atkBuffTurns: 0,
-      atkBuffPct: 0,
-    });
-  }
   const peNotes = [];
   for (const p of state.pets) {
     const skills = petSkillIds(p);
@@ -2130,14 +2119,15 @@ export function runDungeon(state, dungeonId) {
     const pAtk = pe?.atkMult || 1;
     const pHp = pe?.hpMult || 1;
     const pSpd = pe?.spdMult || 1;
+    const bm = bloodmarkCombatMult(p.bloodmarks);
     if (pe?.label) peNotes.push(`${displayPetName(p)}：${pe.label}`);
     allies.push({
       side: "ally",
       name: displayPetName(p),
-      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp),
-      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp),
-      atk: Math.round((p.atk + stageBonus) * atkMult * elemMult * gMult * fAtk * pAtk),
-      spd: Math.round(p.spd * synergy.spdMult * fSpd * pSpd),
+      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp),
+      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp),
+      atk: Math.round((p.atk + stageBonus) * atkMult * elemMult * gMult * fAtk * pAtk * bm.atk),
+      spd: Math.round(p.spd * synergy.spdMult * fSpd * pSpd * bm.spd),
       isMaster: false,
       elementId: p.elementId,
       skillLevel: p.skillLevel ?? 1,
@@ -2152,16 +2142,7 @@ export function runDungeon(state, dungeonId) {
   }
 
   if (!allies.length) {
-    return { ok: false, msg: "無出戰單位（挑戰禁人物且未派出靈寵）。" };
-  }
-
-  // Also apply passive to master if matching
-  const masterAlly = allies.find((a) => a.isMaster);
-  if (masterAlly) {
-    const masterElemMult = dungeonElemAtkMult(combatPassives, "tide");
-    if (masterElemMult !== 1) {
-      masterAlly.atk = Math.round(masterAlly.atk * masterElemMult);
-    }
+    return { ok: false, msg: "請先派出至少一隻靈寵再進秘境。" };
   }
 
   let waveIndex = 0;
@@ -2217,7 +2198,6 @@ export function runDungeon(state, dungeonId) {
     note(
       `${challenge.label}${chalEval.ok ? "（條件已滿足，勝利可領挑戰獎）" : `（${chalEval.reason || "未滿足"}）`}`
     );
-    if (challenge.banMaster) note("挑戰生效：人物未出戰。");
   }
   if (dailyMod?.label) note(dailyMod.label);
   const genNotes = state.pets
@@ -2233,9 +2213,6 @@ export function runDungeon(state, dungeonId) {
   }
   if (peNotes.length) {
     note(`性格被動：${peNotes.join("；")}`);
-  }
-  if (mGear.setLabels?.length) {
-    note(`裝備套裝：${mGear.setLabels.join("、")}。`);
   }
   if ((state.tideSeals || 0) > 0) {
     note(
@@ -2401,10 +2378,7 @@ export function runDungeon(state, dungeonId) {
       }
 
       // 挑戰獎：banMaster 已強制生效；其餘以出戰評估
-      challengeMet = !!(
-        challenge &&
-        evaluateDungeonChallenge(state.pets, challenge, { hasMaster: includeMaster }).ok
-      );
+      challengeMet = !!(challenge && evaluateDungeonChallenge(state.pets, challenge, {}).ok);
       if (challengeMet && challenge?.bonus) {
         challengeStones = challenge.bonus.stones || 0;
         challengeScrap = challenge.bonus.scrap || 0;
@@ -2484,17 +2458,16 @@ export function runDungeon(state, dungeonId) {
           );
         }
       }
-      const drop = rollGearDrop(dungeonId, {
+      const drop = rollDungeonMatDrop(dungeonId, {
         eliteCleared,
         bossCleared,
         conditionHits: condHits,
       });
       if (drop) {
-        if (!state.inventory) state.inventory = [];
-        state.inventory.push(drop);
-        const gname = GEAR[drop.gearId]?.name || drop.gearId;
+        addMaterials(state, { [drop.matId]: drop.amount || 1 });
+        const mname = MATERIALS[drop.matId]?.name || drop.matId;
         const why = bossCleared ? "（BOSS 掉落加成）" : eliteCleared ? "（精英掉落加成）" : "";
-        say(`拾獲裝備【${gname}】${why}！可至修行頁穿戴。`);
+        say(`拾獲【${mname}】×${drop.amount || 1}${why}！`);
       }
     }
   }
@@ -2613,9 +2586,7 @@ export function dungeonStatus(state, dungeonId) {
   const condEval = evaluateDungeonConditions(state.pets, d);
   const daily = dungeonDailyView(state);
   const tutWaive = tutorialWaivesDungeonChallenge(state, dungeonId);
-  const chalEval = evaluateDungeonChallenge(state.pets, d.challenge, {
-    hasMaster: !d.challenge?.banMaster,
-  });
+  const chalEval = evaluateDungeonChallenge(state.pets, d.challenge, {});
   return {
     cleared: !!(state.clearedDungeons || {})[dungeonId],
     cooldownLeftMs: Math.max(0, readyAt - now),
@@ -2637,42 +2608,75 @@ export function dungeonStatus(state, dungeonId) {
   };
 }
 
-export function forgeHint(state) {
-  const need = FORGE_SCRAP_COST;
-  if (state.scrap < need) {
-    return { ok: false, msg: `靈紋鍛造需要 ${need} 碎片（現有 ${state.scrap}）。` };
-  }
-  if (!state.inventory) state.inventory = [];
-  state.scrap -= need;
+export function forgeHint(_state) {
+  return { ok: false, msg: "靈紋鍛造已廢止——秘境改掉落寵用素材。" };
+}
 
-  // 優先強化已裝備的一件人物裝；否則鍛出低階裝
-  const eq = state.master?.equip || {};
-  const equipped = MASTER_EQUIP_SLOTS.map((s) => eq[s]).filter(Boolean);
-  if (equipped.length) {
-    const uid = equipped[Math.floor(Math.random() * equipped.length)];
-    const r = resolveInvGear(state, uid);
-    if (r) {
-      const bonusAtk = 1 + Math.floor(Math.random() * 2);
-      const bonusHp = 3 + Math.floor(Math.random() * 5);
-      r.item.forgeAtk = (r.item.forgeAtk || 0) + bonusAtk;
-      r.item.forgeHp = (r.item.forgeHp || 0) + bonusHp;
-      pushLog(
-        state,
-        `靈紋鍛造：【${r.def.name}】強化 +${bonusAtk} 攻／+${bonusHp} 血。`
-      );
-      return { ok: true, msg: `${r.def.name} 強化 +${bonusAtk}攻` };
+/** 催生符：立即重置繁殖冷卻 */
+export function useBreedTicket(state) {
+  if ((state.materials?.breed_ticket || 0) < 1) {
+    return { ok: false, msg: "沒有催生符。" };
+  }
+  state.materials.breed_ticket -= 1;
+  state.breedReadyAt = 0;
+  pushLog(state, "使用催生符，繁殖冷卻已重置。");
+  return { ok: true, msg: "繁殖冷卻已重置" };
+}
+
+/** 血統催化：縮短當前繁殖冷卻一半 */
+export function useBloodCatalyst(state) {
+  if ((state.materials?.blood_catalyst || 0) < 1) {
+    return { ok: false, msg: "沒有血統催化。" };
+  }
+  const now = Date.now();
+  const left = Math.max(0, (state.breedReadyAt || 0) - now);
+  if (left <= 0) {
+    return { ok: false, msg: "目前沒有繁殖冷卻。" };
+  }
+  state.materials.blood_catalyst -= 1;
+  state.breedReadyAt = now + Math.floor(left / 2);
+  pushLog(state, "使用血統催化，繁殖冷卻減半。");
+  return { ok: true, msg: "繁殖冷卻減半" };
+}
+
+export function pathQuestsView(state) {
+  if (!state.pathQuests) state.pathQuests = emptyPathQuests();
+  const claimed = state.pathQuests.claimed || {};
+  const tracks = {};
+  for (const q of PATH_QUESTS) {
+    if (!tracks[q.track]) {
+      tracks[q.track] = { track: q.track, trackName: q.trackName, items: [] };
+    }
+    const ev = evalPathQuest(state, q);
+    tracks[q.track].items.push({
+      ...q,
+      ...ev,
+      claimed: !!claimed[q.id],
+      canClaim: ev.ok && !claimed[q.id],
+    });
+  }
+  return Object.values(tracks);
+}
+
+export function claimPathQuest(state, questId) {
+  if (!state.pathQuests) state.pathQuests = emptyPathQuests();
+  const q = PATH_QUESTS.find((x) => x.id === questId);
+  if (!q) return { ok: false, msg: "目標不存在。" };
+  if (state.pathQuests.claimed[questId]) return { ok: false, msg: "已領取。" };
+  const ev = evalPathQuest(state, q);
+  if (!ev.ok) return { ok: false, msg: `未達標（${ev.progress}）。` };
+  state.pathQuests.claimed[questId] = true;
+  applyReward(state, q.reward);
+  const bits = [];
+  if (q.reward.stones) bits.push(`${q.reward.stones}石`);
+  if (q.reward.scrap) bits.push(`${q.reward.scrap}碎片`);
+  if (q.reward.materials) {
+    for (const [id, n] of Object.entries(q.reward.materials)) {
+      bits.push(`${MATERIALS[id]?.name || id}×${n}`);
     }
   }
-
-  const pool = Object.values(GEAR).filter((g) => g.rarity <= 2);
-  const pick = pool[Math.floor(Math.random() * pool.length)];
-  const item = {
-    uid: `gear-forge-${Date.now()}-${Math.floor(Math.random() * 999)}`,
-    gearId: pick.id,
-  };
-  state.inventory.push(item);
-  pushLog(state, `靈紋鍛造：獲得人物裝備【${pick.name}】。`);
-  return { ok: true, msg: `鍛出 ${pick.name}` };
+  pushLog(state, `求道【${q.name}】達成，獲 ${bits.join("／")}。`);
+  return { ok: true, msg: `領取 ${bits.join("／")}` };
 }
 
 /**
@@ -2720,6 +2724,7 @@ export function tryBreed(state, uidA, uidB) {
       element: genes.element,
       personality: genes.personality,
       personality2: genes.personality2,
+      bloodmarks: genes.bloodmarks || [],
       rarity: genes.rarity,
       cost: 0,
     })
@@ -3050,9 +3055,11 @@ export {
   petSpeciesBaseline,
   fusionAbsorbRate,
   bestiaryEntries,
+  bestiarySpeciesSummary,
   bestiaryTotal,
   bestiaryCombatBonus,
   DAILY_QUESTS,
+  PATH_QUESTS,
   ACHIEVEMENTS,
   BREED_GOALS,
   NICK_MAX_LEN,

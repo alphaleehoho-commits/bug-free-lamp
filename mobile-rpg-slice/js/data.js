@@ -1,12 +1,12 @@
 /** Data tables — 靈寵修行 */
 
 export const STAGES = [
-  { id: 0, name: "初契", need: 0, rate: 2.5 },
-  { id: 1, name: "通靈初期", need: 40, rate: 3.2 },
-  { id: 2, name: "通靈後期", need: 120, rate: 4.2 },
-  { id: 3, name: "御靈", need: 320, rate: 5.5 },
-  { id: 4, name: "靈主", need: 800, rate: 7 },
-  { id: 5, name: "潮主", need: 1800, rate: 9 },
+  { id: 0, name: "初契", need: 0, rate: 2.2 },
+  { id: 1, name: "通靈初期", need: 55, rate: 2.8 },
+  { id: 2, name: "通靈後期", need: 200, rate: 3.6 },
+  { id: 3, name: "御靈", need: 520, rate: 4.6 },
+  { id: 4, name: "靈主", need: 1400, rate: 5.8 },
+  { id: 5, name: "潮主", need: 3200, rate: 7.2 },
 ];
 
 export const REALMS = STAGES;
@@ -39,43 +39,47 @@ export function nextStageAt(realmId) {
  */
 export const BREAKTHROUGH_GATES = {
   1: {
-    costs: { stones: 25 },
-    checks: [],
+    costs: { stones: 20 },
+    checks: [
+      { type: "owned_pets", need: 1, label: "擁有靈寵 ≥ 1" },
+    ],
   },
   2: {
-    costs: { stones: 45, scrap: 1 },
+    costs: { stones: 60, scrap: 1 },
     checks: [
       { type: "cleared", dungeonId: "tide_1", label: "通關【潮汐廢墟·一層】" },
-      { type: "bonds", need: 1, label: "成功契約 ≥ 1" },
       { type: "owned_pets", need: 2, label: "擁有靈寵 ≥ 2" },
+      { type: "bestiary", need: 3, label: "圖鑑登錄 ≥ 3 格" },
     ],
   },
   3: {
-    costs: { stones: 90, scrap: 2, dust: 8 },
+    costs: { stones: 140, scrap: 3, dust: 12 },
     checks: [
-      { type: "cleared", dungeonId: "tide_1", label: "通關【一層】" },
-      { type: "combats", need: 5, label: "累計秘境勝場 ≥ 5" },
-      { type: "bonds", need: 2, label: "成功契約 ≥ 2" },
-      { type: "gear_equipped", need: 1, label: "人物穿戴 ≥ 1 件裝備" },
+      { type: "cleared", dungeonId: "tide_2", label: "通關【二層】" },
+      { type: "combats", need: 8, label: "累計秘境勝場 ≥ 8" },
+      { type: "breeds", need: 1, label: "繁殖次數 ≥ 1" },
+      { type: "bestiary", need: 12, label: "圖鑑登錄 ≥ 12 格" },
     ],
   },
   4: {
-    costs: { stones: 180, scrap: 3, dust: 18, feed: 12 },
+    costs: { stones: 280, scrap: 5, dust: 28, feed: 16 },
     checks: [
-      { type: "cleared", dungeonId: "tide_2", label: "通關【二層】" },
-      { type: "fusions", need: 1, label: "完成融合 ≥ 1" },
+      { type: "cleared", dungeonId: "tide_3", label: "通關【心核】" },
       { type: "hybrid_owned", need: 1, label: "擁有雜交種 ≥ 1" },
-      { type: "gear_equipped", need: 2, label: "人物穿戴 ≥ 2 件裝備" },
+      { type: "fusions", need: 1, label: "完成融合 ≥ 1" },
+      { type: "bestiary", need: 40, label: "圖鑑登錄 ≥ 40 格" },
+      { type: "min_gen", gen: 1, label: "擁有 ≥ 1 代寵" },
     ],
   },
   5: {
-    costs: { stones: 360, scrap: 5, dust: 36, feed: 26 },
+    costs: { stones: 520, scrap: 8, dust: 48, feed: 32 },
     checks: [
       { type: "cleared", dungeonId: "tide_4", label: "通關【潮汐深層】" },
       { type: "min_gen", gen: 2, label: "擁有 ≥ 2 代寵" },
-      { type: "breeds", need: 2, label: "繁殖次數 ≥ 2" },
-      { type: "bestiary", need: 10, label: "圖鑑登錄 ≥ 10 格" },
-      { type: "gear_equipped", need: 3, label: "三槽滿裝" },
+      { type: "breeds", need: 5, label: "繁殖次數 ≥ 5" },
+      { type: "hybrid_owned", need: 2, label: "擁有雜交種 ≥ 2" },
+      { type: "bestiary", need: 100, label: "圖鑑登錄 ≥ 100 格" },
+      { type: "bloodmark_owned", need: 1, label: "擁有帶血脈紋靈寵 ≥ 1" },
     ],
   },
 };
@@ -88,10 +92,10 @@ export function breakthroughGateFor(targetRealmId) {
   const reqGen = Math.min(3, 2 + Math.floor((extra - 1) / 2));
   return {
     costs: {
-      stones: Math.round(400 * Math.pow(1.48, extra - 1)),
-      scrap: 5 + extra * 2,
-      dust: 40 + extra * 12,
-      feed: 30 + extra * 8,
+      stones: Math.round(560 * Math.pow(1.52, extra - 1)),
+      scrap: 8 + extra * 3,
+      dust: 50 + extra * 14,
+      feed: 36 + extra * 10,
       seal_ember: extra,
     },
     checks: [
@@ -102,8 +106,8 @@ export function breakthroughGateFor(targetRealmId) {
       },
       {
         type: "combats",
-        need: 8 + extra * 4,
-        label: `累計秘境勝場 ≥ ${8 + extra * 4}`,
+        need: 12 + extra * 5,
+        label: `累計秘境勝場 ≥ ${12 + extra * 5}`,
       },
       {
         type: "min_gen",
@@ -111,9 +115,14 @@ export function breakthroughGateFor(targetRealmId) {
         label: `擁有 ≥ ${reqGen} 代寵`,
       },
       {
-        type: "gear_equipped",
-        need: 3,
-        label: "三槽滿裝",
+        type: "bestiary",
+        need: 80 + extra * 40,
+        label: `圖鑑登錄 ≥ ${80 + extra * 40} 格`,
+      },
+      {
+        type: "breeds",
+        need: 3 + extra * 2,
+        label: `繁殖次數 ≥ ${3 + extra * 2}`,
       },
     ],
   };
@@ -124,8 +133,7 @@ function ownedPetList(state) {
 }
 
 function countEquippedGear(state) {
-  const eq = state.master?.equip || {};
-  return ["weapon", "armor", "accessory"].filter((s) => eq[s]).length;
+  return 0;
 }
 
 /** 評估單項突破檢查 */
@@ -149,8 +157,8 @@ export function evalBreakthroughCheck(state, check) {
     return { ok: n >= check.need, progress: `${n}/${check.need}` };
   }
   if (check.type === "gear_equipped") {
-    const n = countEquippedGear(state);
-    return { ok: n >= check.need, progress: `${n}/${check.need}` };
+    /* 人物裝備已移除：舊存檔條件視為達成 */
+    return { ok: true, progress: "—／已廢止" };
   }
   if (check.type === "fusions") {
     const n = stats.fusions || 0;
@@ -170,6 +178,10 @@ export function evalBreakthroughCheck(state, check) {
   }
   if (check.type === "bestiary") {
     const n = Object.keys(state.bestiary || {}).length;
+    return { ok: n >= check.need, progress: `${n}/${check.need}` };
+  }
+  if (check.type === "bloodmark_owned") {
+    const n = owned.filter((p) => (p.bloodmarks || []).length > 0).length;
     return { ok: n >= check.need, progress: `${n}/${check.need}` };
   }
   return { ok: false, progress: "?" };
@@ -407,13 +419,134 @@ export const SPECIES = {
     breedOnly: true,
     base: { atk: 11, hp: 158, spd: 7 },
   },
+  // —— 野生擴充（realm 分池）——
+  saltpup: { id: "saltpup", name: "鹽犬", kind: "獸", minRealm: 0, base: { atk: 12, hp: 88, spd: 12 } },
+  brineeel: { id: "brineeel", name: "鹵鰻", kind: "鱗", minRealm: 0, base: { atk: 11, hp: 100, spd: 10 } },
+  cliffkite: { id: "cliffkite", name: "崖鳶", kind: "禽", minRealm: 1, base: { atk: 13, hp: 76, spd: 15 } },
+  barnshell: { id: "barnshell", name: "藤螺", kind: "甲", minRealm: 1, base: { atk: 8, hp: 150, spd: 4 } },
+  siltmite: { id: "siltmite", name: "泥蟎", kind: "蟲", minRealm: 2, base: { atk: 14, hp: 72, spd: 13 } },
+  lanternray: { id: "lanternray", name: "燈鰩", kind: "光", minRealm: 2, base: { atk: 12, hp: 98, spd: 9 } },
+  duskox: { id: "duskox", name: "暮牛", kind: "獸", minRealm: 3, base: { atk: 15, hp: 125, spd: 7 } },
+  foamdrake: { id: "foamdrake", name: "沫蛟", kind: "鱗", minRealm: 3, base: { atk: 16, hp: 108, spd: 11 } },
+  // —— 雜交擴充 ——
+  tidehowl: {
+    id: "tidehowl",
+    name: "潮嗥",
+    kind: "獸",
+    breedOnly: true,
+    base: { atk: 18, hp: 105, spd: 11 },
+  },
+  coralmane: {
+    id: "coralmane",
+    name: "珊鬃",
+    kind: "獸",
+    breedOnly: true,
+    base: { atk: 15, hp: 118, spd: 10 },
+  },
+  mistwing: {
+    id: "mistwing",
+    name: "霧翼",
+    kind: "禽",
+    breedOnly: true,
+    base: { atk: 14, hp: 86, spd: 17 },
+  },
+  stormshell: {
+    id: "stormshell",
+    name: "嵐甲",
+    kind: "甲",
+    breedOnly: true,
+    base: { atk: 13, hp: 170, spd: 7 },
+  },
+  gloomfang: {
+    id: "gloomfang",
+    name: "幽牙",
+    kind: "蟲",
+    breedOnly: true,
+    base: { atk: 19, hp: 80, spd: 14 },
+  },
+  lightscale: {
+    id: "lightscale",
+    name: "輝鱗",
+    kind: "鱗",
+    breedOnly: true,
+    base: { atk: 15, hp: 112, spd: 12 },
+  },
+  ashspine: {
+    id: "ashspine",
+    name: "灰脊",
+    kind: "甲",
+    breedOnly: true,
+    base: { atk: 14, hp: 145, spd: 9 },
+  },
+  deepquill: {
+    id: "deepquill",
+    name: "深羽",
+    kind: "禽",
+    breedOnly: true,
+    base: { atk: 16, hp: 88, spd: 16 },
+  },
+  reefmite: {
+    id: "reefmite",
+    name: "礁蟎",
+    kind: "蟲",
+    breedOnly: true,
+    base: { atk: 16, hp: 95, spd: 12 },
+  },
+  voidcarp: {
+    id: "voidcarp",
+    name: "虛鯉",
+    kind: "鱗",
+    breedOnly: true,
+    base: { atk: 14, hp: 130, spd: 10 },
+  },
+  brightback: {
+    id: "brightback",
+    name: "明背",
+    kind: "光",
+    breedOnly: true,
+    base: { atk: 13, hp: 120, spd: 11 },
+  },
+  galebeast: {
+    id: "galebeast",
+    name: "嵐獸",
+    kind: "獸",
+    breedOnly: true,
+    base: { atk: 17, hp: 98, spd: 14 },
+  },
+  stonefinch: {
+    id: "stonefinch",
+    name: "岩雀",
+    kind: "禽",
+    breedOnly: true,
+    base: { atk: 13, hp: 92, spd: 13 },
+  },
+  inkfox: {
+    id: "inkfox",
+    name: "墨狐",
+    kind: "獸",
+    breedOnly: true,
+    base: { atk: 18, hp: 90, spd: 15 },
+  },
+  prismoth: {
+    id: "prismoth",
+    name: "稜蛾",
+    kind: "蟲",
+    breedOnly: true,
+    base: { atk: 17, hp: 84, spd: 15 },
+  },
 };
 
 /** 野生／秘境可遇種族（排除繁殖專屬） */
-export function wildSpeciesIds() {
+export function wildSpeciesIds(realm = 99) {
+  const r = realm == null ? 99 : realm | 0;
   return Object.values(SPECIES)
-    .filter((s) => !s.breedOnly)
+    .filter((s) => !s.breedOnly && (s.minRealm == null || s.minRealm <= r))
     .map((s) => s.id);
+}
+
+/** 商肆／早期可用野生池 */
+export function shopSpeciesIds(realm = 0) {
+  return wildSpeciesIds(Math.max(0, realm | 0));
 }
 
 export const PERSONALITIES = {
@@ -423,6 +556,68 @@ export const PERSONALITIES = {
   gentle: { id: "gentle", name: "溫馴", atk: 0.9, hp: 1.1, spd: 1.0 },
   wild: { id: "wild", name: "狂放", atk: 1.2, hp: 0.88, spd: 1.08 },
 };
+
+/** 血脈紋（每寵 0–2）：圖鑑組合軸之一 */
+export const BLOODLINE_MARKS = {
+  tide_sigil: { id: "tide_sigil", name: "潮印", atk: 1.03, hp: 1.02, spd: 1.0 },
+  reef_bone: { id: "reef_bone", name: "礁骨", atk: 1.0, hp: 1.06, spd: 0.98 },
+  gale_plume: { id: "gale_plume", name: "嵐羽", atk: 1.02, hp: 0.98, spd: 1.06 },
+  gloom_spark: { id: "gloom_spark", name: "幽螢", atk: 1.05, hp: 0.97, spd: 1.03 },
+};
+
+export const BLOODLINE_MARK_IDS = Object.keys(BLOODLINE_MARKS);
+export const BLOODMARK_MAX = 2;
+
+/** 正規化血脈鍵（圖鑑用） */
+export function bloodlineKey(marks) {
+  const ids = (Array.isArray(marks) ? marks : [])
+    .filter((id) => BLOODLINE_MARKS[id])
+    .slice(0, BLOODMARK_MAX)
+    .sort();
+  const uniq = [...new Set(ids)];
+  return uniq.length ? uniq.join("+") : "none";
+}
+
+export function bloodlineLabel(marks) {
+  const key = bloodlineKey(marks);
+  if (key === "none") return "無紋";
+  return key
+    .split("+")
+    .map((id) => BLOODLINE_MARKS[id]?.name || id)
+    .join("·");
+}
+
+/** 所有血脈型態鍵（含無紋）：C(4,0)+C(4,1)+C(4,2)=11 */
+export function allBloodlineKeys() {
+  const ids = BLOODLINE_MARK_IDS;
+  const out = ["none"];
+  for (const a of ids) out.push(a);
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      out.push([ids[i], ids[j]].sort().join("+"));
+    }
+  }
+  return out;
+}
+
+export function normalizeBloodmarks(marks) {
+  const key = bloodlineKey(marks);
+  return key === "none" ? [] : key.split("+");
+}
+
+export function bloodmarkCombatMult(marks) {
+  let atk = 1;
+  let hp = 1;
+  let spd = 1;
+  for (const id of normalizeBloodmarks(marks)) {
+    const m = BLOODLINE_MARKS[id];
+    if (!m) continue;
+    atk *= m.atk;
+    hp *= m.hp;
+    spd *= m.spd;
+  }
+  return { atk, hp, spd };
+}
 
 /**
  * 技能定義
@@ -874,25 +1069,44 @@ export const HYBRID_RECIPES = [
   { kinds: ["甲", "蟲"], species: "shellmite", chance: 0.24, tier: "main" },
   { kinds: ["光", "獸"], species: "glintfox", chance: 0.24, tier: "main" },
   { kinds: ["光", "甲"], species: "prismback", chance: 0.24, tier: "main" },
-  // —— 次配方（較低機率／後門）——
-  { kinds: ["鱗", "蟲"], species: "mistcarp", chance: 0.18, tier: "sub" },
-  { kinds: ["甲", "禽"], species: "ironback", chance: 0.16, tier: "sub" },
-  { kinds: ["光", "獸"], species: "tideling", chance: 0.16, tier: "sub" },
-  { kinds: ["光", "禽"], species: "reefwing", chance: 0.18, tier: "sub" },
-  { kinds: ["光", "鱗"], species: "mistcarp", chance: 0.15, tier: "sub" },
-  { kinds: ["光", "甲"], species: "ironback", chance: 0.14, tier: "sub" },
+  { kinds: ["光", "鱗"], species: "lightscale", chance: 0.24, tier: "main" },
+  { kinds: ["光", "禽"], species: "mistwing", chance: 0.23, tier: "main" },
+  { kinds: ["鱗", "蟲"], species: "voidcarp", chance: 0.22, tier: "main" },
+  { kinds: ["甲", "禽"], species: "stormshell", chance: 0.22, tier: "main" },
+  // —— 次配方（交替產物）——
+  { kinds: ["獸", "鱗"], species: "tidehowl", chance: 0.14, tier: "sub" },
+  { kinds: ["獸", "甲"], species: "coralmane", chance: 0.13, tier: "sub" },
+  { kinds: ["禽", "蟲"], species: "gloomfang", chance: 0.13, tier: "sub" },
+  { kinds: ["光", "蟲"], species: "prismoth", chance: 0.12, tier: "sub" },
+  { kinds: ["獸", "禽"], species: "galebeast", chance: 0.12, tier: "sub" },
+  { kinds: ["鱗", "禽"], species: "deepquill", chance: 0.12, tier: "sub" },
+  { kinds: ["甲", "蟲"], species: "reefmite", chance: 0.12, tier: "sub" },
+  { kinds: ["光", "甲"], species: "brightback", chance: 0.12, tier: "sub" },
+  { kinds: ["獸", "蟲"], species: "inkfox", chance: 0.11, tier: "sub" },
+  { kinds: ["光", "獸"], species: "ashspine", chance: 0.1, tier: "sub" },
+  { kinds: ["甲", "禽"], species: "stonefinch", chance: 0.1, tier: "sub" },
 ];
 
 function kindPairKey(k1, k2) {
   return [k1, k2].sort().join("|");
 }
 
-const HYBRID_BY_KINDS = (() => {
+/** 同 kind 對可有多條配方；繁殖時按 chance 加權抽 */
+const HYBRID_LIST_BY_KINDS = (() => {
   const map = {};
   for (const r of HYBRID_RECIPES) {
-    if (!r.chance) continue;
+    if (!r.chance || !SPECIES[r.species]) continue;
     const key = kindPairKey(r.kinds[0], r.kinds[1]);
-    if (!map[key] || r.chance > map[key].chance) map[key] = r;
+    if (!map[key]) map[key] = [];
+    map[key].push(r);
+  }
+  return map;
+})();
+
+const HYBRID_BY_KINDS = (() => {
+  const map = {};
+  for (const [key, list] of Object.entries(HYBRID_LIST_BY_KINDS)) {
+    map[key] = list.reduce((best, r) => (!best || r.chance > best.chance ? r : best), null);
   }
   return map;
 })();
@@ -900,6 +1114,25 @@ const HYBRID_BY_KINDS = (() => {
 export function hybridRecipeForKinds(kindA, kindB) {
   if (!kindA || !kindB || kindA === kindB) return null;
   return HYBRID_BY_KINDS[kindPairKey(kindA, kindB)] || null;
+}
+
+export function hybridRecipesForKinds(kindA, kindB) {
+  if (!kindA || !kindB || kindA === kindB) return [];
+  return HYBRID_LIST_BY_KINDS[kindPairKey(kindA, kindB)] || [];
+}
+
+function pickHybridRecipe(kindA, kindB, genMult = 1) {
+  const list = hybridRecipesForKinds(kindA, kindB);
+  if (!list.length) return null;
+  const weighted = {};
+  for (const r of list) {
+    weighted[r.species] = Math.min(0.85, r.chance * genMult);
+  }
+  /* 以加權機率嘗試；全敗則無雜交 */
+  const total = Object.values(weighted).reduce((a, b) => a + b, 0);
+  if (Math.random() > Math.min(0.9, total)) return null;
+  const species = pickWeighted(weighted);
+  return list.find((r) => r.species === species) || list[0];
 }
 
 /** 繁殖代數：0＝原生（未繁殖），最高 3 */
@@ -1021,15 +1254,12 @@ export function rollBreedGenes(parentA, parentB) {
   let hybrid = false;
   let newSpecies = false;
 
-  const recipe = !sameSpecies && kindA !== kindB ? hybridRecipeForKinds(kindA, kindB) : null;
+  const recipe = !sameSpecies && kindA !== kindB ? pickHybridRecipe(kindA, kindB, genMult) : null;
   if (recipe && SPECIES[recipe.species]) {
-    const chance = Math.min(0.85, recipe.chance * genMult);
-    if (Math.random() < chance) {
-      species = recipe.species;
-      hybrid = true;
-      newSpecies = true;
-      mutated = true;
-    }
+    species = recipe.species;
+    hybrid = true;
+    newSpecies = true;
+    mutated = true;
   }
 
   const elemRate = Math.min(0.35, BREED_ELEMENT_MUTATION_RATE * genMult);
@@ -1069,6 +1299,28 @@ export function rollBreedGenes(parentA, parentB) {
   }
   if (personality2 === personality) personality2 = null;
 
+  /* 血脈紋：繼承雙親池，約 28% 突變加紋，最高 2 */
+  const markPool = [
+    ...normalizeBloodmarks(parentA.bloodmarks),
+    ...normalizeBloodmarks(parentB.bloodmarks),
+  ];
+  let bloodmarks = [];
+  if (markPool.length && Math.random() < 0.7) {
+    bloodmarks.push(markPool[Math.floor(Math.random() * markPool.length)]);
+  }
+  if (markPool.length > 1 && Math.random() < 0.35) {
+    const other = markPool.find((m) => m !== bloodmarks[0]);
+    if (other) bloodmarks.push(other);
+  }
+  if (Math.random() < 0.28 * genMult) {
+    const candidates = BLOODLINE_MARK_IDS.filter((id) => !bloodmarks.includes(id));
+    if (candidates.length) {
+      bloodmarks.push(pick(candidates));
+      mutated = true;
+    }
+  }
+  bloodmarks = normalizeBloodmarks(bloodmarks);
+
   const rarity = rollBreedRarity(parentA, parentB, { sameSpecies, hybrid, genMult });
   const parentMax = Math.max(parentA.rarity ?? 0, parentB.rarity ?? 0);
   const rarityUp = rarity > parentMax;
@@ -1078,6 +1330,7 @@ export function rollBreedGenes(parentA, parentB) {
     element,
     personality,
     personality2,
+    bloodmarks,
     rarity,
     generation,
     genA,
@@ -1092,9 +1345,9 @@ export function rollBreedGenes(parentA, parentB) {
   };
 }
 
-/** 秘境隨機生成一隻野生靈寵；可帶分層權重（僅野生種） */
-export function rollWildEncounter(dungeonId = "wild", dungeonDef = null) {
-  const wildIds = wildSpeciesIds();
+/** 秘境隨機生成一隻野生靈寵；可帶分層權重（僅野生種，受 realm 分池） */
+export function rollWildEncounter(dungeonId = "wild", dungeonDef = null, realm = 0) {
+  const wildIds = wildSpeciesIds(realm);
   const weights = dungeonDef?.encounterWeights;
   let speciesId;
   if (weights) {
@@ -1111,6 +1364,15 @@ export function rollWildEncounter(dungeonId = "wild", dungeonDef = null) {
     : pick(Object.keys(ELEMENTS));
   const personalityId = pick(Object.keys(PERSONALITIES));
   const baseCost = Math.min(BOND_COST_MAX, 24 + Math.floor(Math.random() * 19));
+  let bloodmarks = [];
+  if ((realm | 0) >= 2 && Math.random() < 0.18) {
+    bloodmarks = [pick(BLOODLINE_MARK_IDS)];
+  }
+  if ((realm | 0) >= 4 && Math.random() < 0.08) {
+    const extra = pick(BLOODLINE_MARK_IDS.filter((id) => id !== bloodmarks[0]));
+    if (extra) bloodmarks.push(extra);
+  }
+  bloodmarks = normalizeBloodmarks(bloodmarks);
   const pet = buildPetStats({
     id: `enc-${dungeonId}-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
     species: speciesId,
@@ -1118,6 +1380,7 @@ export function rollWildEncounter(dungeonId = "wild", dungeonDef = null) {
     personality: personalityId,
     cost: baseCost,
     rarity: 0,
+    bloodmarks,
   });
   const bondRate = BOND_RATE_BY_PERSONALITY[personalityId] ?? 0.5;
   return {
@@ -1142,6 +1405,10 @@ export const RECRUIT_POOL = [
   { species: "nightmoth", element: "gale", personality: "sly", weight: 2, cost: 65 },
   { species: "glowfin", element: "flame", personality: "fierce", weight: 3, cost: 58 },
   { species: "glowfin", element: "tide", personality: "gentle", weight: 2, cost: 60 },
+  { species: "saltpup", element: "tide", personality: "fierce", weight: 3, cost: 48 },
+  { species: "brineeel", element: "stone", personality: "steady", weight: 3, cost: 50 },
+  { species: "cliffkite", element: "gale", personality: "sly", weight: 2, cost: 58 },
+  { species: "barnshell", element: "stone", personality: "gentle", weight: 2, cost: 56 },
 ];
 
 export const SHOP_OFFER_COUNT = 3;
@@ -1190,10 +1457,10 @@ export const FORMATION_IDS = ["vanguard", "balanced", "rear"];
  */
 export const DUNGEON_CHALLENGE_RULES = [
   {
-    id: "no_master",
-    label: "挑戰：禁人物出戰",
-    banMaster: true,
-    bonus: { stones: 22, scrap: 1 },
+    id: "max_1_pet",
+    label: "挑戰：孤寵出戰（僅 1 寵）",
+    maxPets: 1,
+    bonus: { stones: 24, scrap: 1 },
   },
   {
     id: "max_2_pets",
@@ -1248,9 +1515,6 @@ export function evaluateDungeonChallenge(pets, challenge, opts = {}) {
       const elName = ELEMENTS[challenge.banElement]?.name || challenge.banElement;
       return { ok: false, reason: `含禁屬${elName}` };
     }
-  }
-  if (challenge.banMaster && opts.hasMaster === false) {
-    // master already excluded — ok
   }
   return { ok: true, reason: "" };
 }
@@ -2291,13 +2555,15 @@ export function buildPetStats(template) {
   const rarity = Math.max(0, Math.min(RARITY_MAX, template.rarity ?? 0));
   const rMult = rarityInfo(rarity).mult;
   const skillId = KIND_SKILLS[sp.kind];
+  const bloodmarks = normalizeBloodmarks(template.bloodmarks);
+  const bm = bloodmarkCombatMult(bloodmarks);
   // 主性格 75% + 副性格 25% 影響白板
   const peAtk = pe2 ? pe.atk * 0.75 + pe2.atk * 0.25 : pe.atk;
   const peHp = pe2 ? pe.hp * 0.75 + pe2.hp * 0.25 : pe.hp;
   const peSpd = pe2 ? pe.spd * 0.75 + pe2.spd * 0.25 : pe.spd;
-  const atk = Math.round(sp.base.atk * el.atk * peAtk * rMult);
-  const hp = Math.round(sp.base.hp * el.hp * peHp * rMult);
-  const spd = Math.round(sp.base.spd * el.spd * peSpd * rMult);
+  const atk = Math.round(sp.base.atk * el.atk * peAtk * rMult * bm.atk);
+  const hp = Math.round(sp.base.hp * el.hp * peHp * rMult * bm.hp);
+  const spd = Math.round(sp.base.spd * el.spd * peSpd * rMult * bm.spd);
   return {
     templateId: template.id,
     speciesId: sp.id,
@@ -2310,6 +2576,8 @@ export function buildPetStats(template) {
     personalityName: pe.name,
     personality2Id: pe2?.id || null,
     personality2Name: pe2?.name || null,
+    bloodmarks,
+    bloodlineName: bloodlineLabel(bloodmarks),
     name: `${el.name}${sp.name}`,
     atk,
     hp,
@@ -2330,10 +2598,29 @@ export function buildPetStats(template) {
   };
 }
 
+/** 開局贈送首寵（潮屬礁狐） */
+export function makeStarterPet() {
+  const built = buildPetStats({
+    id: "starter-reefox-tide",
+    species: "reefox",
+    element: "tide",
+    personality: "sly",
+    cost: 0,
+    rarity: 0,
+    bloodmarks: [],
+  });
+  return {
+    ...built,
+    uid: "starter-reefox",
+    fromStarter: true,
+  };
+}
+
 export function petLabel(pet) {
   const r = rarityInfo(pet.rarity ?? 0).name;
   const pe2 = pet.personality2Name ? `/${pet.personality2Name}` : "";
-  return `${pet.name}（${r}·${pet.kind}·${pet.elementName}·${pet.personalityName}${pe2}）`;
+  const blood = pet.bloodlineName && pet.bloodlineName !== "無紋" ? `·${pet.bloodlineName}` : "";
+  return `${pet.name}（${r}·${pet.kind}·${pet.elementName}·${pet.personalityName}${pe2}${blood}）`;
 }
 
 /* ─── P1：牧場掛機產物 ─── */
@@ -2689,21 +2976,43 @@ export const DUNGEON_GEAR_DROPS = {
 };
 
 export function rollGearDrop(dungeonId, opts = {}) {
-  const table = DUNGEON_GEAR_DROPS[dungeonId];
+  /* 人物裝備已移除：改掉落寵用素材 */
+  return null;
+}
+
+/** 秘境勝利掉落寵用素材（替代人物裝備） */
+export const DUNGEON_MAT_DROPS = {
+  tide_1: {
+    chance: 0.42,
+    weights: { tide_dew: 4, coral_shard: 3, temper_oil: 1 },
+  },
+  tide_2: {
+    chance: 0.48,
+    weights: { coral_shard: 3, mist_silk: 2, blood_catalyst: 1, temper_oil: 1 },
+  },
+  tide_3: {
+    chance: 0.52,
+    weights: { mist_silk: 3, abyss_ink: 2, blood_catalyst: 2, breed_ticket: 1 },
+  },
+  tide_4: {
+    chance: 0.58,
+    weights: { abyss_ink: 3, seal_ember: 2, blood_catalyst: 2, breed_ticket: 2, temper_oil: 1 },
+  },
+};
+
+export function rollDungeonMatDrop(dungeonId, opts = {}) {
+  const table = DUNGEON_MAT_DROPS[dungeonId] || DUNGEON_MAT_DROPS.tide_1;
   if (!table) return null;
   let chance = table.chance || 0;
-  if (opts.bossCleared) chance = Math.min(0.95, chance + 0.22);
-  else if (opts.eliteCleared) chance = Math.min(0.9, chance + 0.12);
+  if (opts.bossCleared) chance = Math.min(0.95, chance + 0.18);
+  else if (opts.eliteCleared) chance = Math.min(0.9, chance + 0.1);
   if (opts.conditionHits > 0) {
-    chance = Math.min(0.95, chance + 0.04 * opts.conditionHits);
+    chance = Math.min(0.95, chance + 0.03 * opts.conditionHits);
   }
   if (Math.random() > chance) return null;
-  const gearId = pickWeighted(table.weights);
-  if (!gearId || !GEAR[gearId]) return null;
-  return {
-    uid: `gear-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
-    gearId,
-  };
+  const matId = pickWeighted(table.weights);
+  if (!matId || !MATERIALS[matId]) return null;
+  return { matId, amount: 1 };
 }
 
 export function gearBonuses(gearIds) {
@@ -2870,6 +3179,9 @@ export const MATERIALS = {
   mist_silk: { id: "mist_silk", name: "霧絲", desc: "高階升級／技能" },
   abyss_ink: { id: "abyss_ink", name: "深淵墨", desc: "雜交／高代繁殖" },
   seal_ember: { id: "seal_ember", name: "契火", desc: "突破與進化" },
+  temper_oil: { id: "temper_oil", name: "性格洗劑", desc: "秘境掉落：洗主性格" },
+  blood_catalyst: { id: "blood_catalyst", name: "血統催化", desc: "秘境掉落：繁殖冷卻縮短／加紋機率" },
+  breed_ticket: { id: "breed_ticket", name: "催生符", desc: "秘境掉落：立即重置繁殖冷卻" },
 };
 
 export const MATERIAL_IDS = Object.keys(MATERIALS);
@@ -2987,6 +3299,9 @@ export const MATERIAL_USES = {
   mist_silk: "高階升級",
   abyss_ink: "繁殖／雜交",
   seal_ember: "突破",
+  temper_oil: "洗性格",
+  blood_catalyst: "縮短繁殖冷卻",
+  breed_ticket: "重置繁殖冷卻",
 };
 
 /** 材料來源索引（練功地／派遣） */
@@ -3122,12 +3437,57 @@ export function partySynergy(pets) {
 
 /* ─── P2：圖鑑／放生／每日／成就 ─── */
 
-export function bestiaryKey(speciesId, elementId) {
+export function bestiaryKey(speciesId, elementId, personalityId = "sly", bloodKey = "none") {
+  const pe = PERSONALITIES[personalityId] ? personalityId : "sly";
+  const bk = bloodKey && bloodKey !== "none" ? bloodKey : "none";
+  return `${speciesId}:${elementId}:${pe}:${bk}`;
+}
+
+/** 舊版種×屬鍵（遷移相容） */
+export function bestiaryKeyLegacy(speciesId, elementId) {
   return `${speciesId}:${elementId}`;
 }
 
+export function bestiaryKeyFromPet(pet) {
+  if (!pet?.speciesId || !pet?.elementId) return null;
+  return bestiaryKey(
+    pet.speciesId,
+    pet.elementId,
+    pet.personalityId || "sly",
+    bloodlineKey(pet.bloodmarks)
+  );
+}
+
 export function bestiaryTotal() {
-  return Object.keys(SPECIES).length * Object.keys(ELEMENTS).length;
+  return (
+    Object.keys(SPECIES).length *
+    Object.keys(ELEMENTS).length *
+    Object.keys(PERSONALITIES).length *
+    allBloodlineKeys().length
+  );
+}
+
+/** 圖鑑物種摘要（UI 用，避免渲染上萬格） */
+export function bestiarySpeciesSummary(state) {
+  const known = state?.bestiary || {};
+  const bloodKeys = allBloodlineKeys();
+  const perSpecies =
+    Object.keys(ELEMENTS).length * Object.keys(PERSONALITIES).length * bloodKeys.length;
+  return Object.values(SPECIES).map((sp) => {
+    let found = 0;
+    const prefix = `${sp.id}:`;
+    for (const key of Object.keys(known)) {
+      if (key.startsWith(prefix)) found += 1;
+    }
+    return {
+      speciesId: sp.id,
+      speciesName: sp.name,
+      kind: sp.kind,
+      breedOnly: !!sp.breedOnly,
+      found,
+      total: perSpecies,
+    };
+  });
 }
 
 export function bestiaryEntries() {
@@ -3135,7 +3495,7 @@ export function bestiaryEntries() {
   for (const sp of Object.values(SPECIES)) {
     for (const el of Object.values(ELEMENTS)) {
       out.push({
-        key: bestiaryKey(sp.id, el.id),
+        key: bestiaryKeyLegacy(sp.id, el.id),
         speciesId: sp.id,
         speciesName: sp.name,
         kind: sp.kind,
@@ -3148,10 +3508,10 @@ export function bestiaryEntries() {
   return out;
 }
 
-/** 每收集 5 格：全隊攻／血 +2%（戰鬥） */
+/** 每收集 25 格：全隊攻／血 +2%（戰鬥） */
 export function bestiaryCombatBonus(discoveredCount) {
   const n = Math.max(0, discoveredCount | 0);
-  const tiers = Math.floor(n / 5);
+  const tiers = Math.floor(n / 25);
   const rate = tiers * 0.02;
   return {
     tiers,
@@ -3227,6 +3587,166 @@ export const DAILY_QUESTS = [
     reward: { stones: 26, scrap: 1 },
   },
 ];
+
+/**
+ * 求道目標板：三條長線（收集／育成／挑戰）
+ * need 為累積門檻；領獎後進度保留，可領下一檔
+ */
+export const PATH_QUESTS = [
+  {
+    track: "collect",
+    trackName: "收集",
+    id: "collect_20",
+    name: "潮錄二十",
+    desc: "圖鑑登錄 ≥ 20 格",
+    type: "bestiary",
+    need: 20,
+    reward: { stones: 40, materials: { coral_shard: 2 } },
+  },
+  {
+    track: "collect",
+    trackName: "收集",
+    id: "collect_80",
+    name: "潮錄八十",
+    desc: "圖鑑登錄 ≥ 80 格",
+    type: "bestiary",
+    need: 80,
+    reward: { stones: 80, materials: { blood_catalyst: 1, mist_silk: 2 } },
+  },
+  {
+    track: "collect",
+    trackName: "收集",
+    id: "collect_200",
+    name: "潮錄二百",
+    desc: "圖鑑登錄 ≥ 200 格",
+    type: "bestiary",
+    need: 200,
+    reward: { stones: 150, materials: { blood_catalyst: 2, seal_ember: 1 } },
+  },
+  {
+    track: "collect",
+    trackName: "收集",
+    id: "collect_500",
+    name: "潮錄五百",
+    desc: "圖鑑登錄 ≥ 500 格",
+    type: "bestiary",
+    need: 500,
+    reward: { stones: 280, materials: { breed_ticket: 2, abyss_ink: 3 } },
+  },
+  {
+    track: "nurture",
+    trackName: "育成",
+    id: "nurture_breed3",
+    name: "血脈三結",
+    desc: "繁殖 ≥ 3 次",
+    type: "breeds",
+    need: 3,
+    reward: { stones: 50, materials: { coral_shard: 3 } },
+  },
+  {
+    track: "nurture",
+    trackName: "育成",
+    id: "nurture_hybrid",
+    name: "雜交初成",
+    desc: "擁有雜交種 ≥ 1",
+    type: "hybrid_owned",
+    need: 1,
+    reward: { stones: 70, materials: { abyss_ink: 1 } },
+  },
+  {
+    track: "nurture",
+    trackName: "育成",
+    id: "nurture_gen2",
+    name: "二代血脈",
+    desc: "擁有 ≥ 2 代寵",
+    type: "min_gen",
+    need: 2,
+    reward: { stones: 90, materials: { blood_catalyst: 1 } },
+  },
+  {
+    track: "nurture",
+    trackName: "育成",
+    id: "nurture_gen3",
+    name: "三代覺醒",
+    desc: "擁有 ≥ 3 代寵",
+    type: "min_gen",
+    need: 3,
+    reward: { stones: 160, materials: { seal_ember: 2, breed_ticket: 1 } },
+  },
+  {
+    track: "challenge",
+    trackName: "挑戰",
+    id: "chal_wins8",
+    name: "秘境八勝",
+    desc: "累計秘境勝場 ≥ 8",
+    type: "combats",
+    need: 8,
+    reward: { stones: 55, scrap: 2 },
+  },
+  {
+    track: "challenge",
+    trackName: "挑戰",
+    id: "chal_tide2",
+    name: "踏破二層",
+    desc: "通關【潮汐廢墟·二層】",
+    type: "cleared",
+    dungeonId: "tide_2",
+    need: 1,
+    reward: { stones: 80, materials: { mist_silk: 2 } },
+  },
+  {
+    track: "challenge",
+    trackName: "挑戰",
+    id: "chal_tide4",
+    name: "深層回音",
+    desc: "通關【潮汐深層】",
+    type: "cleared",
+    dungeonId: "tide_4",
+    need: 1,
+    reward: { stones: 140, materials: { blood_catalyst: 2, temper_oil: 1 } },
+  },
+  {
+    track: "challenge",
+    trackName: "挑戰",
+    id: "chal_wins30",
+    name: "百潮之師",
+    desc: "累計秘境勝場 ≥ 30",
+    type: "combats",
+    need: 30,
+    reward: { stones: 220, materials: { seal_ember: 2 } },
+  },
+];
+
+export function evalPathQuest(state, quest) {
+  if (!quest) return { ok: false, progress: "?", current: 0 };
+  if (quest.type === "bestiary") {
+    const n = Object.keys(state.bestiary || {}).length;
+    return { ok: n >= quest.need, progress: `${n}/${quest.need}`, current: n };
+  }
+  if (quest.type === "breeds") {
+    const n = state.stats?.breeds || 0;
+    return { ok: n >= quest.need, progress: `${n}/${quest.need}`, current: n };
+  }
+  if (quest.type === "hybrid_owned") {
+    const owned = [...(state.pets || []), ...(state.ranch || [])];
+    const n = owned.filter((p) => p.breedOnly || SPECIES[p.speciesId]?.breedOnly).length;
+    return { ok: n >= quest.need, progress: `${n}/${quest.need}`, current: n };
+  }
+  if (quest.type === "min_gen") {
+    const owned = [...(state.pets || []), ...(state.ranch || [])];
+    const maxG = owned.reduce((m, p) => Math.max(m, petGeneration(p)), 0);
+    return { ok: maxG >= quest.need, progress: `最高${maxG}代`, current: maxG };
+  }
+  if (quest.type === "combats") {
+    const n = state.combatsWon || 0;
+    return { ok: n >= quest.need, progress: `${n}/${quest.need}`, current: n };
+  }
+  if (quest.type === "cleared") {
+    const ok = !!(state.clearedDungeons || {})[quest.dungeonId];
+    return { ok, progress: ok ? "已通" : "未通", current: ok ? 1 : 0 };
+  }
+  return { ok: false, progress: "?", current: 0 };
+}
 
 /** 成就（一次性） */
 export const ACHIEVEMENTS = [

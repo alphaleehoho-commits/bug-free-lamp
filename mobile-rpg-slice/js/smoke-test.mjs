@@ -21,6 +21,11 @@ import {
   partyMeetsTrial,
   countHybridBestiary,
   bestiaryKey,
+  bestiaryTotal,
+  allBloodlineKeys,
+  BLOODLINE_MARK_IDS,
+  PATH_QUESTS,
+  makeStarterPet,
   DUNGEONS,
   dungeonWaves,
   countDungeonRoles,
@@ -100,12 +105,19 @@ function assert(cond, msg) {
 }
 
 assert(KINDS.length === 6, "6 kinds");
-assert(wildSpeciesIds().length === 6, "6 wild");
+assert(wildSpeciesIds().length >= 14, "expanded wild pool");
+assert(wildSpeciesIds(0).length < wildSpeciesIds(3).length, "realm wild pool");
 assert(SPECIES.glowfin.kind === "光", "glowfin light");
 assert(KIND_SKILLS["光"] === "glow_lance", "light skill");
+assert(Object.keys(SPECIES).length >= 40, "40+ species");
+assert(bestiaryTotal() >= 10000, "bestiary 10k+");
+assert(allBloodlineKeys().length === 11, "11 bloodline forms");
+assert(BLOODLINE_MARK_IDS.length === 4, "4 blood marks");
+assert(PATH_QUESTS.length >= 10, "path quests");
+assert(makeStarterPet().speciesId === "reefox", "starter reefox");
 
 const kindsOfWild = new Set(wildSpeciesIds().map((id) => SPECIES[id].kind));
-assert(kindsOfWild.size === 6, "1:1 wild kind");
+assert(kindsOfWild.size === 6, "wild covers 6 kinds");
 
 assert(hybridRecipeForKinds("獸", "鱗").species === "tideling", "main 獸鱗");
 assert(hybridRecipeForKinds("光", "蟲").species === "stormmoth", "main 光蟲→嵐蛾");
@@ -257,9 +269,10 @@ const fakeState = {
 };
 const br0 = breakthroughView(fakeState);
 assert(!br0.ready && br0.items.some((i) => !i.ok), "break blocked at start");
-fakeState.qi = 40;
+fakeState.qi = 60;
 fakeState.stones = 25;
 fakeState.combatsWon = 1;
+fakeState.ranch = [makeStarterPet()];
 const br1 = breakthroughView(fakeState);
 assert(br1.ready && br1.next.id === 1, "break ready to stage1");
 
@@ -411,8 +424,10 @@ const combatSt = {
   combatsWon: 0,
   winStreak: 0,
 };
+assert(combatSt.pets.length >= 1, "combat needs pets");
 const combatRes = runDungeon(combatSt, "tide_1");
 assert(combatRes.ok && combatRes.combatEvents?.length > 5, "combat events");
+assert(!combatRes.combatStart?.allies?.some((a) => a.isMaster), "no master in combat");
 assert(combatRes.combatStart?.allies?.length >= 1, "combat roster allies");
 assert(combatRes.combatEvents.some((e) => e.type === "strike" || e.type === "text"), "strike or text");
 const strikeEv = combatRes.combatEvents.find((e) => e.type === "strike");
@@ -497,25 +512,29 @@ Math.random = origRandom;
 assert(pity.ok && !pity.success && pitySt.pending.length === 1, "pity keeps pending");
 assert(pitySt.stones === stonesBefore, "pity refunds bond cost");
 
-/* P13: tutorial flow */
-const tut = { done: false, step: "cultivate_qi", flags: {} };
-const tutSt = { realm: 0, qi: 0, pets: [], ranch: [], combatsWon: 0, stones: 200, log: [], tutorial: tut };
+/* P13: pet-first tutorial flow */
+const tut = { done: false, step: "meet_pet", flags: {} };
+const tutSt = { realm: 0, qi: 0, pets: [], ranch: [makeStarterPet()], combatsWon: 0, stones: 200, log: [], tutorial: tut };
 normalizeTutorial(tutSt);
 assert(tutorialActive(tutSt), "tutorial on for new");
-tutSt.qi = 40;
-const a1 = advanceTutorialIfReady(tutSt);
-assert(a1.advanced && tutSt.tutorial.step === "breakthrough", "qi step");
-tutSt.realm = 1;
-const a2 = advanceTutorialIfReady(tutSt);
-assert(a2.advanced && tutSt.tutorial.step === "shop_pet", "break step");
+tutSt.tutorial.flags.meetPetVisited = true;
+const a0 = advanceTutorialIfReady(tutSt);
+assert(a0.advanced && tutSt.tutorial.step === "deploy", "meet_pet step");
+tutSt.pets = [tutSt.ranch[0]];
+tutSt.ranch = [];
+const aDep = advanceTutorialIfReady(tutSt);
+assert(aDep.advanced && tutSt.tutorial.step === "dungeon_fight", "deploy step");
+tutSt.tutorial.flags.dungeonStarted = true;
+assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "dungeon_win", "dung start");
+tutSt.tutorial.flags.dungeonWonTutorial = true;
+assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "shop_pet", "dung win");
 assert(tutorialShopPrice(tutSt, 60) === TUTORIAL_SHOP_COST, "tutorial shop price");
-tutSt.stones = 200;
 ensureShop(tutSt);
 const buyTut = buyShopOffer(tutSt, tutSt.shop.offers[0].offerId);
-assert(buyTut.ok && tutSt.ranch.length === 1, "tutorial shop ranch");
-assert(tutSt.tutorial.step === "deploy", "shop step done");
+assert(buyTut.ok && tutSt.ranch.length >= 1, "tutorial shop ranch");
+assert(tutSt.tutorial.step === "cultivate_qi", "shop step done");
 
-const skipSt = { realm: 0, qi: 0, pets: [], ranch: [], combatsWon: 0, stones: 200, log: [], tutorial: { done: false, step: "cultivate_qi", flags: {} } };
+const skipSt = { realm: 0, qi: 0, pets: [], ranch: [], combatsWon: 0, stones: 200, log: [], tutorial: { done: false, step: "meet_pet", flags: {} } };
 normalizeTutorial(skipSt);
 assert(tutorialActive(skipSt), "skip pre active");
 const skipR = skipTutorial(skipSt);
@@ -555,30 +574,31 @@ assert(BOND_COST_MAX === 42, "bond cap");
 const t1 = DUNGEONS.find((d) => d.id === "tide_1");
 assert(t1?.reward?.stones === 32, "t1 stones");
 const bg3 = BREAKTHROUGH_GATES[3];
-assert(bg3.costs.dust === 8 && bg3.checks.find((c) => c.type === "bonds")?.need === 2, "bt gate 3");
+assert(bg3.costs.dust === 12 && bg3.checks.find((c) => c.type === "breeds")?.need === 1, "bt gate 3");
+assert(bg3.checks.find((c) => c.type === "bestiary")?.need === 12, "bt gate 3 bestiary");
+assert(!(BREAKTHROUGH_GATES[5].checks || []).some((c) => c.type === "gear_equipped"), "no gear at r5");
+assert(DUNGEON_CHALLENGE_RULES.every((r) => !r.banMaster), "no banMaster challenge");
+assert(DUNGEON_CHALLENGE_RULES.some((r) => r.maxPets === 1), "solo pet challenge");
 const dailyHybrid = BREED_GOALS.find((g) => g.id === "daily_hybrid");
 assert(dailyHybrid?.type === "breed_cross_kind", "daily hybrid cross kind");
 
-const qiSt = { realm: 0, qi: 50, pets: [], ranch: [], tutorial: { done: false, step: "cultivate_qi", flags: {} } };
+const qiSt = { realm: 0, qi: 60, pets: [], ranch: [makeStarterPet()], tutorial: { done: false, step: "cultivate_qi", flags: {} } };
 normalizeTutorial(qiSt);
 assert(tutorialQiReady(qiSt), "tutorial qi ready");
 assert(!isCultivateSubLocked(qiSt, "advance"), "advance unlocked when qi ready");
 
-assert((BREAKTHROUGH_GATES[1].checks || []).length === 0, "realm1 no combat gate");
-const brGate1 = breakthroughView({ realm: 0, qi: 50, stones: 30, combatsWon: 0, pets: [], ranch: [] });
-assert(brGate1.items.every((i) => i.ok), "realm1 breakthrough ready without combat win");
+assert((BREAKTHROUGH_GATES[1].checks || []).some((c) => c.type === "owned_pets"), "realm1 needs pet");
+const brGate1 = breakthroughView({ realm: 0, qi: 60, stones: 30, combatsWon: 0, pets: [], ranch: [makeStarterPet()] });
+assert(brGate1.items.every((i) => i.ok), "realm1 breakthrough ready with starter");
+assert(!(BREAKTHROUGH_GATES[3].checks || []).some((c) => c.type === "gear_equipped"), "no gear gates");
 
-const navIn = { tab: "cultivate", panelSub: { cultivate: "train", party: "fight", dungeon: "field" } };
+const navIn = { tab: "cultivate", panelSub: { cultivate: "train", party: "fight", dungeon: "field", codex: "dex" } };
 const codexSt = { tutorial: { done: false, step: "codex", flags: {} } };
 const navOut = syncTutorialNavigation(codexSt, navIn);
-assert(navOut.tab === "cultivate" && navOut.panelSub.cultivate === "train", "codex step no auto tab jump");
+assert(navOut.tab === "codex", "codex step navigates to codex");
 const codexHi = tutorialHighlights(codexSt, navIn);
 assert(codexHi.length === 1 && codexHi[0].type === "tab" && codexHi[0].id === "codex", "codex highlight tab");
 assert(tutorialGlowClass(codexSt, { type: "tab", id: "codex" }, navIn) === " tut-glow", "codex glow");
-
-const bondSt = { tutorial: { done: false, step: "bond", flags: {} } };
-const bondNav = syncTutorialNavigation(bondSt, navIn);
-assert(bondNav.tab === "cultivate", "bond step no auto party nav");
 
 const dungSt = {
   tutorial: { done: false, step: "dungeon_win", flags: { dungeonStarted: true } },
@@ -586,15 +606,15 @@ const dungSt = {
 };
 assert(!advanceTutorialIfReady(dungSt).advanced, "dungeon win waits for tutorial flag");
 dungSt.tutorial.flags.dungeonWonTutorial = true;
-assert(advanceTutorialIfReady(dungSt).advanced && dungSt.tutorial.step === "codex", "dungeon win flag advances");
+assert(advanceTutorialIfReady(dungSt).advanced && dungSt.tutorial.step === "shop_pet", "dungeon win to shop");
 
-const bondDone = {
+const codexDone = {
   realm: 0,
-  tutorial: { done: false, step: "bond", flags: { bondVisited: false }, latePending: false, lateCompleted: false },
+  tutorial: { done: false, step: "codex", flags: { codexVisited: false }, latePending: false, lateCompleted: false },
 };
-bondDone.tutorial.flags.bondVisited = true;
-const bondAdv = advanceTutorialIfReady(bondDone);
-assert(bondAdv.nextId === "complete" && bondDone.tutorial.done && bondDone.tutorial.latePending, "bond skips late until realm 2");
+codexDone.tutorial.flags.codexVisited = true;
+const codexAdv = advanceTutorialIfReady(codexDone);
+assert(codexAdv.nextId === "complete" && codexDone.tutorial.done && codexDone.tutorial.latePending, "codex skips late until realm 2");
 
 const lateStart = {
   realm: 2,
@@ -613,10 +633,10 @@ normalizeTutorial(tutDung);
 assert(tutorialWaivesDungeonChallenge(tutDung, "tide_1"), "tutorial waives tide_1 challenge");
 assert(!tutorialWaivesDungeonChallenge(tutDung, "tide_2"), "no waive on t2");
 
-const stepBond = { tutorial: { done: false, step: "bond", flags: {}, latePending: false } };
-normalizeTutorial(stepBond);
-const bondInfo = tutorialStepInfo(stepBond);
-assert(bondInfo.index === 8 && bondInfo.total === 8, "core tutorial 8/8 at bond");
+const stepCodex = { tutorial: { done: false, step: "codex", flags: {}, latePending: false } };
+normalizeTutorial(stepCodex);
+const codexInfo = tutorialStepInfo(stepCodex);
+assert(codexInfo.index === 9 && codexInfo.total === 9, "core tutorial 9/9 at codex");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

@@ -23,10 +23,6 @@ import {
   realmInfo,
   nextRealm,
   ranchCap,
-  inventoryView,
-  equipMaster,
-  unequipMaster,
-  masterGearBonus,
   partySynergy,
   renamePet,
   clearOfflineHint,
@@ -45,8 +41,6 @@ import {
   KINDS,
   dungeonWaves,
   SKILLS,
-  MASTER_EQUIP_SLOTS,
-  SLOT_LABEL,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
   FUSION_MAX_STAGE,
@@ -54,8 +48,7 @@ import {
   BOND_FEED_COST,
   BOND_FEED_BONUS,
   NICK_MAX_LEN,
-  bestiaryEntries,
-  masterSkillsForStage,
+  bestiarySpeciesSummary,
   fusionStoneCost,
   breakthroughView,
   shopView,
@@ -82,6 +75,10 @@ import {
   TACTICS,
   FORMATIONS,
   MATERIALS,
+  pathQuestsView,
+  claimPathQuest,
+  useBreedTicket,
+  useBloodCatalyst,
 } from "./engine.js";
 import {
   tutorialActive,
@@ -507,6 +504,10 @@ function switchTab(id) {
     const adv = markTutorialFlag(state, "codexVisited");
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
   }
+  if (id === "party" && tutorialActive(state) && state.tutorial.step === "meet_pet") {
+    const adv = markTutorialFlag(state, "meetPetVisited");
+    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+  }
   if (id !== "party") {
     petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
   }
@@ -516,14 +517,11 @@ function switchTab(id) {
 function markTutorialSubVisit(group, id) {
   tutMisclickCount = 0;
   const step = state.tutorial?.step;
-  if (group === "party" && id === "bond" && step === "bond") {
-    const adv = markTutorialFlag(state, "bondVisited");
+  if (group === "party" && id === "ranch" && step === "meet_pet") {
+    const adv = markTutorialFlag(state, "meetPetVisited");
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
   } else if (group === "party" && id === "dispatch" && step === "dispatch") {
     const adv = markTutorialFlag(state, "dispatchVisited");
-    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
-  } else if (group === "cultivate" && id === "gear" && step === "gear") {
-    const adv = markTutorialFlag(state, "gearVisited");
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
   } else if (group === "dungeon" && id === "setup" && step === "tactics") {
     const adv = markTutorialFlag(state, "tacticsVisited");
@@ -867,23 +865,8 @@ function tabBtn(id, label, busy) {
 }
 
 function cultivatePanel(qiPct, next, m) {
-  const skills = masterSkillsForStage(state.realm)
-    .map((id) => SKILLS[id])
-    .filter(Boolean)
-    .map((s) => `<li><strong>${escapeHtml(s.name)}</strong> — ${escapeHtml(s.desc)}（CD${s.cd}）</li>`)
-    .join("");
-
-  const gBonus = masterGearBonus(state);
-  const eq = m.equip || {};
-  const inv = inventoryView(state);
-  const totalAtk = m.atk + gBonus.atk;
-  const totalHp = m.hp + gBonus.hp;
-  const totalSpd = m.spd + gBonus.spd;
   const br = breakthroughView(state);
   const seal = tideSealView(state);
-  const setNote = gBonus.setLabels?.length
-    ? `套裝：${gBonus.setLabels.join("、")}`
-    : "穿齊同套 2／3 件可啟動套裝加成";
   const sites = trainSitesView(state);
   const siteBtns = sites
     .map((s) => {
@@ -898,35 +881,6 @@ function cultivatePanel(qiPct, next, m) {
   const trainLockNote = nextLocked
     ? `<p class="train-lock-note">🔒 ${escapeHtml(nextLocked.unlockHint || `解鎖【${nextLocked.name}】`)}</p>`
     : "";
-
-  const slotSelects = MASTER_EQUIP_SLOTS.map((slot) => {
-    const cur = eq[slot];
-    const opts = inv
-      .filter((x) => x.slot === slot && (!x.worn || x.uid === cur))
-      .map(
-        (x) =>
-          `<option value="${escapeHtml(x.uid)}" ${x.uid === cur ? "selected" : ""}>${escapeHtml(x.name)} 攻${x.atk} 血${x.hp} 速${x.spd}</option>`
-      )
-      .join("");
-    return `
-      <label>${SLOT_LABEL[slot]}
-        <select data-master-equip-slot="${slot}">
-          <option value="">（空）</option>
-          ${opts}
-        </select>
-      </label>`;
-  }).join("");
-
-  const invList =
-    inv
-      .slice(0, 4)
-      .map((x) => {
-        const wornNote = x.worn ? `（已裝）` : "";
-        const forgeNote = x.forgeAtk || x.forgeHp ? ` +${x.forgeAtk}/${x.forgeHp}` : "";
-        return `<li><strong>${escapeHtml(x.name)}</strong> · ${SLOT_LABEL[x.slot] || x.slot} 攻${x.atk}血${x.hp}${forgeNote}${wornNote}</li>`;
-      })
-      .join("") || `<li class="empty">尚無裝備。</li>`;
-  const invMore = inv.length > 4 ? `<p class="meta">另有 ${inv.length - 4} 件未顯示</p>` : "";
 
   const shopOffers = shopView(state);
   const ranchFull = (state.ranch?.length || 0) + state.pets.length >= ranchCap(state);
@@ -954,11 +908,11 @@ function cultivatePanel(qiPct, next, m) {
     ? `突破至${br.next.name}${br.costLabel ? `（耗${br.costLabel}）` : ""}`
     : "突破階段（條件未齊）";
 
+  if (panelSub.cultivate === "gear") panelSub.cultivate = "train";
   const sub = panelSub.cultivate;
   const nav = panelSubNav("cultivate", [
     { id: "train", label: "練功" },
     { id: "shop", label: "商肆" },
-    { id: "gear", label: "裝備" },
     { id: "advance", label: "進階" },
   ]);
 
@@ -970,22 +924,8 @@ function cultivatePanel(qiPct, next, m) {
       <ul class="list">${shopRows}</ul>`;
   }
 
-  if (sub === "gear") {
-    return `
-      ${nav}
-      <h2>契壇修行 · 裝備</h2>
-      <p class="lead">攻${totalAtk} 血${totalHp} 速${totalSpd} · ${escapeHtml(setNote)}</p>
-      <div class="row gear-row">${slotSelects}</div>
-      <h3>裝備庫（${inv.length}）</h3>
-      <ul class="skill-list">${invList}</ul>
-      ${invMore}
-      <div class="row">
-        <button type="button" data-act="forge">靈紋鍛造</button>
-      </div>`;
-  }
-
   if (sub === "advance") {
-    const gateCompact = br.items.slice(0, 5);
+    const gateCompact = br.items.slice(0, 6);
     const gateRowsCompact = gateCompact
       .map(
         (it) => `
@@ -998,7 +938,7 @@ function cultivatePanel(qiPct, next, m) {
       </li>`
       )
       .join("");
-  return `
+    return `
       ${nav}
       <h2>契壇修行 · 進階</h2>
       <p class="lead">→【${escapeHtml(br.next.name)}】潮印 ${seal.seals}/${seal.max} · 全隊 ×${seal.mult.toFixed(2)}</p>
@@ -1006,15 +946,13 @@ function cultivatePanel(qiPct, next, m) {
       <div class="row">
         <button type="button" class="primary${tutGlow({ type: "act", act: "break" })}" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
         <button type="button" data-act="tide-seal" ${seal.canSeal ? "" : "disabled"}>鑄潮印${seal.canSeal ? `+${seal.nextGain}` : ""}</button>
-      </div>
-      <h3>人物技能</h3>
-      <ul class="skill-list">${skills || "<li class='empty'>尚未解鎖</li>"}</ul>`;
+      </div>`;
   }
 
   return `
     ${nav}
     <h2>契壇修行</h2>
-    <p class="lead">${escapeHtml(m.name)} · 攻${totalAtk}/血${totalHp}/速${totalSpd} · 牧場 ${ranchN}</p>
+    <p class="lead">御靈師【${escapeHtml(m.name)}】· 牧場 ${ranchN}／${ranchCap(state)} · 重心在靈寵</p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 【${escapeHtml(br.cur?.name || "")}】→【${escapeHtml(br.next.name)}】</p>
     ${
@@ -1029,6 +967,10 @@ function cultivatePanel(qiPct, next, m) {
     <h3>材料 <span class="meta-inline">用途／來源</span></h3>
     <div class="chip-row">${matChipsHtml()}</div>
     ${matHintListHtml()}
+    <div class="row">
+      <button type="button" data-act="use-breed-ticket" ${(state.materials?.breed_ticket || 0) < 1 ? "disabled" : ""}>催生符</button>
+      <button type="button" data-act="use-blood-catalyst" ${(state.materials?.blood_catalyst || 0) < 1 ? "disabled" : ""}>血統催化</button>
+    </div>
   `;
 }
 
@@ -1043,7 +985,7 @@ function petRow(p, extraBtn = "") {
     <li class="card-row">
       <div>
         <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
-        <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}</span>
+        <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
         <span class="muted">攻${p.atk} 血${p.hp} 速${p.spd} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
@@ -1160,7 +1102,7 @@ function petsListView() {
       ${nav}
       <h2>靈寵 · 牧場</h2>
       <p class="lead">牧場 ${ranch.length}/${cap}</p>
-      <div class="row"><button type="button" data-act="start-breed" ${tutorialActive(state) ? "disabled" : ""}>繁殖</button></div>
+      <div class="row"><button type="button" class="primary${tutGlow({ type: "act", act: "open-breed" })}" data-act="open-breed">繁殖</button></div>
       <ul class="list">${ranchList}</ul>`;
   }
   if (sub === "dispatch") {
@@ -1442,13 +1384,36 @@ function petsPanel() {
 
 function codexPanel() {
   const dex = bestiaryStatus(state);
-  const known = state.bestiary || {};
-  const cells = bestiaryEntries()
-    .map((e) => {
-      const on = !!known[e.key];
-      return `<li class="codex-cell ${on ? "on" : ""}" title="${escapeHtml(e.label)}">${
-        on ? escapeHtml(e.label) : "？？"
-      }</li>`;
+  const speciesRows = bestiarySpeciesSummary(state)
+    .filter((s) => s.found > 0 || !s.breedOnly)
+    .slice(0, 48)
+    .map((s) => {
+      const pct = Math.min(100, Math.round((s.found / Math.max(1, s.total)) * 100));
+      return `<li class="card-row">
+        <div>
+          <strong>${escapeHtml(s.speciesName)}</strong>
+          <span class="muted">${escapeHtml(s.kind)}${s.breedOnly ? "·雜交" : ""} · ${s.found}/${s.total}</span>
+          <div class="bar thin"><i style="width:${pct}%"></i></div>
+        </div>
+      </li>`;
+    })
+    .join("");
+
+  const pathTracks = pathQuestsView(state)
+    .map((tr) => {
+      const rows = tr.items
+        .map((q) => {
+          const status = q.claimed ? "已領" : q.ok ? "可領" : q.progress;
+          return `<li class="card-row">
+            <div>
+              <strong>${escapeHtml(q.name)}</strong>
+              <span class="muted">${escapeHtml(q.desc)} · ${escapeHtml(String(status))}</span>
+            </div>
+            <button type="button" class="primary" data-claim-path="${q.id}" ${q.canClaim ? "" : "disabled"}>${q.claimed ? "已領" : "領獎"}</button>
+          </li>`;
+        })
+        .join("");
+      return `<h3>求道 · ${escapeHtml(tr.trackName)}</h3><ul class="list">${rows}</ul>`;
     })
     .join("");
 
@@ -1484,14 +1449,19 @@ function codexPanel() {
   return `
     ${panelSubNav("codex", [
       { id: "dex", label: "圖鑑" },
+      { id: "path", label: "求道" },
       { id: "tasks", label: "任務" },
       { id: "recipe", label: "配方" },
     ])}
     ${
       panelSub.codex === "dex"
         ? `<h2>靈寵圖鑑</h2>
-    <p class="lead">已錄 ${dex.discovered}/${dex.total}${dex.label ? ` · ${escapeHtml(dex.label)}` : ""}</p>
-    <ul class="codex-grid">${cells}</ul>`
+    <p class="lead">已錄 ${dex.discovered}/${dex.total}${dex.label ? ` · ${escapeHtml(dex.label)}` : ""} · 種×屬×性格×血脈</p>
+    <ul class="list">${speciesRows || '<li class="empty">尚未登錄</li>'}</ul>`
+        : panelSub.codex === "path"
+          ? `<h2>求道</h2>
+    <p class="lead">長線目標：收集／育成／挑戰</p>
+    ${pathTracks}`
         : panelSub.codex === "tasks"
           ? `<h2>任務</h2>
     ${breedGoalsBoardHtml(true)}
@@ -1783,18 +1753,29 @@ function bind() {
           setFlash(r.msg);
         }
       } else if (act === "forge") {
-        const r = forgeHint(state);
-        saveState(state);
-        render();
-        setFlash(r.msg);
+        setFlash("人物裝備與鍛造已廢止。");
       } else if (act === "tide-seal") {
         const r = tryTideSeal(state);
         saveState(state);
         render();
         setFlash(r.msg);
-      } else if (act === "start-breed") {
+      } else if (act === "start-breed" || act === "open-breed") {
+        if (tutorialActive(state) && state.tutorial.step === "breed_intro") {
+          const adv = markTutorialFlag(state, "breedVisited");
+          if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+        }
         petView = { mode: "breed", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
         render();
+      } else if (act === "use-breed-ticket") {
+        const r = useBreedTicket(state);
+        saveState(state);
+        render();
+        setFlash(r.msg);
+      } else if (act === "use-blood-catalyst") {
+        const r = useBloodCatalyst(state);
+        saveState(state);
+        render();
+        setFlash(r.msg);
       } else if (act === "clear-offline") {
         clearOfflineHint(state);
         saveState(state);
@@ -1904,13 +1885,9 @@ function bind() {
       setFlash(r.msg);
     });
   });
-  app.querySelectorAll("[data-master-equip-slot]").forEach((sel) => {
-    sel.addEventListener("change", () => {
-      const slot = sel.dataset.masterEquipSlot;
-      const uid = sel.value;
-      let r;
-      if (!uid) r = unequipMaster(state, slot);
-      else r = equipMaster(state, uid, slot);
+  app.querySelectorAll("[data-claim-path]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = claimPathQuest(state, btn.dataset.claimPath);
       saveState(state);
       render();
       setFlash(r.msg);
