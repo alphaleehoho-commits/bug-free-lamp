@@ -68,6 +68,9 @@ import {
   MATERIALS,
   upgradeMatCost,
   breedMatCost,
+  skillMatCost,
+  fusionMatCost,
+  DUNGEON_MAT_DROPS,
   unlockedTrainSiteIds,
   materialSourceLabel,
   MATERIAL_SOURCE_INDEX,
@@ -443,13 +446,34 @@ assert(tideSealCombatMult(5) === 1.1, "seal mult");
 assert(TIDE_SEAL_MIN_REALM === 5, "seal min realm");
 
 /* P10: train sites, materials, dual personality, shellmite */
-assert(TRAIN_SITES.length >= 5 && MATERIALS.tide_dew, "train+mats");
+assert(TRAIN_SITES.length >= 7 && MATERIALS.tide_dew, "train+mats");
+assert(TRAIN_SITES.every((s) => s.focus), "each site has focus");
+assert(
+  !TRAIN_SITES.some((s) => (s.drops || []).some((d) => MATERIALS[d.mat]?.tier === "dungeon")),
+  "no dungeon mats on AFK sites"
+);
+assert(MATERIALS.echo_resin && MATERIALS.fuse_sand, "new bulk mats");
+assert(skillMatCost(1) && Object.keys(skillMatCost(1)).length === 0, "skill lv1 no resin");
+assert(skillMatCost(2).echo_resin >= 1, "skill lv2 needs resin");
+assert(fusionMatCost(1).fuse_sand === 1 && fusionMatCost(3).fuse_sand === 3, "fuse sand cost");
+assert(materialSourceLabel("temper_oil") === "秘境專屬", "temper dungeon-only label");
+assert(materialSourceLabel("echo_resin").includes("霧帷"), "resin from mistveil");
 assert(unlockedTrainSiteIds({ clearedDungeons: {} }).includes("shore"), "shore free");
 assert(!unlockedTrainSiteIds({ clearedDungeons: {} }).includes("ruins"), "ruins locked");
 assert(unlockedTrainSiteIds({ clearedDungeons: { tide_1: true } }).includes("ruins"), "ruins unlock");
+assert(
+  unlockedTrainSiteIds({ clearedDungeons: { tide_2: true } }).includes("mistveil"),
+  "mistveil unlock t2"
+);
+assert(
+  unlockedTrainSiteIds({ clearedDungeons: { tide_3: true } }).includes("fusehall"),
+  "fusehall unlock t3"
+);
 assert(upgradeMatCost(1).tide_dew >= 1, "upgrade mats");
 assert(breedMatCost(0, 0).coral_shard >= 1, "breed mats");
-assert(DISPATCH_MISSIONS.length >= 5, "more dispatch");
+assert(DISPATCH_MISSIONS.length >= 7, "more dispatch");
+assert(DISPATCH_MISSIONS.some((m) => m.needSite === "mistveil"), "resin dispatch");
+assert(DISPATCH_MISSIONS.some((m) => m.needSite === "fusehall"), "sand dispatch");
 assert(SPECIES.shellmite?.breedOnly, "shellmite");
 fox.personality2Id = "steady";
 fin.personalityId = "wild";
@@ -472,13 +496,28 @@ assert(dual.personality2Id === "gentle" && dual.personality2Name, "build dual pe
 
 /* P11: material hints + unlock helpers */
 assert(MATERIAL_SOURCE_INDEX.tide_dew?.sites?.includes("潮岸練場"), "tide_dew shore");
-assert(MATERIAL_SOURCE_INDEX.coral_shard?.sites?.length >= 1, "coral sources");
+assert(MATERIAL_SOURCE_INDEX.coral_shard?.sites?.includes("廢墟影堂"), "coral ruins only");
+assert(!MATERIAL_SOURCE_INDEX.coral_shard?.sites?.includes("潮岸練場"), "coral not on shore");
+assert(MATERIAL_SOURCE_INDEX.seal_ember?.sites?.length === 1, "ember single site");
 assert(materialSourceLabel("seal_ember").includes("暗潮心壇"), "ember source");
+assert(!materialSourceLabel("seal_ember").includes("霧絲"), "ember not mixed");
 assert(trainSiteUnlockHint(TRAIN_SITES.find((s) => s.id === "ruins"))?.includes("一層"), "ruins hint");
 assert(dungeonNameForClear("tide_1").includes("一層"), "dungeon name");
 const fakeMats = { materials: { tide_dew: 0, mist_silk: 2 } };
 const aff = affordMaterials(fakeMats, { tide_dew: 2, mist_silk: 1 });
 assert(!aff.ok && aff.items.find((i) => i.id === "tide_dew")?.short === 2, "afford short");
+
+/* P18: specialize — ruins primary is coral not tide mix */
+const ruins = TRAIN_SITES.find((s) => s.id === "ruins");
+assert(ruins.focus === "繁殖" && ruins.drops.every((d) => !d.mat || d.mat === "coral_shard"), "ruins coral focus");
+const abyssSite = TRAIN_SITES.find((s) => s.id === "abyss");
+assert(
+  abyssSite.focus === "突破" && abyssSite.drops.every((d) => !d.mat || d.mat === "seal_ember"),
+  "abyss ember focus"
+);
+assert(DUNGEON_MAT_DROPS.tide_4.weights.breed_ticket >= 2, "dungeon exclusive weight");
+assert(!DUNGEON_MAT_DROPS.tide_1.weights.echo_resin, "no resin in dungeon");
+assert(!DUNGEON_MAT_DROPS.tide_1.weights.fuse_sand, "no fuse sand in dungeon");
 
 /* P12: combat events */
 const combatFox = buildPetStats({

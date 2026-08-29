@@ -121,6 +121,8 @@ import {
   MATERIAL_IDS,
   upgradeMatCost,
   breedMatCost,
+  skillMatCost,
+  fusionMatCost,
   TRAIN_SITES,
   trainSiteById,
   makeStarterPet,
@@ -1590,7 +1592,7 @@ function maybeAnnounceSecondSkill(state, pet, prevLevel) {
   }
 }
 
-/** 靈塵升級寵物技能等級（含第二技能威力） */
+/** 靈塵＋靈響脂升級寵物技能等級（含第二技能威力） */
 export function upgradePetSkill(state, uid) {
   const found = findOwnedPet(state, uid);
   if (!found) return { ok: false, msg: "找不到靈寵。" };
@@ -1599,9 +1601,17 @@ export function upgradePetSkill(state, uid) {
   if (lv >= SKILL_MAX_LEVEL) return { ok: false, msg: `技能已滿級（${SKILL_MAX_LEVEL}）。` };
   const cost = skillDustCost(lv);
   if ((state.dust || 0) < cost) return { ok: false, msg: `靈塵不足（需 ${cost}）。` };
+  const mats = skillMatCost(lv);
+  if (!spendMaterials(state, mats)) {
+    return { ok: false, msg: `材料不足（需 ${formatMats(mats)}）。` };
+  }
   state.dust -= cost;
   pet.skillLevel = lv + 1;
-  pushLog(state, `${pet.name} 技能升至 Lv.${pet.skillLevel}（威力↑）。`);
+  const matNote = formatMats(mats);
+  pushLog(
+    state,
+    `${pet.name} 技能升至 Lv.${pet.skillLevel}（威力↑）${matNote ? `｜耗 ${matNote}` : ""}。`
+  );
   return { ok: true, msg: `${pet.name} 技能 Lv.${pet.skillLevel}` };
 }
 
@@ -1689,6 +1699,10 @@ export function fusePets(state, baseUid, matUids) {
 
   const cost = fusionStoneCost(targetStage);
   if (state.stones < cost) return { ok: false, msg: `靈石不足（需 ${cost}）。` };
+  const fuseMats = fusionMatCost(targetStage);
+  if (!spendMaterials(state, fuseMats)) {
+    return { ok: false, msg: `材料不足（需 ${formatMats(fuseMats)}）。` };
+  }
   state.stones -= cost;
 
   // 融合主要吸收素材天生數值，寫入主體基礎
@@ -1720,7 +1734,9 @@ export function fusePets(state, baseUid, matUids) {
 
   pushLog(
     state,
-    `融合完成：${base.name} → 融階 ${targetStage}（繼承 Lv.${keepLevel}，耗 ${needMats} 素材／${cost} 靈石）。`
+    `融合完成：${base.name} → 融階 ${targetStage}（繼承 Lv.${keepLevel}，耗 ${needMats} 素材／${cost} 靈石${
+      formatMats(fuseMats) ? `／${formatMats(fuseMats)}` : ""
+    }）。`
   );
   if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
   state.stats.fusions += 1;
@@ -1770,12 +1786,14 @@ export function petDetail(state, uid) {
     upgradeCost: upgradeStoneCost(level),
     upgradeFeedCost: upgradeFeedCost(level),
     skillDustCost: skillLv < SKILL_MAX_LEVEL ? skillDustCost(skillLv) : null,
+    skillMatCost: skillLv < SKILL_MAX_LEVEL ? skillMatCost(skillLv) : null,
     skillMaxed: skillLv >= SKILL_MAX_LEVEL,
     nextFusionStage: target,
     fuseNeedLevel: rule?.needLevel ?? null,
     fuseTotalPets: rule?.totalPets ?? null,
     fuseMatNeed: target != null ? fusionMaterialNeed(target) : 0,
     fuseCostHint: target != null ? fusionStoneCost(target) : null,
+    fuseMatCost: target != null ? fusionMatCost(target) : null,
     fuseMaxed: target == null,
     skill: skillInfo(pet.skillId),
     skillIds,
@@ -3143,6 +3161,8 @@ export {
   TRAIN_SITES,
   upgradeMatCost,
   breedMatCost,
+  skillMatCost,
+  fusionMatCost,
   stageAt,
   nextStageAt,
   dungeonsForRealm,
