@@ -1030,7 +1030,7 @@ function pickWeighted(weightMap) {
 
 /** 繁殖：靈石消耗、冷卻 */
 export const BREED_STONE_COST = 45;
-export const BREED_COOLDOWN_MS = 30_000;
+export const BREED_COOLDOWN_MS = 45_000;
 export const BREED_ELEMENT_MUTATION_RATE = 0.1;
 
 /**

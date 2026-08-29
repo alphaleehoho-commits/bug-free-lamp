@@ -566,7 +566,7 @@ assert(inh.atk >= 0 && inh.hp >= 0, "inherit preview");
 
 /* P16: balance pass */
 assert(BREED_STONE_COST === 45, "breed cost");
-assert(BREED_COOLDOWN_MS === 30_000, "breed cd");
+assert(BREED_COOLDOWN_MS === 45_000, "breed cd");
 assert(FORGE_SCRAP_COST === 2, "forge scrap");
 assert(fusionStoneCost(2) === 192, "fuse stage2 cost");
 assert(upgradeStoneCost(1) === 19, "upgrade lv1");
