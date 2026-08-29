@@ -3032,7 +3032,7 @@ export const DISPATCH_MISSIONS = [
     durationMs: 150_000,
     needPets: 1,
     needSite: "ruins",
-    reward: { dust: 12, stones: 10, materials: { coral_shard: 2 } },
+    reward: { dust: 12, stones: 10, materials: { coral_shard: 3 } },
     desc: "1 寵 · 需廢墟影堂 · 靈塵／珊瑚屑",
   },
   {
@@ -3040,9 +3040,18 @@ export const DISPATCH_MISSIONS = [
     name: "廢墟打撈",
     durationMs: 240_000,
     needPets: 2,
-    needSite: "ruins",
-    reward: { scrap: 2, stones: 25, feed: 4, materials: { mist_silk: 1, coral_shard: 1 } },
-    desc: "2 寵 · 需廢墟影堂 · 碎片／霧絲",
+    needSite: "deep",
+    reward: { scrap: 2, stones: 25, feed: 4, materials: { mist_silk: 2 } },
+    desc: "2 寵 · 需深層祭壇 · 霧絲",
+  },
+  {
+    id: "resin_gather",
+    name: "霧帷採脂",
+    durationMs: 210_000,
+    needPets: 1,
+    needSite: "mistveil",
+    reward: { dust: 6, stones: 18, materials: { echo_resin: 3 } },
+    desc: "1 寵 · 需霧帷練台 · 靈響脂",
   },
   {
     id: "ink_scout",
@@ -3050,8 +3059,17 @@ export const DISPATCH_MISSIONS = [
     durationMs: 300_000,
     needPets: 2,
     needSite: "core",
-    reward: { dust: 8, stones: 30, materials: { abyss_ink: 2, mist_silk: 1 } },
+    reward: { dust: 8, stones: 30, materials: { abyss_ink: 3 } },
     desc: "2 寵 · 需心核道場 · 深淵墨",
+  },
+  {
+    id: "sand_haul",
+    name: "融砂搬運",
+    durationMs: 270_000,
+    needPets: 2,
+    needSite: "fusehall",
+    reward: { stones: 28, feed: 3, materials: { fuse_sand: 3 } },
+    desc: "2 寵 · 需融砂坊 · 融砂",
   },
   {
     id: "ember_rite",
@@ -3059,7 +3077,7 @@ export const DISPATCH_MISSIONS = [
     durationMs: 360_000,
     needPets: 2,
     needSite: "abyss",
-    reward: { stones: 40, materials: { seal_ember: 2, abyss_ink: 1 } },
+    reward: { stones: 40, materials: { seal_ember: 3 } },
     desc: "2 寵 · 需暗潮心壇 · 契火",
   },
 ];
@@ -3128,23 +3146,23 @@ export function rollGearDrop(dungeonId, opts = {}) {
   return null;
 }
 
-/** 秘境勝利掉落寵用素材（替代人物裝備） */
+/** 秘境勝利掉落：偏專屬催化；bulk 僅作少量爆發補充 */
 export const DUNGEON_MAT_DROPS = {
   tide_1: {
     chance: 0.42,
-    weights: { tide_dew: 4, coral_shard: 3, temper_oil: 1 },
+    weights: { temper_oil: 3, tide_dew: 2, coral_shard: 2 },
   },
   tide_2: {
     chance: 0.48,
-    weights: { coral_shard: 3, mist_silk: 2, blood_catalyst: 1, temper_oil: 1 },
+    weights: { temper_oil: 2, blood_catalyst: 3, mist_silk: 2 },
   },
   tide_3: {
     chance: 0.52,
-    weights: { mist_silk: 3, abyss_ink: 2, blood_catalyst: 2, breed_ticket: 1 },
+    weights: { blood_catalyst: 3, breed_ticket: 2, abyss_ink: 2 },
   },
   tide_4: {
     chance: 0.58,
-    weights: { abyss_ink: 3, seal_ember: 2, blood_catalyst: 2, breed_ticket: 2, temper_oil: 1 },
+    weights: { breed_ticket: 3, temper_oil: 2, blood_catalyst: 2, seal_ember: 1 },
   },
 };
 
@@ -3322,14 +3340,31 @@ export function personalityCombatForPet(pet) {
 /* ─── P10：材料／練功地點／主線解鎖 ─── */
 
 export const MATERIALS = {
-  tide_dew: { id: "tide_dew", name: "潮露", desc: "寵物升級催化" },
-  coral_shard: { id: "coral_shard", name: "珊瑚屑", desc: "繁殖必需" },
-  mist_silk: { id: "mist_silk", name: "霧絲", desc: "高階升級／技能" },
-  abyss_ink: { id: "abyss_ink", name: "深淵墨", desc: "雜交／高代繁殖" },
-  seal_ember: { id: "seal_ember", name: "契火", desc: "突破與進化" },
-  temper_oil: { id: "temper_oil", name: "性格洗劑", desc: "秘境掉落：洗主性格" },
-  blood_catalyst: { id: "blood_catalyst", name: "血統催化", desc: "秘境掉落：繁殖冷卻縮短／加紋機率" },
-  breed_ticket: { id: "breed_ticket", name: "催生符", desc: "秘境掉落：立即重置繁殖冷卻" },
+  tide_dew: { id: "tide_dew", name: "潮露", desc: "寵物升級催化", tier: "bulk" },
+  coral_shard: { id: "coral_shard", name: "珊瑚屑", desc: "繁殖必需", tier: "bulk" },
+  mist_silk: { id: "mist_silk", name: "霧絲", desc: "高階升級", tier: "bulk" },
+  abyss_ink: { id: "abyss_ink", name: "深淵墨", desc: "雜交／高代繁殖", tier: "bulk" },
+  seal_ember: { id: "seal_ember", name: "契火", desc: "突破與進化", tier: "bulk" },
+  echo_resin: { id: "echo_resin", name: "靈響脂", desc: "技能升級（練功專精）", tier: "bulk" },
+  fuse_sand: { id: "fuse_sand", name: "融砂", desc: "融合催化（練功專精）", tier: "bulk" },
+  temper_oil: {
+    id: "temper_oil",
+    name: "性格洗劑",
+    desc: "秘境專屬：洗主性格",
+    tier: "dungeon",
+  },
+  blood_catalyst: {
+    id: "blood_catalyst",
+    name: "血統催化",
+    desc: "秘境專屬：繁殖冷卻縮短／加紋機率",
+    tier: "dungeon",
+  },
+  breed_ticket: {
+    id: "breed_ticket",
+    name: "催生符",
+    desc: "秘境專屬：立即重置繁殖冷卻",
+    tier: "dungeon",
+  },
 };
 
 export const MATERIAL_IDS = Object.keys(MATERIALS);
@@ -3356,9 +3391,23 @@ export function breedMatCost(genA, genB) {
   };
 }
 
+/** 技能升級額外材料（Lv≥2 起；練功專精） */
+export function skillMatCost(skillLevel) {
+  const lv = Math.max(1, skillLevel | 0);
+  if (lv < 2) return {};
+  return { echo_resin: 1 + Math.floor((lv - 2) / 2) };
+}
+
+/** 融合額外材料（練功專精） */
+export function fusionMatCost(targetStage) {
+  const st = Math.max(1, targetStage | 0);
+  return { fuse_sand: st };
+}
+
 /**
- * 練功地點：擊殺對應秘境 BOSS（首通）解鎖
- * drops: perSec 期望產出／秒
+ * 練功地點：首通秘境解鎖；每地專精一種 bulk（唔再愈深愈全能）
+ * focus: UI 短標；drops: perSec 期望產出／秒
+ * 秘境專屬料（洗劑／催化／催生符）永不進 AFK
  */
 export const TRAIN_SITES = [
   {
@@ -3366,60 +3415,88 @@ export const TRAIN_SITES = [
     name: "潮岸練場",
     needClear: null,
     qiMult: 1,
-    desc: "基礎練功 · 潮露／飼料／少許靈塵",
+    focus: "升級",
+    desc: "專精升級 · 潮露／飼料",
     drops: [
-      { mat: "tide_dew", perSec: 0.035 },
-      { feed: 0.04 },
-      { dust: 0.012 },
+      { mat: "tide_dew", perSec: 0.042 },
+      { feed: 0.045 },
+      { dust: 0.01 },
     ],
   },
   {
     id: "ruins",
     name: "廢墟影堂",
     needClear: "tide_1",
-    qiMult: 1.08,
-    desc: "通關一層解鎖 · 潮露／珊瑚屑",
+    qiMult: 1.04,
+    focus: "繁殖",
+    desc: "專精繁殖 · 珊瑚屑",
     drops: [
-      { mat: "tide_dew", perSec: 0.028 },
-      { mat: "coral_shard", perSec: 0.022 },
-      { dust: 0.02 },
+      { mat: "coral_shard", perSec: 0.038 },
+      { feed: 0.02 },
+      { dust: 0.015 },
     ],
   },
   {
     id: "deep",
     name: "深層祭壇",
     needClear: "tide_2",
-    qiMult: 1.15,
-    desc: "通關二層解鎖 · 霧絲／珊瑚",
+    qiMult: 1.06,
+    focus: "高階升級",
+    desc: "專精高階升級 · 霧絲",
     drops: [
-      { mat: "coral_shard", perSec: 0.025 },
-      { mat: "mist_silk", perSec: 0.018 },
-      { feed: 0.025 },
+      { mat: "mist_silk", perSec: 0.032 },
+      { feed: 0.022 },
+      { dust: 0.012 },
+    ],
+  },
+  {
+    id: "mistveil",
+    name: "霧帷練台",
+    needClear: "tide_2",
+    qiMult: 1.05,
+    focus: "技能",
+    desc: "專精技能 · 靈響脂／靈塵",
+    drops: [
+      { mat: "echo_resin", perSec: 0.028 },
+      { dust: 0.035 },
+      { feed: 0.012 },
     ],
   },
   {
     id: "core",
     name: "心核道場",
     needClear: "tide_3",
-    qiMult: 1.22,
-    desc: "通關心核解鎖 · 深淵墨／霧絲",
+    qiMult: 1.08,
+    focus: "雜交",
+    desc: "專精雜交繁殖 · 深淵墨",
     drops: [
-      { mat: "mist_silk", perSec: 0.022 },
-      { mat: "abyss_ink", perSec: 0.016 },
-      { dust: 0.03 },
+      { mat: "abyss_ink", perSec: 0.03 },
+      { dust: 0.018 },
+    ],
+  },
+  {
+    id: "fusehall",
+    name: "融砂坊",
+    needClear: "tide_3",
+    qiMult: 1.07,
+    focus: "融合",
+    desc: "專精融合 · 融砂",
+    drops: [
+      { mat: "fuse_sand", perSec: 0.026 },
+      { feed: 0.015 },
+      { dust: 0.014 },
     ],
   },
   {
     id: "abyss",
     name: "暗潮心壇",
     needClear: "tide_4",
-    qiMult: 1.3,
-    desc: "通關深層解鎖 · 契火／深淵墨",
+    qiMult: 1.1,
+    focus: "突破",
+    desc: "專精突破 · 契火",
     drops: [
-      { mat: "abyss_ink", perSec: 0.02 },
-      { mat: "seal_ember", perSec: 0.012 },
-      { mat: "mist_silk", perSec: 0.015 },
-      { dust: 0.025 },
+      { mat: "seal_ember", perSec: 0.024 },
+      { dust: 0.02 },
     ],
   },
 ];
@@ -3447,6 +3524,8 @@ export const MATERIAL_USES = {
   mist_silk: "高階升級",
   abyss_ink: "繁殖／雜交",
   seal_ember: "突破",
+  echo_resin: "技能升級",
+  fuse_sand: "融合",
   temper_oil: "洗性格",
   blood_catalyst: "縮短繁殖冷卻",
   breed_ticket: "重置繁殖冷卻",
@@ -3480,15 +3559,17 @@ export function buildMaterialSourceIndex() {
 export const MATERIAL_SOURCE_INDEX = buildMaterialSourceIndex();
 
 export function materialSourceLabel(matId) {
+  const mat = MATERIALS[matId];
+  if (mat?.tier === "dungeon") return "秘境專屬";
   const e = MATERIAL_SOURCE_INDEX[matId];
-  if (!e) return MATERIALS[matId]?.desc || "";
+  if (!e) return mat?.desc || "";
   const parts = [];
   if (e.sites.length) parts.push(`練功：${e.sites.join("／")}`);
   if (e.missions.length) {
     const ms = e.missions.slice(0, 2).join("／");
     parts.push(`派遣：${ms}${e.missions.length > 2 ? "…" : ""}`);
   }
-  return parts.join(" · ") || MATERIALS[matId]?.desc || "";
+  return parts.join(" · ") || mat?.desc || "";
 }
 
 export function dungeonNameForClear(clearId) {

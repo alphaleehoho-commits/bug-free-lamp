@@ -71,6 +71,8 @@ import {
   stageAt,
   upgradeMatCost,
   breedMatCost,
+  skillMatCost,
+  fusionMatCost,
   affordMaterials,
   TACTICS,
   FORMATIONS,
@@ -872,9 +874,10 @@ function cultivatePanel(qiPct, next, m) {
   const siteBtns = sites
     .map((s) => {
       const locked = !s.unlocked || areTrainSitesLocked(state);
+      const focus = s.focus ? ` ·${s.focus}` : "";
       return `<button type="button" class="${s.selected ? "primary" : ""} train-site-btn${locked ? " is-locked" : ""}" data-set-train="${s.id}" ${
-        locked ? `disabled title="${escapeHtml(s.unlockHint || "未解鎖")}"` : ""
-      }>${escapeHtml(s.name)}${locked ? "🔒" : ""}</button>`;
+        locked ? `disabled title="${escapeHtml(s.unlockHint || "未解鎖")}"` : `title="${escapeHtml(s.desc || "")}"`
+      }>${escapeHtml(s.name)}${escapeHtml(focus)}${locked ? "🔒" : ""}</button>`;
     })
     .join("");
   const siteCur = sites.find((s) => s.selected);
@@ -961,10 +964,11 @@ function cultivatePanel(qiPct, next, m) {
         ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
         : ""
     }
-    <h3>練功地點 ×${(siteCur?.qiMult || 1).toFixed(2)}</h3>
+    <h3>練功地點 ×${(siteCur?.qiMult || 1).toFixed(2)}${siteCur?.focus ? ` · 專精${escapeHtml(siteCur.focus)}` : ""}</h3>
     <div class="row tactics-row">${siteBtns}</div>
     ${trainLockNote}
     <p class="meta">${escapeHtml(siteCur?.desc || "")} · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
+    <p class="meta muted">練功打 bulk；洗劑／催化／催生符僅秘境</p>
     <h3>材料 <span class="meta-inline">用途／來源</span></h3>
     <div class="chip-row">${matChipsHtml()}</div>
     ${matHintListHtml()}
@@ -1266,6 +1270,7 @@ function petsDetailView() {
     upgradeCost,
     upgradeFeedCost: feedCost,
     fuseCostHint,
+    fuseMatCost: fuseMatsNeed,
     skill,
     fuseMaxed,
     fuseNeedLevel,
@@ -1274,6 +1279,7 @@ function petsDetailView() {
     nextFusionStage,
     skillLevel,
     skillDustCost: dustCost,
+    skillMatCost: skillMatsNeed,
     skillMaxed,
     secondSkill,
     secondUnlocked,
@@ -1287,7 +1293,11 @@ function petsDetailView() {
   const loc = deployed ? "出戰中" : "牧場待命";
   const fuseHint = fuseMaxed
     ? `已達融階上限（${FUSION_MAX_STAGE}）`
-    : `下一融階 ${nextFusionStage}：主體≥Lv.${fuseNeedLevel}、共 ${fuseTotalPets} 隻（${fuseMatNeed} 素材）· ${fuseCostHint} 石`;
+    : `下一融階 ${nextFusionStage}：主體≥Lv.${fuseNeedLevel}、共 ${fuseTotalPets} 隻（${fuseMatNeed} 素材）· ${fuseCostHint} 石${
+        fuseMatsNeed && Object.keys(fuseMatsNeed).length
+          ? `＋${matAffordHtml(fuseMatsNeed) || "融砂"}`
+          : ""
+      }`;
 
   const secondLine = secondUnlocked
     ? `【${escapeHtml(secondSkill?.name || "—")}】${secondSkill ? ` ${escapeHtml(secondSkill.desc)}（CD${secondSkill.cd}）` : ""}`
@@ -1295,6 +1305,8 @@ function petsDetailView() {
 
   const matUp = upgradeMatCost(lv);
   const matUpHtml = matAffordHtml(matUp);
+  const skillMatHtml =
+    skillMatsNeed && Object.keys(skillMatsNeed).length ? matAffordHtml(skillMatsNeed) : "";
   const lineage = petLineage(state, pet.uid);
   return `
     <h2>${escapeHtml(displayPetName(pet))}</h2>
@@ -1303,7 +1315,13 @@ function petsDetailView() {
       <li><strong>屬性</strong> — ${escapeHtml(pet.kind)}·${escapeHtml(pet.elementName)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span></li>
       <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}${pet.personality2Name ? `／${escapeHtml(pet.personality2Name)}` : ""}${pet.bloodlineName && pet.bloodlineName !== "無紋" ? ` · 血脈${escapeHtml(pet.bloodlineName)}` : ""}</li>
       <li><strong>戰力</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}</li>
-      <li><strong>技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】Lv.${skillLevel}</li>
+      <li><strong>技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】Lv.${skillLevel}${
+        skillMaxed
+          ? "（滿）"
+          : dustCost != null
+            ? ` · 升需靈塵${dustCost}${skillMatHtml ? `＋${skillMatHtml}` : ""}`
+            : ""
+      }</li>
       <li><strong>升級</strong> — ${upgradeCost}石／${feedCost}料＋${matUpHtml || "潮露×1"}</li>
     </ul>
     ${lineageHtml(lineage)}
@@ -2103,7 +2121,13 @@ function bind() {
       }
       if (
         !confirm(
-          `將 ${mats.length} 隻素材融入 ${d.pet.name}？\n目標融階 ${d.nextFusionStage}｜繼承 Lv.${d.level}｜耗 ${d.fuseCostHint} 靈石`
+          `將 ${mats.length} 隻素材融入 ${d.pet.name}？\n目標融階 ${d.nextFusionStage}｜繼承 Lv.${d.level}｜耗 ${d.fuseCostHint} 靈石${
+            d.fuseMatCost && Object.keys(d.fuseMatCost).length
+              ? `＋${Object.entries(d.fuseMatCost)
+                  .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
+                  .join("、")}`
+              : ""
+          }`
         )
       ) {
         return;
