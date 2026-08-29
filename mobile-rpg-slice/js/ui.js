@@ -74,6 +74,8 @@ import {
   skillMatCost,
   fusionMatCost,
   affordMaterials,
+  primaryTrainSiteForMat,
+  suggestTrainForShortage,
   TACTICS,
   FORMATIONS,
   MATERIALS,
@@ -348,12 +350,14 @@ function setFlash(msg, tone = "") {
   if (msg) {
     host.hidden = false;
     host.className = `flash-toast-host is-visible${flashTone ? ` flash-tone-${flashTone}` : ""}`;
+    host.style.pointerEvents = "none";
     el.hidden = false;
     el.textContent = msg;
     el.className = flashTone ? `flash flash-truncate flash-${flashTone}` : "flash flash-truncate";
   } else {
     host.hidden = true;
     host.className = "flash-toast-host";
+    host.style.pointerEvents = "none";
     el.hidden = true;
     el.textContent = "";
     el.className = "flash flash-truncate";
@@ -363,6 +367,50 @@ function setFlash(msg, tone = "") {
   if (msg) {
     flashTimer = setTimeout(() => setFlash(""), 2800);
   }
+}
+
+/** 缺料結果：可一鍵切到專精練功地 */
+function flashResult(r, okTone = "") {
+  if (!r) return;
+  if (r.ok) {
+    setFlash(r.msg, okTone);
+    return;
+  }
+  const s = r.suggest;
+  if (s?.siteId && s.unlocked && !s.alreadyThere && !s.dungeonOnly) {
+    setFlashWithTrainAction(r.msg, s.siteId, `前往${s.siteName}`);
+    return;
+  }
+  setFlash(r.msg);
+}
+
+function setFlashWithTrainAction(msg, siteId, label) {
+  flash = msg;
+  flashTone = "";
+  const host = ensureFlashHost();
+  const el = host.querySelector("[data-live=flash]");
+  host.hidden = false;
+  host.className = "flash-toast-host is-visible";
+  host.style.pointerEvents = "auto";
+  el.hidden = false;
+  el.className = "flash flash-truncate flash-with-act";
+  el.innerHTML = `${escapeHtml(msg)} <button type="button" class="flash-act" data-flash-train="${escapeHtml(
+    siteId
+  )}">${escapeHtml(label)}</button>`;
+  const btn = el.querySelector("[data-flash-train]");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      const r = setTrainSite(state, siteId);
+      tab = "cultivate";
+      panelSub.cultivate = "train";
+      petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+      saveState(state);
+      setFlash(r.msg);
+      render();
+    });
+  }
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => setFlash(""), 5200);
 }
 
 function genTagHtml(g) {
@@ -572,14 +620,27 @@ function matChipsHtml() {
 
 function matHintListHtml() {
   return `<ul class="mat-hint-list">${materialHintsView(state)
-    .map(
-      (m) => `
+    .map((m) => {
+      const site = primaryTrainSiteForMat(m.id);
+      const unlocked = site ? trainSitesView(state).find((s) => s.id === site.id)?.unlocked : false;
+      const goto =
+        site && unlocked
+          ? `<button type="button" class="linkish mat-goto" data-goto-train="${escapeHtml(site.id)}">去${escapeHtml(
+              site.focus || site.name
+            )}</button>`
+          : MATERIALS[m.id]?.tier === "dungeon"
+            ? `<span class="mat-goto muted">秘境</span>`
+            : site
+              ? `<span class="mat-goto muted">未解鎖</span>`
+              : "";
+      return `
     <li class="mat-hint ${m.count <= 0 ? "is-empty" : ""}">
       <span class="mat-name">${escapeHtml(m.name)}</span>
       <span class="mat-count">${m.count}</span>
       <span class="mat-src">${escapeHtml(m.source)}</span>
-    </li>`
-    )
+      ${goto}
+    </li>`;
+    })
     .join("")}</ul>`;
 }
 
@@ -1888,7 +1949,8 @@ function bind() {
         else if ((r.rarity ?? 0) >= 3) tone = "legend";
         else tone = "celebrate";
       }
-      setFlash(r.msg, tone);
+      if (r.ok) setFlash(r.msg, tone);
+      else flashResult(r);
     });
   });
   app.querySelectorAll("[data-claim-breed-goal]").forEach((btn) => {
@@ -1929,7 +1991,7 @@ function bind() {
       const r = upgradePet(state, btn.dataset.upgradeFeed, "feed");
       saveState(state);
       render();
-      setFlash(r.msg);
+      flashResult(r);
     });
   });
   app.querySelectorAll("[data-upgrade-skill]").forEach((btn) => {
@@ -1938,7 +2000,7 @@ function bind() {
       const r = upgradePetSkill(state, btn.dataset.upgradeSkill);
       saveState(state);
       render();
-      setFlash(r.msg);
+      flashResult(r);
     });
   });
   app.querySelectorAll("[data-temper-oil]").forEach((btn) => {
@@ -2070,6 +2132,17 @@ function bind() {
       const r = upgradePet(state, btn.dataset.upgrade);
       saveState(state);
       render();
+      flashResult(r);
+    });
+  });
+  app.querySelectorAll("[data-goto-train]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = setTrainSite(state, btn.dataset.gotoTrain);
+      tab = "cultivate";
+      panelSub.cultivate = "train";
+      saveState(state);
+      render();
       setFlash(r.msg);
     });
   });
@@ -2138,7 +2211,7 @@ function bind() {
         petView = { mode: "detail", uid: baseUid, fuseBase: null, fuseMats: [], breedParents: [] };
       }
       render();
-      setFlash(r.msg);
+      flashResult(r);
     });
   });
   app.querySelectorAll("[data-pet-back]").forEach((btn) => {

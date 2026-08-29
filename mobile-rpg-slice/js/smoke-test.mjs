@@ -71,6 +71,8 @@ import {
   skillMatCost,
   fusionMatCost,
   DUNGEON_MAT_DROPS,
+  primaryTrainSiteForMat,
+  suggestTrainForShortage,
   unlockedTrainSiteIds,
   materialSourceLabel,
   MATERIAL_SOURCE_INDEX,
@@ -518,6 +520,22 @@ assert(
 assert(DUNGEON_MAT_DROPS.tide_4.weights.breed_ticket >= 2, "dungeon exclusive weight");
 assert(!DUNGEON_MAT_DROPS.tide_1.weights.echo_resin, "no resin in dungeon");
 assert(!DUNGEON_MAT_DROPS.tide_1.weights.fuse_sand, "no fuse sand in dungeon");
+
+/* P19: shortage → train site nav */
+assert(primaryTrainSiteForMat("coral_shard")?.id === "ruins", "coral → ruins");
+assert(primaryTrainSiteForMat("echo_resin")?.id === "mistveil", "resin → mistveil");
+assert(primaryTrainSiteForMat("temper_oil") == null, "temper no AFK site");
+const shortSt = {
+  materials: { tide_dew: 0, coral_shard: 0 },
+  trainSite: "shore",
+  clearedDungeons: { tide_1: true, tide_2: true },
+};
+const sug = suggestTrainForShortage(shortSt, { coral_shard: 2 });
+assert(sug?.siteId === "ruins" && sug.unlocked && !sug.alreadyThere, "suggest ruins");
+const dungSug = suggestTrainForShortage(shortSt, { temper_oil: 1 });
+assert(dungSug?.dungeonOnly, "temper dungeon suggest");
+const there = suggestTrainForShortage({ ...shortSt, trainSite: "ruins" }, { coral_shard: 1 });
+assert(there?.alreadyThere, "already at ruins");
 
 /* P12: combat events */
 const combatFox = buildPetStats({

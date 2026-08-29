@@ -135,6 +135,8 @@ import {
   materialSourceLabel,
   MATERIAL_USES,
   trainSiteUnlockHint,
+  primaryTrainSiteForMat,
+  suggestTrainForShortage,
 } from "./data.js";
 import {
   normalizeTutorial,
@@ -512,6 +514,28 @@ export function affordMaterials(state, cost) {
       };
     });
   return { ok: items.every((i) => i.ok), items };
+}
+
+/** 缺料提示：建議練功地或標明秘境專屬 */
+export function shortageHint(state, cost) {
+  const suggest = suggestTrainForShortage(state, cost);
+  if (!suggest) return { suggest: null, hint: "" };
+  if (suggest.dungeonOnly) {
+    return { suggest, hint: `【${suggest.matName}】僅秘境掉落` };
+  }
+  if (suggest.alreadyThere) {
+    return { suggest, hint: `缺${suggest.matName} · 已在【${suggest.siteName}】掛機` };
+  }
+  if (!suggest.unlocked) {
+    return {
+      suggest,
+      hint: `缺${suggest.matName} · ${suggest.unlockHint || `未解鎖【${suggest.siteName}】`}`,
+    };
+  }
+  return {
+    suggest,
+    hint: `缺${suggest.matName} · 建議【${suggest.siteName}·${suggest.focus}】`,
+  };
 }
 
 export function materialHintsView(state) {
@@ -1542,7 +1566,12 @@ export function upgradePet(state, uid, payWith = "stones") {
   const level = pet.level ?? 1;
   const matCost = upgradeMatCost(level);
   if (!spendMaterials(state, matCost)) {
-    return { ok: false, msg: `材料不足（需 ${formatMats(matCost)}）。` };
+    const sh = shortageHint(state, matCost);
+    return {
+      ok: false,
+      msg: `材料不足（需 ${formatMats(matCost)}）${sh.hint ? `｜${sh.hint}` : ""}。`,
+      suggest: sh.suggest,
+    };
   }
   if (payWith === "feed") {
     const cost = upgradeFeedCost(level);
@@ -1603,7 +1632,12 @@ export function upgradePetSkill(state, uid) {
   if ((state.dust || 0) < cost) return { ok: false, msg: `靈塵不足（需 ${cost}）。` };
   const mats = skillMatCost(lv);
   if (!spendMaterials(state, mats)) {
-    return { ok: false, msg: `材料不足（需 ${formatMats(mats)}）。` };
+    const sh = shortageHint(state, mats);
+    return {
+      ok: false,
+      msg: `材料不足（需 ${formatMats(mats)}）${sh.hint ? `｜${sh.hint}` : ""}。`,
+      suggest: sh.suggest,
+    };
   }
   state.dust -= cost;
   pet.skillLevel = lv + 1;
@@ -1701,7 +1735,12 @@ export function fusePets(state, baseUid, matUids) {
   if (state.stones < cost) return { ok: false, msg: `靈石不足（需 ${cost}）。` };
   const fuseMats = fusionMatCost(targetStage);
   if (!spendMaterials(state, fuseMats)) {
-    return { ok: false, msg: `材料不足（需 ${formatMats(fuseMats)}）。` };
+    const sh = shortageHint(state, fuseMats);
+    return {
+      ok: false,
+      msg: `材料不足（需 ${formatMats(fuseMats)}）${sh.hint ? `｜${sh.hint}` : ""}。`,
+      suggest: sh.suggest,
+    };
   }
   state.stones -= cost;
 
@@ -2764,7 +2803,12 @@ export function tryBreed(state, uidA, uidB) {
   }
   const matCost = breedMatCost(petGeneration(a), petGeneration(b));
   if (!spendMaterials(state, matCost)) {
-    return { ok: false, msg: `材料不足（需 ${formatMats(matCost)}）。` };
+    const sh = shortageHint(state, matCost);
+    return {
+      ok: false,
+      msg: `材料不足（需 ${formatMats(matCost)}）${sh.hint ? `｜${sh.hint}` : ""}。`,
+      suggest: sh.suggest,
+    };
   }
 
   const genes = rollBreedGenes(a, b);
@@ -3163,6 +3207,8 @@ export {
   breedMatCost,
   skillMatCost,
   fusionMatCost,
+  primaryTrainSiteForMat,
+  suggestTrainForShortage,
   stageAt,
   nextStageAt,
   dungeonsForRealm,
