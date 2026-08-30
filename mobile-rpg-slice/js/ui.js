@@ -64,6 +64,7 @@ import {
   tideSealView,
   setTrainSite,
   trainSitesView,
+  trainDailySpotlightView,
   materialHintsView,
   dungeonDailyView,
   resolveDungeon,
@@ -1056,15 +1057,30 @@ function cultivatePanel(qiPct, next, m) {
     .map((s) => {
       const locked = !s.unlocked || areTrainSitesLocked(state);
       const focus = s.focus ? ` ·${s.focus}` : "";
-      return `<button type="button" class="${s.selected ? "primary" : ""} train-site-btn${locked ? " is-locked" : ""}" data-set-train="${s.id}" ${
+      const spot = s.isDailySpot ? " ☀" : "";
+      return `<button type="button" class="${s.selected ? "primary" : ""} train-site-btn${locked ? " is-locked" : ""}${s.isDailySpot ? " is-daily-spot" : ""}" data-set-train="${s.id}" ${
         locked ? `disabled title="${escapeHtml(s.unlockHint || "未解鎖")}"` : `title="${escapeHtml(s.desc || "")}"`
-      }>${escapeHtml(s.name)}${escapeHtml(focus)}${locked ? "🔒" : ""}</button>`;
+      }>${escapeHtml(s.name)}${escapeHtml(focus)}${spot}${locked ? "🔒" : ""}</button>`;
     })
     .join("");
   const siteCur = sites.find((s) => s.selected);
+  const trainSpot = trainDailySpotlightView();
   const nextLocked = sites.find((s) => !s.unlocked);
   const trainLockNote = nextLocked
     ? `<p class="train-lock-note">🔒 ${escapeHtml(nextLocked.unlockHint || `解鎖【${nextLocked.name}】`)}</p>`
+    : "";
+  const spotNote = trainSpot
+    ? `<p class="train-daily-spot">${escapeHtml(trainSpot.label)}${trainSpot.focus ? ` · ${escapeHtml(trainSpot.focus)}` : ""}</p>`
+    : "";
+  const rateLines = (siteCur?.rates?.lines || [])
+    .slice(0, 4)
+    .map(
+      (r) =>
+        `<li class="train-rate ${r.tag ? "is-boosted" : ""}"><span>${escapeHtml(r.name)}</span><span class="muted">≈${r.perHr}/時${r.tag ? ` · ${escapeHtml(r.tag)}` : ""}</span></li>`
+    )
+    .join("");
+  const rateBlock = rateLines
+    ? `<ul class="train-rate-list">${rateLines}</ul>`
     : "";
 
   const shopOffers = shopView(state);
@@ -1145,10 +1161,12 @@ function cultivatePanel(qiPct, next, m) {
         ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
         : ""
     }
-    <h3>練功地點 ×${(siteCur?.qiMult || 1).toFixed(2)}${siteCur?.focus ? ` · 專精${escapeHtml(siteCur.focus)}` : ""}</h3>
+    <h3>練功地點 ×${(siteCur?.qiMult || 1).toFixed(2)}${siteCur?.focus ? ` · 專精${escapeHtml(siteCur.focus)}` : ""}${siteCur?.isDailySpot ? " · 今日強化" : ""}</h3>
+    ${spotNote}
     <div class="row tactics-row">${siteBtns}</div>
     ${trainLockNote}
-    <p class="meta">${escapeHtml(siteCur?.desc || "")} · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
+    <p class="meta">${escapeHtml(siteCur?.desc || "")} · 專精主產物 +35% · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
+    ${rateBlock}
     <p class="meta muted">練功打 bulk；洗劑／催化／催生符僅秘境</p>
     <h3>材料 <span class="meta-inline">用途／來源</span></h3>
     <div class="chip-row">${matChipsHtml()}</div>
@@ -1907,7 +1925,12 @@ function dungeonPanel() {
         : ""
     }`
         : `<h2>潮汐秘境</h2>
-    <p class="lead">波次自動戰鬥 · 逐層翻頁</p>
+    <p class="lead">波次自動戰鬥 · 逐層翻頁 · 每層每日挑戰／敵情輪換</p>
+    ${
+      dailyMod
+        ? `<p class="dungeon-daily-mod">${escapeHtml(dailyMod.label)}</p>`
+        : ""
+    }
     <ul class="list dungeon-list">${dungeonCard}</ul>
     ${pager}`
     }

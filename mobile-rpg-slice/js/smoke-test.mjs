@@ -47,6 +47,7 @@ import {
   FORMATION_IDS,
   DUNGEON_CHALLENGE_RULES,
   pickDailyChallenge,
+  DUNGEON_DAILY_MODS,
   evaluateDungeonChallenge,
   weekKey,
   DAILY_QUESTS,
@@ -77,6 +78,12 @@ import {
   materialSourceLabel,
   MATERIAL_SOURCE_INDEX,
   trainSiteUnlockHint,
+  pickDailyTrainSpotlight,
+  trainDropMult,
+  trainSiteRatesView,
+  trainSiteById,
+  TRAIN_FOCUS_BONUS,
+  TRAIN_DAILY_SPOT_BONUS,
   dungeonNameForClear,
   genAwakenBonus,
   breedStatInheritancePreview,
@@ -540,6 +547,20 @@ const dungSug = suggestTrainForShortage(shortSt, { temper_oil: 1 });
 assert(dungSug?.dungeonOnly, "temper dungeon suggest");
 const there = suggestTrainForShortage({ ...shortSt, trainSite: "ruins" }, { coral_shard: 1 });
 assert(there?.alreadyThere, "already at ruins");
+
+/* P20: deepen train sites + daily spotlight */
+const spot = pickDailyTrainSpotlight("2026-08-30");
+assert(spot?.id && pickDailyTrainSpotlight("2026-08-30").id === spot.id, "train spot stable");
+const ruinsSite = trainSiteById("ruins");
+const dewMult = trainDropMult(ruinsSite, { mat: "coral_shard", perSec: 0.038 }, "2026-08-30");
+assert(dewMult >= TRAIN_FOCUS_BONUS, "focus mult on primary mat");
+const rates = trainSiteRatesView(ruinsSite, "2026-08-30");
+assert(rates.lines.some((l) => l.name === "珊瑚屑"), "rates include primary");
+assert(DUNGEON_DAILY_MODS.length >= 10, "expanded daily mods");
+assert(DUNGEON_CHALLENGE_RULES.some((r) => r.minGeneration === 2), "gen2 challenge");
+const gen1Pet = makeStarterPet();
+const gen2Rule = DUNGEON_CHALLENGE_RULES.find((r) => r.id === "min_gen2");
+assert(!evaluateDungeonChallenge([gen1Pet], gen2Rule).ok, "gen2 challenge rejects gen1");
 
 /* P12: combat events */
 const combatFox = buildPetStats({

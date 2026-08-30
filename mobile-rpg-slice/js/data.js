@@ -1649,6 +1649,24 @@ export const DUNGEON_CHALLENGE_RULES = [
     bossAtkMult: 1.12,
     bonus: { stones: 28, scrap: 1 },
   },
+  {
+    id: "ban_tide",
+    label: "挑戰：禁潮屬出戰",
+    banElement: "tide",
+    bonus: { stones: 16, dust: 4 },
+  },
+  {
+    id: "ban_stone",
+    label: "挑戰：禁岩屬出戰",
+    banElement: "stone",
+    bonus: { stones: 16, dust: 4 },
+  },
+  {
+    id: "min_gen2",
+    label: "挑戰：僅 ≥2 代靈寵",
+    minGeneration: 2,
+    bonus: { stones: 22, dust: 5 },
+  },
 ];
 
 export function pickDailyChallenge(dateKey, dungeonId) {
@@ -1670,6 +1688,12 @@ export function evaluateDungeonChallenge(pets, challenge, opts = {}) {
     if (hit.length) {
       const elName = ELEMENTS[challenge.banElement]?.name || challenge.banElement;
       return { ok: false, reason: `含禁屬${elName}` };
+    }
+  }
+  if (challenge.minGeneration != null) {
+    const low = list.filter((p) => petGeneration(p) < challenge.minGeneration);
+    if (low.length) {
+      return { ok: false, reason: `需 ≥${challenge.minGeneration} 代` };
     }
   }
   return { ok: true, reason: "" };
@@ -1708,6 +1732,26 @@ export const DUNGEON_DAILY_MODS = [
     id: "stone_bonus",
     label: "今日：通關額外 +15 靈石",
     clearStoneBonus: 15,
+  },
+  {
+    id: "tide_favor",
+    label: "今日：潮屬友方攻擊 +15%",
+    allyElemAtk: { element: "tide", mult: 1.15 },
+  },
+  {
+    id: "gloom_favor",
+    label: "今日：幽屬友方攻擊 +15%",
+    allyElemAtk: { element: "gloom", mult: 1.15 },
+  },
+  {
+    id: "dust_bonus",
+    label: "今日：通關額外 +6 靈塵",
+    clearDustBonus: 6,
+  },
+  {
+    id: "feed_bonus",
+    label: "今日：通關額外 +8 飼料",
+    clearFeedBonus: 8,
   },
 ];
 
@@ -3423,9 +3467,12 @@ export function fusionMatCost(targetStage) {
 
 /**
  * 練功地點：首通秘境解鎖；每地專精一種 bulk（唔再愈深愈全能）
- * focus: UI 短標；drops: perSec 期望產出／秒
+ * focus: UI 短標；primaryMat: 專精主產物；drops: perSec 期望產出／秒
  * 秘境專屬料（洗劑／催化／催生符）永不進 AFK
  */
+export const TRAIN_FOCUS_BONUS = 1.35;
+export const TRAIN_DAILY_SPOT_BONUS = 1.25;
+
 export const TRAIN_SITES = [
   {
     id: "shore",
@@ -3433,6 +3480,7 @@ export const TRAIN_SITES = [
     needClear: null,
     qiMult: 1,
     focus: "升級",
+    primaryMat: "tide_dew",
     desc: "專精升級 · 潮露／飼料",
     drops: [
       { mat: "tide_dew", perSec: 0.042 },
@@ -3446,6 +3494,7 @@ export const TRAIN_SITES = [
     needClear: "tide_1",
     qiMult: 1.04,
     focus: "繁殖",
+    primaryMat: "coral_shard",
     desc: "專精繁殖 · 珊瑚屑",
     drops: [
       { mat: "coral_shard", perSec: 0.038 },
@@ -3459,6 +3508,7 @@ export const TRAIN_SITES = [
     needClear: "tide_2",
     qiMult: 1.06,
     focus: "高階升級",
+    primaryMat: "mist_silk",
     desc: "專精高階升級 · 霧絲",
     drops: [
       { mat: "mist_silk", perSec: 0.032 },
@@ -3472,6 +3522,7 @@ export const TRAIN_SITES = [
     needClear: "tide_2",
     qiMult: 1.05,
     focus: "技能",
+    primaryMat: "echo_resin",
     desc: "專精技能 · 靈響脂／靈塵",
     drops: [
       { mat: "echo_resin", perSec: 0.028 },
@@ -3485,6 +3536,7 @@ export const TRAIN_SITES = [
     needClear: "tide_3",
     qiMult: 1.08,
     focus: "雜交",
+    primaryMat: "abyss_ink",
     desc: "專精雜交繁殖 · 深淵墨",
     drops: [
       { mat: "abyss_ink", perSec: 0.03 },
@@ -3497,6 +3549,7 @@ export const TRAIN_SITES = [
     needClear: "tide_3",
     qiMult: 1.07,
     focus: "融合",
+    primaryMat: "fuse_sand",
     desc: "專精融合 · 融砂",
     drops: [
       { mat: "fuse_sand", perSec: 0.026 },
@@ -3510,6 +3563,7 @@ export const TRAIN_SITES = [
     needClear: "tide_4",
     qiMult: 1.1,
     focus: "突破",
+    primaryMat: "seal_ember",
     desc: "專精突破 · 契火",
     drops: [
       { mat: "seal_ember", perSec: 0.024 },
@@ -3520,6 +3574,76 @@ export const TRAIN_SITES = [
 
 export function trainSiteById(id) {
   return TRAIN_SITES.find((s) => s.id === id) || TRAIN_SITES[0];
+}
+
+/** 練功地主產物（專精加成對象） */
+export function trainSitePrimaryMat(site) {
+  if (!site) return null;
+  if (site.primaryMat) return site.primaryMat;
+  return (site.drops || []).find((d) => d.mat)?.mat || null;
+}
+
+/** 每日輪換一個練功地全產出強化（穩定 seed） */
+export function pickDailyTrainSpotlight(dateKey) {
+  if (!TRAIN_SITES.length) return null;
+  const idx = hashDayKey(`${dateKey || ""}:train-spot`) % TRAIN_SITES.length;
+  return TRAIN_SITES[idx];
+}
+
+/** 單項 drop 的有效倍率（專精主產物 + 今日強化地） */
+export function trainDropMult(site, drop, dateKey) {
+  if (!site || !drop) return 1;
+  let mult = 1;
+  const primary = trainSitePrimaryMat(site);
+  if (drop.mat && drop.mat === primary) mult *= TRAIN_FOCUS_BONUS;
+  const spot = pickDailyTrainSpotlight(dateKey);
+  if (spot?.id === site.id) mult *= TRAIN_DAILY_SPOT_BONUS;
+  return mult;
+}
+
+/** UI：今日強化練功地 */
+export function trainDailySpotlightView(dateKey = todayKey()) {
+  const site = pickDailyTrainSpotlight(dateKey);
+  if (!site) return null;
+  return {
+    siteId: site.id,
+    siteName: site.name,
+    focus: site.focus || "",
+    bonusPct: Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100),
+    label: `今日強化【${site.name}】全產出 +${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%`,
+  };
+}
+
+/** UI：每地有效產率（含加成） */
+export function trainSiteRatesView(site, dateKey = todayKey()) {
+  const primary = trainSitePrimaryMat(site);
+  const spot = pickDailyTrainSpotlight(dateKey);
+  const isSpot = spot?.id === site.id;
+  const lines = [];
+  for (const drop of site.drops || []) {
+    const mult = trainDropMult(site, drop, dateKey);
+    if (drop.mat) {
+      const name = MATERIALS[drop.mat]?.name || drop.mat;
+      const perHr = ((drop.perSec || 0) * mult * 3600).toFixed(1);
+      const tags = [];
+      if (drop.mat === primary) tags.push(`專精+${Math.round((TRAIN_FOCUS_BONUS - 1) * 100)}%`);
+      if (isSpot) tags.push(`今日+${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%`);
+      lines.push({
+        kind: "mat",
+        id: drop.mat,
+        name,
+        perHr,
+        tag: tags.join(" · "),
+      });
+    } else if (drop.feed) {
+      const perHr = ((drop.feed || 0) * mult * 3600).toFixed(0);
+      lines.push({ kind: "feed", name: "飼料", perHr, tag: isSpot ? `今日+${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%` : "" });
+    } else if (drop.dust) {
+      const perHr = ((drop.dust || 0) * mult * 3600).toFixed(0);
+      lines.push({ kind: "dust", name: "靈塵", perHr, tag: isSpot ? `今日+${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%` : "" });
+    }
+  }
+  return { primaryMat: primary, isDailySpot: isSpot, lines };
 }
 
 export function isTrainSiteUnlocked(state, siteId) {
