@@ -126,6 +126,11 @@ import {
   TRAIN_SITES,
   trainSiteById,
   makeStarterPet,
+  makeStarterEgg,
+  makeEgg,
+  hatchPetFromEgg,
+  eggTierInfo,
+  EGG_TIERS,
   normalizeBloodmarks,
   bloodlineLabel,
   bloodmarkCombatMult,
@@ -186,7 +191,10 @@ function emptyPathQuests() {
 }
 
 function defaultState() {
-  const starter = makeStarterPet();
+  const now = Date.now();
+  const starterEgg = makeStarterEgg(now);
+  const mats = emptyMaterials();
+  mats.tide_dew = 1;
   return {
     realm: 0,
     qi: 0,
@@ -194,18 +202,19 @@ function defaultState() {
     scrap: 0,
     feed: 8,
     dust: 8,
-    materials: emptyMaterials(),
+    materials: mats,
     trainSite: "shore",
     inventory: [],
     master: defaultMaster(),
     pets: [],
-    ranch: [starter],
+    ranch: [],
+    eggs: [starterEgg],
     pending: [],
     log: [
-      "你沿暗潮抵達荒廢契壇，潮霧中已有一隻靈寵相隨。",
-      "先認寵、出戰，再踏入秘境——契壇會逐步解鎖。",
+      "你沿暗潮抵達荒廢契壇，霧中擱著一枚潮霧蛋。",
+      "先孵化首寵、練功升級，再踏入秘境——契壇會逐步解鎖。",
     ],
-    lastTick: Date.now(),
+    lastTick: now,
     combatsWon: 0,
     winStreak: 0,
     breedingUnlocked: true,
@@ -213,9 +222,7 @@ function defaultState() {
     dungeonReadyAt: {},
     breedReadyAt: 0,
     /** P2 */
-    bestiary: {
-      [bestiaryKeyFromPet(starter)]: true,
-    },
+    bestiary: {},
     daily: emptyDaily(),
     pathQuests: emptyPathQuests(),
     achievements: {},
@@ -232,6 +239,7 @@ function defaultState() {
       speciesBreeds: {},
       dispatches: 0,
       seals: 0,
+      eggsHatched: 0,
     },
     /** P3 繁殖目標進度 */
     breedGoals: emptyBreedGoals(),
@@ -245,7 +253,7 @@ function defaultState() {
     /** P9 */
     dispatches: [],
     tideSeals: 0,
-    tutorial: { done: false, step: "meet_pet", flags: {} },
+    tutorial: { done: false, step: "hatch_starter", flags: {} },
   };
 }
 
@@ -299,6 +307,24 @@ function normalizePet(p) {
 
 function normalizePetList(list) {
   return (Array.isArray(list) ? list : []).map(normalizePet);
+}
+
+function normalizeEggs(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((e) => e && e.uid && !e.claimed)
+    .map((e) => {
+      const t = eggTierInfo(e.tier || "C");
+      return {
+        uid: e.uid,
+        tier: t.id,
+        name: e.name || t.name,
+        source: e.source || "unknown",
+        startedAt: e.startedAt ?? null,
+        readyAt: e.readyAt ?? null,
+        claimed: false,
+      };
+    });
 }
 
 export function ranchCap(state) {
@@ -402,6 +428,7 @@ export function loadState() {
       master,
       pets,
       ranch,
+      eggs: normalizeEggs(parsed.eggs),
       feed: parsed.feed ?? 0,
       dust: parsed.dust ?? 0,
       materials: mergedMats,
@@ -646,6 +673,16 @@ export function tickCultivation(state, now = Date.now()) {
   state.daily.idleSec = (state.daily.idleSec || 0) + elapsed;
   if (state.daily.idleSec >= 180) {
     bumpDaily(state, "idle", 1);
+  }
+  if (
+    state.tutorial &&
+    !state.tutorial.done &&
+    state.tutorial.step === "cultivate_qi" &&
+    (state.daily.idleSec || 0) >= 90
+  ) {
+    state.tutorial.flags = state.tutorial.flags || {};
+    state.tutorial.flags.qiIdleDone = true;
+    advanceTutorialIfReady(state);
   }
 
   if (elapsed >= OFFLINE_HINT_SEC) {
@@ -1092,9 +1129,28 @@ export function dungeonDailyView(state) {
   return d?.mod || null;
 }
 
+function rollShopEggOffer(tier, seedSalt = 0) {
+  const t = eggTierInfo(tier);
+  return {
+    offerId: `shop-egg-${t.id}-${Date.now()}-${seedSalt}-${Math.floor(Math.random() * 999)}`,
+    kind: "egg",
+    eggTier: t.id,
+    name: t.name,
+    cost: t.shopCost,
+    label: t.label,
+    desc: t.desc,
+  };
+}
+
 function rollShopOffer(seedSalt = 0) {
+  // ~40% 蛋、其餘靈寵；預留 kind:mat / kind:trade 之後再做
+  if (Math.random() < 0.4) {
+    const roll = Math.random();
+    const tier = roll < 0.55 ? "C" : roll < 0.9 ? "B" : "A";
+    return rollShopEggOffer(tier, seedSalt);
+  }
   const pool = RECRUIT_POOL;
-  if (!pool.length) return null;
+  if (!pool.length) return rollShopEggOffer("C", seedSalt);
   let total = 0;
   for (const p of pool) total += p.weight || 1;
   let r = Math.random() * total;
@@ -1106,19 +1162,17 @@ function rollShopOffer(seedSalt = 0) {
       break;
     }
   }
-  const peKeys = Object.keys(
-    // personalities via template
-    { fierce: 1, steady: 1, sly: 1, gentle: 1, wild: 1 }
-  );
+  const peKeys = Object.keys({ fierce: 1, steady: 1, sly: 1, gentle: 1, wild: 1 });
   const personality = pick.personality || peKeys[Math.floor(Math.random() * peKeys.length)];
   return {
     offerId: `shop-${Date.now()}-${seedSalt}-${Math.floor(Math.random() * 999)}`,
+    kind: "pet",
     species: pick.species,
     element: pick.element,
     personality,
     cost: pick.cost || 60,
     name: SPECIES[pick.species]?.name || pick.species,
-    kind: SPECIES[pick.species]?.kind || "?",
+    petKind: SPECIES[pick.species]?.kind || "?",
     elementName: { tide: "潮", stone: "岩", flame: "焰", gale: "嵐", gloom: "幽" }[pick.element] || pick.element,
   };
 }
@@ -1128,11 +1182,25 @@ export function ensureShop(state, now = Date.now()) {
   if (!state.shop) state.shop = emptyShop(now);
   if (state.shop.date !== key || !Array.isArray(state.shop.offers) || state.shop.offers.length === 0) {
     const offers = [];
-    for (let i = 0; i < SHOP_OFFER_COUNT; i++) {
+    // 每日至少一顆蛋
+    offers.push(rollShopEggOffer(Math.random() < 0.7 ? "C" : "B", 0));
+    for (let i = 1; i < SHOP_OFFER_COUNT; i++) {
       const o = rollShopOffer(i);
       if (o) offers.push(o);
     }
     state.shop = { date: key, offers };
+  }
+  // 教學：確保有未售蛋可買
+  if (
+    state.tutorial &&
+    !state.tutorial.done &&
+    state.tutorial.step === "shop_egg" &&
+    !state.tutorial.flags?.shopBought
+  ) {
+    const hasEgg = state.shop.offers.some((o) => o.kind === "egg" && !o.bought);
+    if (!hasEgg) {
+      state.shop.offers.unshift(rollShopEggOffer("C", 99));
+    }
   }
   return state.shop;
 }
@@ -1142,15 +1210,19 @@ export function shopView(state) {
   const tutDeal =
     state.tutorial &&
     !state.tutorial.done &&
-    state.tutorial.step === "shop_pet" &&
+    state.tutorial.step === "shop_egg" &&
     !state.tutorial.flags?.shopBought;
-  return state.shop.offers.map((o) => ({
-    ...o,
-    speciesName: SPECIES[o.species]?.name || o.name,
-    bought: !!o.bought,
-    cost: tutorialShopPrice(state, o.cost),
-    tutorialDeal: tutDeal && !o.bought,
-  }));
+  return state.shop.offers.map((o) => {
+    const isEgg = o.kind === "egg";
+    return {
+      ...o,
+      kind: o.kind || "pet",
+      speciesName: isEgg ? o.name : SPECIES[o.species]?.name || o.name,
+      bought: !!o.bought,
+      cost: tutorialShopPrice(state, o.cost),
+      tutorialDeal: tutDeal && isEgg && !o.bought,
+    };
+  });
 }
 
 export function buyShopOffer(state, offerId) {
@@ -1160,6 +1232,21 @@ export function buyShopOffer(state, offerId) {
   if (offer.bought) return { ok: false, msg: "已售出。" };
   const payCost = tutorialShopPrice(state, offer.cost);
   if (state.stones < payCost) return { ok: false, msg: `靈石不足（需 ${payCost}）。` };
+
+  if (offer.kind === "egg") {
+    if (!state.eggs) state.eggs = [];
+    if (state.eggs.length >= 6) return { ok: false, msg: "蛋欄已滿（最多 6）。" };
+    state.stones -= payCost;
+    offer.bought = true;
+    const egg = makeEgg(offer.eggTier || "C", "shop");
+    state.eggs.push(egg);
+    if (state.tutorial && !state.tutorial.done) {
+      state.tutorial.flags.shopBought = true;
+    }
+    pushLog(state, `商肆購入【${egg.name}】，耗 ${payCost} 靈石。可開始孵化。`);
+    advanceTutorialCascade(state);
+    return { ok: true, msg: `購入 ${egg.name}（請開始孵化）`, egg };
+  }
 
   if (!state.ranch) state.ranch = [];
   const owned = state.pets.length + state.ranch.length;
@@ -1195,7 +1282,7 @@ export function buyShopOffer(state, offerId) {
     `商肆購入【${pet.name}】（${pet.kind}·${pet.elementName}）直入牧場，耗 ${payCost} 靈石。`
   );
   checkAchievements(state);
-  advanceTutorialIfReady(state);
+  advanceTutorialCascade(state);
   return { ok: true, msg: `購入 ${pet.name}（已入牧場，可派出戰）` };
 }
 
@@ -1328,6 +1415,15 @@ export function claimDispatch(state, dispatchId) {
   const mission = DISPATCH_MISSIONS.find((m) => m.id === d.missionId);
   d.claimed = true;
   applyReward(state, mission?.reward);
+  let eggGot = null;
+  const chance = mission?.eggChance;
+  if (chance?.tier && Math.random() < (chance.rate || 0)) {
+    if (!state.eggs) state.eggs = [];
+    if (state.eggs.length < 6) {
+      eggGot = makeEgg(chance.tier, `dispatch:${mission.id}`);
+      state.eggs.push(eggGot);
+    }
+  }
   if (!state.stats) state.stats = {};
   state.stats.dispatches = (state.stats.dispatches || 0) + 1;
   // 清走已領，避免列表膨脹
@@ -1337,10 +1433,15 @@ export function claimDispatch(state, dispatchId) {
   if (mission?.reward?.feed) bits.push(`${mission.reward.feed}飼料`);
   if (mission?.reward?.dust) bits.push(`${mission.reward.dust}靈塵`);
   if (mission?.reward?.scrap) bits.push(`${mission.reward.scrap}碎片`);
-  pushLog(state, `派遣【${mission?.name || d.missionId}】歸來：${bits.join("／")}。`);
+  if (eggGot) bits.push(eggGot.name);
+  pushLog(state, `派遣【${mission?.name || d.missionId}】歸來：${bits.join("／") || "無"}。`);
   bumpDaily(state, "dispatch", 1);
   checkAchievements(state);
-  return { ok: true, msg: `領取 ${bits.join("／")}` };
+  return {
+    ok: true,
+    msg: eggGot ? `領取 ${bits.join("／")}` : `領取 ${bits.join("／")}`,
+    egg: eggGot,
+  };
 }
 
 /**
@@ -1507,6 +1608,85 @@ export function deployPet(state, uid) {
   return {
     ok: true,
     msg: `${pet.name} 已出戰`,
+    tutorialUnlock: tut.advanced ? tut.unlockMsg : null,
+  };
+}
+
+/** 蛋列表視圖 */
+export function eggsView(state, now = Date.now()) {
+  if (!state.eggs) state.eggs = [];
+  return state.eggs.map((e) => {
+    const t = eggTierInfo(e.tier);
+    const hatching = e.startedAt != null;
+    const left = hatching ? Math.max(0, (e.readyAt || 0) - now) : t.hatchMs;
+    return {
+      ...e,
+      name: e.name || t.name,
+      label: t.label,
+      desc: t.desc,
+      hatchMs: t.hatchMs,
+      hatching,
+      ready: hatching && left <= 0,
+      leftMs: left,
+      leftSec: Math.ceil(left / 1000),
+    };
+  });
+}
+
+/** 開始孵化 */
+export function startHatch(state, eggUid, now = Date.now()) {
+  if (!state.eggs) state.eggs = [];
+  const egg = state.eggs.find((e) => e.uid === eggUid);
+  if (!egg) return { ok: false, msg: "找不到這枚蛋。" };
+  if (egg.startedAt != null) return { ok: false, msg: "已在孵化中。" };
+  const t = eggTierInfo(egg.tier);
+  egg.startedAt = now;
+  egg.readyAt = now + t.hatchMs;
+  pushLog(state, `開始孵化【${egg.name || t.name}】（約 ${Math.round(t.hatchMs / 60000)} 分）。`);
+  if (state.tutorial && !state.tutorial.done) {
+    state.tutorial.flags.hatchStarted = true;
+  }
+  advanceTutorialCascade(state);
+  return { ok: true, msg: `孵化開始：${egg.name || t.name}` };
+}
+
+/** 領取孵化完成的靈寵 */
+export function claimHatch(state, eggUid) {
+  if (!state.eggs) state.eggs = [];
+  if (!state.ranch) state.ranch = [];
+  const i = state.eggs.findIndex((e) => e.uid === eggUid);
+  if (i < 0) return { ok: false, msg: "找不到這枚蛋。" };
+  const egg = state.eggs[i];
+  if (egg.startedAt == null) return { ok: false, msg: "尚未開始孵化。" };
+  if ((egg.readyAt || 0) > Date.now()) {
+    const sec = Math.ceil((egg.readyAt - Date.now()) / 1000);
+    return { ok: false, msg: `尚未孵出（${sec}s）。` };
+  }
+  const owned = state.pets.length + state.ranch.length;
+  const cap = ranchCap(state);
+  if (owned >= cap) {
+    return { ok: false, msg: `牧場已滿（${cap}），無法領取。` };
+  }
+  const pet = normalizePet(hatchPetFromEgg(egg, { realm: state.realm, starter: egg.source === "starter" }));
+  state.eggs.splice(i, 1);
+  state.ranch.push(pet);
+  registerBestiary(state, pet);
+  if (!state.stats) state.stats = {};
+  state.stats.eggsHatched = (state.stats.eggsHatched || 0) + 1;
+  state.stats.bonds = (state.stats.bonds || 0) + 1;
+  if (state.tutorial && !state.tutorial.done) {
+    state.tutorial.flags.hatchClaimed = true;
+    if (egg.source === "starter") state.tutorial.flags.starterHatched = true;
+    if (egg.source === "shop" || state.tutorial.flags.shopBought) {
+      state.tutorial.flags.secondEggHatched = true;
+    }
+  }
+  pushLog(state, `【${egg.name || eggTierInfo(egg.tier).name}】孵出 ${pet.name}！`);
+  const tut = advanceTutorialCascade(state);
+  return {
+    ok: true,
+    msg: `孵出 ${pet.name}`,
+    pet,
     tutorialUnlock: tut.advanced ? tut.unlockMsg : null,
   };
 }
@@ -3249,6 +3429,7 @@ export {
   TRAIN_FOCUS_BONUS,
   TRAIN_DAILY_SPOT_BONUS,
   pickDailyTrainSpotlight,
+  EGG_TIERS,
   stageAt,
   nextStageAt,
   dungeonsForRealm,
