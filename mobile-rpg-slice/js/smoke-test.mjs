@@ -195,8 +195,9 @@ assert(summary.filter((r) => r.tier === "main").length === HYBRID_RECIPES.filter
 assert(summary.some((r) => r.tier === "tertiary" && r.species === "abyssreign"), "tertiary in summary");
 assert(summary.every((r) => r.name && r.kindsLabel), "summary labels");
 assert(Object.keys(SPECIES).filter((id) => SPECIES[id].tertiary).length >= 8, "8+ tertiary species");
-assert(TERTIARY_RECIPES.length >= 8, "tertiary recipes");
+assert(TERTIARY_RECIPES.length >= 32, "tertiary recipes expanded");
 assert(tertiaryRecipesForParents("tideling", "mistcarp").length >= 1, "tideling×mistcarp tertiary");
+assert(tertiaryRecipesForParents("tidehowl", "voidcarp").length >= 1, "sub hybrid tertiary path");
 assert(PATH_QUESTS.some((q) => q.id === "nurture_tertiary"), "tertiary path quest");
 assert(bestiaryTotal() >= 13200, "bestiary 48×5×5×11");
 
@@ -576,8 +577,10 @@ assert(combatRes.combatStart?.allies?.length >= 1, "combat roster allies");
 assert(combatRes.combatEvents.some((e) => e.type === "strike" || e.type === "text"), "strike or text");
 const strikeEv = combatRes.combatEvents.find((e) => e.type === "strike");
 if (strikeEv) {
-  assert(strikeEv.targetUid && strikeEv.elemTag !== undefined, "strike fields");
+  assert(strikeEv.targetUid && strikeEv.actorUid && strikeEv.elemTag !== undefined, "strike fields");
+  assert(strikeEv.actorElementId != null, "strike element ids");
 }
+assert(combatRes.combatEvents.some((e) => e.type === "wave" && e.foes?.length), "wave event");
 const firstEv = combatRes.combatEvents[0];
 assert(
   firstEv?.type === "wave" || firstEv?.type === "round",

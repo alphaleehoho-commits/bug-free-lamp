@@ -1173,6 +1173,23 @@ export const TERTIARY_RECIPES = [
   { parents: ["voidcarp", "shellmite"], species: "nightscale", chance: 0.13 },
   { parents: ["galebeast", "mistwing"], species: "galevoid", chance: 0.16 },
   { parents: ["reefwing", "voidcarp"], species: "galevoid", chance: 0.12 },
+  /* 次配方父母對 → 提高三代入手路徑 */
+  { parents: ["tidehowl", "voidcarp"], species: "abyssreign", chance: 0.14 },
+  { parents: ["lightscale", "mistcarp"], species: "abyssreign", chance: 0.12 },
+  { parents: ["lightscale", "prismoth"], species: "voidglint", chance: 0.13 },
+  { parents: ["ashspine", "stormmoth"], species: "voidglint", chance: 0.11 },
+  { parents: ["coralmane", "duskfly"], species: "duskiron", chance: 0.13 },
+  { parents: ["stonefinch", "ironback"], species: "duskiron", chance: 0.11 },
+  { parents: ["reefmite", "stormshell"], species: "coralstorm", chance: 0.12 },
+  { parents: ["galebeast", "coralmane"], species: "coralstorm", chance: 0.11 },
+  { parents: ["inkfox", "gloomfang"], species: "deepfang", chance: 0.12 },
+  { parents: ["reefmite", "deepquill"], species: "deepfang", chance: 0.1 },
+  { parents: ["tidehowl", "prismback"], species: "tideprism", chance: 0.12 },
+  { parents: ["lightscale", "ironback"], species: "tideprism", chance: 0.1 },
+  { parents: ["reefmite", "voidcarp"], species: "nightscale", chance: 0.12 },
+  { parents: ["tidehowl", "shellmite"], species: "nightscale", chance: 0.1 },
+  { parents: ["ashspine", "mistwing"], species: "galevoid", chance: 0.12 },
+  { parents: ["stonefinch", "reefwing"], species: "galevoid", chance: 0.1 },
 ];
 
 function speciesPairKey(a, b) {

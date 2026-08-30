@@ -253,6 +253,52 @@ let playback = null;
 
 const LINE_MS = 520;
 
+function playbackDelayMs(event) {
+  if (!event) return LINE_MS;
+  if (event.type === "wave") return 880;
+  if (event.type === "round") return 680;
+  if (event.type === "heal") return 540;
+  if (event.type === "strike") {
+    if (event.ko) return 760;
+    if (event.skillName) return 580;
+    if (event.elemTag) return 520;
+    return 460;
+  }
+  return 380;
+}
+
+function buildSkipSummary(events) {
+  const list = events || [];
+  let strikes = 0;
+  let heals = 0;
+  let kos = 0;
+  let adv = 0;
+  for (const e of list) {
+    if (e.type === "strike") {
+      strikes += 1;
+      if (e.ko) kos += 1;
+      if (e.elemTag === "克制") adv += 1;
+    } else if (e.type === "heal") heals += 1;
+  }
+  return {
+    strikes,
+    heals,
+    kos,
+    adv,
+    rounds: list.filter((e) => e.type === "round").length,
+    waves: list.filter((e) => e.type === "wave").length,
+  };
+}
+
+function skipSummaryHtml(summary) {
+  if (!summary) return "";
+  const bits = [`${summary.rounds} 回合`, `${summary.strikes} 擊`];
+  if (summary.heals) bits.push(`${summary.heals} 治`);
+  if (summary.kos) bits.push(`${summary.kos} 破`);
+  if (summary.adv) bits.push(`${summary.adv} 克`);
+  return `<p class="skip-summary">跳過戰報 · ${escapeHtml(bits.join(" · "))}</p>`;
+}
+
 function initCombatHp(result) {
   const hp = new Map();
   const allies = [];
@@ -270,15 +316,29 @@ function initCombatHp(result) {
 
 function applyCombatEvent(event, pb) {
   if (!event || !pb) return;
+  pb.lastActorUid = null;
+  pb.lastDmg = null;
+  pb.lastHealAmt = null;
+  pb.waveLabel = pb.waveLabel || null;
   if (event.type === "round") {
     pb.currentRound = event.round || pb.currentRound;
-  } else if (event.type === "strike" || event.type === "heal") {
-    pb.unitHp.set(event.targetUid, event.targetHp);
-    pb.lastHitUid = event.type === "strike" ? event.targetUid : null;
-  } else if (event.type === "wave" && event.foes) {
-    pb.foeUnits = event.foes.map((f) => ({ ...f }));
-    for (const f of event.foes) pb.unitHp.set(f.uid, f.hp);
+  } else if (event.type === "wave") {
+    pb.waveLabel = event.label || event.text;
+    pb.foeUnits = (event.foes || []).map((f) => ({ ...f }));
+    for (const f of event.foes || []) pb.unitHp.set(f.uid, f.hp);
     pb.lastHitUid = null;
+  } else if (event.type === "strike") {
+    pb.unitHp.set(event.targetUid, event.targetHp);
+    pb.lastHitUid = event.targetUid;
+    pb.lastActorUid = event.actorUid;
+    pb.lastDmg = event.dmg;
+    if (event.ko) pb.lastKoUid = event.targetUid;
+  } else if (event.type === "heal") {
+    pb.unitHp.set(event.targetUid, event.targetHp);
+    pb.lastHitUid = null;
+    pb.lastActorUid = event.actorUid || null;
+    pb.lastHealAmt = event.heal;
+    pb.lastHealTarget = event.targetUid;
   } else {
     pb.lastHitUid = null;
   }
@@ -286,12 +346,14 @@ function applyCombatEvent(event, pb) {
 
 function combatLogClass(event) {
   if (!event) return "";
+  if (event.type === "wave") return "log-wave";
   if (event.type === "round") return "log-round";
   if (event.type === "heal") return "log-heal";
   if (event.type === "strike") {
+    if (event.ko) return "log-ko";
     if (event.elemTag === "克制") return "log-adv";
     if (event.elemTag === "被克") return "log-dis";
-    if (event.ko) return "log-ko";
+    if (event.skillName) return "log-skill";
   }
   return "";
 }
@@ -302,6 +364,10 @@ function combatLogLineHtml(text, event) {
   if (event?.type === "strike" && event.elemTag) {
     const kind = event.elemTag === "克制" ? "adv" : "dis";
     badge = `<span class="elem-badge elem-${kind}">${escapeHtml(event.elemTag)}</span>`;
+  } else if (event?.type === "strike" && event.skillName) {
+    badge = `<span class="skill-badge">${escapeHtml(event.skillName)}</span>`;
+  } else if (event?.type === "wave") {
+    badge = `<span class="wave-badge">波</span>`;
   }
   return `<li class="${cls}">${badge}${escapeHtml(text)}</li>`;
 }
@@ -312,10 +378,21 @@ function combatUnitBar(u, pb) {
   const dead = hp <= 0;
   const doubleAct = u.role === "boss" || (u.actions || 1) > 1;
   const actBadge = doubleAct ? `<span class="cu-act" title="可連續行動">雙動</span>` : "";
-  return `<div class="combat-unit ${dead ? "is-down" : ""}${doubleAct ? " is-boss-act" : ""}" data-combat-uid="${escapeHtml(u.uid)}" data-element="${escapeHtml(
-    u.elementId || ""
-  )}">
-    <span class="cu-name">${actBadge}${escapeHtml(u.name)}</span>
+  const isHit = pb.lastHitUid === u.uid;
+  const isActor = pb.lastActorUid === u.uid;
+  const isKo = pb.lastKoUid === u.uid;
+  const dmgPop =
+    isHit && pb.lastDmg != null ? `<span class="cu-dmg">-${pb.lastDmg}</span>` : "";
+  const healPop =
+    pb.lastHealAmt != null && pb.lastHealTarget === u.uid
+      ? `<span class="cu-heal">+${pb.lastHealAmt}</span>`
+      : "";
+  return `<div class="combat-unit ${dead ? "is-down" : ""}${doubleAct ? " is-boss-act" : ""}${
+    isHit ? " is-hit" : ""
+  }${isActor && !isHit ? " is-actor" : ""}${isKo ? " is-ko-flash" : ""}" data-combat-uid="${escapeHtml(
+    u.uid
+  )}" data-element="${escapeHtml(u.elementId || "")}">
+    <span class="cu-name">${actBadge}${escapeHtml(u.name)}${dmgPop}${healPop}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
 }
@@ -333,12 +410,10 @@ function patchCombatRosterDom(pb) {
   root.innerHTML = `
     <div class="combat-side allies">${pb.allyUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>
     <div class="combat-side foes">${pb.foeUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>`;
-  if (pb.lastHitUid) {
-    const hit = root.querySelector(`[data-combat-uid="${pb.lastHitUid}"]`);
-    if (hit) {
-      hit.classList.add("is-hit");
-      setTimeout(() => hit.classList.remove("is-hit"), 420);
-    }
+  const waveEl = document.querySelector("[data-live=combat-wave]");
+  if (waveEl) {
+    waveEl.textContent = pb.waveLabel && !pb.done ? pb.waveLabel : "";
+    waveEl.hidden = !pb.waveLabel || pb.done;
   }
 }
 
@@ -542,7 +617,7 @@ function recipeBoardHtml() {
 }
 
 function stopPlayback() {
-  if (playback?.timer) clearInterval(playback.timer);
+  if (playback?.timer) clearTimeout(playback.timer);
   playback = null;
 }
 
@@ -715,6 +790,16 @@ function updatePlaybackDom(latestEvent = null) {
         badge.className = `elem-badge elem-${kind}`;
         badge.textContent = event.elemTag;
         li.appendChild(badge);
+      } else if (event?.type === "strike" && event.skillName) {
+        const badge = document.createElement("span");
+        badge.className = "skill-badge";
+        badge.textContent = event.skillName;
+        li.appendChild(badge);
+      } else if (event?.type === "wave") {
+        const badge = document.createElement("span");
+        badge.className = "wave-badge";
+        badge.textContent = "波";
+        li.appendChild(badge);
       }
       li.append(document.createTextNode(last));
       list.prepend(li);
@@ -730,7 +815,7 @@ function finishPlayback() {
   if (!playback) return;
   playback.done = true;
   if (playback.timer) {
-    clearInterval(playback.timer);
+    clearTimeout(playback.timer);
     playback.timer = null;
   }
   let adv = { advanced: false, unlockMsg: null };
@@ -751,6 +836,20 @@ function finishPlayback() {
   } else {
     setFlash(playback.result.msg);
   }
+}
+
+function schedulePlaybackStep() {
+  if (!playback || playback.done) return;
+  if (playback.index >= playback.events.length) {
+    finishPlayback();
+    return;
+  }
+  const delay = playbackDelayMs(playback.events[playback.index]);
+  playback.timer = window.setTimeout(() => {
+    playback.timer = null;
+    advancePlayback();
+    if (playback && !playback.done) schedulePlaybackStep();
+  }, delay);
 }
 
 function advancePlayback() {
@@ -785,26 +884,36 @@ function startPlayback(result) {
     timer: null,
     done: false,
     skipped: false,
+    skipSummary: null,
     unitHp: hpState.hp,
     allyUnits: hpState.allies,
     foeUnits: hpState.foes,
     lastHitUid: null,
+    lastActorUid: null,
+    lastKoUid: null,
+    lastDmg: null,
+    lastHealAmt: null,
+    lastHealTarget: null,
+    waveLabel: null,
     currentRound: 0,
   };
   render();
-  advancePlayback();
-  playback.timer = setInterval(advancePlayback, LINE_MS);
+  schedulePlaybackStep();
 }
 
 function skipPlayback() {
   if (!playback || playback.done) return;
   playback.skipped = true;
+  if (playback.timer) {
+    clearTimeout(playback.timer);
+    playback.timer = null;
+  }
   while (playback.index < playback.events.length) {
     const event = playback.events[playback.index];
     applyCombatEvent(event, playback);
     playback.index += 1;
   }
-  /* 跳過後不列出戰報，直接顯示最終結算 */
+  playback.skipSummary = buildSkipSummary(playback.events);
   playback.shown = [];
   finishPlayback();
   render();
@@ -1662,9 +1771,11 @@ function dungeonPanel() {
       </div>`;
     return `
       <h2>${playback.done ? "結算" : "戰報"}</h2>
+      ${playback.waveLabel && !playback.done ? `<p class="combat-wave-banner" data-live="combat-wave">${escapeHtml(playback.waveLabel)}</p>` : `<p class="combat-wave-banner" data-live="combat-wave" hidden></p>`}
       ${renderCombatRoster(playback)}
       <p class="lead" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
       <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
+      ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
       ${logBlock}
       ${breakdownHtml}
       <div class="row">
