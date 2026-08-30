@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-const CACHE = "void-tide-pets-v35";
-=======
-const CACHE = "void-tide-pets-v37";
->>>>>>> 55b07c8 (Specialize train sites for bulk mats; keep dungeon exclusives)
+const CACHE = "void-tide-pets-v38";
 const ASSETS = [
   "./",
   "./index.html",

@@ -1081,6 +1081,54 @@ button.linkish strong { color: var(--jade); }
 .combat .log-dis { color: #e8a090; }
 .combat .log-heal { color: #7eb8a3; }
 .combat .log-ko { color: #e8b86d; font-weight: 600; }
+.combat .log-skill { color: #c8dce8; }
+.combat .log-wave { color: #9ec4e8; font-weight: 600; }
+.skill-badge,
+.wave-badge {
+  display: inline-block;
+  margin-right: 0.25rem;
+  padding: 0 0.25rem;
+  border-radius: 4px;
+  font-size: 0.52rem;
+  vertical-align: middle;
+}
+.skill-badge {
+  background: rgba(100, 140, 180, 0.35);
+  color: #d8eaf8;
+  border: 1px solid rgba(140, 180, 220, 0.35);
+}
+.wave-badge {
+  background: rgba(80, 120, 160, 0.4);
+  color: #b8d8f0;
+}
+.combat-wave-banner {
+  font-size: 0.62rem;
+  color: #9ec4e8;
+  margin: 0 0 0.25rem;
+  text-align: center;
+  animation: fadeUp 0.35s ease-out;
+}
+.combat-unit.is-actor .cu-name { color: var(--jade-bright); }
+.combat-unit.is-ko-flash { animation: koFlash 0.55s ease-out; }
+.cu-dmg,
+.cu-heal {
+  display: inline-block;
+  margin-left: 0.2rem;
+  font-size: 0.52rem;
+  font-weight: 700;
+  animation: dmgPop 0.55s ease-out;
+}
+.cu-dmg { color: #e89078; }
+.cu-heal { color: #7eb8a3; }
+@keyframes dmgPop {
+  0% { opacity: 0; transform: translateY(4px) scale(0.85); }
+  30% { opacity: 1; transform: translateY(0) scale(1.05); }
+  100% { opacity: 0.7; transform: translateY(-2px) scale(1); }
+}
+@keyframes koFlash {
+  0% { filter: brightness(1.8); box-shadow: 0 0 0 0 rgba(232, 184, 109, 0.55); }
+  100% { filter: brightness(1); box-shadow: 0 0 0 8px rgba(232, 184, 109, 0); }
+}
 .skip-summary {
   font-size: 0.62rem;
   color: var(--jade-bright);
