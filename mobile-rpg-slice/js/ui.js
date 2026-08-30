@@ -90,6 +90,7 @@ import {
   tutorialBannerHtml,
   syncTutorialNavigation,
   advanceTutorialIfReady,
+  advanceTutorialCascade,
   markTutorialFlag,
   isTabLocked,
   isCultivateSubLocked,
@@ -196,8 +197,9 @@ function positionTutorialSpotlight(urgent = false) {
   }
   const el = targets[0];
   const isUrgent = urgent || tutMisclickCount >= 2;
-  if (isUrgent) {
-    el.classList.add("tut-glow", "tut-flash-urgent");
+  for (const t of targets) {
+    t.classList.add("tut-glow");
+    if (isUrgent) t.classList.add("tut-flash-urgent");
   }
   const r = el.getBoundingClientRect();
   host.hidden = false;
@@ -926,6 +928,14 @@ function render() {
   tab = nav.tab;
   panelSub = nav.panelSub;
 
+  let tutorialUnlockMsg = null;
+  if (tutorialActive(state) && state.tutorial.step === "meet_pet" && tab === "party" && panelSub.party === "ranch") {
+    const adv = markTutorialFlag(state, "meetPetVisited");
+    if (adv.advanced && adv.unlockMsg) tutorialUnlockMsg = adv.unlockMsg;
+  }
+  const heal = advanceTutorialCascade(state);
+  if (heal.advanced && heal.unlockMsg) tutorialUnlockMsg = heal.unlockMsg;
+
   const stage = realmInfo(state);
   const next = nextRealm(state);
   const qiPct = next ? Math.min(100, (state.qi / next.need) * 100) : 100;
@@ -982,6 +992,7 @@ function render() {
   tutorialSnapCache = tutorialLiveSnapshot(state);
   saveState(state);
   positionTutorialSpotlight(false);
+  if (tutorialUnlockMsg) setFlash(tutorialUnlockMsg, "unlock");
   if (playback) updatePlaybackDom();
 }
 
@@ -2227,7 +2238,8 @@ function bind() {
       const r = deployPet(state, btn.dataset.deploy);
       saveState(state);
       render();
-      setFlash(r.msg);
+      if (r.tutorialUnlock) setFlash(r.tutorialUnlock, "unlock");
+      else setFlash(r.msg);
     });
   });
   app.querySelectorAll("[data-undeploy]").forEach((btn) => {

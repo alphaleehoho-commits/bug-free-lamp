@@ -96,10 +96,13 @@ import {
   breedPreview,
   petLineage,
   useTemperOil,
+  deployPet,
 } from "./engine.js";
 import {
   normalizeTutorial,
   advanceTutorialIfReady,
+  advanceTutorialCascade,
+  healTutorialProgress,
   tutorialActive,
   tutorialShopPrice,
   skipTutorial,
@@ -687,6 +690,48 @@ assert(tutorialActive(skipSt), "skip pre active");
 const skipR = skipTutorial(skipSt);
 assert(skipR.ok && !tutorialActive(skipSt), "skip tutorial unlocks");
 assert(skipSt.tutorial.done && skipSt.tutorial.step === "complete", "skip marks complete");
+
+const stuckSt = {
+  realm: 0,
+  qi: 0,
+  pets: [makeStarterPet()],
+  ranch: [],
+  combatsWon: 0,
+  stones: 120,
+  log: [],
+  tutorial: { done: false, step: "meet_pet", flags: {} },
+};
+normalizeTutorial(stuckSt);
+healTutorialProgress(stuckSt);
+assert(stuckSt.tutorial.step === "dungeon_fight", "heal stuck meet_pet after early deploy");
+
+const ranchHiSt = {
+  realm: 0,
+  qi: 0,
+  pets: [],
+  ranch: [makeStarterPet()],
+  combatsWon: 0,
+  stones: 120,
+  log: [],
+  tutorial: { done: false, step: "meet_pet", flags: {} },
+};
+const meetHi = tutorialHighlights(ranchHiSt, { tab: "party", panelSub: { party: "ranch" } });
+assert(meetHi.some((h) => h.type === "deploy"), "meet_pet ranch highlights deploy button");
+
+const earlySt = {
+  realm: 0,
+  qi: 0,
+  pets: [],
+  ranch: [makeStarterPet()],
+  combatsWon: 0,
+  stones: 120,
+  log: [],
+  tutorial: { done: false, step: "meet_pet", flags: {} },
+};
+const earlyPet = earlySt.ranch[0];
+const dep = deployPet(earlySt, earlyPet.uid);
+assert(dep.ok && earlySt.tutorial.step === "dungeon_fight", "deploy cascades meet_pet and deploy");
+assert(tutorialGlowClass(earlySt, { type: "tab", id: "dungeon" }, { tab: "cultivate", panelSub: {} }) === " tut-glow", "dungeon tab glow after deploy");
 
 const ga = genAwakenBonus(3);
 assert(ga?.skillLevel === 2 && ga.atk > 0, "gen3 awaken");

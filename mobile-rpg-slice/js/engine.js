@@ -140,7 +140,9 @@ import {
 } from "./data.js";
 import {
   normalizeTutorial,
+  healTutorialProgress,
   advanceTutorialIfReady,
+  advanceTutorialCascade,
   tutorialShopPrice,
   markTutorialFlag,
   skipTutorial,
@@ -434,6 +436,7 @@ export function loadState() {
       tutorial: parsed.tutorial,
     };
     normalizeTutorial(merged);
+    healTutorialProgress(merged);
     return merged;
   } catch {
     return defaultState();
@@ -1490,8 +1493,12 @@ export function deployPet(state, uid) {
   const [pet] = state.ranch.splice(i, 1);
   state.pets.push(pet);
   pushLog(state, `派出 ${pet.name} 出戰。`);
-  advanceTutorialIfReady(state);
-  return { ok: true, msg: `${pet.name} 已出戰` };
+  const tut = advanceTutorialCascade(state);
+  return {
+    ok: true,
+    msg: `${pet.name} 已出戰`,
+    tutorialUnlock: tut.advanced ? tut.unlockMsg : null,
+  };
 }
 
 /** 出戰 → 牧場 */

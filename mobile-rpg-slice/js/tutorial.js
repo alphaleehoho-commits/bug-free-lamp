@@ -312,7 +312,7 @@ function meetsAdvance(state, stepId) {
 
   switch (stepId) {
     case "meet_pet":
-      return !!flags.meetPetVisited;
+      return !!flags.meetPetVisited || (state.pets?.length || 0) >= 1;
     case "deploy":
       return (state.pets?.length || 0) >= 1;
     case "dungeon_fight":
@@ -384,6 +384,28 @@ export function maybeStartLateTutorial(state) {
   };
 }
 
+/** 修復「已出戰但仍卡在認寵／派出戰」等不一致狀態 */
+export function healTutorialProgress(state) {
+  if (!state.tutorial || state.tutorial.done) return { advanced: false, unlockMsg: null, steps: 0 };
+  if ((state.pets?.length || 0) >= 1) {
+    state.tutorial.flags.meetPetVisited = true;
+  }
+  return advanceTutorialCascade(state);
+}
+
+/** 連續推進至下一步未滿足為止 */
+export function advanceTutorialCascade(state, maxSteps = 6) {
+  let last = { advanced: false, unlockMsg: null, nextId: null };
+  let steps = 0;
+  for (let i = 0; i < maxSteps; i++) {
+    const r = advanceTutorialIfReady(state);
+    if (!r.advanced) break;
+    last = r;
+    steps += 1;
+  }
+  return { ...last, advanced: steps > 0, steps };
+}
+
 /**
  * 自動推進教學步驟；回傳 { advanced, unlockMsg }
  */
@@ -453,7 +475,10 @@ export function tutorialHighlights(state, nav = {}) {
 
   switch (step) {
     case "meet_pet":
-      if (tab === "party" && ps.party === "ranch") return [];
+      if (tab === "party" && ps.party === "ranch") {
+        if ((state.ranch?.length || 0) >= 1) return [{ type: "deploy" }];
+        return [];
+      }
       if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
       return [{ type: "tab", id: "party" }];
     case "deploy":
