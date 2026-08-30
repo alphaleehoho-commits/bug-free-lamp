@@ -47,6 +47,7 @@ import {
   FORMATION_IDS,
   DUNGEON_CHALLENGE_RULES,
   pickDailyChallenge,
+  DUNGEON_DAILY_MODS,
   evaluateDungeonChallenge,
   weekKey,
   DAILY_QUESTS,
@@ -77,6 +78,12 @@ import {
   materialSourceLabel,
   MATERIAL_SOURCE_INDEX,
   trainSiteUnlockHint,
+  pickDailyTrainSpotlight,
+  trainDropMult,
+  trainSiteRatesView,
+  trainSiteById,
+  TRAIN_FOCUS_BONUS,
+  TRAIN_DAILY_SPOT_BONUS,
   dungeonNameForClear,
   genAwakenBonus,
   breedStatInheritancePreview,
@@ -96,10 +103,13 @@ import {
   breedPreview,
   petLineage,
   useTemperOil,
+  deployPet,
 } from "./engine.js";
 import {
   normalizeTutorial,
   advanceTutorialIfReady,
+  advanceTutorialCascade,
+  healTutorialProgress,
   tutorialActive,
   tutorialShopPrice,
   skipTutorial,
@@ -538,6 +548,20 @@ assert(dungSug?.dungeonOnly, "temper dungeon suggest");
 const there = suggestTrainForShortage({ ...shortSt, trainSite: "ruins" }, { coral_shard: 1 });
 assert(there?.alreadyThere, "already at ruins");
 
+/* P20: deepen train sites + daily spotlight */
+const spot = pickDailyTrainSpotlight("2026-08-30");
+assert(spot?.id && pickDailyTrainSpotlight("2026-08-30").id === spot.id, "train spot stable");
+const ruinsSite = trainSiteById("ruins");
+const dewMult = trainDropMult(ruinsSite, { mat: "coral_shard", perSec: 0.038 }, "2026-08-30");
+assert(dewMult >= TRAIN_FOCUS_BONUS, "focus mult on primary mat");
+const rates = trainSiteRatesView(ruinsSite, "2026-08-30");
+assert(rates.lines.some((l) => l.name === "珊瑚屑"), "rates include primary");
+assert(DUNGEON_DAILY_MODS.length >= 10, "expanded daily mods");
+assert(DUNGEON_CHALLENGE_RULES.some((r) => r.minGeneration === 2), "gen2 challenge");
+const gen1Pet = makeStarterPet();
+const gen2Rule = DUNGEON_CHALLENGE_RULES.find((r) => r.id === "min_gen2");
+assert(!evaluateDungeonChallenge([gen1Pet], gen2Rule).ok, "gen2 challenge rejects gen1");
+
 /* P12: combat events */
 const combatFox = buildPetStats({
   id: "p1",
@@ -687,6 +711,48 @@ assert(tutorialActive(skipSt), "skip pre active");
 const skipR = skipTutorial(skipSt);
 assert(skipR.ok && !tutorialActive(skipSt), "skip tutorial unlocks");
 assert(skipSt.tutorial.done && skipSt.tutorial.step === "complete", "skip marks complete");
+
+const stuckSt = {
+  realm: 0,
+  qi: 0,
+  pets: [makeStarterPet()],
+  ranch: [],
+  combatsWon: 0,
+  stones: 120,
+  log: [],
+  tutorial: { done: false, step: "meet_pet", flags: {} },
+};
+normalizeTutorial(stuckSt);
+healTutorialProgress(stuckSt);
+assert(stuckSt.tutorial.step === "dungeon_fight", "heal stuck meet_pet after early deploy");
+
+const ranchHiSt = {
+  realm: 0,
+  qi: 0,
+  pets: [],
+  ranch: [makeStarterPet()],
+  combatsWon: 0,
+  stones: 120,
+  log: [],
+  tutorial: { done: false, step: "meet_pet", flags: {} },
+};
+const meetHi = tutorialHighlights(ranchHiSt, { tab: "party", panelSub: { party: "ranch" } });
+assert(meetHi.some((h) => h.type === "deploy"), "meet_pet ranch highlights deploy button");
+
+const earlySt = {
+  realm: 0,
+  qi: 0,
+  pets: [],
+  ranch: [makeStarterPet()],
+  combatsWon: 0,
+  stones: 120,
+  log: [],
+  tutorial: { done: false, step: "meet_pet", flags: {} },
+};
+const earlyPet = earlySt.ranch[0];
+const dep = deployPet(earlySt, earlyPet.uid);
+assert(dep.ok && earlySt.tutorial.step === "dungeon_fight", "deploy cascades meet_pet and deploy");
+assert(tutorialGlowClass(earlySt, { type: "tab", id: "dungeon" }, { tab: "cultivate", panelSub: {} }) === " tut-glow", "dungeon tab glow after deploy");
 
 const ga = genAwakenBonus(3);
 assert(ga?.skillLevel === 2 && ga.atk > 0, "gen3 awaken");

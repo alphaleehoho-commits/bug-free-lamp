@@ -137,10 +137,18 @@ import {
   trainSiteUnlockHint,
   primaryTrainSiteForMat,
   suggestTrainForShortage,
+  trainDropMult,
+  trainDailySpotlightView,
+  trainSiteRatesView,
+  TRAIN_FOCUS_BONUS,
+  TRAIN_DAILY_SPOT_BONUS,
+  pickDailyTrainSpotlight,
 } from "./data.js";
 import {
   normalizeTutorial,
+  healTutorialProgress,
   advanceTutorialIfReady,
+  advanceTutorialCascade,
   tutorialShopPrice,
   markTutorialFlag,
   skipTutorial,
@@ -434,6 +442,7 @@ export function loadState() {
       tutorial: parsed.tutorial,
     };
     normalizeTutorial(merged);
+    healTutorialProgress(merged);
     return merged;
   } catch {
     return defaultState();
@@ -559,8 +568,9 @@ export function tickTrainSite(state, elapsedSec) {
   let feed = 0;
   let dust = 0;
   for (const drop of active.drops || []) {
+    const mult = trainDropMult(active, drop, todayKey());
     if (drop.mat) {
-      const expected = (drop.perSec || 0) * elapsedSec;
+      const expected = (drop.perSec || 0) * mult * elapsedSec;
       let n = Math.floor(expected);
       if (Math.random() < expected - n) n += 1;
       if (n > 0) {
@@ -569,12 +579,12 @@ export function tickTrainSite(state, elapsedSec) {
       }
     }
     if (drop.feed) {
-      const f = drop.feed * elapsedSec;
+      const f = (drop.feed || 0) * mult * elapsedSec;
       state.feed = (state.feed || 0) + f;
       feed += f;
     }
     if (drop.dust) {
-      const d = drop.dust * elapsedSec;
+      const d = (drop.dust || 0) * mult * elapsedSec;
       state.dust = (state.dust || 0) + d;
       dust += d;
     }
@@ -596,11 +606,14 @@ export function setTrainSite(state, siteId) {
 
 export function trainSitesView(state) {
   const cur = state.trainSite || "shore";
+  const spot = trainDailySpotlightView();
   return TRAIN_SITES.map((s) => ({
     ...s,
     unlocked: isTrainSiteUnlocked(state, s.id),
     selected: s.id === cur,
     unlockHint: trainSiteUnlockHint(s),
+    isDailySpot: spot?.siteId === s.id,
+    rates: trainSiteRatesView(s),
   }));
 }
 
@@ -1490,8 +1503,12 @@ export function deployPet(state, uid) {
   const [pet] = state.ranch.splice(i, 1);
   state.pets.push(pet);
   pushLog(state, `派出 ${pet.name} 出戰。`);
-  advanceTutorialIfReady(state);
-  return { ok: true, msg: `${pet.name} 已出戰` };
+  const tut = advanceTutorialCascade(state);
+  return {
+    ok: true,
+    msg: `${pet.name} 已出戰`,
+    tutorialUnlock: tut.advanced ? tut.unlockMsg : null,
+  };
 }
 
 /** 出戰 → 牧場 */
@@ -2402,6 +2419,8 @@ export function runDungeon(state, dungeonId) {
       progressDungeonWinGoals(state);
       dailyStoneBonus = 0;
       dailyScrapBonus = 0;
+      let dailyDustBonus = 0;
+      let dailyFeedBonus = 0;
       if (dailyMod?.clearStoneBonus) {
         dailyStoneBonus = dailyMod.clearStoneBonus;
         state.stones += dailyStoneBonus;
@@ -2410,10 +2429,21 @@ export function runDungeon(state, dungeonId) {
         dailyScrapBonus = dailyMod.clearScrapBonus;
         state.scrap += dailyScrapBonus;
       }
-      if (dailyStoneBonus || dailyScrapBonus) {
-        note(
-          `今日修飾結算：+${dailyStoneBonus}石／+${dailyScrapBonus}碎片。`
-        );
+      if (dailyMod?.clearDustBonus) {
+        dailyDustBonus = dailyMod.clearDustBonus;
+        state.dust = (state.dust || 0) + dailyDustBonus;
+      }
+      if (dailyMod?.clearFeedBonus) {
+        dailyFeedBonus = dailyMod.clearFeedBonus;
+        state.feed = (state.feed || 0) + dailyFeedBonus;
+      }
+      if (dailyStoneBonus || dailyScrapBonus || dailyDustBonus || dailyFeedBonus) {
+        const bits = [];
+        if (dailyStoneBonus) bits.push(`+${dailyStoneBonus}石`);
+        if (dailyScrapBonus) bits.push(`+${dailyScrapBonus}碎片`);
+        if (dailyDustBonus) bits.push(`+${dailyDustBonus}塵`);
+        if (dailyFeedBonus) bits.push(`+${dailyFeedBonus}飼`);
+        note(`今日修飾結算：${bits.join("／")}。`);
       }
       const first = !state.clearedDungeons[dungeonId];
       if (first && d.firstClearBonus) {
@@ -3213,6 +3243,12 @@ export {
   fusionMatCost,
   primaryTrainSiteForMat,
   suggestTrainForShortage,
+  trainDailySpotlightView,
+  trainDropMult,
+  trainSiteRatesView,
+  TRAIN_FOCUS_BONUS,
+  TRAIN_DAILY_SPOT_BONUS,
+  pickDailyTrainSpotlight,
   stageAt,
   nextStageAt,
   dungeonsForRealm,
