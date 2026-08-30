@@ -2807,7 +2807,7 @@ export function buildPetStats(template) {
   };
 }
 
-/** 開局贈送首寵（潮屬礁狐） */
+/** 開局贈送首寵（潮屬礁狐）— 亦可由蛋孵化產出 */
 export function makeStarterPet() {
   const built = buildPetStats({
     id: "starter-reefox-tide",
@@ -2822,6 +2822,109 @@ export function makeStarterPet() {
     ...built,
     uid: "starter-reefox",
     fromStarter: true,
+  };
+}
+
+/* ─── 寵物蛋：多 tier 孵化 ─── */
+
+/**
+ * C 常見／教學｜B 日常｜A 稀有
+ * hatchMs：實時毫秒（離線照計）
+ */
+export const EGG_TIERS = {
+  C: {
+    id: "C",
+    name: "潮霧蛋",
+    hatchMs: 120_000,
+    shopCost: 40,
+    label: "常見",
+    desc: "約 2 分鐘孵化 · 野生種",
+  },
+  B: {
+    id: "B",
+    name: "暗潮蛋",
+    hatchMs: 480_000,
+    shopCost: 90,
+    label: "優秀",
+    desc: "約 8 分鐘孵化 · 較佳成長",
+  },
+  A: {
+    id: "A",
+    name: "心核蛋",
+    hatchMs: 1_800_000,
+    shopCost: 180,
+    label: "稀有",
+    desc: "約 30 分鐘孵化 · 高潛力",
+  },
+};
+
+export function eggTierInfo(tier) {
+  return EGG_TIERS[tier] || EGG_TIERS.C;
+}
+
+/** 生成一顆蛋（未開始孵化） */
+export function makeEgg(tier = "C", source = "unknown", now = Date.now()) {
+  const t = eggTierInfo(tier);
+  const uid = `egg-${t.id}-${now}-${Math.floor(Math.random() * 9999)}`;
+  return {
+    uid,
+    tier: t.id,
+    name: t.name,
+    source,
+    startedAt: null,
+    readyAt: null,
+    claimed: false,
+  };
+}
+
+/** 開局教學蛋（已開始倒數，方便立即看到進度） */
+export function makeStarterEgg(now = Date.now()) {
+  const egg = makeEgg("C", "starter", now);
+  const t = eggTierInfo("C");
+  egg.startedAt = now;
+  egg.readyAt = now + t.hatchMs;
+  egg.uid = "egg-starter-c";
+  return egg;
+}
+
+/** 孵化產出寵物（C 普通／B 略強／A 再強） */
+export function hatchPetFromEgg(egg, opts = {}) {
+  const tier = egg?.tier || "C";
+  const isStarter = egg?.source === "starter" || opts.starter;
+  if (isStarter) {
+    const pet = makeStarterPet();
+    pet.fromEgg = egg?.uid || true;
+    return pet;
+  }
+  const wildIds = wildSpeciesIds(opts.realm || 0);
+  const species = opts.species || wildIds[Math.floor(Math.random() * wildIds.length)] || "reefox";
+  const elements = Object.keys(ELEMENTS);
+  const element = opts.element || elements[Math.floor(Math.random() * elements.length)] || "tide";
+  const personalities = Object.keys(PERSONALITIES);
+  const personality =
+    opts.personality || personalities[Math.floor(Math.random() * personalities.length)] || "sly";
+  let rarity = 0;
+  if (tier === "B" && Math.random() < 0.35) rarity = 1;
+  if (tier === "A") rarity = Math.random() < 0.55 ? 1 : Math.random() < 0.25 ? 2 : 0;
+  const built = buildPetStats({
+    id: `hatch-${egg?.uid || Date.now()}`,
+    species,
+    element,
+    personality,
+    cost: 0,
+    rarity,
+    bloodmarks: tier === "A" && Math.random() < 0.4 ? [BLOODLINE_MARK_IDS[0]] : [],
+  });
+  const bonus =
+    tier === "A" ? { atk: 3, hp: 8, spd: 1 } : tier === "B" ? { atk: 1, hp: 4, spd: 0 } : { atk: 0, hp: 0, spd: 0 };
+  return {
+    ...built,
+    uid: `hatch-${egg?.uid || Date.now()}`,
+    atk: built.atk + bonus.atk,
+    hp: built.hp + bonus.hp,
+    spd: built.spd + bonus.spd,
+    fromEgg: egg?.uid || true,
+    eggTier: tier,
   };
 }
 
@@ -3085,7 +3188,18 @@ export const DISPATCH_MISSIONS = [
     needPets: 1,
     needSite: null,
     reward: { feed: 10, stones: 12, materials: { tide_dew: 2 } },
-    desc: "1 寵 · 約 1.5 分 → 飼料／潮露",
+    eggChance: { tier: "C", rate: 0.12 },
+    desc: "1 寵 · 約 1.5 分 → 飼料／潮露 · 低機率潮霧蛋",
+  },
+  {
+    id: "egg_shore",
+    name: "潮岸拾蛋",
+    durationMs: 180_000,
+    needPets: 1,
+    needSite: null,
+    reward: { stones: 8, feed: 4, materials: { tide_dew: 1 } },
+    eggChance: { tier: "C", rate: 0.55 },
+    desc: "1 寵 · 約 3 分 → 高機率潮霧蛋",
   },
   {
     id: "dust_hunt",
@@ -3094,7 +3208,18 @@ export const DISPATCH_MISSIONS = [
     needPets: 1,
     needSite: "ruins",
     reward: { dust: 12, stones: 10, materials: { coral_shard: 3 } },
-    desc: "1 寵 · 需廢墟影堂 · 靈塵／珊瑚屑",
+    eggChance: { tier: "C", rate: 0.18 },
+    desc: "1 寵 · 需廢墟影堂 · 靈塵／珊瑚屑 · 偶得蛋",
+  },
+  {
+    id: "egg_ruins",
+    name: "廢墟巢穴",
+    durationMs: 240_000,
+    needPets: 1,
+    needSite: "ruins",
+    reward: { stones: 14, dust: 4, materials: { coral_shard: 2 } },
+    eggChance: { tier: "B", rate: 0.35 },
+    desc: "1 寵 · 需廢墟影堂 · 機率暗潮蛋",
   },
   {
     id: "scrap_dive",
@@ -3103,7 +3228,18 @@ export const DISPATCH_MISSIONS = [
     needPets: 2,
     needSite: "deep",
     reward: { scrap: 2, stones: 25, feed: 4, materials: { mist_silk: 2 } },
+    eggChance: { tier: "B", rate: 0.15 },
     desc: "2 寵 · 需深層祭壇 · 霧絲",
+  },
+  {
+    id: "egg_deep",
+    name: "深層孵巢",
+    durationMs: 300_000,
+    needPets: 2,
+    needSite: "deep",
+    reward: { stones: 20, materials: { mist_silk: 1 } },
+    eggChance: { tier: "B", rate: 0.45 },
+    desc: "2 寵 · 需深層祭壇 · 高機率暗潮蛋",
   },
   {
     id: "resin_gather",
@@ -3112,6 +3248,7 @@ export const DISPATCH_MISSIONS = [
     needPets: 1,
     needSite: "mistveil",
     reward: { dust: 6, stones: 18, materials: { echo_resin: 3 } },
+    eggChance: { tier: "B", rate: 0.12 },
     desc: "1 寵 · 需霧帷練台 · 靈響脂",
   },
   {
@@ -3121,6 +3258,7 @@ export const DISPATCH_MISSIONS = [
     needPets: 2,
     needSite: "core",
     reward: { dust: 8, stones: 30, materials: { abyss_ink: 3 } },
+    eggChance: { tier: "B", rate: 0.2 },
     desc: "2 寵 · 需心核道場 · 深淵墨",
   },
   {
@@ -3130,6 +3268,7 @@ export const DISPATCH_MISSIONS = [
     needPets: 2,
     needSite: "fusehall",
     reward: { stones: 28, feed: 3, materials: { fuse_sand: 3 } },
+    eggChance: { tier: "B", rate: 0.14 },
     desc: "2 寵 · 需融砂坊 · 融砂",
   },
   {
@@ -3139,7 +3278,18 @@ export const DISPATCH_MISSIONS = [
     needPets: 2,
     needSite: "abyss",
     reward: { stones: 40, materials: { seal_ember: 3 } },
-    desc: "2 寵 · 需暗潮心壇 · 契火",
+    eggChance: { tier: "A", rate: 0.1 },
+    desc: "2 寵 · 需暗潮心壇 · 契火 · 低機率心核蛋",
+  },
+  {
+    id: "egg_abyss",
+    name: "心核拾遺",
+    durationMs: 420_000,
+    needPets: 2,
+    needSite: "abyss",
+    reward: { stones: 35, dust: 6, materials: { seal_ember: 1 } },
+    eggChance: { tier: "A", rate: 0.28 },
+    desc: "2 寵 · 需暗潮心壇 · 機率心核蛋",
   },
 ];
 

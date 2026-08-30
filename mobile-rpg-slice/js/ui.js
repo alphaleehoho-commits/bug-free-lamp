@@ -8,6 +8,9 @@ import {
   releasePet,
   deployPet,
   undeployPet,
+  eggsView,
+  startHatch,
+  claimHatch,
   upgradePet,
   upgradePetSkill,
   fusePets,
@@ -202,13 +205,18 @@ function positionTutorialSpotlight(urgent = false) {
     t.classList.add("tut-glow");
     if (isUrgent) t.classList.add("tut-flash-urgent");
   }
+  try {
+    el.scrollIntoView({ block: "nearest", inline: "nearest" });
+  } catch {
+    /* ignore */
+  }
   const r = el.getBoundingClientRect();
   host.hidden = false;
   host.classList.toggle("is-urgent", isUrgent);
   host.style.top = `${Math.max(4, r.top - 4)}px`;
   host.style.left = `${Math.max(4, r.left - 4)}px`;
-  host.style.width = `${r.width + 8}px`;
-  host.style.height = `${r.height + 8}px`;
+  host.style.width = `${Math.max(8, r.width + 8)}px`;
+  host.style.height = `${Math.max(8, r.height + 8)}px`;
   banner?.classList.add("is-spotlight-active");
 }
 
@@ -634,8 +642,7 @@ function switchTab(id) {
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
   }
   if (id === "party" && tutorialActive(state) && state.tutorial.step === "meet_pet") {
-    const adv = markTutorialFlag(state, "meetPetVisited");
-    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+    // 只導航，唔自動完成認寵
   }
   if (id !== "party") {
     petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
@@ -647,8 +654,7 @@ function markTutorialSubVisit(group, id) {
   tutMisclickCount = 0;
   const step = state.tutorial?.step;
   if (group === "party" && id === "ranch" && step === "meet_pet") {
-    const adv = markTutorialFlag(state, "meetPetVisited");
-    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+    // 認寵需點詳情，唔因進入牧場完成
   } else if (group === "party" && id === "dispatch" && step === "dispatch") {
     const adv = markTutorialFlag(state, "dispatchVisited");
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
@@ -929,14 +935,6 @@ function render() {
   tab = nav.tab;
   panelSub = nav.panelSub;
 
-  let tutorialUnlockMsg = null;
-  if (tutorialActive(state) && state.tutorial.step === "meet_pet" && tab === "party" && panelSub.party === "ranch") {
-    const adv = markTutorialFlag(state, "meetPetVisited");
-    if (adv.advanced && adv.unlockMsg) tutorialUnlockMsg = adv.unlockMsg;
-  }
-  const heal = advanceTutorialCascade(state);
-  if (heal.advanced && heal.unlockMsg) tutorialUnlockMsg = heal.unlockMsg;
-
   const stage = realmInfo(state);
   const next = nextRealm(state);
   const qiPct = next ? Math.min(100, (state.qi / next.need) * 100) : 100;
@@ -992,8 +990,9 @@ function render() {
   if (tutorialSnapCache !== tutorialLiveSnapshot(state)) tutMisclickCount = 0;
   tutorialSnapCache = tutorialLiveSnapshot(state);
   saveState(state);
-  positionTutorialSpotlight(false);
-  if (tutorialUnlockMsg) setFlash(tutorialUnlockMsg, "unlock");
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => positionTutorialSpotlight(false));
+  });
   if (playback) updatePlaybackDom();
 }
 
@@ -1085,21 +1084,27 @@ function cultivatePanel(qiPct, next, m) {
 
   const shopOffers = shopView(state);
   const ranchFull = (state.ranch?.length || 0) + state.pets.length >= ranchCap(state);
+  const eggFull = (state.eggs?.length || 0) >= 6;
   const shopRows =
     shopOffers
       .map((o) => {
         const sold = o.bought;
+        const isEgg = o.kind === "egg";
+        const block = isEgg ? eggFull : ranchFull;
+        const sub = isEgg
+          ? `${escapeHtml(o.label || "蛋")} · ${escapeHtml(o.desc || "")}`
+          : `${escapeHtml(o.petKind || o.kind || "?")}·${escapeHtml(o.elementName || "")}`;
         return `
         <li class="card-row">
           <div>
-            <strong>${escapeHtml(o.speciesName || o.name)}</strong>
-            <span class="muted">${escapeHtml(o.kind)}·${escapeHtml(o.elementName)} · ${
+            <strong>${escapeHtml(o.speciesName || o.name)}${isEgg ? " ·蛋" : ""}</strong>
+            <span class="muted">${sub} · ${
               sold ? "已售" : o.tutorialDeal ? `教學 ${o.cost} 靈石` : `${o.cost} 靈石`
             }</span>
           </div>
           <button type="button" class="primary${tutGlow({ type: "shop-buy" })}" data-shop-buy="${escapeHtml(o.offerId)}" ${
-            sold || ranchFull ? "disabled" : ""
-          }>${sold ? "已售" : ranchFull ? "牧場滿" : "購入"}</button>
+            sold || block ? "disabled" : ""
+          }>${sold ? "已售" : block ? (isEgg ? "蛋欄滿" : "牧場滿") : "購入"}</button>
         </li>`;
       })
       .join("") || `<li class="empty">今日商肆無貨。</li>`;
@@ -1188,12 +1193,12 @@ function petRow(p, extraBtn = "") {
   return `
     <li class="card-row">
       <div>
-        <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
+        <button type="button" class="linkish${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
         <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
         <span class="muted">攻${p.atk} 血${p.hp} 速${p.spd} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
-        <button type="button" data-pet-detail="${uid}">詳情</button>
+        <button type="button" class="${tutGlow({ type: "pet-detail" }).trim() || "ghost"}" data-pet-detail="${uid}">詳情</button>
         ${extraBtn}
       </div>
     </li>`;
@@ -1232,7 +1237,26 @@ function petsListView() {
         return petRow(p, extra);
       })
       .join("") ||
-    `<li class="empty">牧場空。契約成功的靈寵會進入牧場（容量 ${cap}）。</li>`;
+    `<li class="empty">牧場空。孵化／契約成功的靈寵會進入牧場（容量 ${cap}）。</li>`;
+
+  const eggRows =
+    eggsView(state)
+      .map((e) => {
+        const action = !e.hatching
+          ? `<button type="button" class="primary${tutGlow({ type: "start-hatch" })}" data-start-hatch="${escapeHtml(e.uid)}">開始孵化</button>`
+          : e.ready
+            ? `<button type="button" class="primary${tutGlow({ type: "claim-hatch" })}" data-claim-hatch="${escapeHtml(e.uid)}">領取</button>`
+            : `<span class="muted">孵化中 ${e.leftSec}s</span>`;
+        return `
+        <li class="card-row egg-row">
+          <div>
+            <strong>${escapeHtml(e.name)}</strong>
+            <span class="muted">${escapeHtml(e.label)} · ${escapeHtml(e.desc || "")}</span>
+          </div>
+          <div class="row-actions">${action}</div>
+        </li>`;
+      })
+      .join("") || `<li class="empty muted">尚無寵物蛋。商肆／派遣可獲得。</li>`;
 
   const pending = (state.pending || [])
     .map(
@@ -1275,13 +1299,16 @@ function petsListView() {
     .map((m) => {
       const can = !m.locked && dispatchPick.length === m.needPets && dv.slotsUsed < dv.slotsMax;
       const matBits = dispatchMatBits(m);
+      const eggNote = m.eggChance
+        ? ` · 蛋${Math.round((m.eggChance.rate || 0) * 100)}%`
+        : "";
       return `
       <li class="card-row">
         <div>
           <strong>${escapeHtml(m.name)}</strong>
           <span class="muted">${escapeHtml(m.desc)} · ${escapeHtml(rewardBitsHtml(m.reward))}${
             matBits ? ` · ${matBits}` : ""
-          }${m.locked ? ` · 需${escapeHtml(m.lockLabel)}` : ""}</span>
+          }${eggNote}${m.locked ? ` · 需${escapeHtml(m.lockLabel)}` : ""}</span>
         </div>
         <button type="button" class="primary" data-start-dispatch="${m.id}" ${can ? "" : "disabled"}>${
           m.locked ? "未解鎖" : "派出"
@@ -1305,7 +1332,9 @@ function petsListView() {
     return `
       ${nav}
       <h2>靈寵 · 牧場</h2>
-      <p class="lead">牧場 ${ranch.length}/${cap}</p>
+      <p class="lead">牧場 ${ranch.length}/${cap} · 蛋 ${(state.eggs || []).length}/6</p>
+      <h3>寵物蛋</h3>
+      <ul class="list">${eggRows}</ul>
       <div class="row"><button type="button" class="primary${tutGlow({ type: "act", act: "open-breed" })}" data-act="open-breed">繁殖</button></div>
       <ul class="list">${ranchList}</ul>`;
   }
@@ -1529,7 +1558,7 @@ function petsDetailView() {
       <button type="button" data-rename="${escapeHtml(pet.uid)}">命名</button>
     </div>
     <div class="row">
-      <button type="button" class="primary" data-upgrade="${escapeHtml(pet.uid)}">升級</button>
+      <button type="button" class="primary${tutGlow({ type: "act", act: "upgrade" })}" data-upgrade="${escapeHtml(pet.uid)}">升級</button>
       <button type="button" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升</button>
       <button type="button" data-upgrade-skill="${escapeHtml(pet.uid)}" ${skillMaxed ? "disabled" : ""}>技能</button>
       <button type="button" data-temper-oil="${escapeHtml(pet.uid)}" ${(state.materials?.temper_oil || 0) < 1 ? "disabled" : ""}>洗性格${(state.materials?.temper_oil || 0) > 0 ? `（${state.materials.temper_oil}）` : ""}</button>
@@ -2276,9 +2305,28 @@ function bind() {
   app.querySelectorAll("[data-upgrade]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const r = upgradePet(state, btn.dataset.upgrade);
+      const tut = advanceTutorialIfReady(state);
       saveState(state);
       render();
-      flashResult(r);
+      if (tut.advanced && tut.unlockMsg) setFlash(tut.unlockMsg, "unlock");
+      else flashResult(r);
+    });
+  });
+  app.querySelectorAll("[data-start-hatch]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = startHatch(state, btn.dataset.startHatch);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-claim-hatch]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = claimHatch(state, btn.dataset.claimHatch);
+      saveState(state);
+      render();
+      if (r.tutorialUnlock) setFlash(r.tutorialUnlock, "unlock");
+      else setFlash(r.msg);
     });
   });
   app.querySelectorAll("[data-goto-train]").forEach((btn) => {
@@ -2295,6 +2343,10 @@ function bind() {
   app.querySelectorAll("[data-pet-detail]").forEach((btn) => {
     btn.addEventListener("click", () => {
       petView = { mode: "detail", uid: btn.dataset.petDetail, fuseBase: null, fuseMats: [], breedParents: [] };
+      if (tutorialActive(state) && state.tutorial.step === "meet_pet") {
+        const adv = markTutorialFlag(state, "petDetailVisited");
+        if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+      }
       render();
     });
   });

@@ -1,13 +1,24 @@
 /**
- * P13：新手引導 — 寵物優先，逐步解鎖
+ * P13：新手引導 — 寵物蛋 → 練功 Lv3 → 秘境 → 商肆蛋
+ * 目標節奏約 10–15 分鐘；不在 render 自動連跳
  */
 import { nextStageAt } from "./data.js";
 
 export const TUTORIAL_STEPS = [
   {
+    id: "hatch_starter",
+    title: "孵化首寵",
+    hint: "打開「靈寵 → 牧場」，等待潮霧蛋孵化並領取首隻靈寵。",
+  },
+  {
     id: "meet_pet",
     title: "認寵",
-    hint: "打開「靈寵 → 牧場」，認識你的首隻靈寵。",
+    hint: "點開首隻靈寵的「詳情」，認識牠的屬性與升級入口。",
+  },
+  {
+    id: "train_pet",
+    title: "練功升級",
+    hint: "在潮岸掛機攞潮露，把首寵升至 Lv.3（才夠穩打秘境一層）。",
   },
   {
     id: "deploy",
@@ -25,14 +36,19 @@ export const TUTORIAL_STEPS = [
     hint: "帶靈寵戰勝秘境一層；教學中不檢查今日禁屬／試煉條件。",
   },
   {
-    id: "shop_pet",
-    title: "商肆擴隊",
-    hint: "在商肆購入第二隻靈寵（教學價 35 靈石，必得入牧場）。",
+    id: "shop_egg",
+    title: "商肆購蛋",
+    hint: "在商肆購入一枚寵物蛋（教學優惠），開始孵化擴隊。",
+  },
+  {
+    id: "hatch_second",
+    title: "孵化擴隊",
+    hint: "等待第二枚蛋孵化完成並領取，擴充牧場。",
   },
   {
     id: "cultivate_qi",
     title: "靈契修行",
-    hint: "在契壇等候靈契累積至突破所需（掛機即可）。",
+    hint: "在契壇掛機累積靈契（教學需稍作等候，感受修行節奏）。",
   },
   {
     id: "breakthrough",
@@ -52,7 +68,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "dispatch",
     title: "牧場派遣",
-    hint: "「靈寵 → 派遣」可派牧場靈寵外派取資。",
+    hint: "「靈寵 → 派遣」可派牧場靈寵外派取資，亦可能帶回寵物蛋。",
   },
   {
     id: "tactics",
@@ -68,34 +84,48 @@ export const TUTORIAL_STEPS = [
 
 const STEP_IDS = TUTORIAL_STEPS.map((s) => s.id);
 
-/** 初期必做步驟 */
 export const CORE_TUTORIAL_STEPS = [
+  "hatch_starter",
   "meet_pet",
+  "train_pet",
   "deploy",
   "dungeon_fight",
   "dungeon_win",
-  "shop_pet",
+  "shop_egg",
+  "hatch_second",
   "cultivate_qi",
   "breakthrough",
   "breed_intro",
   "codex",
 ];
 
-/** 進階功能教學 — 達【通靈後期】realm≥2 才開始 */
 export const LATE_TUTORIAL_STEPS = ["dispatch", "tactics"];
 export const LATE_TUTORIAL_MIN_REALM = 2;
+
+/** 教學：首寵升級門檻 */
+export const TUTORIAL_TRAIN_LEVEL = 3;
+/** 教學：靈契步最少掛機秒數（節奏） */
+export const TUTORIAL_QI_IDLE_SEC = 90;
 
 function isLateStep(stepId) {
   return LATE_TUTORIAL_STEPS.includes(stepId);
 }
 
 export function defaultTutorial() {
-  return { done: false, step: "meet_pet", flags: {} };
+  return { done: false, step: "hatch_starter", flags: {} };
 }
 
 export function isVeteranPlayer(state) {
   const owned = (state.pets?.length || 0) + (state.ranch?.length || 0);
   return (state.realm || 0) > 0 || owned > 1 || (state.combatsWon || 0) > 0;
+}
+
+function highestOwnedLevel(state) {
+  let max = 0;
+  for (const p of [...(state.pets || []), ...(state.ranch || [])]) {
+    max = Math.max(max, p.level ?? 1);
+  }
+  return max;
 }
 
 /** 載入／舊存檔正規化 */
@@ -106,16 +136,16 @@ export function normalizeTutorial(state) {
       : defaultTutorial();
   }
   if (!state.tutorial.flags) state.tutorial.flags = {};
-  /* 舊教學步驟映射 */
   const legacyMap = {
     bond: "codex",
     gear: "tactics",
+    shop_pet: "shop_egg",
   };
   if (legacyMap[state.tutorial.step]) {
     state.tutorial.step = legacyMap[state.tutorial.step];
   }
   if (!STEP_IDS.includes(state.tutorial.step)) {
-    state.tutorial.step = state.tutorial.done ? "complete" : "meet_pet";
+    state.tutorial.step = state.tutorial.done ? "complete" : "hatch_starter";
   }
   if (state.tutorial.done) state.tutorial.step = "complete";
   if (state.tutorial.latePending == null) state.tutorial.latePending = false;
@@ -139,8 +169,8 @@ export function tutorialStepInfo(state) {
   let index = 1;
   if (inLate && idx >= STEP_IDS.indexOf("dispatch")) {
     index = CORE_TUTORIAL_STEPS.length + (idx - STEP_IDS.indexOf("dispatch") + 1);
-  } else if (idx >= 0 && idx < CORE_TUTORIAL_STEPS.length) {
-    index = idx + 1;
+  } else if (idx >= 0 && CORE_TUTORIAL_STEPS.includes(cur.id)) {
+    index = CORE_TUTORIAL_STEPS.indexOf(cur.id) + 1;
   } else if (idx >= 0) {
     index = Math.min(idx + 1, total);
   }
@@ -154,12 +184,19 @@ export function tutorialStepInfo(state) {
 }
 
 function locksForStep(stepId) {
-  const allTabs = { party: true, dungeon: true, codex: true, log: true };
   const allCult = { advance: true, shop: true };
   const allParty = { fight: true, ranch: true, dispatch: true, bond: true };
   const allDung = { setup: true };
 
   switch (stepId) {
+    case "hatch_starter":
+      return {
+        tabs: { cultivate: true, dungeon: true, codex: true, log: true },
+        cultivateSub: { ...allCult },
+        partySub: { fight: true, dispatch: true, bond: true },
+        dungeonSub: { ...allDung },
+        trainSites: true,
+      };
     case "meet_pet":
       return {
         tabs: { cultivate: true, dungeon: true, codex: true, log: true },
@@ -167,6 +204,14 @@ function locksForStep(stepId) {
         partySub: { fight: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: true,
+      };
+    case "train_pet":
+      return {
+        tabs: { dungeon: true, codex: true, log: true },
+        cultivateSub: { advance: true, shop: true },
+        partySub: { fight: true, dispatch: true, bond: true },
+        dungeonSub: { ...allDung },
+        trainSites: false,
       };
     case "deploy":
       return {
@@ -185,11 +230,19 @@ function locksForStep(stepId) {
         dungeonSub: { setup: true },
         trainSites: false,
       };
-    case "shop_pet":
+    case "shop_egg":
       return {
         tabs: { party: true, dungeon: true, codex: true, log: true },
         cultivateSub: { advance: true, shop: false },
         partySub: { ...allParty },
+        dungeonSub: { ...allDung },
+        trainSites: true,
+      };
+    case "hatch_second":
+      return {
+        tabs: { cultivate: true, dungeon: true, codex: true, log: true },
+        cultivateSub: { ...allCult },
+        partySub: { fight: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: true,
       };
@@ -275,13 +328,13 @@ export function isCultivateSubLocked(state, subId) {
   return !!tutorialLocks(state).cultivateSub[subId];
 }
 
-/** 教學：靈契已達突破所需 */
 export function tutorialQiReady(state) {
   if (!tutorialActive(state)) return false;
   const step = state.tutorial.step;
   if (step !== "cultivate_qi" && step !== "breakthrough") return false;
   const next = nextStageAt(state.realm);
-  return state.qi >= next.need;
+  const idleOk = (state.daily?.idleSec || 0) >= TUTORIAL_QI_IDLE_SEC || !!state.tutorial.flags?.qiIdleDone;
+  return state.qi >= next.need && idleOk;
 }
 
 export function isPartySubLocked(state, subId) {
@@ -300,7 +353,7 @@ export const TUTORIAL_SHOP_COST = 35;
 
 export function tutorialShopPrice(state, offerCost) {
   if (!tutorialActive(state)) return offerCost;
-  if (state.tutorial.step !== "shop_pet") return offerCost;
+  if (state.tutorial.step !== "shop_egg") return offerCost;
   if (state.tutorial.flags?.shopBought) return offerCost;
   return Math.min(TUTORIAL_SHOP_COST, offerCost);
 }
@@ -311,18 +364,27 @@ function meetsAdvance(state, stepId) {
   const owned = (state.pets?.length || 0) + (state.ranch?.length || 0);
 
   switch (stepId) {
+    case "hatch_starter":
+      return !!flags.starterHatched || owned >= 1;
     case "meet_pet":
-      return !!flags.meetPetVisited || (state.pets?.length || 0) >= 1;
+      return !!flags.petDetailVisited;
+    case "train_pet":
+      return highestOwnedLevel(state) >= TUTORIAL_TRAIN_LEVEL;
     case "deploy":
       return (state.pets?.length || 0) >= 1;
     case "dungeon_fight":
       return !!flags.dungeonStarted;
     case "dungeon_win":
       return !!flags.dungeonWonTutorial;
-    case "shop_pet":
-      return owned >= 2 || !!flags.shopBought;
-    case "cultivate_qi":
-      return state.qi >= next.need;
+    case "shop_egg":
+      return !!flags.shopBought;
+    case "hatch_second":
+      return !!flags.secondEggHatched || owned >= 2;
+    case "cultivate_qi": {
+      const idleOk =
+        (state.daily?.idleSec || 0) >= TUTORIAL_QI_IDLE_SEC || !!flags.qiIdleDone;
+      return state.qi >= next.need && idleOk;
+    }
     case "breakthrough":
       return state.realm >= 1;
     case "breed_intro":
@@ -354,7 +416,6 @@ function resolveNextStepId(state, cur) {
   return nextId;
 }
 
-/** realm 達標後啟動派遣／戰術教學 */
 export function maybeStartLateTutorial(state) {
   normalizeTutorial(state);
   if ((state.realm | 0) < LATE_TUTORIAL_MIN_REALM) return { started: false };
@@ -384,17 +445,21 @@ export function maybeStartLateTutorial(state) {
   };
 }
 
-/** 修復「已出戰但仍卡在認寵／派出戰」等不一致狀態 */
+/** 只修復明顯卡住；唔會喺 render 狂 cascade */
 export function healTutorialProgress(state) {
   if (!state.tutorial || state.tutorial.done) return { advanced: false, unlockMsg: null, steps: 0 };
-  if ((state.pets?.length || 0) >= 1) {
-    state.tutorial.flags.meetPetVisited = true;
+  const owned = (state.pets?.length || 0) + (state.ranch?.length || 0);
+  if (owned >= 1 && state.tutorial.step === "hatch_starter") {
+    state.tutorial.flags.starterHatched = true;
   }
-  return advanceTutorialCascade(state);
+  if ((state.daily?.idleSec || 0) >= TUTORIAL_QI_IDLE_SEC) {
+    state.tutorial.flags.qiIdleDone = true;
+  }
+  // 單步推進一次即可，避免一次跳多步
+  return advanceTutorialIfReady(state);
 }
 
-/** 連續推進至下一步未滿足為止 */
-export function advanceTutorialCascade(state, maxSteps = 6) {
+export function advanceTutorialCascade(state, maxSteps = 4) {
   let last = { advanced: false, unlockMsg: null, nextId: null };
   let steps = 0;
   for (let i = 0; i < maxSteps; i++) {
@@ -406,9 +471,6 @@ export function advanceTutorialCascade(state, maxSteps = 6) {
   return { ...last, advanced: steps > 0, steps };
 }
 
-/**
- * 自動推進教學步驟；回傳 { advanced, unlockMsg }
- */
 export function advanceTutorialIfReady(state) {
   if (!tutorialActive(state)) return { advanced: false, unlockMsg: null };
   const cur = state.tutorial.step;
@@ -438,19 +500,27 @@ export function advanceTutorialIfReady(state) {
   return { advanced: true, unlockMsg, nextId };
 }
 
-/** 引導 UI 預設分頁 */
 export function syncTutorialNavigation(state, nav) {
   if (!tutorialActive(state)) return nav;
   const step = state.tutorial.step;
   const next = { ...nav };
 
-  if (step === "meet_pet" || step === "deploy" || step === "breed_intro") {
+  if (
+    step === "hatch_starter" ||
+    step === "meet_pet" ||
+    step === "deploy" ||
+    step === "hatch_second" ||
+    step === "breed_intro"
+  ) {
     next.tab = "party";
     next.panelSub = { ...next.panelSub, party: "ranch" };
+  } else if (step === "train_pet") {
+    next.tab = "cultivate";
+    next.panelSub = { ...next.panelSub, cultivate: "train" };
   } else if (step === "dungeon_fight" || step === "dungeon_win") {
     next.tab = "dungeon";
     next.panelSub = { ...next.panelSub, dungeon: "field" };
-  } else if (step === "shop_pet") {
+  } else if (step === "shop_egg") {
     next.tab = "cultivate";
     next.panelSub = { ...next.panelSub, cultivate: "shop" };
   } else if (step === "cultivate_qi") {
@@ -466,21 +536,32 @@ export function syncTutorialNavigation(state, nav) {
   return next;
 }
 
-/** 教學中下一個應點擊的 UI 元素 */
 export function tutorialHighlights(state, nav = {}) {
   if (!tutorialActive(state)) return [];
   const step = state.tutorial.step;
   const tab = nav.tab || "";
   const ps = nav.panelSub || {};
+  const eggReady = (state.eggs || []).some((e) => e.startedAt != null && (e.readyAt || 0) <= Date.now());
+  const eggIdle = (state.eggs || []).some((e) => e.startedAt == null);
 
   switch (step) {
-    case "meet_pet":
+    case "hatch_starter":
       if (tab === "party" && ps.party === "ranch") {
-        if ((state.ranch?.length || 0) >= 1) return [{ type: "deploy" }];
+        if (eggReady) return [{ type: "claim-hatch" }];
+        if (eggIdle) return [{ type: "start-hatch" }];
         return [];
       }
       if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
       return [{ type: "tab", id: "party" }];
+    case "meet_pet":
+      if (tab === "party" && ps.party === "ranch") return [{ type: "pet-detail" }];
+      if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
+      return [{ type: "tab", id: "party" }];
+    case "train_pet":
+      if (tab === "party") return [{ type: "act", act: "upgrade" }, { type: "pet-detail" }];
+      if (tab === "cultivate" && ps.cultivate === "train") return [{ type: "tab", id: "party" }];
+      if (tab === "cultivate") return [{ type: "panel-sub", group: "cultivate", id: "train" }];
+      return [{ type: "tab", id: "cultivate" }];
     case "deploy":
       if (tab === "party" && ps.party === "ranch") return [{ type: "deploy" }];
       if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
@@ -492,12 +573,18 @@ export function tutorialHighlights(state, nav = {}) {
       }
       if (tab === "dungeon") return [{ type: "panel-sub", group: "dungeon", id: "field" }];
       return [{ type: "tab", id: "dungeon" }];
-    case "shop_pet":
-      if (tab === "cultivate" && ps.cultivate === "shop") {
-        return [{ type: "shop-buy" }];
-      }
+    case "shop_egg":
+      if (tab === "cultivate" && ps.cultivate === "shop") return [{ type: "shop-buy" }];
       if (tab === "cultivate") return [{ type: "panel-sub", group: "cultivate", id: "shop" }];
       return [{ type: "tab", id: "cultivate" }];
+    case "hatch_second":
+      if (tab === "party" && ps.party === "ranch") {
+        if (eggReady) return [{ type: "claim-hatch" }];
+        if (eggIdle) return [{ type: "start-hatch" }];
+        return [];
+      }
+      if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
+      return [{ type: "tab", id: "party" }];
     case "cultivate_qi":
       if (tutorialQiReady(state)) {
         if (tab === "cultivate" && ps.cultivate === "advance") return [];
@@ -538,6 +625,9 @@ function highlightMatches(h, spec) {
       return h.act === spec.act;
     case "shop-buy":
     case "deploy":
+    case "pet-detail":
+    case "start-hatch":
+    case "claim-hatch":
       return true;
     case "dungeon":
       return !spec.dungeonId || h.dungeonId === spec.dungeonId;
@@ -563,6 +653,12 @@ export function tutorialTargetSelector(spec) {
       return "[data-shop-buy]:not([disabled])";
     case "deploy":
       return "[data-deploy]:not([disabled])";
+    case "pet-detail":
+      return "[data-pet-detail]";
+    case "start-hatch":
+      return "[data-start-hatch]:not([disabled])";
+    case "claim-hatch":
+      return "[data-claim-hatch]:not([disabled])";
     case "dungeon":
       return spec.dungeonId
         ? `[data-dungeon="${spec.dungeonId}"]:not([disabled])`
@@ -607,7 +703,6 @@ export function skipTutorial(state) {
   return { ok: true, msg: "已跳過新手教學，所有功能已解鎖。" };
 }
 
-/** 教學期間 tide_1 豁免每日挑戰限制 */
 export function tutorialWaivesDungeonChallenge(state, dungeonId) {
   if (!tutorialActive(state)) return false;
   if (dungeonId !== "tide_1") return false;
@@ -615,7 +710,6 @@ export function tutorialWaivesDungeonChallenge(state, dungeonId) {
   return step === "dungeon_fight" || step === "dungeon_win";
 }
 
-/** 供 UI 判斷教學狀態是否需重繪 */
 export function tutorialLiveSnapshot(state) {
   const t = state.tutorial || {};
   const f = t.flags || {};
@@ -626,8 +720,13 @@ export function tutorialLiveSnapshot(state) {
     f.dungeonStarted,
     f.dungeonWonTutorial,
     f.codexVisited,
-    f.meetPetVisited,
+    f.petDetailVisited,
+    f.starterHatched,
+    f.shopBought,
+    f.secondEggHatched,
     f.breedVisited,
+    highestOwnedLevel(state),
+    (state.eggs || []).length,
   ].join("|");
 }
 
@@ -635,6 +734,20 @@ export function tutorialBannerHint(state) {
   const info = tutorialStepInfo(state);
   if (info.stepId === "cultivate_qi" && tutorialQiReady(state)) {
     return "靈契已足，打開「進階」突破！";
+  }
+  if (info.stepId === "train_pet") {
+    const lv = highestOwnedLevel(state);
+    return `首寵目前 Lv.${lv}／需 Lv.${TUTORIAL_TRAIN_LEVEL}。潮岸掛機攞潮露後，到詳情點「升級」。`;
+  }
+  if (info.stepId === "hatch_starter" || info.stepId === "hatch_second") {
+    const eggs = state.eggs || [];
+    const ready = eggs.find((e) => e.startedAt != null && (e.readyAt || 0) <= Date.now());
+    if (ready) return `【${ready.name || "蛋"}】已就緒，點「領取」！`;
+    const hatching = eggs.find((e) => e.startedAt != null);
+    if (hatching) {
+      const sec = Math.max(0, Math.ceil(((hatching.readyAt || 0) - Date.now()) / 1000));
+      return `孵化中… 約 ${sec}s 後可領取。`;
+    }
   }
   return info.hint;
 }

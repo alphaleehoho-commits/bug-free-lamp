@@ -93,6 +93,11 @@ import {
   BOND_COST_MAX,
   fusionStoneCost,
   upgradeStoneCost,
+  makeStarterEgg,
+  makeEgg,
+  hatchPetFromEgg,
+  EGG_TIERS,
+  eggTierInfo,
 } from "./data.js";
 import {
   affordMaterials,
@@ -104,6 +109,9 @@ import {
   petLineage,
   useTemperOil,
   deployPet,
+  claimHatch,
+  startHatch,
+  eggsView,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -116,6 +124,7 @@ import {
   tutorialQiReady,
   isCultivateSubLocked,
   TUTORIAL_SHOP_COST,
+  TUTORIAL_TRAIN_LEVEL,
   syncTutorialNavigation,
   tutorialHighlights,
   tutorialGlowClass,
@@ -484,7 +493,9 @@ assert(
 );
 assert(upgradeMatCost(1).tide_dew >= 1, "upgrade mats");
 assert(breedMatCost(0, 0).coral_shard >= 1, "breed mats");
-assert(DISPATCH_MISSIONS.length >= 7, "more dispatch");
+assert(DISPATCH_MISSIONS.length >= 11, "more dispatch");
+assert(DISPATCH_MISSIONS.some((m) => m.eggChance), "dispatch egg chance");
+assert(DISPATCH_MISSIONS.some((m) => m.id === "egg_shore"), "shore egg mission");
 assert(DISPATCH_MISSIONS.some((m) => m.needSite === "mistveil"), "resin dispatch");
 assert(DISPATCH_MISSIONS.some((m) => m.needSite === "fusehall"), "sand dispatch");
 assert(SPECIES.shellmite?.breedOnly, "shellmite");
@@ -624,7 +635,7 @@ assert(
   "preamble stays in transcript"
 );
 
-/* P12b: shop direct ranch + newbie bond pity */
+/* P12b: shop egg/pet + newbie bond pity */
 const shopSt = {
   realm: 0,
   qi: 0,
@@ -634,6 +645,7 @@ const shopSt = {
   dust: 0,
   pets: [],
   ranch: [],
+  eggs: [],
   pending: [],
   clearedDungeons: {},
   dungeonReadyAt: {},
@@ -646,12 +658,18 @@ const shopSt = {
   log: [],
   combatsWon: 0,
   winStreak: 0,
+  tutorial: { done: true, step: "complete", flags: {} },
 };
 ensureShop(shopSt);
-const offerId = shopSt.shop.offers[0]?.offerId;
-assert(offerId, "shop offer");
-const buy = buyShopOffer(shopSt, offerId);
-assert(buy.ok && shopSt.ranch.length === 1 && shopSt.pending.length === 0, "shop to ranch");
+const eggOffer = shopSt.shop.offers.find((o) => o.kind === "egg") || shopSt.shop.offers[0];
+assert(eggOffer, "shop offer");
+const buy = buyShopOffer(shopSt, eggOffer.offerId);
+assert(buy.ok, "shop buy ok");
+if (eggOffer.kind === "egg") {
+  assert(shopSt.eggs.length >= 1 && shopSt.ranch.length === 0, "shop egg to eggs");
+} else {
+  assert(shopSt.ranch.length === 1 && shopSt.pending.length === 0, "shop to ranch");
+}
 const pitySt = {
   realm: 0,
   qi: 0,
@@ -683,76 +701,93 @@ Math.random = origRandom;
 assert(pity.ok && !pity.success && pitySt.pending.length === 1, "pity keeps pending");
 assert(pitySt.stones === stonesBefore, "pity refunds bond cost");
 
-/* P13: pet-first tutorial flow */
-const tut = { done: false, step: "meet_pet", flags: {} };
-const tutSt = { realm: 0, qi: 0, pets: [], ranch: [makeStarterPet()], combatsWon: 0, stones: 200, log: [], tutorial: tut };
+/* P21: eggs */
+assert(EGG_TIERS.C.hatchMs === 120_000 && EGG_TIERS.A.hatchMs >= 1_800_000, "egg tiers");
+const egg0 = makeStarterEgg(Date.now() - 200_000);
+assert(egg0.readyAt <= Date.now(), "starter egg ready past");
+const hatchSt = {
+  realm: 0,
+  pets: [],
+  ranch: [],
+  eggs: [egg0],
+  materials: {},
+  bestiary: {},
+  stats: {},
+  log: [],
+  tutorial: { done: false, step: "hatch_starter", flags: {} },
+};
+const hatched = claimHatch(hatchSt, egg0.uid);
+assert(hatched.ok && hatchSt.ranch.length === 1 && hatchSt.eggs.length === 0, "claim hatch starter");
+assert(hatchSt.tutorial.step === "meet_pet" || hatchSt.tutorial.flags.starterHatched, "hatch advances");
+
+/* P13: egg-first tutorial flow */
+const tut = { done: false, step: "hatch_starter", flags: { starterHatched: true } };
+const tutPet = makeStarterPet();
+tutPet.level = TUTORIAL_TRAIN_LEVEL;
+const tutSt = {
+  realm: 0,
+  qi: 0,
+  pets: [],
+  ranch: [tutPet],
+  eggs: [],
+  combatsWon: 0,
+  stones: 200,
+  log: [],
+  daily: { date: "x", idleSec: 0, progress: {}, claimed: {} },
+  tutorial: tut,
+};
 normalizeTutorial(tutSt);
 assert(tutorialActive(tutSt), "tutorial on for new");
-tutSt.tutorial.flags.meetPetVisited = true;
-const a0 = advanceTutorialIfReady(tutSt);
-assert(a0.advanced && tutSt.tutorial.step === "deploy", "meet_pet step");
+assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "meet_pet", "hatch_starter done");
+tutSt.tutorial.flags.petDetailVisited = true;
+assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "train_pet", "meet_pet step");
+assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "deploy", "train_pet lv3");
 tutSt.pets = [tutSt.ranch[0]];
 tutSt.ranch = [];
-const aDep = advanceTutorialIfReady(tutSt);
-assert(aDep.advanced && tutSt.tutorial.step === "dungeon_fight", "deploy step");
+assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "dungeon_fight", "deploy step");
 tutSt.tutorial.flags.dungeonStarted = true;
 assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "dungeon_win", "dung start");
 tutSt.tutorial.flags.dungeonWonTutorial = true;
-assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "shop_pet", "dung win");
+assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "shop_egg", "dung win");
 assert(tutorialShopPrice(tutSt, 60) === TUTORIAL_SHOP_COST, "tutorial shop price");
 ensureShop(tutSt);
-const buyTut = buyShopOffer(tutSt, tutSt.shop.offers[0].offerId);
-assert(buyTut.ok && tutSt.ranch.length >= 1, "tutorial shop ranch");
-assert(tutSt.tutorial.step === "cultivate_qi", "shop step done");
+const eggOfferTut = tutSt.shop.offers.find((o) => o.kind === "egg" && !o.bought);
+assert(eggOfferTut, "tutorial egg offer");
+const buyTut = buyShopOffer(tutSt, eggOfferTut.offerId);
+assert(buyTut.ok && tutSt.eggs.length >= 1, "tutorial shop egg");
+assert(tutSt.tutorial.step === "hatch_second", "shop egg step done");
+const readyEgg = tutSt.eggs[0];
+readyEgg.startedAt = Date.now() - 1;
+readyEgg.readyAt = Date.now() - 1;
+const claim2 = claimHatch(tutSt, readyEgg.uid);
+assert(claim2.ok && tutSt.tutorial.step === "cultivate_qi", "second hatch to qi");
 
-const skipSt = { realm: 0, qi: 0, pets: [], ranch: [], combatsWon: 0, stones: 200, log: [], tutorial: { done: false, step: "meet_pet", flags: {} } };
+const skipSt = {
+  realm: 0,
+  qi: 0,
+  pets: [],
+  ranch: [],
+  combatsWon: 0,
+  stones: 200,
+  log: [],
+  tutorial: { done: false, step: "hatch_starter", flags: {} },
+};
 normalizeTutorial(skipSt);
 assert(tutorialActive(skipSt), "skip pre active");
 const skipR = skipTutorial(skipSt);
 assert(skipR.ok && !tutorialActive(skipSt), "skip tutorial unlocks");
 assert(skipSt.tutorial.done && skipSt.tutorial.step === "complete", "skip marks complete");
 
-const stuckSt = {
-  realm: 0,
-  qi: 0,
-  pets: [makeStarterPet()],
-  ranch: [],
-  combatsWon: 0,
-  stones: 120,
-  log: [],
-  tutorial: { done: false, step: "meet_pet", flags: {} },
-};
-normalizeTutorial(stuckSt);
-healTutorialProgress(stuckSt);
-assert(stuckSt.tutorial.step === "dungeon_fight", "heal stuck meet_pet after early deploy");
-
-const ranchHiSt = {
-  realm: 0,
-  qi: 0,
-  pets: [],
-  ranch: [makeStarterPet()],
-  combatsWon: 0,
-  stones: 120,
-  log: [],
-  tutorial: { done: false, step: "meet_pet", flags: {} },
-};
-const meetHi = tutorialHighlights(ranchHiSt, { tab: "party", panelSub: { party: "ranch" } });
-assert(meetHi.some((h) => h.type === "deploy"), "meet_pet ranch highlights deploy button");
-
-const earlySt = {
-  realm: 0,
-  qi: 0,
-  pets: [],
-  ranch: [makeStarterPet()],
-  combatsWon: 0,
-  stones: 120,
-  log: [],
-  tutorial: { done: false, step: "meet_pet", flags: {} },
-};
-const earlyPet = earlySt.ranch[0];
-const dep = deployPet(earlySt, earlyPet.uid);
-assert(dep.ok && earlySt.tutorial.step === "dungeon_fight", "deploy cascades meet_pet and deploy");
-assert(tutorialGlowClass(earlySt, { type: "tab", id: "dungeon" }, { tab: "cultivate", panelSub: {} }) === " tut-glow", "dungeon tab glow after deploy");
+const meetHi = tutorialHighlights(
+  {
+    tutorial: { done: false, step: "meet_pet", flags: {} },
+    ranch: [makeStarterPet()],
+    pets: [],
+    eggs: [],
+  },
+  { tab: "party", panelSub: { party: "ranch" } }
+);
+assert(meetHi.some((h) => h.type === "pet-detail"), "meet_pet highlights detail");
 
 const ga = genAwakenBonus(3);
 assert(ga?.skillLevel === 2 && ga.atk > 0, "gen3 awaken");
@@ -795,7 +830,14 @@ assert(DUNGEON_CHALLENGE_RULES.some((r) => r.maxPets === 1), "solo pet challenge
 const dailyHybrid = BREED_GOALS.find((g) => g.id === "daily_hybrid");
 assert(dailyHybrid?.type === "breed_cross_kind", "daily hybrid cross kind");
 
-const qiSt = { realm: 0, qi: 60, pets: [], ranch: [makeStarterPet()], tutorial: { done: false, step: "cultivate_qi", flags: {} } };
+const qiSt = {
+  realm: 0,
+  qi: 60,
+  pets: [],
+  ranch: [makeStarterPet()],
+  daily: { date: "x", idleSec: 120, progress: {}, claimed: {} },
+  tutorial: { done: false, step: "cultivate_qi", flags: { qiIdleDone: true } },
+};
 normalizeTutorial(qiSt);
 assert(tutorialQiReady(qiSt), "tutorial qi ready");
 assert(!isCultivateSubLocked(qiSt, "advance"), "advance unlocked when qi ready");
@@ -819,7 +861,7 @@ const dungSt = {
 };
 assert(!advanceTutorialIfReady(dungSt).advanced, "dungeon win waits for tutorial flag");
 dungSt.tutorial.flags.dungeonWonTutorial = true;
-assert(advanceTutorialIfReady(dungSt).advanced && dungSt.tutorial.step === "shop_pet", "dungeon win to shop");
+assert(advanceTutorialIfReady(dungSt).advanced && dungSt.tutorial.step === "shop_egg", "dungeon win to shop egg");
 
 const codexDone = {
   realm: 0,
@@ -849,7 +891,7 @@ assert(!tutorialWaivesDungeonChallenge(tutDung, "tide_2"), "no waive on t2");
 const stepCodex = { tutorial: { done: false, step: "codex", flags: {}, latePending: false } };
 normalizeTutorial(stepCodex);
 const codexInfo = tutorialStepInfo(stepCodex);
-assert(codexInfo.index === 9 && codexInfo.total === 9, "core tutorial 9/9 at codex");
+assert(codexInfo.index === 12 && codexInfo.total === 12, "core tutorial 12/12 at codex");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
