@@ -674,6 +674,16 @@ export function tickCultivation(state, now = Date.now()) {
   if (state.daily.idleSec >= 180) {
     bumpDaily(state, "idle", 1);
   }
+  if (
+    state.tutorial &&
+    !state.tutorial.done &&
+    state.tutorial.step === "cultivate_qi" &&
+    (state.daily.idleSec || 0) >= 90
+  ) {
+    state.tutorial.flags = state.tutorial.flags || {};
+    state.tutorial.flags.qiIdleDone = true;
+    advanceTutorialIfReady(state);
+  }
 
   if (elapsed >= OFFLINE_HINT_SEC) {
     const qiGain = state.qi - qiBefore;
