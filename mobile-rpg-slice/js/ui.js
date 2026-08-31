@@ -16,6 +16,8 @@ import {
   fusePets,
   petDetail,
   runDungeon,
+  runDungeonSweep,
+  canDungeonSweep,
   forgeHint,
   tryBreed,
   breedStatus,
@@ -30,6 +32,9 @@ import {
   renamePet,
   clearOfflineHint,
   claimDaily,
+  claimAllDailies,
+  claimDailyAllClear,
+  dailyAllClearView,
   dailyView,
   achievementsView,
   bestiaryStatus,
@@ -94,6 +99,7 @@ import {
   loginStreakView,
   claimLoginStreak,
 } from "./engine.js";
+import { DUNGEON_SWEEP_COUNTS } from "./data.js";
 import { petIconHtml, petIconFromPet } from "./pet-icons.js";
 import {
   tutorialActive,
@@ -135,6 +141,8 @@ let tab = "cultivate";
 /** @type {{ cultivate: string, party: string, dungeon: string, codex: string }} */
 let panelSub = { cultivate: "train", party: "fight", dungeon: "field", codex: "dex" };
 let dungeonIdx = 0;
+let sweepCount = 10;
+let sweepResult = null;
 let shellReady = false;
 /** @type {string[]} 牧場派遣選中 uid */
 let dispatchPick = [];
@@ -1247,6 +1255,7 @@ function render() {
       ${tabBtn("log", "見聞", busy)}
     </nav>
     ${playback ? combatModalHtml() : ""}
+    ${sweepResult ? sweepModalHtml() : ""}
     ${condSheetOpen ? dungeonCondSheetHtml() : ""}
     ${statsSheetOpen ? statsSheetHtml() : ""}
     ${dailyHubHtml()}
@@ -1348,6 +1357,17 @@ function nextGoalChipHtml() {
   </button>`;
 }
 
+function dailyTasksToolbarHtml() {
+  const ac = dailyAllClearView(state);
+  const claimAllDisabled = ac.claimable <= 0;
+  const allClearDisabled = !ac.canClaimAllClear;
+  const allClearLabel = ac.allClearClaimed ? "全清獎已領" : ac.canClaimAllClear ? "領全清獎" : `全清獎（${ac.claimed}/${ac.total}）`;
+  return `<div class="daily-tasks-toolbar row">
+    <button type="button" class="primary" data-act="claim-all-dailies" ${claimAllDisabled ? "disabled" : ""}>一鍵領取（${ac.claimable}）</button>
+    <button type="button" data-act="claim-daily-allclear" ${allClearDisabled ? "disabled" : ""}>${escapeHtml(allClearLabel)}</button>
+  </div>`;
+}
+
 function dailyHubHtml() {
   if (tutorialActive(state)) return "";
   const hub = dailyHubView(state);
@@ -1371,6 +1391,18 @@ function dailyHubHtml() {
   const goalLine = hub.nextGoal
     ? `<p class="hub-goal">下一目標：<strong>${escapeHtml(hub.nextGoal.label)}</strong>（${escapeHtml(hub.nextGoal.progress)}）</p>`
     : "";
+  const dailyClaimLine = `<p class="hub-daily-claim">每日領取 <strong>${hub.dailyClaimed || 0}/${hub.dailyTotal}</strong>${
+    hub.allClearClaimed ? " · 全清獎已領" : hub.canClaimAllClear ? " · 可領全清獎！" : ""
+  }</p>`;
+  const hubDailyActs =
+    hub.dailyClaimable > 0 || hub.canClaimAllClear
+      ? `<div class="row hub-daily-claim-row">
+          <button type="button" class="primary" data-act="claim-all-dailies" ${hub.dailyClaimable <= 0 ? "disabled" : ""}>一鍵領每日（${hub.dailyClaimable || 0}）</button>
+          <button type="button" data-act="claim-daily-allclear" ${!hub.canClaimAllClear ? "disabled" : ""}>${
+            hub.allClearClaimed ? "全清獎已領" : hub.canClaimAllClear ? "領全清獎" : `全清獎 ${hub.dailyClaimed}/${hub.dailyTotal}`
+          }</button>
+        </div>`
+      : "";
   return `<div class="daily-hub-overlay" data-live="daily-hub">
     <div class="daily-hub-card" role="dialog" aria-label="每日儀表板">
       <h2>今日暗潮</h2>
@@ -1384,6 +1416,8 @@ function dailyHubHtml() {
       ${hub.dailyModLabel ? `<p class="hub-mod">${escapeHtml(hub.dailyModLabel)}</p>` : ""}
       ${hub.spotlightName ? `<p class="hub-spot">今日練功地強化【${escapeHtml(hub.spotlightName)}】</p>` : ""}
       ${goalLine}
+      ${dailyClaimLine}
+      ${hubDailyActs}
       ${eggLines || dispatchLines ? `<ul class="hub-timers">${eggLines}${dispatchLines}</ul>` : ""}
       <h3>連續登入 · 第 ${streak.day} 日</h3>
       <ol class="streak-row">${streakRewards}</ol>
@@ -2063,7 +2097,6 @@ function codexPanel() {
     .join("");
 
   const dailies = dailyView(state)
-    .slice(0, 3)
     .map((q) => {
       const status = q.claimed ? "已領" : q.done ? "可領" : `${q.progress}/${q.need}`;
       return `
@@ -2078,7 +2111,7 @@ function codexPanel() {
     .join("");
 
   const ach = achievementsView(state)
-    .slice(0, 3)
+    .sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1))
     .map(
       (a) => `
       <li class="card-row">
@@ -2108,8 +2141,9 @@ function codexPanel() {
     ${pathTracks}`
         : panelSub.codex === "tasks"
           ? `<h2>任務</h2>
+    ${dailyTasksToolbarHtml()}
     ${breedGoalsBoardHtml(true)}
-    <h3>每日</h3>
+    <h3>每日 · ${dailyAllClearView(state).claimed}/${dailyAllClearView(state).total}</h3>
     <ul class="list">${dailies}</ul>
     <h3>成就</h3>
     <ul class="list">${ach}</ul>`
@@ -2199,6 +2233,43 @@ function combatRewardBreakdownHtml(bd) {
             }
             <li class="cond-item is-met"><span class="cond-badge">合計</span><div class="cond-body"><strong>+${bd.totalStones} 靈石</strong><span class="muted">各項分開累加</span></div></li>
           </ul>`;
+}
+
+function sweepModalHtml() {
+  const r = sweepResult;
+  if (!r) return "";
+  const encounterLine = r.encounter
+    ? `<p class="hub-mod">潮霧遇見【${escapeHtml(r.encounter.name)}】— 可至待契結契</p>`
+    : r.encounterBlocked
+      ? `<p class="muted">待契欄已滿，未再遇見新靈</p>`
+      : "";
+  const detailRows = (r.perRun || [])
+    .map(
+      (run, i) =>
+        `<li class="card-row"><div><strong>第 ${i + 1} 次</strong><span class="muted">${run.won ? "勝" : "敗"} · +${run.stones}石${run.scrap ? `／+${run.scrap}碎` : ""}</span></div></li>`
+    )
+    .join("");
+  return `
+    <div class="combat-modal-overlay sweep-modal-overlay" data-live="sweep-modal" role="dialog" aria-label="掃蕩結算">
+      <div class="combat-modal-card">
+        <div class="combat-modal-scroll">
+          <h2>掃蕩結算 · ${escapeHtml(r.dungeonName || "")}</h2>
+          <p class="lead">${escapeHtml(r.msg || "")}</p>
+          <div class="settle-summary-row">
+            <div>
+              <strong class="settle-total">+${r.totalStones} 靈石</strong>
+              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 碎片 +${r.totalScrap || 0}</span>
+            </div>
+          </div>
+          ${encounterLine}
+          <h3>各次明细</h3>
+          <ul class="list">${detailRows}</ul>
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" class="primary" data-act="close-sweep-modal">返回秘境</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 function combatModalHtml() {
@@ -2399,14 +2470,32 @@ function dungeonPanel() {
       : "";
   const fieldDock =
     panelSub.dungeon === "field"
-      ? `<div class="row dungeon-dock-row">
-          ${pager}
-          ${
-            dCur
-              ? `<button type="button" class="primary dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}" ${locked || onCd ? "disabled" : ""}>進攻 · ${escapeHtml(dCur.name)}</button>`
-              : ""
-          }
-        </div>`
+      ? (() => {
+          const sweepOk = dCur && canDungeonSweep(state, dCur.id).ok;
+          const sweepBtns = DUNGEON_SWEEP_COUNTS.map(
+            (n) =>
+              `<button type="button" class="sweep-count-btn ${sweepCount === n ? "primary" : ""}" data-sweep-count="${n}" ${sweepOk ? "" : "disabled"}">${n}</button>`
+          ).join("");
+          const sweepRow =
+            sweepOk
+              ? `<div class="sweep-controls">
+                  <span class="sweep-label">連刷</span>
+                  <div class="row sweep-count-row">${sweepBtns}</div>
+                  <button type="button" class="primary sweep-run-btn" data-sweep="${escapeHtml(dCur.id)}">掃蕩 ×${sweepCount}</button>
+                </div>`
+              : "";
+          return `<div class="dungeon-dock-stack">
+          <div class="row dungeon-dock-row">
+            ${pager}
+            ${
+              dCur
+                ? `<button type="button" class="${sweepOk ? "" : "primary"} dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}" ${locked || onCd ? "disabled" : ""}>進攻 · ${escapeHtml(dCur.name)}</button>`
+                : ""
+            }
+          </div>
+          ${sweepRow}
+        </div>`;
+        })()
       : "";
   const nav = panelSubNav("dungeon", [
     { id: "field", label: "秘境" },
@@ -2603,6 +2692,19 @@ function bind() {
           render();
           setFlash("存檔已重置。");
         }
+      } else if (act === "claim-all-dailies") {
+        const r = claimAllDailies(state);
+        saveState(state);
+        render();
+        setFlash(r.msg, r.ok ? "celebrate" : "");
+      } else if (act === "claim-daily-allclear") {
+        const r = claimDailyAllClear(state);
+        saveState(state);
+        render();
+        setFlash(r.msg, r.ok ? "celebrate" : "");
+      } else if (act === "close-sweep-modal") {
+        sweepResult = null;
+        render();
       } else if (act === "clear-combat") {
         clearCombatPlayback();
       } else if (act === "clear-combat-setup") {
@@ -2981,6 +3083,27 @@ function bind() {
   app.querySelectorAll("[data-pet-back]").forEach((btn) => {
     btn.addEventListener("click", () => {
       petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+      render();
+    });
+  });
+  app.querySelectorAll("[data-sweep-count]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      sweepCount = Number(btn.dataset.sweepCount) || 10;
+      render();
+    });
+  });
+  app.querySelectorAll("[data-sweep]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      if (playback && !playback.done) return;
+      const r = runDungeonSweep(state, btn.dataset.sweep, sweepCount);
+      saveState(state);
+      if (!r.ok) {
+        setFlash(r.msg);
+        return;
+      }
+      sweepResult = r;
       render();
     });
   });
