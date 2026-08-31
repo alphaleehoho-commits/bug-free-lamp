@@ -1,6 +1,9 @@
 /**
  * Smoke: kind sync + generation breeding + P3 goals / trials / recipes.
  */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import {
   buildPetStats,
   SPECIES,
@@ -1043,6 +1046,12 @@ const tacticsNav = syncTutorialNavigation(tacticsSt, {
   panelSub: { dungeon: "field", party: "fight", cultivate: "train", codex: "dex" },
 });
 assert(tacticsNav.panelSub.dungeon === "setup", "tactics sync forces setup sub");
+
+const __dir = dirname(fileURLToPath(import.meta.url));
+const uiSrc = readFileSync(join(__dir, "ui.js"), "utf8");
+assert(uiSrc.includes("function wrapStage"), "ui has wrapStage layout helper");
+assert(uiSrc.includes("tabs-bottom"), "ui has bottom tab bar");
+assert(uiSrc.includes("statsSheetHtml"), "ui has stats resource sheet");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

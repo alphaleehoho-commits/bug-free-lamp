@@ -140,6 +140,88 @@ body {
   font-size: 0.68rem;
 }
 
+.stats-tappable {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: center;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.stats-tappable:active {
+  background: rgba(126, 168, 160, 0.12);
+  border-color: rgba(126, 168, 160, 0.45);
+}
+.stats-tappable > div {
+  background: var(--panel);
+  border: none;
+  border-radius: 0;
+  padding: 0.16rem 0.08rem;
+}
+.stats-tappable > div:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.stats-tappable > div:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+.stat-sheet-grid {
+  list-style: none;
+  margin: 0 0 0.35rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.28rem;
+}
+.stat-sheet-grid li {
+  padding: 0.32rem 0.38rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.18);
+}
+.stat-sheet-grid span {
+  display: block;
+  font-size: 0.58rem;
+  color: var(--muted);
+}
+.stat-sheet-grid strong {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  color: var(--jade-bright);
+}
+.stat-sheet-card h4 {
+  margin: 0.35rem 0 0.2rem;
+  font-size: 0.68rem;
+  color: var(--jade);
+  letter-spacing: 0.08em;
+}
+.stat-sheet-mats {
+  list-style: none;
+  margin: 0 0 0.35rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+.stat-sheet-mat {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.12rem 0.35rem;
+  padding: 0.28rem 0.35rem;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 0.68rem;
+}
+.stat-sheet-mat .muted {
+  grid-column: 1 / -1;
+  font-size: 0.58rem;
+}
+
 .flash {
   margin: 0;
   padding: 0.42rem 0.65rem;

@@ -143,12 +143,36 @@ let pwaDismissed = localStorage.getItem("void-tide-pwa-dismiss") === "1";
 let tutorialSnapCache = "";
 let tutMisclickCount = 0;
 let tutSpotlightEl = null;
-/** Phase 2–4 UI chrome toggles */
+/** Phase 2–5 UI chrome toggles */
 let condSheetOpen = false;
 let rewardDetailsOpen = false;
 let tutorialCollapsed = false;
 let matSectionOpen = false;
 let trainRatesOpen = false;
+let statsSheetOpen = false;
+
+const UI_PREFS_KEY = "void-tide-ui-prefs";
+
+function loadUiPrefs() {
+  try {
+    const raw = sessionStorage.getItem(UI_PREFS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function saveUiPrefs() {
+  sessionStorage.setItem(
+    UI_PREFS_KEY,
+    JSON.stringify({ matSectionOpen, trainRatesOpen })
+  );
+}
+
+const uiPrefsBoot = loadUiPrefs();
+matSectionOpen = !!uiPrefsBoot.matSectionOpen;
+trainRatesOpen = !!uiPrefsBoot.trainRatesOpen;
 
 const COMBAT_PREFS_KEY = "void-tide-combat-prefs";
 
@@ -737,6 +761,7 @@ function switchTab(id) {
   if (isTabLocked(state, id)) return;
   tab = id;
   condSheetOpen = false;
+  statsSheetOpen = false;
   tutMisclickCount = 0;
   if (tutorialActive(state)) {
     const step = state.tutorial.step;
@@ -1223,6 +1248,7 @@ function render() {
     </nav>
     ${playback ? combatModalHtml() : ""}
     ${condSheetOpen ? dungeonCondSheetHtml() : ""}
+    ${statsSheetOpen ? statsSheetHtml() : ""}
     ${dailyHubHtml()}
     ${offlineBanner()}
     ${inTutorial ? "" : installBanner()}
@@ -1256,12 +1282,48 @@ function dispatchMatBits(mission) {
 let dailyHubDismissedSession = false;
 
 function statsStripHtml(stage) {
-  return `<div class="stats stats-compact">
+  return `<button type="button" class="stats stats-compact stats-tappable" data-act="toggle-stats-sheet" aria-label="查看資源詳情">
       <div><span>階段</span><strong data-live="stage">${stage.name}</strong></div>
       <div><span>靈石</span><strong data-live="stones">${Math.floor(state.stones)}</strong></div>
       <div><span>碎片</span><strong data-live="scrap">${state.scrap}</strong></div>
       <div><span>飼料</span><strong data-live="feed">${Math.floor(state.feed || 0)}</strong></div>
       <div><span>靈塵</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
+    </button>`;
+}
+
+function statsSheetHtml() {
+  const stage = realmInfo(state);
+  const next = nextRealm(state);
+  const br = breakthroughView(state);
+  const qiPct = next ? Math.min(100, Math.round((state.qi / next.need) * 100)) : 100;
+  const ranchN = (state.ranch?.length || 0) + state.pets.length;
+  const matRows = materialHintsView(state)
+    .filter((m) => m.count > 0)
+    .slice(0, 8)
+    .map(
+      (m) =>
+        `<li class="stat-sheet-mat"><span>${escapeHtml(m.name)}</span><strong>${m.count}</strong><span class="muted">${escapeHtml(m.use)}</span></li>`
+    )
+    .join("");
+  return `
+    <div class="sheet-overlay" role="presentation">
+      <div class="sheet-card stat-sheet-card" role="dialog" aria-label="資源詳情" data-sheet-card>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <h3>資源詳情</h3>
+        <ul class="stat-sheet-grid">
+          <li><span>階段</span><strong>${escapeHtml(stage.name)}</strong></li>
+          <li><span>靈石</span><strong>${Math.floor(state.stones)}</strong></li>
+          <li><span>碎片</span><strong>${state.scrap}</strong></li>
+          <li><span>飼料</span><strong>${Math.floor(state.feed || 0)}</strong></li>
+          <li><span>靈塵</span><strong>${Math.floor(state.dust || 0)}</strong></li>
+          <li><span>勝場</span><strong>${state.combatsWon}</strong></li>
+          <li><span>牧場</span><strong>${ranchN}／${ranchCap(state)}</strong></li>
+          <li><span>出戰</span><strong>${state.pets.length}／${ACTIVE_PET_MAX}</strong></li>
+        </ul>
+        <p class="meta">靈契 ${Math.floor(state.qi)} / ${next?.need || "—"} · ${qiPct}% →【${escapeHtml(br.next?.name || "")}】</p>
+        ${matRows ? `<h4>持有材料</h4><ul class="stat-sheet-mats">${matRows}</ul>` : ""}
+        <button type="button" class="primary sheet-close" data-act="close-stats-sheet">關閉</button>
+      </div>
     </div>`;
 }
 
@@ -2564,9 +2626,17 @@ function bind() {
         render();
       } else if (act === "toggle-mat-section") {
         matSectionOpen = !matSectionOpen;
+        saveUiPrefs();
         render();
       } else if (act === "toggle-train-rates") {
         trainRatesOpen = !trainRatesOpen;
+        saveUiPrefs();
+        render();
+      } else if (act === "toggle-stats-sheet") {
+        statsSheetOpen = !statsSheetOpen;
+        render();
+      } else if (act === "close-stats-sheet") {
+        statsSheetOpen = false;
         render();
       }
     });
@@ -2577,6 +2647,7 @@ function bind() {
   app.querySelectorAll(".sheet-overlay").forEach((el) => {
     el.addEventListener("click", () => {
       condSheetOpen = false;
+      statsSheetOpen = false;
       render();
     });
   });
