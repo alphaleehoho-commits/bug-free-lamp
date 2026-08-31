@@ -911,19 +911,32 @@ export function tutorialBannerHint(state) {
   return info.hint;
 }
 
-export function tutorialBannerHtml(state) {
+export function tutorialBannerHtml(state, opts = {}) {
   if (!tutorialActive(state)) return "";
+  const collapsed = !!opts.collapsed;
   const info = tutorialStepInfo(state);
-  let hint = tutorialBannerHint(state);
+  const hint = tutorialBannerHint(state);
   const phaseNote = info.inLate
     ? `<p class="tutorial-phase">進階引導 · 達【通靈後期】解鎖</p>`
     : "";
+  if (collapsed) {
+    return `
+    <div class="tutorial-banner tutorial-banner-compact is-collapsed" data-live="tutorial">
+      <button type="button" class="tutorial-compact-main" data-act="expand-tutorial">
+        <span class="tutorial-step">${info.index}/${info.total}</span>
+        <strong>${info.title}</strong>
+        <span class="tutorial-hint-oneline" data-live="tutorial-hint">${hint}</span>
+      </button>
+      <button type="button" class="ghost tutorial-skip" data-act="skip-tutorial">跳過</button>
+    </div>`;
+  }
   return `
     <div class="tutorial-banner" data-live="tutorial">
       ${phaseNote}
       <div class="tutorial-head">
         <span class="tutorial-step">${info.index}/${info.total}</span>
         <strong>${info.title}</strong>
+        <button type="button" class="ghost tutorial-collapse" data-act="collapse-tutorial">收起</button>
         <button type="button" class="ghost tutorial-skip" data-act="skip-tutorial">跳過教學</button>
       </div>
       <p class="tutorial-hint" data-live="tutorial-hint">${hint}</p>

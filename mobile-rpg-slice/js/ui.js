@@ -143,9 +143,10 @@ let pwaDismissed = localStorage.getItem("void-tide-pwa-dismiss") === "1";
 let tutorialSnapCache = "";
 let tutMisclickCount = 0;
 let tutSpotlightEl = null;
-/** Phase 2 UI chrome toggles */
+/** Phase 2–3 UI chrome toggles */
 let condSheetOpen = false;
 let rewardDetailsOpen = false;
+let tutorialCollapsed = false;
 
 const COMBAT_PREFS_KEY = "void-tide-combat-prefs";
 
@@ -277,7 +278,7 @@ function patchTutorialBanner() {
     ensureSpotlight().hidden = true;
     return;
   }
-  const html = tutorialBannerHtml(state);
+  const html = tutorialBannerHtml(state, { collapsed: tutorialCollapsed });
   if (cur) {
     const wrap = document.createElement("div");
     wrap.innerHTML = html.trim();
@@ -892,9 +893,11 @@ function patchEggLive() {
 }
 
 function patchTutorialHintLive() {
-  const hintEl = document.querySelector("[data-live=tutorial-hint]");
-  if (!hintEl || !tutorialActive(state)) return;
-  hintEl.textContent = tutorialBannerHint(state);
+  if (!tutorialActive(state)) return;
+  const hint = tutorialBannerHint(state);
+  document.querySelectorAll("[data-live=tutorial-hint]").forEach((hintEl) => {
+    hintEl.textContent = hint;
+  });
 }
 
 function patchLive() {
@@ -1149,8 +1152,9 @@ function render() {
   const m = state.master;
   const enterClass = shellReady ? "is-settled" : "is-enter";
   const busy = playback && !playback.done;
+  const inTutorial = tutorialActive(state);
 
-  app.className = enterClass;
+  app.className = `${enterClass}${inTutorial ? " is-tutorial" : ""}`;
   app.innerHTML = `
     <header class="top top-compact">
       <div class="brand-row">
@@ -1159,20 +1163,15 @@ function render() {
       </div>
     </header>
 
-    <div class="stats stats-compact">
-      <div><span>階段</span><strong data-live="stage">${stage.name}</strong></div>
-      <div><span>靈石</span><strong data-live="stones">${Math.floor(state.stones)}</strong></div>
-      <div><span>碎片</span><strong data-live="scrap">${state.scrap}</strong></div>
-      <div><span>飼料</span><strong data-live="feed">${Math.floor(state.feed || 0)}</strong></div>
-      <div><span>靈塵</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
-    </div>
+    ${inTutorial ? tutorialStatsStrip() : statsStripHtml(stage)}
 
     ${offlineBanner()}
-    ${installBanner()}
+    ${inTutorial ? "" : installBanner()}
     ${nextGoalChipHtml()}
 
+    ${inTutorial ? tutorialBannerHtml(state, { collapsed: tutorialCollapsed }) : ""}
+
     <main class="panel">
-      ${tutorialBannerHtml(state)}
       <div class="panel-body">
       ${tab === "cultivate" ? cultivatePanel(qiPct, next, m) : ""}
       ${tab === "party" ? petsPanel() : ""}
@@ -1196,7 +1195,10 @@ function render() {
 
   bind();
   shellReady = true;
-  if (tutorialSnapCache !== tutorialLiveSnapshot(state)) tutMisclickCount = 0;
+  if (tutorialSnapCache !== tutorialLiveSnapshot(state)) {
+    tutMisclickCount = 0;
+    tutorialCollapsed = false;
+  }
   tutorialSnapCache = tutorialLiveSnapshot(state);
   saveState(state);
   requestAnimationFrame(() => {
@@ -1217,6 +1219,26 @@ function dispatchMatBits(mission) {
 }
 
 let dailyHubDismissedSession = false;
+
+function statsStripHtml(stage) {
+  return `<div class="stats stats-compact">
+      <div><span>階段</span><strong data-live="stage">${stage.name}</strong></div>
+      <div><span>靈石</span><strong data-live="stones">${Math.floor(state.stones)}</strong></div>
+      <div><span>碎片</span><strong data-live="scrap">${state.scrap}</strong></div>
+      <div><span>飼料</span><strong data-live="feed">${Math.floor(state.feed || 0)}</strong></div>
+      <div><span>靈塵</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
+    </div>`;
+}
+
+function tutorialStatsStrip() {
+  const stage = realmInfo(state);
+  return `<div class="tutorial-stats-strip">
+    <span data-live="stage">${escapeHtml(stage.name)}</span>
+    <span><strong data-live="stones">${Math.floor(state.stones)}</strong> 石</span>
+    <span>飼 <strong data-live="feed">${Math.floor(state.feed || 0)}</strong></span>
+    <span>塵 <strong data-live="dust">${Math.floor(state.dust || 0)}</strong></span>
+  </div>`;
+}
 
 function nextGoalChipHtml() {
   if (tutorialActive(state)) return "";
@@ -2503,6 +2525,12 @@ function bind() {
         render();
       } else if (act === "toggle-reward-details") {
         rewardDetailsOpen = !rewardDetailsOpen;
+        render();
+      } else if (act === "collapse-tutorial") {
+        tutorialCollapsed = true;
+        render();
+      } else if (act === "expand-tutorial") {
+        tutorialCollapsed = false;
         render();
       }
     });

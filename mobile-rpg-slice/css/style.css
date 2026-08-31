@@ -230,9 +230,17 @@ body {
   gap: 0.22rem;
   margin: 0 0 0.35rem;
   flex-shrink: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.panel-subnav::-webkit-scrollbar {
+  display: none;
 }
 .panel-subnav button {
-  flex: 1;
+  flex: 1 0 auto;
+  min-width: 3.4rem;
   padding: 0.32rem 0.2rem;
   font-size: 0.68rem;
   border-radius: 999px;
@@ -247,6 +255,79 @@ body {
 .panel > .tutorial-banner {
   flex-shrink: 0;
   margin: 0 0 0.35rem;
+}
+
+#app.is-tutorial .panel {
+  padding-top: 0.45rem;
+}
+
+.tutorial-stats-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.55rem;
+  padding: 0.22rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(18, 32, 44, 0.72);
+  font-size: 0.62rem;
+  color: var(--fog);
+  flex-shrink: 0;
+}
+.tutorial-stats-strip strong {
+  color: var(--jade-bright);
+  font-weight: 600;
+}
+
+.tutorial-banner-compact {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.28rem 0.35rem 0.28rem 0.42rem;
+}
+.tutorial-compact-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.15rem 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tutorial-compact-main strong {
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  color: #d0f0e4;
+}
+.tutorial-hint-oneline {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.62rem;
+  color: #c8dce6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tutorial-banner-compact .tutorial-skip {
+  margin-left: 0;
+  flex-shrink: 0;
+}
+.tutorial-collapse {
+  margin-left: auto;
+  padding: 0.12rem 0.35rem;
+  font-size: 0.55rem;
+  line-height: 1.2;
+}
+.tutorial-head .tutorial-skip {
+  margin-left: 0;
 }
 
 .panel-body {
