@@ -110,6 +110,7 @@ import {
   maybeStartLateTutorial,
   tutorialStepInfo,
   tutorialWaivesDungeonChallenge,
+  tutorialBannerHint,
 } from "./tutorial.js";
 
 const app = document.querySelector("#app");
@@ -728,6 +729,35 @@ function matHintListHtml() {
     .join("")}</ul>`;
 }
 
+function patchEggLive() {
+  const now = Date.now();
+  let becameReady = false;
+  document.querySelectorAll("[data-egg-timer]").forEach((el) => {
+    const readyAt = Number(el.dataset.readyAt);
+    const uid = el.dataset.eggUid;
+    if (!uid || !Number.isFinite(readyAt)) return;
+    const left = Math.max(0, readyAt - now);
+    const sec = Math.ceil(left / 1000);
+    if (left <= 0) {
+      becameReady = true;
+      const row = el.closest(".egg-row");
+      const actions = row?.querySelector(".row-actions");
+      if (actions && !actions.querySelector("[data-claim-hatch]")) {
+        actions.innerHTML = `<button type="button" class="primary${tutGlow({ type: "claim-hatch" })}" data-claim-hatch="${escapeHtml(uid)}">領取</button>`;
+      }
+    } else {
+      el.textContent = `孵化中 ${sec}s`;
+    }
+  });
+  return becameReady;
+}
+
+function patchTutorialHintLive() {
+  const hintEl = document.querySelector("[data-live=tutorial-hint]");
+  if (!hintEl || !tutorialActive(state)) return;
+  hintEl.textContent = tutorialBannerHint(state);
+}
+
 function patchLive() {
   if (playback && !playback.done) return;
   state = tickCultivation(state);
@@ -755,6 +785,9 @@ function patchLive() {
   if (stageEl) stageEl.textContent = stage.name;
   if (wins) wins.textContent = `勝場 ${state.combatsWon}`;
 
+  const eggReadyNow = patchEggLive();
+  patchTutorialHintLive();
+
   const snap = tutorialLiveSnapshot(state);
   if (snap !== tutorialSnapCache) {
     tutorialSnapCache = snap;
@@ -762,6 +795,8 @@ function patchLive() {
   } else if (tutorialActive(state)) {
     refreshTutorialGlow();
   }
+
+  return eggReadyNow;
 }
 
 function combatPlaybackMeta(pb) {
@@ -1246,7 +1281,7 @@ function petsListView() {
           ? `<button type="button" class="primary${tutGlow({ type: "start-hatch" })}" data-start-hatch="${escapeHtml(e.uid)}">開始孵化</button>`
           : e.ready
             ? `<button type="button" class="primary${tutGlow({ type: "claim-hatch" })}" data-claim-hatch="${escapeHtml(e.uid)}">領取</button>`
-            : `<span class="muted">孵化中 ${e.leftSec}s</span>`;
+            : `<span class="muted" data-egg-timer data-egg-uid="${escapeHtml(e.uid)}" data-ready-at="${e.readyAt || 0}">孵化中 ${e.leftSec}s</span>`;
         return `
         <li class="card-row egg-row">
           <div>
@@ -2475,10 +2510,10 @@ window.addEventListener("beforeinstallprompt", (e) => {
 
 setInterval(() => {
   if (playback && !playback.done) return;
-  patchLive();
+  const eggReadyNow = patchLive();
   const adv = advanceTutorialIfReady(state);
   const snap = tutorialLiveSnapshot(state);
-  if (adv.advanced || snap !== tutorialSnapCache) {
+  if (eggReadyNow || adv.advanced || snap !== tutorialSnapCache) {
     tutorialSnapCache = snap;
     saveState(state);
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");

@@ -94,6 +94,7 @@ import {
   fusionStoneCost,
   upgradeStoneCost,
   makeStarterEgg,
+  STARTER_EGG_HATCH_MS,
   makeEgg,
   hatchPetFromEgg,
   EGG_TIERS,
@@ -123,6 +124,7 @@ import {
   skipTutorial,
   tutorialQiReady,
   isCultivateSubLocked,
+  isTabLocked,
   TUTORIAL_SHOP_COST,
   TUTORIAL_TRAIN_LEVEL,
   syncTutorialNavigation,
@@ -703,6 +705,9 @@ assert(pitySt.stones === stonesBefore, "pity refunds bond cost");
 
 /* P21: eggs */
 assert(EGG_TIERS.C.hatchMs === 120_000 && EGG_TIERS.A.hatchMs >= 1_800_000, "egg tiers");
+assert(STARTER_EGG_HATCH_MS === 20_000, "starter hatch ms");
+const freshEgg = makeStarterEgg();
+assert(freshEgg.readyAt - freshEgg.startedAt === STARTER_EGG_HATCH_MS, "starter egg duration");
 const egg0 = makeStarterEgg(Date.now() - 200_000);
 assert(egg0.readyAt <= Date.now(), "starter egg ready past");
 const hatchSt = {
@@ -719,6 +724,11 @@ const hatchSt = {
 const hatched = claimHatch(hatchSt, egg0.uid);
 assert(hatched.ok && hatchSt.ranch.length === 1 && hatchSt.eggs.length === 0, "claim hatch starter");
 assert(hatchSt.tutorial.step === "meet_pet" || hatchSt.tutorial.flags.starterHatched, "hatch advances");
+
+const hatchLockSt = { tutorial: { done: false, step: "hatch_starter", flags: {} } };
+assert(!isTabLocked(hatchLockSt, "cultivate"), "hatch_starter unlocks cultivate tab");
+assert(!isCultivateSubLocked(hatchLockSt, "train"), "hatch_starter unlocks train");
+assert(isCultivateSubLocked(hatchLockSt, "shop"), "hatch_starter locks shop");
 
 /* P13: egg-first tutorial flow */
 const tut = { done: false, step: "hatch_starter", flags: { starterHatched: true } };
