@@ -89,6 +89,7 @@ import {
   useBloodCatalyst,
   useTemperOil,
 } from "./engine.js";
+import { materialSourceLabel } from "./data.js";
 import {
   tutorialActive,
   tutorialBannerHtml,
@@ -96,11 +97,6 @@ import {
   advanceTutorialIfReady,
   advanceTutorialCascade,
   markTutorialFlag,
-  isTabLocked,
-  isCultivateSubLocked,
-  isPartySubLocked,
-  isDungeonSubLocked,
-  areTrainSitesLocked,
   skipTutorial,
   tutorialQiReady,
   tutorialGlowClass,
@@ -114,11 +110,23 @@ import {
   tutorialNeedsRanchSub,
   tutorialEggReady,
 } from "./tutorial.js";
+import {
+  isTabLocked,
+  isCultivateSubLocked,
+  isPartySubLocked,
+  isDungeonSubLocked,
+  areTrainSitesLocked,
+  isBreedLocked,
+  breedLockReason,
+  lockReason,
+  pollProgressionUnlocks,
+} from "./progression.js";
 
 const app = document.querySelector("#app");
 
 let state = loadState();
 state = tickCultivation(state);
+const bootUnlock = pollProgressionUnlocks(state);
 saveState(state);
 
 let flash = "";
@@ -255,7 +263,12 @@ function tutorialNavCtx() {
 }
 
 function initTutorialNav() {
-  if (!tutorialActive(state)) return;
+  if (!tutorialActive(state)) {
+    if (isPartySubLocked(state, "fight")) {
+      panelSub = { ...panelSub, party: "ranch" };
+    }
+    return;
+  }
   const step = state.tutorial.step;
   if ((step === "hatch_starter" || step === "hatch_second") && tutorialEggReady(state)) {
     tab = "party";
@@ -673,6 +686,12 @@ function switchTab(id) {
       if (step === "dungeon_fight" || step === "dungeon_win") panelSub = { ...panelSub, dungeon: "field" };
       else if (step === "tactics") panelSub = { ...panelSub, dungeon: "setup" };
     }
+  } else if (id === "party" && isPartySubLocked(state, "fight")) {
+    panelSub = { ...panelSub, party: "ranch" };
+  } else if (id === "cultivate" && isCultivateSubLocked(state, "shop") && !isCultivateSubLocked(state, "advance")) {
+    panelSub = { ...panelSub, cultivate: "train" };
+  } else if (id === "cultivate" && !isCultivateSubLocked(state, "advance")) {
+    panelSub = { ...panelSub, cultivate: panelSub.cultivate === "shop" ? "train" : panelSub.cultivate };
   }
   if (id === "codex" && tutorialActive(state) && state.tutorial.step === "codex") {
     const adv = markTutorialFlag(state, "codexVisited");
@@ -714,7 +733,9 @@ function panelSubNav(group, items) {
     .map(({ id, label }) => {
       const locked = lockFn(state, id);
       const glow = tutGlow({ type: "panel-sub", group, id });
-      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${locked ? " is-locked" : ""}${glow}" data-panel-sub="${group}:${id}" ${locked ? "disabled" : ""}>${label}${locked ? "🔒" : ""}</button>`;
+      const hint = locked ? lockReason(state, `${group}Sub`, id) : "";
+      const title = hint ? ` title="${escapeHtml(hint)}"` : "";
+      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${locked ? " is-locked" : ""}${glow}" data-panel-sub="${group}:${id}" ${locked ? `disabled${title}` : ""}>${label}${locked ? "🔒" : ""}</button>`;
     })
     .join("")}</nav>`;
 }
@@ -1134,7 +1155,9 @@ function offlineBanner() {
 function tabBtn(id, label, busy) {
   const locked = isTabLocked(state, id);
   const glow = tutGlow({ type: "tab", id });
-  return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${locked ? " locked" : ""}${glow}" data-tab="${id}" ${busy && id !== "dungeon" ? "disabled" : ""} ${locked ? "disabled" : ""}>${label}${locked ? "🔒" : ""}</button>`;
+  const hint = locked ? lockReason(state, "tab", id) : "";
+  const title = hint ? ` title="${escapeHtml(hint)}"` : "";
+  return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${locked ? " locked" : ""}${glow}" data-tab="${id}" ${busy && id !== "dungeon" ? "disabled" : ""} ${locked ? `disabled${title}` : ""}>${label}${locked ? "🔒" : ""}</button>`;
 }
 
 function cultivatePanel(qiPct, next, m) {
@@ -1179,14 +1202,21 @@ function cultivatePanel(qiPct, next, m) {
       .map((o) => {
         const sold = o.bought;
         const isEgg = o.kind === "egg";
-        const block = isEgg ? eggFull : ranchFull;
+        const isMat = o.kind === "mat";
+        const block = isEgg ? eggFull : isMat ? false : ranchFull;
+        const matHint = isMat && o.matId ? materialSourceLabel(o.matId) : "";
         const sub = isEgg
           ? `${escapeHtml(o.label || "蛋")} · ${escapeHtml(o.desc || "")}`
-          : `${escapeHtml(o.petKind || o.kind || "?")}·${escapeHtml(o.elementName || "")}`;
+          : isMat
+            ? `${escapeHtml(o.desc || "")}${matHint ? ` · ${escapeHtml(matHint)}` : ""}`
+            : `${escapeHtml(o.petKind || o.kind || "?")}·${escapeHtml(o.elementName || "")}`;
+        const title = isMat
+          ? escapeHtml(o.name || MATERIALS[o.matId]?.name || "素材")
+          : escapeHtml(o.speciesName || o.name);
         return `
         <li class="card-row">
           <div>
-            <strong>${escapeHtml(o.speciesName || o.name)}${isEgg ? " ·蛋" : ""}</strong>
+            <strong>${title}${isEgg ? " ·蛋" : isMat ? " ·素材" : ""}</strong>
             <span class="muted">${sub} · ${
               sold ? "已售" : o.tutorialDeal ? `教學 ${o.cost} 靈石` : `${o.cost} 靈石`
             }</span>
@@ -1216,6 +1246,7 @@ function cultivatePanel(qiPct, next, m) {
       ${nav}
       <h2>商肆 · 今日</h2>
       <p class="lead">靈石 ${Math.floor(state.stones)} · 牧場 ${ranchN}／${ranchCap(state)}</p>
+      <p class="meta">通關一層後偶爾出現素材包；標示產地可對照練功地。</p>
       <ul class="list">${shopRows}</ul>`;
   }
 
@@ -1424,7 +1455,7 @@ function petsListView() {
       <p class="lead">牧場 ${ranch.length}/${cap} · 蛋 ${(state.eggs || []).length}/6</p>
       <h3>寵物蛋</h3>
       <ul class="list">${eggRows}</ul>
-      <div class="row"><button type="button" class="primary${tutGlow({ type: "act", act: "open-breed" })}" data-act="open-breed">繁殖</button></div>
+      <div class="row"><button type="button" class="primary${tutGlow({ type: "act", act: "open-breed" })}" data-act="open-breed" ${isBreedLocked(state) ? `disabled title="${escapeHtml(breedLockReason(state))}"` : ""}>繁殖</button></div>
       <ul class="list">${ranchList}</ul>`;
   }
   if (sub === "dispatch") {
@@ -2115,6 +2146,10 @@ function bind() {
         render();
         setFlash(r.msg);
       } else if (act === "start-breed" || act === "open-breed") {
+        if (isBreedLocked(state)) {
+          setFlash(breedLockReason(state));
+          return;
+        }
         if (tutorialActive(state) && state.tutorial.step === "breed_intro") {
           const adv = markTutorialFlag(state, "breedVisited");
           if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
@@ -2544,6 +2579,7 @@ render();
 ensureFlashHost();
 ensureSpotlight();
 if (flash) setFlash(flash, flashTone);
+else if (bootUnlock) setFlash(bootUnlock, "unlock");
 const lateBoot = maybeStartLateTutorial(state);
 if (lateBoot.started) {
   saveState(state);
@@ -2565,12 +2601,18 @@ window.addEventListener("beforeinstallprompt", (e) => {
 setInterval(() => {
   if (playback && !playback.done) return;
   const eggReadyNow = patchLive();
-  const adv = advanceTutorialIfReady(state);
-  const snap = tutorialLiveSnapshot(state);
-  if (eggReadyNow || adv.advanced || snap !== tutorialSnapCache) {
+  const unlockMsg = pollProgressionUnlocks(state);
+  let adv = { advanced: false, unlockMsg: null };
+  let snap = "";
+  if (tutorialActive(state)) {
+    adv = advanceTutorialIfReady(state);
+    snap = tutorialLiveSnapshot(state);
+  }
+  if (eggReadyNow || adv.advanced || snap !== tutorialSnapCache || unlockMsg) {
     tutorialSnapCache = snap;
     saveState(state);
-    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+    if (unlockMsg) setFlash(unlockMsg, "unlock");
+    else if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
     render();
     return;
   }

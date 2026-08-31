@@ -162,8 +162,8 @@ import {
   maybeStartLateTutorial,
   tutorialWaivesDungeonChallenge,
   TUTORIAL_STARTER_TIDE_DEW,
-  TUTORIAL_QI_IDLE_SEC,
 } from "./tutorial.js";
+import { hasClearedTide1, healProgressionAnnouncements } from "./progression.js";
 
 const SAVE_KEY = "void-tide-pets-v25";
 
@@ -481,6 +481,7 @@ export function loadState() {
     };
     normalizeTutorial(merged);
     healTutorialProgress(merged);
+    healProgressionAnnouncements(merged);
     return merged;
   } catch {
     return defaultState();
@@ -689,7 +690,7 @@ export function tickCultivation(state, now = Date.now()) {
     state.tutorial &&
     !state.tutorial.done &&
     state.tutorial.step === "cultivate_qi" &&
-    (state.daily.idleSec || 0) >= TUTORIAL_QI_IDLE_SEC
+    (state.daily.idleSec || 0) >= 90
   ) {
     state.tutorial.flags = state.tutorial.flags || {};
     state.tutorial.flags.qiIdleDone = true;
@@ -1153,12 +1154,31 @@ function rollShopEggOffer(tier, seedSalt = 0) {
   };
 }
 
+function rollShopMatOffer(seedSalt = 0) {
+  const bulk = Object.entries(MATERIALS).filter(([, m]) => m.tier === "bulk");
+  if (!bulk.length) return null;
+  const [id, meta] = bulk[Math.floor(Math.random() * bulk.length)];
+  const amount = 1 + (seedSalt % 3);
+  return {
+    offerId: `shop-mat-${id}-${Date.now()}-${seedSalt}`,
+    kind: "mat",
+    matId: id,
+    matAmount: amount,
+    name: meta.name,
+    cost: 12 + amount * 6,
+    desc: `素材 ×${amount}`,
+  };
+}
+
 function rollShopOffer(seedSalt = 0) {
-  // ~40% 蛋、其餘靈寵；預留 kind:mat / kind:trade 之後再做
-  if (Math.random() < 0.4) {
-    const roll = Math.random();
-    const tier = roll < 0.55 ? "C" : roll < 0.9 ? "B" : "A";
+  const roll = Math.random();
+  if (roll < 0.35) {
+    const tierRoll = Math.random();
+    const tier = tierRoll < 0.55 ? "C" : tierRoll < 0.9 ? "B" : "A";
     return rollShopEggOffer(tier, seedSalt);
+  }
+  if (roll < 0.55) {
+    return rollShopMatOffer(seedSalt);
   }
   const pool = RECRUIT_POOL;
   if (!pool.length) return rollShopEggOffer("C", seedSalt);
@@ -1193,11 +1213,14 @@ export function ensureShop(state, now = Date.now()) {
   if (!state.shop) state.shop = emptyShop(now);
   if (state.shop.date !== key || !Array.isArray(state.shop.offers) || state.shop.offers.length === 0) {
     const offers = [];
-    // 每日至少一顆蛋
     offers.push(rollShopEggOffer(Math.random() < 0.7 ? "C" : "B", 0));
     for (let i = 1; i < SHOP_OFFER_COUNT; i++) {
       const o = rollShopOffer(i);
       if (o) offers.push(o);
+    }
+    if (hasClearedTide1(state) && !offers.some((o) => o.kind === "mat")) {
+      const mat = rollShopMatOffer(99);
+      if (mat) offers.push(mat);
     }
     state.shop = { date: key, offers };
   }
@@ -1225,10 +1248,11 @@ export function shopView(state) {
     !state.tutorial.flags?.shopBought;
   return state.shop.offers.map((o) => {
     const isEgg = o.kind === "egg";
+    const isMat = o.kind === "mat";
     return {
       ...o,
       kind: o.kind || "pet",
-      speciesName: isEgg ? o.name : SPECIES[o.species]?.name || o.name,
+      speciesName: isEgg ? o.name : isMat ? o.name : SPECIES[o.species]?.name || o.name,
       bought: !!o.bought,
       cost: tutorialShopPrice(state, o.cost),
       tutorialDeal: tutDeal && isEgg && !o.bought,
@@ -1262,6 +1286,19 @@ export function buyShopOffer(state, offerId) {
     pushLog(state, `商肆購入【${egg.name}】，耗 ${payCost} 靈石。可開始孵化。`);
     advanceTutorialCascade(state);
     return { ok: true, msg: `購入 ${egg.name}（請開始孵化）`, egg };
+  }
+
+  if (offer.kind === "mat") {
+    const matId = offer.matId;
+    const amt = offer.matAmount || 1;
+    if (!matId) return { ok: false, msg: "商品資料錯誤。" };
+    state.stones -= payCost;
+    offer.bought = true;
+    if (!state.materials) state.materials = emptyMaterials();
+    state.materials[matId] = (state.materials[matId] || 0) + amt;
+    const matName = MATERIALS[matId]?.name || matId;
+    pushLog(state, `商肆購入【${matName}】×${amt}，耗 ${payCost} 靈石。`);
+    return { ok: true, msg: `購入 ${matName} ×${amt}` };
   }
 
   if (!state.ranch) state.ranch = [];
