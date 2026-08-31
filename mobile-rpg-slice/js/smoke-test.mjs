@@ -154,6 +154,10 @@ import {
   hasClearedTide1,
   pollProgressionUnlocks,
   PROGRESSION_DUNGEON_LEVEL,
+  canAccessAdvanceSub,
+  progressionQiBreakReady,
+  nextGoalHint,
+  isFreshOnboarding,
 } from "./progression.js";
 
 function assertNavKeepsTab(state, step, tab, panelSub = {}) {
@@ -801,8 +805,20 @@ assert(isBreedLocked({ pets: [makeStarterPet()], ranch: [] }), "breed locked wit
 assert(!isBreedLocked({ pets: [makeStarterPet()], ranch: [makeStarterPet()] }), "breed unlocked with 2 pets");
 
 const progUnlockSt = { pets: [], ranch: [makeStarterPet()], clearedDungeons: {}, progression: { announced: {} } };
-const unlockMsg = pollProgressionUnlocks(progUnlockSt);
-assert(unlockMsg && unlockMsg.includes("出戰"), "progression unlock toast for first pet");
+const unlockMsgs = pollProgressionUnlocks(progUnlockSt);
+assert(unlockMsgs.length && unlockMsgs[0].includes("出戰"), "progression unlock toast for first pet");
+
+const deploySt = { pets: [makeStarterPet()], ranch: [], clearedDungeons: {} };
+assert(!canEnterDungeon(deploySt), "deploy alone does not unlock dungeon");
+
+const advQiSt = { realm: 0, qi: 55, pets: [], ranch: [makeStarterPet()], materials: {} };
+assert(canAccessAdvanceSub(advQiSt), "qi full unlocks advance access");
+assert(!isCultivateSubLocked(advQiSt, "advance"), "advance sub open when qi ready");
+assert(progressionQiBreakReady(advQiSt), "breakthrough CTA ready");
+
+const freshSt = { pets: [], ranch: [], eggs: [makeStarterEgg()], combatsWon: 0, realm: 0 };
+assert(isFreshOnboarding(freshSt), "fresh onboarding detect");
+assert(nextGoalHint(freshSt).includes("牧場"), "fresh goal hints ranch");
 
 assert(TUTORIAL_STARTER_TIDE_DEW >= 3, "starter dew for lv3");
 const trainNavSt = {
@@ -1051,7 +1067,7 @@ const dailyHybrid = BREED_GOALS.find((g) => g.id === "daily_hybrid");
 assert(dailyHybrid?.type === "breed_cross_kind", "daily hybrid cross kind");
 
 const qiSt = {
-  realm: 1,
+  realm: 0,
   qi: 60,
   pets: [],
   ranch: [makeStarterPet()],
@@ -1063,7 +1079,7 @@ if (TUTORIAL_ENABLED) {
 } else {
   assert(!tutorialQiReady(qiSt), "tutorial qi ready off when disabled");
 }
-assert(!isCultivateSubLocked(qiSt, "advance"), "advance unlocked at realm 1");
+assert(!isCultivateSubLocked(qiSt, "advance"), "advance unlocked when qi ready at realm 0");
 
 assert((BREAKTHROUGH_GATES[1].checks || []).some((c) => c.type === "owned_pets"), "realm1 needs pet");
 const brGate1 = breakthroughView({ realm: 0, qi: 60, stones: 30, combatsWon: 0, pets: [], ranch: [makeStarterPet()] });
