@@ -128,6 +128,7 @@ import {
   makeStarterPet,
   makeStarterEgg,
   STARTER_EGG_HATCH_MS,
+  TUTORIAL_EGG_HATCH_MS,
   makeEgg,
   hatchPetFromEgg,
   eggTierInfo,
@@ -160,6 +161,8 @@ import {
   skipTutorial,
   maybeStartLateTutorial,
   tutorialWaivesDungeonChallenge,
+  TUTORIAL_STARTER_TIDE_DEW,
+  TUTORIAL_QI_IDLE_SEC,
 } from "./tutorial.js";
 
 const SAVE_KEY = "void-tide-pets-v25";
@@ -195,7 +198,7 @@ function defaultState() {
   const now = Date.now();
   const starterEgg = makeStarterEgg(now);
   const mats = emptyMaterials();
-  mats.tide_dew = 1;
+  mats.tide_dew = TUTORIAL_STARTER_TIDE_DEW;
   return {
     realm: 0,
     qi: 0,
@@ -318,8 +321,8 @@ function normalizeEggs(list) {
       const t = eggTierInfo(e.tier || "C");
       let startedAt = e.startedAt ?? null;
       let readyAt = e.readyAt ?? null;
-      if (e.source === "starter" && startedAt != null && readyAt != null) {
-        const maxReady = startedAt + STARTER_EGG_HATCH_MS;
+      if ((e.source === "starter" || e.source === "tutorial_shop") && startedAt != null && readyAt != null) {
+        const maxReady = startedAt + TUTORIAL_EGG_HATCH_MS;
         if (readyAt > maxReady) readyAt = maxReady;
       }
       return {
@@ -522,11 +525,11 @@ function spendMaterials(state, mats) {
   if (!state.materials) state.materials = emptyMaterials();
   for (const [id, n] of Object.entries(mats)) {
     if (!n) continue;
-    if ((state.materials[id] || 0) < n) return false;
+    if (Math.floor(state.materials[id] || 0) < n) return false;
   }
   for (const [id, n] of Object.entries(mats)) {
     if (!n) continue;
-    state.materials[id] -= n;
+    state.materials[id] = (state.materials[id] || 0) - n;
   }
   return true;
 }
@@ -545,7 +548,7 @@ export function affordMaterials(state, cost) {
   const items = Object.entries(cost || {})
     .filter(([, n]) => n > 0)
     .map(([id, need]) => {
-      const have = state.materials[id] || 0;
+      const have = Math.floor(state.materials[id] || 0);
       return {
         id,
         name: MATERIALS[id]?.name || id,
@@ -606,12 +609,12 @@ export function tickTrainSite(state, elapsedSec) {
     const mult = trainDropMult(active, drop, todayKey());
     if (drop.mat) {
       const expected = (drop.perSec || 0) * mult * elapsedSec;
-      let n = Math.floor(expected);
-      if (Math.random() < expected - n) n += 1;
-      if (n > 0) {
-        state.materials[drop.mat] = (state.materials[drop.mat] || 0) + n;
-        gained[drop.mat] = (gained[drop.mat] || 0) + n;
-      }
+      // 用累積小數，避免每秒 tick 只有 ~5% 機率出料、新手空等
+      const before = state.materials[drop.mat] || 0;
+      const after = before + expected;
+      state.materials[drop.mat] = after;
+      const gainedN = Math.floor(after) - Math.floor(before);
+      if (gainedN > 0) gained[drop.mat] = (gained[drop.mat] || 0) + gainedN;
     }
     if (drop.feed) {
       const f = (drop.feed || 0) * mult * elapsedSec;
@@ -656,7 +659,7 @@ export function materialsView(state) {
   if (!state.materials) state.materials = emptyMaterials();
   return MATERIAL_IDS.map((id) => ({
     ...MATERIALS[id],
-    count: state.materials[id] || 0,
+    count: Math.floor(state.materials[id] || 0),
   }));
 }
 
@@ -686,7 +689,7 @@ export function tickCultivation(state, now = Date.now()) {
     state.tutorial &&
     !state.tutorial.done &&
     state.tutorial.step === "cultivate_qi" &&
-    (state.daily.idleSec || 0) >= 90
+    (state.daily.idleSec || 0) >= TUTORIAL_QI_IDLE_SEC
   ) {
     state.tutorial.flags = state.tutorial.flags || {};
     state.tutorial.flags.qiIdleDone = true;
@@ -1246,7 +1249,12 @@ export function buyShopOffer(state, offerId) {
     if (state.eggs.length >= 6) return { ok: false, msg: "蛋欄已滿（最多 6）。" };
     state.stones -= payCost;
     offer.bought = true;
-    const egg = makeEgg(offer.eggTier || "C", "shop");
+    const egg = makeEgg(
+      offer.eggTier || "C",
+      state.tutorial && !state.tutorial.done && state.tutorial.step === "shop_egg"
+        ? "tutorial_shop"
+        : "shop"
+    );
     state.eggs.push(egg);
     if (state.tutorial && !state.tutorial.done) {
       state.tutorial.flags.shopBought = true;
@@ -1648,9 +1656,15 @@ export function startHatch(state, eggUid, now = Date.now()) {
   if (!egg) return { ok: false, msg: "找不到這枚蛋。" };
   if (egg.startedAt != null) return { ok: false, msg: "已在孵化中。" };
   const t = eggTierInfo(egg.tier);
+  const tutShort =
+    egg.source === "starter" ||
+    egg.source === "tutorial_shop" ||
+    (state.tutorial && !state.tutorial.done && state.tutorial.step === "hatch_second");
+  const hatchMs = tutShort ? TUTORIAL_EGG_HATCH_MS : t.hatchMs;
   egg.startedAt = now;
-  egg.readyAt = now + t.hatchMs;
-  pushLog(state, `開始孵化【${egg.name || t.name}】（約 ${Math.round(t.hatchMs / 60000)} 分）。`);
+  egg.readyAt = now + hatchMs;
+  const hatchLabel = tutShort ? `${Math.round(hatchMs / 1000)} 秒` : `約 ${Math.round(hatchMs / 60000)} 分`;
+  pushLog(state, `開始孵化【${egg.name || t.name}】（${hatchLabel}）。`);
   if (state.tutorial && !state.tutorial.done) {
     state.tutorial.flags.hatchStarted = true;
   }
