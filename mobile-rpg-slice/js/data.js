@@ -2877,8 +2877,9 @@ export function makeEgg(tier = "C", source = "unknown", now = Date.now()) {
   };
 }
 
-/** 開局教學蛋孵化時間（短於一般 C 蛋，避免開局空等） */
+/** 開局／教學蛋孵化時間（短於一般 C 蛋，避免空等） */
 export const STARTER_EGG_HATCH_MS = 20_000;
+export const TUTORIAL_EGG_HATCH_MS = STARTER_EGG_HATCH_MS;
 
 /** 開局教學蛋（已開始倒數，方便立即看到進度） */
 export function makeStarterEgg(now = Date.now()) {

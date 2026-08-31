@@ -43,7 +43,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "hatch_second",
     title: "孵化擴隊",
-    hint: "等待第二枚蛋孵化完成並領取，擴充牧場。",
+    hint: "第二枚蛋孵化中。等待期間可先「修行 → 練功」，完成後回牧場領取。",
   },
   {
     id: "cultivate_qi",
@@ -105,7 +105,7 @@ export const LATE_TUTORIAL_MIN_REALM = 2;
 /** 教學：首寵升級門檻 */
 export const TUTORIAL_TRAIN_LEVEL = 3;
 /** 教學：靈契步最少掛機秒數（節奏） */
-export const TUTORIAL_QI_IDLE_SEC = 90;
+export const TUTORIAL_QI_IDLE_SEC = 45;
 
 function isLateStep(stepId) {
   return LATE_TUTORIAL_STEPS.includes(stepId);
@@ -264,11 +264,11 @@ function locksForStep(stepId) {
       };
     case "hatch_second":
       return {
-        tabs: { cultivate: true, dungeon: true, codex: true, log: true },
-        cultivateSub: { ...allCult },
+        tabs: { dungeon: true, codex: true, log: true },
+        cultivateSub: { advance: true, shop: true },
         partySub: { fight: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
-        trainSites: true,
+        trainSites: false,
       };
     case "cultivate_qi":
       return {
@@ -533,46 +533,61 @@ export function advanceTutorialIfReady(state) {
   return { advanced: true, unlockMsg, nextId };
 }
 
+function cloneNav(nav) {
+  return { ...nav, panelSub: { ...(nav.panelSub || {}) } };
+}
+
+/** 只喺離開允許 tab 時拉回；已喺允許 tab 內唔強改 sub */
+function clampTutorialTabs(nav, allowedTabs, fallback) {
+  const next = cloneNav(nav);
+  if (!allowedTabs.includes(next.tab)) {
+    next.tab = fallback || allowedTabs[0];
+  }
+  return next;
+}
+
 export function syncTutorialNavigation(state, nav) {
   if (!tutorialActive(state)) return nav;
   const step = state.tutorial.step;
-  const next = { ...nav };
 
-  if (step === "meet_pet" || step === "deploy" || step === "breed_intro") {
-    next.tab = "party";
-    next.panelSub = { ...next.panelSub, party: "ranch" };
-  } else if (step === "hatch_starter" || step === "hatch_second") {
-    if (next.tab !== "cultivate" && next.tab !== "party") {
-      next.tab = "party";
-      next.panelSub = { ...next.panelSub, party: "ranch" };
-    }
-  } else if (step === "train_pet") {
-    // 需要「練功攞料」＋「靈寵升級」兩邊來回；唔好每 render 強鎖修行
-    if (next.tab !== "cultivate" && next.tab !== "party") {
-      next.tab = trainPetCanUpgrade(state) ? "party" : "cultivate";
-      if (next.tab === "cultivate") {
-        next.panelSub = { ...next.panelSub, cultivate: "train" };
-      } else {
-        next.panelSub = { ...next.panelSub, party: "ranch" };
-      }
-    }
-  } else if (step === "dungeon_fight" || step === "dungeon_win") {
-    next.tab = "dungeon";
-    next.panelSub = { ...next.panelSub, dungeon: "field" };
-  } else if (step === "shop_egg") {
-    next.tab = "cultivate";
-    next.panelSub = { ...next.panelSub, cultivate: "shop" };
-  } else if (step === "cultivate_qi") {
-    next.tab = "cultivate";
-    next.panelSub = { ...next.panelSub, cultivate: "train" };
-  } else if (step === "breakthrough") {
-    next.tab = "cultivate";
-    next.panelSub = { ...next.panelSub, cultivate: "advance" };
-  } else if (step === "codex") {
-    next.tab = "codex";
+  switch (step) {
+    case "meet_pet":
+    case "deploy":
+    case "breed_intro":
+      return clampTutorialTabs(nav, ["party"]);
+    case "hatch_starter":
+    case "hatch_second":
+      return clampTutorialTabs(nav, ["party", "cultivate"], "party");
+    case "train_pet":
+      if (nav.tab === "cultivate" || nav.tab === "party") return cloneNav(nav);
+      return clampTutorialTabs(
+        {
+          ...nav,
+          tab: trainPetCanUpgrade(state) ? "party" : "cultivate",
+          panelSub: {
+            ...nav.panelSub,
+            ...(trainPetCanUpgrade(state) ? { party: "ranch" } : { cultivate: "train" }),
+          },
+        },
+        ["cultivate", "party"]
+      );
+    case "dungeon_fight":
+    case "dungeon_win":
+      return clampTutorialTabs(nav, ["dungeon"]);
+    case "shop_egg":
+      return clampTutorialTabs(nav, ["cultivate"]);
+    case "cultivate_qi":
+    case "breakthrough":
+      return clampTutorialTabs(nav, ["cultivate"]);
+    case "codex":
+      return clampTutorialTabs(nav, ["codex"]);
+    case "dispatch":
+      return clampTutorialTabs(nav, ["party"]);
+    case "tactics":
+      return clampTutorialTabs(nav, ["dungeon"]);
+    default:
+      return cloneNav(nav);
   }
-
-  return next;
 }
 
 export function tutorialHighlights(state, nav = {}) {
@@ -627,20 +642,25 @@ export function tutorialHighlights(state, nav = {}) {
       if (tab === "cultivate" && ps.cultivate === "shop") return [{ type: "shop-buy" }];
       if (tab === "cultivate") return [{ type: "panel-sub", group: "cultivate", id: "shop" }];
       return [{ type: "tab", id: "cultivate" }];
-    case "hatch_second":
+    case "hatch_second": {
       if (tab === "party" && ps.party === "ranch") {
         if (eggReady) return [{ type: "claim-hatch" }];
         if (eggIdle) return [{ type: "start-hatch" }];
-        return [];
+        return [{ type: "tab", id: "cultivate" }];
       }
+      if (tab === "cultivate" && ps.cultivate === "train") return [];
+      if (tab === "cultivate") return [{ type: "panel-sub", group: "cultivate", id: "train" }];
       if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
       return [{ type: "tab", id: "party" }];
+    }
     case "cultivate_qi":
       if (tutorialQiReady(state)) {
         if (tab === "cultivate" && ps.cultivate === "advance") return [];
         return [{ type: "panel-sub", group: "cultivate", id: "advance" }];
       }
-      return [];
+      if (tab === "cultivate" && ps.cultivate === "train") return [];
+      if (tab === "cultivate") return [{ type: "panel-sub", group: "cultivate", id: "train" }];
+      return [{ type: "tab", id: "cultivate" }];
     case "breakthrough":
       if (tab === "cultivate" && ps.cultivate === "advance") {
         return [{ type: "act", act: "break" }];
@@ -764,6 +784,8 @@ export function tutorialLiveSnapshot(state) {
   const t = state.tutorial || {};
   const f = t.flags || {};
   const dew = Math.floor(state.materials?.tide_dew || 0);
+  const idleSec = Math.floor(state.daily?.idleSec || 0);
+  const qiIdleLeft = Math.max(0, TUTORIAL_QI_IDLE_SEC - idleSec);
   return [
     t.step,
     t.done,
@@ -780,13 +802,27 @@ export function tutorialLiveSnapshot(state) {
     (state.eggs || []).length,
     dew,
     trainPetCanUpgrade(state) ? 1 : 0,
+    idleSec,
+    qiIdleLeft,
+    Math.floor(state.qi || 0),
   ].join("|");
 }
 
 export function tutorialBannerHint(state) {
   const info = tutorialStepInfo(state);
-  if (info.stepId === "cultivate_qi" && tutorialQiReady(state)) {
-    return "靈契已足，打開「進階」突破！";
+  if (info.stepId === "cultivate_qi") {
+    if (tutorialQiReady(state)) {
+      return "靈契已足，打開「進階」突破！";
+    }
+    const idle = Math.floor(state.daily?.idleSec || 0);
+    const left = Math.max(0, TUTORIAL_QI_IDLE_SEC - idle);
+    const next = nextStageAt(state.realm);
+    if (left > 0) {
+      return `契壇掛機中… 還需約 ${left}s（靈契 ${Math.floor(state.qi)}/${next.need}）。`;
+    }
+    if (state.qi < next.need) {
+      return `掛機時間已足，繼續累積靈契（${Math.floor(state.qi)}/${next.need}）。`;
+    }
   }
   if (info.stepId === "train_pet") {
     const lv = highestOwnedLevel(state);

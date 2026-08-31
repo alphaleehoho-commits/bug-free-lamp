@@ -95,6 +95,7 @@ import {
   upgradeStoneCost,
   makeStarterEgg,
   STARTER_EGG_HATCH_MS,
+  TUTORIAL_EGG_HATCH_MS,
   makeEgg,
   hatchPetFromEgg,
   EGG_TIERS,
@@ -138,7 +139,19 @@ import {
   LATE_TUTORIAL_MIN_REALM,
   trainPetCanUpgrade,
   TUTORIAL_STARTER_TIDE_DEW,
+  TUTORIAL_QI_IDLE_SEC,
+  tutorialBannerHint,
 } from "./tutorial.js";
+
+function assertNavKeepsTab(state, step, tab, panelSub = {}) {
+  state.tutorial = { done: false, step, flags: state.tutorial?.flags || {} };
+  const navIn = {
+    tab,
+    panelSub: { party: "ranch", cultivate: "train", dungeon: "field", codex: "dex", ...panelSub },
+  };
+  const navOut = syncTutorialNavigation(state, navIn);
+  assert(navOut.tab === tab, `${step} keeps tab ${tab}`);
+}
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -757,6 +770,49 @@ const trainHiWait = tutorialHighlights(
   { tab: "cultivate", panelSub: { cultivate: "train" } }
 );
 assert(trainHiWait.length === 0, "train no party push while waiting mats");
+
+assertNavKeepsTab({ ranch: [makeStarterPet()] }, "meet_pet", "party", { party: "ranch" });
+assertNavKeepsTab({ ranch: [makeStarterPet()] }, "deploy", "party", { party: "ranch" });
+assertNavKeepsTab(trainNavSt, "train_pet", "party", { party: "ranch" });
+assertNavKeepsTab(trainNavSt, "train_pet", "cultivate", { cultivate: "train" });
+assertNavKeepsTab(
+  { tutorial: { done: false, step: "hatch_second", flags: {} }, eggs: [] },
+  "hatch_second",
+  "cultivate",
+  { cultivate: "train" }
+);
+
+const hatch2LockSt = { tutorial: { done: false, step: "hatch_second", flags: {} } };
+assert(!isTabLocked(hatch2LockSt, "cultivate"), "hatch_second unlocks cultivate tab");
+
+assert(TUTORIAL_EGG_HATCH_MS === STARTER_EGG_HATCH_MS, "tutorial egg hatch ms");
+assert(TUTORIAL_EGG_HATCH_MS < EGG_TIERS.C.hatchMs, "tutorial egg faster than C tier");
+const tutShopEgg = makeEgg("C", "tutorial_shop");
+const hatch2St = {
+  realm: 0,
+  pets: [],
+  ranch: [makeStarterPet()],
+  eggs: [tutShopEgg],
+  materials: {},
+  stones: 120,
+  log: [],
+  tutorial: { done: false, step: "hatch_second", flags: { shopBought: true } },
+};
+const hatch2Start = startHatch(hatch2St, tutShopEgg.uid);
+assert(hatch2Start.ok, "tutorial second egg start");
+assert(
+  tutShopEgg.readyAt - tutShopEgg.startedAt === TUTORIAL_EGG_HATCH_MS,
+  "tutorial second egg short hatch"
+);
+
+assert(TUTORIAL_QI_IDLE_SEC === 45, "qi idle sec shortened");
+const qiBannerSt = {
+  realm: 0,
+  qi: 0,
+  daily: { idleSec: 10 },
+  tutorial: { done: false, step: "cultivate_qi", flags: {} },
+};
+assert(tutorialBannerHint(qiBannerSt).includes("35s"), "qi banner shows idle countdown");
 
 const tickMatSt = {
   realm: 0,
