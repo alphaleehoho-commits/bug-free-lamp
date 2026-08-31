@@ -141,6 +141,9 @@ import {
   TUTORIAL_STARTER_TIDE_DEW,
   TUTORIAL_QI_IDLE_SEC,
   tutorialBannerHint,
+  tutorialEggReady,
+  tutorialNeedsRanchSub,
+  tutorialTargetSelector,
 } from "./tutorial.js";
 
 function assertNavKeepsTab(state, step, tab, panelSub = {}) {
@@ -813,6 +816,25 @@ const qiBannerSt = {
   tutorial: { done: false, step: "cultivate_qi", flags: {} },
 };
 assert(tutorialBannerHint(qiBannerSt).includes("35s"), "qi banner shows idle countdown");
+
+assert(tutorialNeedsRanchSub("train_pet"), "train_pet needs ranch");
+assert(tutorialTargetSelector({ type: "upgrade" }) === "[data-upgrade]:not([disabled])", "upgrade selector");
+
+const eggReadySt = {
+  eggs: [{ uid: "e1", startedAt: Date.now() - 30_000, readyAt: Date.now() - 1000, tier: "C", name: "潮霧蛋" }],
+  tutorial: { done: false, step: "hatch_starter", flags: {} },
+};
+assert(tutorialEggReady(eggReadySt), "egg ready detect");
+const eggReadyHi = tutorialHighlights(eggReadySt, { tab: "cultivate", panelSub: { cultivate: "train" } });
+assert(eggReadyHi.some((h) => h.type === "tab" && h.id === "party"), "egg ready highlights party from cultivate");
+const eggReadyNav = syncTutorialNavigation(eggReadySt, { tab: "cultivate", panelSub: { cultivate: "train" } });
+assert(eggReadyNav.tab === "party" && eggReadyNav.panelSub.party === "ranch", "egg ready nav to ranch");
+
+const trainDetailHi = tutorialHighlights(
+  { ...trainNavSt, ranch: [makeStarterPet()] },
+  { tab: "party", panelSub: { party: "ranch" }, petDetail: true }
+);
+assert(trainDetailHi.some((h) => h.type === "upgrade"), "train detail highlights upgrade");
 
 const tickMatSt = {
   realm: 0,

@@ -111,6 +111,8 @@ import {
   tutorialStepInfo,
   tutorialWaivesDungeonChallenge,
   tutorialBannerHint,
+  tutorialNeedsRanchSub,
+  tutorialEggReady,
 } from "./tutorial.js";
 
 const app = document.querySelector("#app");
@@ -170,7 +172,7 @@ function ensureSpotlight() {
 }
 
 function isTutorialTargetClick(target) {
-  const targets = findTutorialTargetElements(state, { tab, panelSub });
+  const targets = findTutorialTargetElements(state, tutorialNavCtx());
   return targets.some((el) => el === target || el.contains(target));
 }
 
@@ -193,7 +195,7 @@ function positionTutorialSpotlight(urgent = false) {
     banner?.classList.remove("is-spotlight-active");
     return;
   }
-  const targets = findTutorialTargetElements(state, { tab, panelSub });
+  const targets = findTutorialTargetElements(state, tutorialNavCtx());
   app.querySelectorAll(".tut-glow").forEach((el) => el.classList.remove("tut-glow", "tut-flash-urgent"));
   if (!targets.length) {
     host.hidden = true;
@@ -222,7 +224,7 @@ function positionTutorialSpotlight(urgent = false) {
 }
 
 function tutGlow(spec) {
-  return tutorialGlowClass(state, spec, { tab, panelSub });
+  return tutorialGlowClass(state, spec, tutorialNavCtx());
 }
 
 function refreshTutorialGlow() {
@@ -247,6 +249,25 @@ function patchTutorialBanner() {
 
 /** @type {{ mode: 'list' | 'detail' | 'fuse' | 'breed', uid: string | null, fuseBase: string | null, fuseMats: string[], breedParents: string[] }} */
 let petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+
+function tutorialNavCtx() {
+  return { tab, panelSub, petDetail: petView.mode === "detail" };
+}
+
+function initTutorialNav() {
+  if (!tutorialActive(state)) return;
+  const step = state.tutorial.step;
+  if ((step === "hatch_starter" || step === "hatch_second") && tutorialEggReady(state)) {
+    tab = "party";
+    panelSub = { ...panelSub, party: "ranch" };
+    return;
+  }
+  const nav = syncTutorialNavigation(state, { tab, panelSub });
+  tab = nav.tab;
+  panelSub = nav.panelSub;
+}
+
+initTutorialNav();
 
 /** @type {null | {
  *  events: object[],
@@ -638,6 +659,21 @@ function switchTab(id) {
   if (isTabLocked(state, id)) return;
   tab = id;
   tutMisclickCount = 0;
+  if (tutorialActive(state)) {
+    const step = state.tutorial.step;
+    if (id === "party" && tutorialNeedsRanchSub(step)) {
+      panelSub = { ...panelSub, party: "ranch" };
+    } else if (id === "cultivate") {
+      if (step === "shop_egg") panelSub = { ...panelSub, cultivate: "shop" };
+      else if (step === "breakthrough") panelSub = { ...panelSub, cultivate: "advance" };
+      else if (step === "cultivate_qi" || step === "train_pet" || step === "hatch_starter" || step === "hatch_second") {
+        panelSub = { ...panelSub, cultivate: "train" };
+      }
+    } else if (id === "dungeon") {
+      if (step === "dungeon_fight" || step === "dungeon_win") panelSub = { ...panelSub, dungeon: "field" };
+      else if (step === "tactics") panelSub = { ...panelSub, dungeon: "setup" };
+    }
+  }
   if (id === "codex" && tutorialActive(state) && state.tutorial.step === "codex") {
     const adv = markTutorialFlag(state, "codexVisited");
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
@@ -1611,7 +1647,7 @@ function petsDetailView() {
       <button type="button" data-rename="${escapeHtml(pet.uid)}">命名</button>
     </div>
     <div class="row">
-      <button type="button" class="primary${tutGlow({ type: "act", act: "upgrade" })}" data-upgrade="${escapeHtml(pet.uid)}">升級</button>
+      <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade="${escapeHtml(pet.uid)}">升級</button>
       <button type="button" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升</button>
       <button type="button" data-upgrade-skill="${escapeHtml(pet.uid)}" ${skillMaxed ? "disabled" : ""}>技能</button>
       <button type="button" data-temper-oil="${escapeHtml(pet.uid)}" ${(state.materials?.temper_oil || 0) < 1 ? "disabled" : ""}>洗性格${(state.materials?.temper_oil || 0) > 0 ? `（${state.materials.temper_oil}）` : ""}</button>
