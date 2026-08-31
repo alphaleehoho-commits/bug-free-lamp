@@ -224,6 +224,10 @@ function onTutorialMisclick(ev) {
     return;
   }
   tutMisclickCount += 1;
+  if (tutorialCollapsed) {
+    tutorialCollapsed = false;
+    render();
+  }
   if (tutMisclickCount >= 2) positionTutorialSpotlight(true);
 }
 
