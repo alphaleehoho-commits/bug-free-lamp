@@ -152,6 +152,8 @@ import {
   TRAIN_FOCUS_BONUS,
   TRAIN_DAILY_SPOT_BONUS,
   pickDailyTrainSpotlight,
+  DAILY_ALL_CLEAR_BONUS,
+  DUNGEON_SWEEP_COUNTS,
 } from "./data.js";
 import {
   normalizeTutorial,
@@ -163,6 +165,7 @@ import {
   skipTutorial,
   maybeStartLateTutorial,
   tutorialWaivesDungeonChallenge,
+  tutorialActive,
   TUTORIAL_STARTER_TIDE_DEW,
   TUTORIAL_QI_IDLE_SEC,
 } from "./tutorial.js";
@@ -191,6 +194,8 @@ function emptyDaily(now = Date.now()) {
     idleSec: 0,
     /** 今日已關閉每日儀表板 */
     hubDismissed: false,
+    /** 今日全清獎已領 */
+    allClearClaimed: false,
   };
 }
 
@@ -752,6 +757,7 @@ function ensureDaily(dailyOrState, now = Date.now()) {
     }
     if (!state.daily.claimed) state.daily.claimed = {};
     if (state.daily.hubDismissed == null) state.daily.hubDismissed = false;
+    if (state.daily.allClearClaimed == null) state.daily.allClearClaimed = false;
     return state.daily;
   }
   const daily = dailyOrState;
@@ -770,6 +776,7 @@ function ensureDaily(dailyOrState, now = Date.now()) {
       ...(daily.progress || {}),
     },
     claimed: { ...(daily.claimed || {}) },
+    allClearClaimed: !!daily.allClearClaimed,
     idleSec: daily.idleSec || 0,
   };
 }
@@ -809,6 +816,61 @@ export function claimDaily(state, questId) {
   pushLog(state, `每日任務【${q.name}】領獎：${bits.join("／")}。`);
   checkAchievements(state);
   return { ok: true, msg: `領取 ${bits.join("／")}` };
+}
+
+export function dailyAllClearView(state) {
+  ensureDaily(state);
+  const dailies = dailyView(state);
+  const claimed = dailies.filter((q) => q.claimed).length;
+  const claimable = dailies.filter((q) => q.done && !q.claimed).length;
+  const allClaimed = dailies.length > 0 && dailies.every((q) => q.claimed);
+  return {
+    total: dailies.length,
+    claimed,
+    done: dailies.filter((q) => q.done).length,
+    claimable,
+    allClaimed,
+    allClearClaimed: !!state.daily.allClearClaimed,
+    canClaimAllClear: allClaimed && !state.daily.allClearClaimed,
+  };
+}
+
+export function claimAllDailies(state) {
+  ensureDaily(state);
+  const claimable = dailyView(state).filter((q) => q.done && !q.claimed);
+  if (!claimable.length) return { ok: false, msg: "沒有可領取的每日任務。" };
+  let n = 0;
+  const msgs = [];
+  for (const q of claimable) {
+    const r = claimDaily(state, q.id);
+    if (r.ok) {
+      n += 1;
+      msgs.push(r.msg);
+    }
+  }
+  return { ok: n > 0, msg: `一鍵領取 ${n} 項每日任務`, claimed: n };
+}
+
+export function claimDailyAllClear(state) {
+  const view = dailyAllClearView(state);
+  if (!view.allClaimed) return { ok: false, msg: "需先領完今日全部每日任務。" };
+  if (view.allClearClaimed) return { ok: false, msg: "今日全清獎已領取。" };
+  state.daily.allClearClaimed = true;
+  applyReward(state, DAILY_ALL_CLEAR_BONUS);
+  if (!state.eggs) state.eggs = [];
+  const eggAdded = state.eggs.length < 6;
+  if (eggAdded) {
+    state.eggs.push(makeEgg("C", "daily_all_clear"));
+  }
+  const bits = [];
+  if (DAILY_ALL_CLEAR_BONUS.stones) bits.push(`${DAILY_ALL_CLEAR_BONUS.stones}石`);
+  if (DAILY_ALL_CLEAR_BONUS.materials?.breed_ticket) {
+    bits.push(`催生符×${DAILY_ALL_CLEAR_BONUS.materials.breed_ticket}`);
+  }
+  if (eggAdded) bits.push("潮霧蛋×1");
+  pushLog(state, `每日全清獎：${bits.join("／")}。`);
+  checkAchievements(state);
+  return { ok: true, msg: `全清獎：${bits.join("／")}` };
 }
 
 export function registerBestiary(state, pet) {
@@ -2326,7 +2388,8 @@ function spawnWaveFoes(wave, dailyMod = null, challenge = null) {
  * 波次：雜兵 → 精英 → BOSS；敵人可施技能；BOSS 可雙動。
  * 含關卡條件獎、雜交試煉、首通、冷卻。
  */
-export function runDungeon(state, dungeonId) {
+export function runDungeon(state, dungeonId, opts = {}) {
+  const { sweepInternal = false, deferEncounter = false } = opts;
   const d = resolveDungeon(state, dungeonId);
   if (!d) return { ok: false, msg: "秘境不存在。" };
   if (state.realm < d.needRealm) {
@@ -2336,7 +2399,7 @@ export function runDungeon(state, dungeonId) {
   if (!state.clearedDungeons) state.clearedDungeons = {};
   const now = Date.now();
   const readyAt = state.dungeonReadyAt[dungeonId] || 0;
-  if (readyAt > now) {
+  if (!sweepInternal && readyAt > now) {
     const sec = Math.ceil((readyAt - now) / 1000);
     return { ok: false, msg: `秘境冷卻中（${sec}s）。` };
   }
@@ -2784,18 +2847,23 @@ export function runDungeon(state, dungeonId) {
     say("戰鬥逾時，撤退。");
   }
 
-  // 冷卻：無論勝負都進入（防無限刷）
-  const cd = d.cooldownMs || 0;
-  if (cd > 0) state.dungeonReadyAt[dungeonId] = Date.now() + cd;
+  // 冷卻：無論勝負都進入（防無限刷）；掃蕩批次內跳過，由 sweep 結束後統一套用
+  if (!sweepInternal) {
+    const cd = d.cooldownMs || 0;
+    if (cd > 0) state.dungeonReadyAt[dungeonId] = Date.now() + cd;
+  }
 
-  const encResult = maybeEncounterAfterDungeon(state, dungeonId, won);
-  const encounter = encResult.encounter;
-  if (encounter) {
-    say(
-      `潮霧中浮現野生${encounter.name}（${encounter.kind}·${encounter.elementName}·${encounter.personalityName}），成功率約 ${Math.round(encounter.bondRate * 100)}%——可至靈寵頁嘗試契約。`
-    );
-  } else if (encResult.blocked) {
-    say(`待契約欄已滿（${PENDING_BOND_MAX}），未再遇見新靈。`);
+  let encounter = null;
+  if (!deferEncounter) {
+    const encResult = maybeEncounterAfterDungeon(state, dungeonId, won);
+    encounter = encResult.encounter;
+    if (encounter) {
+      say(
+        `潮霧中浮現野生${encounter.name}（${encounter.kind}·${encounter.elementName}·${encounter.personalityName}），成功率約 ${Math.round(encounter.bondRate * 100)}%——可至靈寵頁嘗試契約。`
+      );
+    } else if (encResult.blocked) {
+      say(`待契約欄已滿（${PENDING_BOND_MAX}），未再遇見新靈。`);
+    }
   }
 
   const lines = transcript.slice(0, 80);
@@ -2878,6 +2946,98 @@ export function runDungeon(state, dungeonId) {
     conditionsMet: conditionResults.filter((c) => c.ok).map((c) => c.id),
     rewardBreakdown,
     unlockedSites,
+    msg,
+  };
+}
+
+/** 已通關秘境是否可掃蕩（教學期禁用） */
+export function canDungeonSweep(state, dungeonId) {
+  const d = resolveDungeon(state, dungeonId);
+  if (!d) return { ok: false, reason: "秘境不存在。" };
+  if (tutorialActive(state)) return { ok: false, reason: "教學期間請單次進攻。" };
+  if (state.realm < d.needRealm) {
+    return { ok: false, reason: `需${stageAt(d.needRealm).name}` };
+  }
+  if (!state.pets?.length) return { ok: false, reason: "請先派出靈寵。" };
+  if (!state.clearedDungeons?.[dungeonId]) return { ok: false, reason: "需先通關本層。" };
+  const st = dungeonStatus(state, dungeonId);
+  if (st?.cooldownLeftMs > 0) {
+    const sec = Math.ceil(st.cooldownLeftMs / 1000);
+    return { ok: false, reason: `冷卻中（${sec}s）` };
+  }
+  return { ok: true };
+}
+
+function aggregateSweepRewards(results) {
+  let totalStones = 0;
+  let totalScrap = 0;
+  let wins = 0;
+  let losses = 0;
+  const perRun = [];
+  for (const r of results) {
+    if (r.won) wins += 1;
+    else losses += 1;
+    const bd = r.rewardBreakdown;
+    const stones = bd?.totalStones || 0;
+    const scrap = bd?.base?.scrap || 0;
+    totalStones += stones;
+    totalScrap += scrap;
+    perRun.push({ won: r.won, stones, scrap });
+  }
+  return { totalStones, totalScrap, wins, losses, runs: results.length, perRun };
+}
+
+/**
+ * 已通關層連刷 N 次：批次結算，掃蕩期間跳過 CD／遇寵，結束後只觸發 1 次契約遭遇。
+ */
+export function runDungeonSweep(state, dungeonId, count) {
+  const check = canDungeonSweep(state, dungeonId);
+  if (!check.ok) return { ok: false, msg: check.reason };
+  const allowed = DUNGEON_SWEEP_COUNTS;
+  const n = allowed.includes(count) ? count : allowed[allowed.length - 1];
+  const results = [];
+  for (let i = 0; i < n; i += 1) {
+    const r = runDungeon(state, dungeonId, { sweepInternal: true, deferEncounter: true });
+    if (!r.ok) {
+      if (results.length === 0) return r;
+      break;
+    }
+    results.push(r);
+  }
+  if (!results.length) return { ok: false, msg: "掃蕩失敗。" };
+  const d = resolveDungeon(state, dungeonId);
+  const cd = d?.cooldownMs || 0;
+  if (cd > 0) state.dungeonReadyAt[dungeonId] = Date.now() + cd;
+  const agg = aggregateSweepRewards(results);
+  let encounter = null;
+  let encounterBlocked = false;
+  if (agg.wins > 0) {
+    const encResult = maybeEncounterAfterDungeon(state, dungeonId, true);
+    encounter = encResult.encounter;
+    encounterBlocked = encResult.blocked;
+    if (encounter) {
+      pushLog(
+        state,
+        `掃蕩後潮霧遇見【${encounter.name}】（${encounter.kind}·${encounter.elementName}）— 可至待契嘗試結契。`
+      );
+    }
+  }
+  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 合計 +${agg.totalStones} 石`;
+  pushLog(state, msg);
+  return {
+    ok: true,
+    won: agg.wins > 0,
+    sweep: true,
+    count: agg.runs,
+    wins: agg.wins,
+    losses: agg.losses,
+    totalStones: agg.totalStones,
+    totalScrap: agg.totalScrap,
+    perRun: agg.perRun,
+    encounter,
+    encounterBlocked,
+    dungeonId,
+    dungeonName: d?.name || dungeonId,
     msg,
   };
 }
@@ -3135,10 +3295,15 @@ export function dailyHubView(state, now = Date.now()) {
   const offline = state.offlineHint;
   const idleSec = state.daily?.idleSec || 0;
   const idleDailyCap = 180;
+  const allClear = dailyAllClearView(state);
   return {
     shouldShow: !state.daily.hubDismissed,
     dailyDone,
     dailyTotal: dailies.length,
+    dailyClaimed: allClear.claimed,
+    dailyClaimable: allClear.claimable,
+    allClearClaimed: allClear.allClearClaimed,
+    canClaimAllClear: allClear.canClaimAllClear,
     eggTimers,
     eggReady,
     dispatchReady,

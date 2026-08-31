@@ -4155,6 +4155,15 @@ export const DAILY_QUESTS = [
   },
 ];
 
+/** 7 個每日任務全領後的全清獎（每日一次） */
+export const DAILY_ALL_CLEAR_BONUS = {
+  stones: 60,
+  materials: { breed_ticket: 1 },
+};
+
+/** 已通關秘境掃蕩可選次數 */
+export const DUNGEON_SWEEP_COUNTS = [1, 5, 10, 20];
+
 /**
  * 求道目標板：三條長線（收集／育成／挑戰）
  * need 為累積門檻；領獎後進度保留，可領下一檔

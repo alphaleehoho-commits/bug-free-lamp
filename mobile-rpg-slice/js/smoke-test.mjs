@@ -103,10 +103,18 @@ import {
   hatchPetFromEgg,
   EGG_TIERS,
   eggTierInfo,
+  DAILY_ALL_CLEAR_BONUS,
+  DUNGEON_SWEEP_COUNTS,
+  todayKey,
 } from "./data.js";
 import {
   affordMaterials,
   runDungeon,
+  runDungeonSweep,
+  canDungeonSweep,
+  claimAllDailies,
+  claimDailyAllClear,
+  dailyAllClearView,
   buyShopOffer,
   tryBondPending,
   ensureShop,
@@ -1047,8 +1055,87 @@ const tacticsNav = syncTutorialNavigation(tacticsSt, {
 });
 assert(tacticsNav.panelSub.dungeon === "setup", "tactics sync forces setup sub");
 
+/* Week A: dungeon sweep + daily all-clear */
+assert(DUNGEON_SWEEP_COUNTS.includes(10), "sweep counts include 10");
+assert(DAILY_ALL_CLEAR_BONUS.stones >= 1, "all clear bonus defined");
+assert(!canDungeonSweep(combatSt, "tide_1").ok, "no sweep before clear");
+const sweepSt = {
+  realm: 5,
+  qi: 99999,
+  stones: 9999,
+  scrap: 99,
+  dust: 99,
+  feed: 99,
+  pets: [combatFox],
+  ranch: [],
+  pending: [],
+  clearedDungeons: { tide_1: true },
+  dungeonReadyAt: {},
+  dungeonDaily: null,
+  master: combatSt.master,
+  tactics: "balanced",
+  formation: "balanced",
+  stats: {},
+  bestiary: {},
+  tideSeals: 0,
+  log: [],
+  combatsWon: 0,
+  winStreak: 0,
+  tutorial: { done: true, step: "complete", flags: {} },
+};
+assert(canDungeonSweep(sweepSt, "tide_1").ok, "sweep after clear");
+const sweepRes = runDungeonSweep(sweepSt, "tide_1", 5);
+assert(sweepRes.ok && sweepRes.sweep && sweepRes.count === 5, "sweep 5 runs");
+assert(sweepRes.wins >= 1 && sweepRes.totalStones > 0, "sweep aggregate stones");
+const dayKey = todayKey();
+const dailyAllSt = {
+  realm: 2,
+  qi: 0,
+  stones: 100,
+  scrap: 0,
+  feed: 0,
+  dust: 0,
+  pets: [combatFox],
+  ranch: [],
+  eggs: [],
+  pending: [],
+  clearedDungeons: {},
+  daily: {
+    date: dayKey,
+    idleSec: 0,
+    progress: {},
+    claimed: {},
+    allClearClaimed: false,
+    hubDismissed: false,
+  },
+  stats: {},
+  log: [],
+};
+for (const q of DAILY_QUESTS) {
+  dailyAllSt.daily.progress[q.id] = q.need;
+  dailyAllSt.daily.claimed[q.id] = true;
+}
+const acView = dailyAllClearView(dailyAllSt);
+assert(acView.allClaimed && acView.canClaimAllClear, "all clear ready");
+const acRes = claimDailyAllClear(dailyAllSt);
+assert(acRes.ok && dailyAllSt.daily.allClearClaimed, "claimed all clear");
+const claimSt = {
+  ...dailyAllSt,
+  daily: {
+    date: dayKey,
+    idleSec: 0,
+    progress: Object.fromEntries(DAILY_QUESTS.map((q) => [q.id, q.need])),
+    claimed: {},
+    allClearClaimed: false,
+    hubDismissed: false,
+  },
+};
+const allRes = claimAllDailies(claimSt);
+assert(allRes.ok && allRes.claimed === DAILY_QUESTS.length, "claim all dailies");
+
 const __dir = dirname(fileURLToPath(import.meta.url));
 const uiSrc = readFileSync(join(__dir, "ui.js"), "utf8");
+assert(uiSrc.includes("data-sweep"), "ui sweep bind");
 assert(uiSrc.includes("function wrapStage"), "ui has wrapStage layout helper");
 assert(uiSrc.includes("tabs-bottom"), "ui has bottom tab bar");
 assert(uiSrc.includes("statsSheetHtml"), "ui has stats resource sheet");
