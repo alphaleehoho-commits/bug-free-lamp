@@ -66,7 +66,9 @@ import {
   evalPathQuest,
   ACHIEVEMENTS,
   todayKey,
+  yesterdayKey,
   OFFLINE_HINT_SEC,
+  LOGIN_STREAK_REWARDS,
   rarityInfo,
   RARITY_MAX,
   SPECIES,
@@ -187,7 +189,13 @@ function emptyDaily(now = Date.now()) {
     claimed: {},
     /** 累積掛機秒數（當日） */
     idleSec: 0,
+    /** 今日已關閉每日儀表板 */
+    hubDismissed: false,
   };
+}
+
+function emptyLoginStreak(now = Date.now()) {
+  return { streakDay: 0, lastLoginDate: "", claimedDate: "" };
 }
 
 function emptyPathQuests() {
@@ -258,6 +266,7 @@ function defaultState() {
     dispatches: [],
     tideSeals: 0,
     tutorial: { done: false, step: "hatch_starter", flags: {} },
+    loginStreak: emptyLoginStreak(now),
   };
 }
 
@@ -477,6 +486,9 @@ export function loadState() {
       winStreak: parsed.winStreak || 0,
       dispatches: Array.isArray(parsed.dispatches) ? parsed.dispatches : [],
       tideSeals: parsed.tideSeals || 0,
+      loginStreak: parsed.loginStreak?.lastLoginDate
+        ? { ...emptyLoginStreak(), ...parsed.loginStreak }
+        : emptyLoginStreak(),
       tutorial: parsed.tutorial,
     };
     normalizeTutorial(merged);
@@ -665,6 +677,7 @@ export function materialsView(state) {
 
 export function tickCultivation(state, now = Date.now()) {
   ensureDaily(state);
+  ensureLoginStreak(state, now);
   const elapsed = Math.min(Math.max(0, now - state.lastTick) / 1000, 3600 * 8);
   const qiBefore = state.qi;
   const feedBefore = state.feed || 0;
@@ -738,6 +751,7 @@ function ensureDaily(dailyOrState, now = Date.now()) {
       state.daily.progress = { idle: 0, dungeon: 0, bond: 0, breed: 0, win: 0, dispatch: 0, fuse: 0 };
     }
     if (!state.daily.claimed) state.daily.claimed = {};
+    if (state.daily.hubDismissed == null) state.daily.hubDismissed = false;
     return state.daily;
   }
   const daily = dailyOrState;
@@ -2966,6 +2980,178 @@ export function useTemperOil(state, uid) {
   registerBestiary(state, pet);
   pushLog(state, `【${displayPetName(pet)}】使用性格洗劑：${oldPe?.name || oldId} → ${newPe.name}。`);
   return { ok: true, msg: `${pet.name} 性格 → ${newPe.name}` };
+}
+
+function ensureLoginStreak(state, now = Date.now()) {
+  if (!state.loginStreak) state.loginStreak = emptyLoginStreak(now);
+  const ls = state.loginStreak;
+  const today = todayKey(now);
+  if (ls.lastLoginDate === today) return ls;
+  const yesterday = yesterdayKey(now);
+  if (ls.lastLoginDate === yesterday) {
+    ls.streakDay = Math.min(7, (ls.streakDay || 0) + 1);
+  } else {
+    ls.streakDay = 1;
+  }
+  ls.lastLoginDate = today;
+  return ls;
+}
+
+export function loginStreakView(state, now = Date.now()) {
+  ensureLoginStreak(state, now);
+  const ls = state.loginStreak;
+  const today = todayKey(now);
+  const day = Math.max(1, ls.streakDay || 1);
+  const reward = LOGIN_STREAK_REWARDS[(day - 1) % LOGIN_STREAK_REWARDS.length];
+  return {
+    day,
+    reward,
+    canClaim: ls.claimedDate !== today,
+    claimedToday: ls.claimedDate === today,
+    rewards: LOGIN_STREAK_REWARDS,
+  };
+}
+
+export function claimLoginStreak(state, now = Date.now()) {
+  ensureLoginStreak(state, now);
+  const ls = state.loginStreak;
+  const today = todayKey(now);
+  if (ls.claimedDate === today) return { ok: false, msg: "今日登入獎已領取。" };
+  const view = loginStreakView(state, now);
+  const entry = view.reward;
+  applyReward(state, entry.reward);
+  if (entry.reward.eggTier) {
+    if (!state.eggs) state.eggs = [];
+    if (state.eggs.length < 6) {
+      state.eggs.push(makeEgg(entry.reward.eggTier, "login_streak"));
+    } else {
+      state.stones = (state.stones || 0) + 50;
+    }
+  }
+  ls.claimedDate = today;
+  pushLog(state, `連續登入第 ${view.day} 日【${entry.name}】獎勵已領取。`);
+  return { ok: true, msg: `第 ${view.day} 日登入獎【${entry.name}】已領！` };
+}
+
+function goalNavForBreakthroughItem(item) {
+  if (item.kind === "qi" || item.id?.startsWith("cost_")) {
+    return { tab: "cultivate", sub: item.kind === "qi" ? "train" : "advance" };
+  }
+  const label = item.label || "";
+  if (label.includes("秘境") || label.includes("勝場") || label.includes("通關")) {
+    return { tab: "dungeon", sub: "field" };
+  }
+  if (label.includes("繁殖") || label.includes("融合") || label.includes("代寵") || label.includes("雜交")) {
+    return { tab: "party", sub: "ranch" };
+  }
+  if (label.includes("圖鑑")) {
+    return { tab: "codex", sub: "dex" };
+  }
+  if (label.includes("契約")) {
+    return { tab: "party", sub: "bond" };
+  }
+  return { tab: "cultivate", sub: "advance" };
+}
+
+function goalNavForPathQuest(q) {
+  if (q.type === "combats" || q.type === "cleared") return { tab: "dungeon", sub: "field" };
+  if (q.type === "bestiary") return { tab: "codex", sub: "dex" };
+  if (q.type === "breeds" || q.type === "hybrid_owned" || q.type === "min_gen" || q.type === "tertiary_owned") {
+    return { tab: "party", sub: "ranch" };
+  }
+  return { tab: "codex", sub: "path" };
+}
+
+/** 下一個短期目標（突破門檻或求道） */
+export function nextGoalView(state) {
+  const bt = breakthroughView(state);
+  if (!bt.ready) {
+    const pending = bt.items.filter((i) => !i.ok);
+    if (pending.length) {
+      const first = pending[0];
+      const nav = goalNavForBreakthroughItem(first);
+      return {
+        kind: "breakthrough",
+        title: `突破【${bt.next.name}】`,
+        label: first.label,
+        progress: first.progress,
+        targetName: bt.next.name,
+        ...nav,
+      };
+    }
+  }
+  for (const q of PATH_QUESTS) {
+    if (state.pathQuests?.claimed?.[q.id]) continue;
+    const ev = evalPathQuest(state, q);
+    if (!ev.ok) {
+      const nav = goalNavForPathQuest(q);
+      return {
+        kind: "path",
+        title: `求道 · ${q.trackName}`,
+        label: q.name,
+        progress: ev.progress,
+        desc: q.desc,
+        questId: q.id,
+        ...nav,
+      };
+    }
+  }
+  return null;
+}
+
+export function dismissDailyHub(state) {
+  ensureDaily(state);
+  state.daily.hubDismissed = true;
+  return state;
+}
+
+/** 每日登入儀表板資料 */
+export function dailyHubView(state, now = Date.now()) {
+  ensureDaily(state, now);
+  ensureLoginStreak(state, now);
+  const dailies = dailyView(state);
+  const dailyDone = dailies.filter((q) => q.done).length;
+  const eggs = eggsView(state, now);
+  const eggTimers = eggs
+    .filter((e) => e.hatching && !e.ready)
+    .map((e) => ({
+      tier: e.name || e.label,
+      secLeft: e.leftSec,
+    }));
+  const eggReady = eggs.filter((e) => e.ready).length;
+  const dispatchData = dispatchView(state);
+  const dispatchActive = dispatchData.active || [];
+  const dispatchReady = dispatchActive.filter((d) => d.ready).length;
+  const dispatchTimers = dispatchActive
+    .filter((d) => !d.ready)
+    .map((d) => ({
+      name: d.missionName,
+      secLeft: Math.ceil(d.leftMs / 1000),
+    }));
+  const dailyMod = dungeonDailyView(state);
+  const spotlight = trainDailySpotlightView(todayKey(now));
+  const streak = loginStreakView(state, now);
+  const nextGoal = nextGoalView(state);
+  const offline = state.offlineHint;
+  const idleSec = state.daily?.idleSec || 0;
+  const idleDailyCap = 180;
+  return {
+    shouldShow: !state.daily.hubDismissed,
+    dailyDone,
+    dailyTotal: dailies.length,
+    eggTimers,
+    eggReady,
+    dispatchReady,
+    dispatchTimers,
+    dailyModLabel: dailyMod?.label || null,
+    spotlightName: spotlight?.siteName || null,
+    streak,
+    nextGoal,
+    offline,
+    idleSec,
+    idleDailyCap,
+    idleDailyDone: idleSec >= idleDailyCap,
+  };
 }
 
 export function pathQuestsView(state) {

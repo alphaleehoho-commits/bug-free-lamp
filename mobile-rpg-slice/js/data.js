@@ -4484,6 +4484,21 @@ export const ACHIEVEMENTS = [
   },
 ];
 
+/** 7 日登入連續獎勵（cycle） */
+export const LOGIN_STREAK_REWARDS = [
+  { day: 1, name: "初潮", reward: { stones: 30, feed: 5 } },
+  { day: 2, name: "雙契", reward: { stones: 35, feed: 8 } },
+  { day: 3, name: "三潮", reward: { stones: 40, dust: 6, materials: { tide_dew: 2 } } },
+  { day: 4, name: "暗潮蛋", reward: { stones: 45, eggTier: "B" } },
+  { day: 5, name: "五潮", reward: { stones: 50, scrap: 1, materials: { coral_shard: 2 } } },
+  { day: 6, name: "血脈", reward: { stones: 55, materials: { breed_ticket: 1, blood_catalyst: 1 } } },
+  { day: 7, name: "心核", reward: { stones: 80, eggTier: "A", materials: { mist_silk: 2 } } },
+];
+
+export function yesterdayKey(now = Date.now()) {
+  return todayKey(now - 86400000);
+}
+
 export function todayKey(now = Date.now()) {
   const d = new Date(now);
   const y = d.getFullYear();
