@@ -88,7 +88,13 @@ import {
   useBreedTicket,
   useBloodCatalyst,
   useTemperOil,
+  nextGoalView,
+  dailyHubView,
+  dismissDailyHub,
+  loginStreakView,
+  claimLoginStreak,
 } from "./engine.js";
+import { petIconHtml, petIconFromPet } from "./pet-icons.js";
 import {
   tutorialActive,
   tutorialBannerHtml,
@@ -137,6 +143,36 @@ let pwaDismissed = localStorage.getItem("void-tide-pwa-dismiss") === "1";
 let tutorialSnapCache = "";
 let tutMisclickCount = 0;
 let tutSpotlightEl = null;
+
+const COMBAT_PREFS_KEY = "void-tide-combat-prefs";
+
+function loadCombatPrefs() {
+  try {
+    const raw = localStorage.getItem(COMBAT_PREFS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* ignore */
+  }
+  return { fastMode: true };
+}
+
+function saveCombatPrefs(prefs) {
+  localStorage.setItem(COMBAT_PREFS_KEY, JSON.stringify(prefs));
+}
+
+let combatPrefs = loadCombatPrefs();
+
+function isFarmCombat(result) {
+  if (!result?.won) return false;
+  const fc = result.rewardBreakdown?.firstClear;
+  return !(fc && (fc.stones || fc.scrap));
+}
+
+function combatSpeedMult(result) {
+  if (tutorialActive(state)) return 1;
+  if (combatPrefs.fastMode && isFarmCombat(result)) return 0.12;
+  return 1;
+}
 let flashHostEl = null;
 
 function ensureFlashHost() {
@@ -286,33 +322,51 @@ let playback = null;
 
 const LINE_MS = 520;
 
-function playbackDelayMs(event) {
-  if (!event) return LINE_MS;
-  if (event.type === "wave") return 880;
-  if (event.type === "round") return 680;
-  if (event.type === "heal") return 540;
-  if (event.type === "strike") {
-    if (event.ko) return 760;
-    if (event.skillName) return 580;
-    if (event.elemTag) return 520;
-    return 460;
-  }
-  return 380;
+function playbackDelayMs(event, speedMult = 1) {
+  if (!event) return Math.round(LINE_MS * speedMult);
+  let base = LINE_MS;
+  if (event.type === "wave") base = 880;
+  else if (event.type === "round") base = 680;
+  else if (event.type === "heal") base = 540;
+  else if (event.type === "strike") {
+    if (event.ko) base = 760;
+    else if (event.skillName) base = 580;
+    else if (event.elemTag) base = 520;
+    else base = 460;
+  } else base = 380;
+  return Math.max(40, Math.round(base * speedMult));
 }
 
-function buildSkipSummary(events) {
+function buildSkipSummary(events, result) {
   const list = events || [];
   let strikes = 0;
   let heals = 0;
   let kos = 0;
   let adv = 0;
+  const dmgByActor = new Map();
   for (const e of list) {
     if (e.type === "strike") {
       strikes += 1;
       if (e.ko) kos += 1;
       if (e.elemTag === "克制") adv += 1;
+      if (e.actorUid && e.dmg) {
+        dmgByActor.set(e.actorUid, (dmgByActor.get(e.actorUid) || 0) + e.dmg);
+      }
     } else if (e.type === "heal") heals += 1;
   }
+  let mvpName = null;
+  let mvpDmg = 0;
+  for (const [uid, dmg] of dmgByActor) {
+    if (dmg > mvpDmg) {
+      mvpDmg = dmg;
+      const ally = result?.combatStart?.allies?.find((u) => u.uid === uid);
+      mvpName = ally?.name || null;
+    }
+  }
+  const lootBits = [];
+  const bd = result?.rewardBreakdown;
+  if (bd?.totalStones) lootBits.push(`+${bd.totalStones} 靈石`);
+  if (bd?.base?.scrap) lootBits.push(`+${bd.base.scrap} 碎片`);
   return {
     strikes,
     heals,
@@ -320,6 +374,9 @@ function buildSkipSummary(events) {
     adv,
     rounds: list.filter((e) => e.type === "round").length,
     waves: list.filter((e) => e.type === "wave").length,
+    mvpName,
+    mvpDmg,
+    lootBits,
   };
 }
 
@@ -329,7 +386,18 @@ function skipSummaryHtml(summary) {
   if (summary.heals) bits.push(`${summary.heals} 治`);
   if (summary.kos) bits.push(`${summary.kos} 破`);
   if (summary.adv) bits.push(`${summary.adv} 克`);
-  return `<p class="skip-summary">跳過戰報 · ${escapeHtml(bits.join(" · "))}</p>`;
+  const mvpLine = summary.mvpName
+    ? `<p class="skip-mvp">MVP · ${escapeHtml(summary.mvpName)}（${summary.mvpDmg} 傷）</p>`
+    : "";
+  const lootLine =
+    summary.lootBits?.length
+      ? `<p class="skip-loot">${escapeHtml(summary.lootBits.join(" · "))}</p>`
+      : "";
+  return `<div class="skip-summary-card">
+    <p class="skip-summary">跳過戰報 · ${escapeHtml(bits.join(" · "))}</p>
+    ${mvpLine}
+    ${lootLine}
+  </div>`;
 }
 
 function initCombatHp(result) {
@@ -942,7 +1010,7 @@ function schedulePlaybackStep() {
     finishPlayback();
     return;
   }
-  const delay = playbackDelayMs(playback.events[playback.index]);
+  const delay = playbackDelayMs(playback.events[playback.index], playback.speedMult || 1);
   playback.timer = window.setTimeout(() => {
     playback.timer = null;
     advancePlayback();
@@ -983,6 +1051,8 @@ function startPlayback(result) {
     done: false,
     skipped: false,
     skipSummary: null,
+    speedMult: combatSpeedMult(result),
+    isFarm: isFarmCombat(result),
     unitHp: hpState.hp,
     allyUnits: hpState.allies,
     foeUnits: hpState.foes,
@@ -995,6 +1065,15 @@ function startPlayback(result) {
     waveLabel: null,
     currentRound: 0,
   };
+  if (playback.isFarm && combatPrefs.fastMode && !tutorialActive(state)) {
+    for (const e of events) applyCombatEvent(e, playback);
+    playback.index = events.length;
+    playback.skipped = true;
+    playback.skipSummary = buildSkipSummary(events, result);
+    render();
+    finishPlayback();
+    return;
+  }
   render();
   schedulePlaybackStep();
 }
@@ -1011,7 +1090,7 @@ function skipPlayback() {
     applyCombatEvent(event, playback);
     playback.index += 1;
   }
-  playback.skipSummary = buildSkipSummary(playback.events);
+  playback.skipSummary = buildSkipSummary(playback.events, playback.result);
   playback.shown = [];
   finishPlayback();
   render();
@@ -1048,6 +1127,7 @@ function render() {
 
     ${offlineBanner()}
     ${installBanner()}
+    ${nextGoalChipHtml()}
 
     <nav class="tabs" role="tablist">
       ${tabBtn("cultivate", "修行", busy)}
@@ -1069,9 +1149,9 @@ function render() {
     </main>
 
     <footer class="foot">
-      <button type="button" class="ghost" data-act="reset" ${busy ? "disabled" : ""}>重置存檔</button>
       <span data-live="wins">勝場 ${state.combatsWon}</span>
     </footer>
+    ${dailyHubHtml()}
   `;
 
   bind();
@@ -1094,6 +1174,67 @@ function dispatchMatBits(mission) {
       return `<span class="mat-need" title="${escapeHtml(hintMap[id] || "")}">${escapeHtml(name)}×${n}</span>`;
     })
     .join(" ");
+}
+
+let dailyHubDismissedSession = false;
+
+function nextGoalChipHtml() {
+  if (tutorialActive(state)) return "";
+  const goal = nextGoalView(state);
+  if (!goal) return "";
+  return `<button type="button" class="next-goal-chip" data-act="goto-goal" data-goal-tab="${escapeHtml(goal.tab)}" data-goal-sub="${escapeHtml(goal.sub || "")}">
+    <span class="next-goal-kicker">${escapeHtml(goal.kind === "breakthrough" ? "下一突破" : "求道")}</span>
+    <strong>${escapeHtml(goal.label)}</strong>
+    <span class="muted">${escapeHtml(goal.progress)}${goal.targetName ? ` → ${escapeHtml(goal.targetName)}` : ""}</span>
+  </button>`;
+}
+
+function dailyHubHtml() {
+  if (tutorialActive(state)) return "";
+  const hub = dailyHubView(state);
+  if (!hub.shouldShow || dailyHubDismissedSession) return "";
+  const streak = hub.streak;
+  const streakRewards = streak.rewards
+    .map(
+      (r) =>
+        `<li class="${r.day === streak.day ? "is-today" : r.day < streak.day ? "is-past" : ""}"><span>${r.day}</span><small>${escapeHtml(r.name)}</small></li>`
+    )
+    .join("");
+  const eggLines = hub.eggTimers
+    .map((e) => `<li>孵化中 · ${escapeHtml(e.tier)} · ${e.secLeft}s</li>`)
+    .join("");
+  const dispatchLines = hub.dispatchTimers
+    .map((d) => `<li>派遣 · ${escapeHtml(d.name)} · ${d.secLeft}s</li>`)
+    .join("");
+  const offlineLine = hub.offline
+    ? `<p class="hub-offline">離線 ${Math.round(hub.offline.sec / 60)} 分 · 靈契 +${Math.floor(hub.offline.qi)} · 飼料 +${hub.offline.feed.toFixed(0)}</p>`
+    : "";
+  const goalLine = hub.nextGoal
+    ? `<p class="hub-goal">下一目標：<strong>${escapeHtml(hub.nextGoal.label)}</strong>（${escapeHtml(hub.nextGoal.progress)}）</p>`
+    : "";
+  return `<div class="daily-hub-overlay" data-live="daily-hub">
+    <div class="daily-hub-card" role="dialog" aria-label="每日儀表板">
+      <h2>今日暗潮</h2>
+      ${offlineLine}
+      <div class="hub-grid">
+        <div class="hub-stat"><span>每日任務</span><strong>${hub.dailyDone}/${hub.dailyTotal}</strong></div>
+        <div class="hub-stat"><span>掛機任務</span><strong>${hub.idleDailyDone ? "完成" : `${Math.min(hub.idleSec, hub.idleDailyCap)}s`}</strong></div>
+        <div class="hub-stat"><span>可領蛋</span><strong>${hub.eggReady}</strong></div>
+        <div class="hub-stat"><span>派遣完成</span><strong>${hub.dispatchReady}</strong></div>
+      </div>
+      ${hub.dailyModLabel ? `<p class="hub-mod">${escapeHtml(hub.dailyModLabel)}</p>` : ""}
+      ${hub.spotlightName ? `<p class="hub-spot">今日練功地強化【${escapeHtml(hub.spotlightName)}】</p>` : ""}
+      ${goalLine}
+      ${eggLines || dispatchLines ? `<ul class="hub-timers">${eggLines}${dispatchLines}</ul>` : ""}
+      <h3>連續登入 · 第 ${streak.day} 日</h3>
+      <ol class="streak-row">${streakRewards}</ol>
+      <div class="row hub-actions">
+        <button type="button" class="primary" data-act="claim-streak" ${streak.canClaim ? "" : "disabled"}>${streak.canClaim ? "領取登入獎" : "今日已領"}</button>
+        <button type="button" data-act="goto-daily-tasks">查看任務</button>
+        <button type="button" class="ghost" data-act="dismiss-hub">開始今日</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 function installBanner() {
@@ -1280,7 +1421,8 @@ function petRow(p, extraBtn = "") {
   const r = rarityInfo(p.rarity ?? 0);
   const g = petGeneration(p);
   return `
-    <li class="card-row">
+    <li class="card-row pet-row">
+      ${petIconFromPet(p, { size: 34 })}
       <div>
         <button type="button" class="linkish${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
         <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
@@ -1726,7 +1868,9 @@ function codexPanel() {
     .slice(0, 48)
     .map((s) => {
       const pct = Math.min(100, Math.round((s.found / Math.max(1, s.total)) * 100));
-      return `<li class="card-row">
+      const unlocked = s.found > 0;
+      return `<li class="card-row codex-row${unlocked ? " is-unlocked" : ""}">
+        <div class="codex-icon">${unlocked ? petIconHtml(s.speciesId, { size: 36 }) : `<span class="pet-icon pet-icon-unknown">?</span>`}</div>
         <div>
           <strong>${escapeHtml(s.speciesName)}</strong>
           <span class="muted">${escapeHtml(s.kind)}${s.breedOnly ? "·雜交" : ""} · ${s.found}/${s.total}</span>
@@ -1917,7 +2061,7 @@ function dungeonPanel() {
         <ul class="combat" data-live="combat-log">${lines}</ul>
       </div>`;
     return `
-      <h2>${playback.done ? "結算" : "戰報"}</h2>
+      <h2>${playback.done ? "結算" : "戰報"}${playback.isFarm && combatPrefs.fastMode ? `<span class="combat-fast-badge">快速</span>` : ""}</h2>
       ${playback.waveLabel && !playback.done ? `<p class="combat-wave-banner" data-live="combat-wave">${escapeHtml(playback.waveLabel)}</p>` : `<p class="combat-wave-banner" data-live="combat-wave" hidden></p>`}
       ${renderCombatRoster(playback)}
       <p class="lead" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
@@ -2044,6 +2188,7 @@ function dungeonPanel() {
     }`
         : `<h2>潮汐秘境</h2>
     <p class="lead">波次自動戰鬥 · 逐層翻頁 · 每層每日挑戰／敵情輪換</p>
+    <label class="combat-pref-toggle"><input type="checkbox" data-act="toggle-combat-fast" ${combatPrefs.fastMode ? "checked" : ""}/> 已通關秘境快速戰鬥</label>
     ${
       dailyMod
         ? `<p class="dungeon-daily-mod">${escapeHtml(dailyMod.label)}</p>`
@@ -2057,7 +2202,12 @@ function dungeonPanel() {
 
 function logPanel() {
   const lines = state.log.map((l) => `<li>${escapeHtml(l)}</li>`).join("");
-  return `<h2>見聞錄</h2><div class="log-scroll"><ul class="log">${lines || "<li class='empty'>尚無見聞。</li>"}</ul></div>`;
+  const busy = playback && !playback.done;
+  return `<h2>見聞錄</h2><div class="log-scroll"><ul class="log">${lines || "<li class='empty'>尚無見聞。</li>"}</ul></div>
+    <div class="log-tools row">
+      <button type="button" class="ghost" data-act="notify-perm">開啟通知</button>
+      <button type="button" class="ghost" data-act="reset" ${busy ? "disabled" : ""}>重置存檔</button>
+    </div>`;
 }
 
 function bind() {
@@ -2163,6 +2313,31 @@ function bind() {
           setFlash(p === "granted" ? "已開啟離線通知" : "未授權通知");
           if (p === "granted" && state.offlineHint) maybeNotifyOffline(state.offlineHint);
         });
+      } else if (act === "dismiss-hub") {
+        dismissDailyHub(state);
+        dailyHubDismissedSession = true;
+        saveState(state);
+        render();
+      } else if (act === "claim-streak") {
+        const r = claimLoginStreak(state);
+        saveState(state);
+        render();
+        setFlash(r.msg, r.ok ? "celebrate" : "");
+      } else if (act === "goto-daily-tasks") {
+        tab = "codex";
+        panelSub = { ...panelSub, codex: "tasks" };
+        dismissDailyHub(state);
+        dailyHubDismissedSession = true;
+        saveState(state);
+        render();
+      } else if (act === "goto-goal") {
+        const gTab = btn.dataset.goalTab;
+        const gSub = btn.dataset.goalSub;
+        if (gTab) tab = gTab;
+        if (gSub && gTab && panelSub[gTab] !== undefined) {
+          panelSub = { ...panelSub, [gTab]: gSub };
+        }
+        render();
       } else if (act === "reset") {
         if (confirm("確定清除存檔？")) {
           stopPlayback();
@@ -2178,6 +2353,12 @@ function bind() {
       } else if (act === "skip-combat") {
         skipPlayback();
       }
+    });
+  });
+  app.querySelectorAll("[data-act=toggle-combat-fast]").forEach((input) => {
+    input.addEventListener("change", () => {
+      combatPrefs = { ...combatPrefs, fastMode: input.checked };
+      saveCombatPrefs(combatPrefs);
     });
   });
   app.querySelectorAll("[data-breed-toggle]").forEach((btn) => {
@@ -2575,6 +2756,7 @@ setInterval(() => {
     return;
   }
   saveState(state);
+  checkPushReminders();
 }, 1000);
 
 function maybeNotifyOffline(hint) {
@@ -2589,6 +2771,51 @@ function maybeNotifyOffline(hint) {
     });
   } catch {
     /* ignore */
+  }
+}
+
+const pushNotifySent = new Set();
+
+function pushNotifyOnce(key, title, body) {
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission !== "granted") return;
+  if (pushNotifySent.has(key)) return;
+  pushNotifySent.add(key);
+  try {
+    new Notification(title, { body, icon: "./icons/icon.svg" });
+  } catch {
+    /* ignore */
+  }
+}
+
+function checkPushReminders() {
+  const now = Date.now();
+  if (state.offlineHint && state.offlineHint.sec >= 3600 * 8 - 120) {
+    pushNotifyOnce(
+      `offline-cap-${state.offlineHint.at}`,
+      "暗潮 · 離線上限",
+      "掛機收益即將達 8 小時上限，記得回來領取！"
+    );
+  }
+  for (const e of eggsView(state, now)) {
+    if (e.hatching && !e.ready && e.leftSec > 0 && e.leftSec <= 30) {
+      pushNotifyOnce(`egg-soon-${e.uid}-${e.readyAt}`, "暗潮 · 蛋快好了", `${e.name} 約 ${e.leftSec} 秒後可領取`);
+    }
+    if (e.ready) {
+      pushNotifyOnce(`egg-ready-${e.uid}`, "暗潮 · 孵化完成", `${e.name} 可以領取了！`);
+    }
+  }
+  const disp = dispatchView(state);
+  for (const d of disp.active || []) {
+    if (d.ready) {
+      pushNotifyOnce(`dispatch-ready-${d.dispatchId}`, "暗潮 · 派遣完成", `${d.missionName} 可以領獎了！`);
+    } else if (d.leftMs > 0 && d.leftMs <= 30000) {
+      pushNotifyOnce(
+        `dispatch-soon-${d.dispatchId}`,
+        "暗潮 · 派遣將完成",
+        `${d.missionName} 約 ${Math.ceil(d.leftMs / 1000)} 秒後完成`
+      );
+    }
   }
 }
 

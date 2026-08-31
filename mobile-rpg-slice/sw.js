@@ -1,4 +1,4 @@
-const CACHE = "void-tide-pets-v45";
+const CACHE = "void-tide-pets-v46";
 const ASSETS = [
   "./",
   "./index.html",
@@ -6,10 +6,21 @@ const ASSETS = [
   "./js/data.js",
   "./js/tutorial.js",
   "./js/engine.js",
+  "./js/pet-icons.js",
   "./js/ui.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
 ];
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      if (list.length) return list[0].focus();
+      return self.clients.openWindow("./");
+    })
+  );
+});
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
