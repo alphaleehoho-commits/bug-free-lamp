@@ -143,6 +143,9 @@ let pwaDismissed = localStorage.getItem("void-tide-pwa-dismiss") === "1";
 let tutorialSnapCache = "";
 let tutMisclickCount = 0;
 let tutSpotlightEl = null;
+/** Phase 2 UI chrome toggles */
+let condSheetOpen = false;
+let rewardDetailsOpen = false;
 
 const COMBAT_PREFS_KEY = "void-tide-combat-prefs";
 
@@ -726,6 +729,7 @@ function switchTab(id) {
   if (playback && !playback.done) return;
   if (isTabLocked(state, id)) return;
   tab = id;
+  condSheetOpen = false;
   tutMisclickCount = 0;
   if (tutorialActive(state)) {
     const step = state.tutorial.step;
@@ -918,7 +922,7 @@ function patchLive() {
   if (feed) feed.textContent = String(Math.floor(state.feed || 0));
   if (dust) dust.textContent = String(Math.floor(state.dust || 0));
   if (stageEl) stageEl.textContent = stage.name;
-  if (wins) wins.textContent = `勝場 ${state.combatsWon}`;
+  if (wins) wins.textContent = `勝 ${state.combatsWon}`;
 
   const eggReadyNow = patchEggLive();
   patchTutorialHintLive();
@@ -994,6 +998,7 @@ function updatePlaybackDom(latestEvent = null) {
 function clearCombatPlayback(opts = {}) {
   const goSetup = !!opts.goSetup;
   stopPlayback();
+  rewardDetailsOpen = false;
   if (goSetup) {
     panelSub = { ...panelSub, dungeon: "setup" };
     markTutorialSubVisit("dungeon", "setup");
@@ -1070,6 +1075,8 @@ function advancePlayback() {
 function startPlayback(result) {
   stopPlayback();
   tab = "dungeon";
+  condSheetOpen = false;
+  rewardDetailsOpen = false;
   const events =
     result.combatEvents ||
     (result.transcript || []).map((text) => ({ type: "text", text }));
@@ -1145,12 +1152,14 @@ function render() {
 
   app.className = enterClass;
   app.innerHTML = `
-    <header class="top">
-      <p class="brand">暗潮</p>
-      <p class="tag">靈寵修行</p>
+    <header class="top top-compact">
+      <div class="brand-row">
+        <p class="brand">暗潮</p>
+        <p class="tag">靈寵修行 · <span data-live="wins">勝 ${state.combatsWon}</span></p>
+      </div>
     </header>
 
-    <div class="stats">
+    <div class="stats stats-compact">
       <div><span>階段</span><strong data-live="stage">${stage.name}</strong></div>
       <div><span>靈石</span><strong data-live="stones">${Math.floor(state.stones)}</strong></div>
       <div><span>碎片</span><strong data-live="scrap">${state.scrap}</strong></div>
@@ -1161,14 +1170,6 @@ function render() {
     ${offlineBanner()}
     ${installBanner()}
     ${nextGoalChipHtml()}
-
-    <nav class="tabs" role="tablist">
-      ${tabBtn("cultivate", "修行", busy)}
-      ${tabBtn("party", "靈寵", busy)}
-      ${tabBtn("dungeon", "秘境", busy)}
-      ${tabBtn("codex", "圖鑑", busy)}
-      ${tabBtn("log", "見聞", busy)}
-    </nav>
 
     <main class="panel">
       ${tutorialBannerHtml(state)}
@@ -1181,10 +1182,15 @@ function render() {
       </div>
     </main>
 
-    <footer class="foot">
-      <span data-live="wins">勝場 ${state.combatsWon}</span>
-    </footer>
+    <nav class="tabs tabs-bottom" role="tablist">
+      ${tabBtn("cultivate", "修行", busy)}
+      ${tabBtn("party", "靈寵", busy)}
+      ${tabBtn("dungeon", "秘境", busy)}
+      ${tabBtn("codex", "圖鑑", busy)}
+      ${tabBtn("log", "見聞", busy)}
+    </nav>
     ${playback ? combatModalHtml() : ""}
+    ${condSheetOpen ? dungeonCondSheetHtml() : ""}
     ${dailyHubHtml()}
   `;
 
@@ -1216,10 +1222,10 @@ function nextGoalChipHtml() {
   if (tutorialActive(state)) return "";
   const goal = nextGoalView(state);
   if (!goal) return "";
-  return `<button type="button" class="next-goal-chip" data-act="goto-goal" data-goal-tab="${escapeHtml(goal.tab)}" data-goal-sub="${escapeHtml(goal.sub || "")}">
-    <span class="next-goal-kicker">${escapeHtml(goal.kind === "breakthrough" ? "下一突破" : "求道")}</span>
+  return `<button type="button" class="next-goal-chip next-goal-compact" data-act="goto-goal" data-goal-tab="${escapeHtml(goal.tab)}" data-goal-sub="${escapeHtml(goal.sub || "")}">
+    <span class="next-goal-kicker">${escapeHtml(goal.kind === "breakthrough" ? "突破" : "求道")}</span>
     <strong>${escapeHtml(goal.label)}</strong>
-    <span class="muted">${escapeHtml(goal.progress)}${goal.targetName ? ` → ${escapeHtml(goal.targetName)}` : ""}</span>
+    <span class="muted">${escapeHtml(goal.progress)}</span>
   </button>`;
 }
 
@@ -2097,8 +2103,17 @@ function combatModalHtml() {
     })
     .join("");
   const bd = playback.result?.rewardBreakdown;
-  const breakdownHtml =
-    playback.done && bd && playback.result.won ? combatRewardBreakdownHtml(bd) : "";
+  const wonSettle = playback.done && bd && playback.result.won;
+  const settleHead = wonSettle
+    ? `<div class="settle-summary-row">
+        <div>
+          <strong class="settle-total">+${bd.totalStones} 靈石</strong>
+          <span class="muted">${bd.base?.scrap ? `基礎通碎片 +${bd.base.scrap}` : "通關結算"}</span>
+        </div>
+        <button type="button" class="ghost" data-act="toggle-reward-details">${rewardDetailsOpen ? "收起明細" : "獎勵明細"}</button>
+      </div>
+      ${rewardDetailsOpen ? combatRewardBreakdownHtml(bd) : ""}`
+    : "";
   const logBlock = playback.done
     ? ""
     : `<div class="combat-scroll" data-live="combat-scroll">
@@ -2118,12 +2133,58 @@ function combatModalHtml() {
           <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
           ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
           ${logBlock}
-          ${breakdownHtml}
+          ${settleHead}
         </div>
         <div class="combat-modal-actions row">
           <button type="button" data-act="skip-combat" ${playback.done ? "hidden" : ""}>跳過動畫</button>
           <button type="button" class="primary" data-act="${clearAct}" ${playback.done ? "" : "disabled"}>${escapeHtml(clearLabel)}</button>
         </div>
+      </div>
+    </div>`;
+}
+
+function dungeonCondSheetHtml() {
+  const dungeonIds = dungeonsForRealm(state.realm).filter((id) => resolveDungeon(state, id));
+  const curId = dungeonIds[dungeonIdx];
+  const dCur = curId ? resolveDungeon(state, curId) : null;
+  if (!dCur) return "";
+  const stCur = dungeonStatus(state, dCur.id);
+  const tutWaiveDungeon = tutorialWaivesDungeonChallenge(state, dCur.id);
+  const conds = (stCur?.conditions || []).filter((c) => !c.passive);
+  const passives = (stCur?.conditions || []).filter((c) => c.passive);
+  const condList = tutWaiveDungeon
+    ? `<li class="cond-item is-met is-tut-waive"><span class="cond-badge">教學</span><div class="cond-body"><strong>教學模式</strong><span class="muted">今日挑戰／試煉條件已豁免，可直接進攻</span></div></li>`
+    : conds
+        .map((c) => condStatusRow(c.label.replace(/^條件[:：]?\s*/, ""), c.ok, rewardBitsHtml(c.bonus), c.reason))
+        .join("");
+  const trial = stCur?.trial;
+  const trialRow =
+    tutWaiveDungeon || !trial
+      ? ""
+      : condStatusRow(
+          trial.label.replace(/^試煉[:：]?\s*/, "試煉："),
+          stCur.trialMet,
+          `+${trial.bonus?.stones || 0}石`,
+          stCur.trialReason || "未滿足"
+        );
+  const challengeRow =
+    tutWaiveDungeon || !stCur?.challenge
+      ? ""
+      : condStatusRow(
+          stCur.challenge.label.replace(/^挑戰[:：]?\s*/, "挑戰："),
+          stCur.challengeMet,
+          rewardBitsHtml(stCur.challenge.bonus),
+          stCur.challengeReason || "未滿足"
+        );
+  const passiveLine = passives.map((p) => p.label).join(" · ");
+  return `
+    <div class="sheet-overlay" role="presentation">
+      <div class="sheet-card" role="dialog" aria-label="本層條件" data-sheet-card>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <h3>本層條件 · ${escapeHtml(dCur.name)}</h3>
+        ${passiveLine ? `<p class="meta">${escapeHtml(passiveLine)}</p>` : ""}
+        <ul class="cond-list">${tutWaiveDungeon ? condList : `${challengeRow}${condList}${trialRow}`}</ul>
+        <button type="button" class="primary sheet-close" data-act="close-cond-sheet">關閉</button>
       </div>
     </div>`;
 }
@@ -2167,34 +2228,38 @@ function dungeonPanel() {
   const trial = stCur?.trial;
   const conds = (stCur?.conditions || []).filter((c) => !c.passive);
   const passives = (stCur?.conditions || []).filter((c) => c.passive);
-  const condList = tutWaiveDungeon
-    ? `<li class="cond-item is-met is-tut-waive"><span class="cond-badge">教學</span><div class="cond-body"><strong>教學模式</strong><span class="muted">今日挑戰／試煉條件已豁免，可直接進攻</span></div></li>`
-    : conds
-        .slice(0, 2)
-        .map((c) => condStatusRow(c.label.replace(/^條件[:：]?\s*/, ""), c.ok, rewardBitsHtml(c.bonus), c.reason))
-        .join("");
-  const trialRow =
-    tutWaiveDungeon || !trial
-      ? ""
-      : condStatusRow(
-          trial.label.replace(/^試煉[:：]?\s*/, "試煉："),
-          stCur.trialMet,
-          `+${trial.bonus?.stones || 0}石`,
-          stCur.trialReason || "未滿足"
-        );
-  const challengeRow =
-    tutWaiveDungeon || !stCur?.challenge
-      ? ""
-      : condStatusRow(
-          stCur.challenge.label.replace(/^挑戰[:：]?\s*/, "挑戰："),
-          stCur.challengeMet,
-          rewardBitsHtml(stCur.challenge.bonus),
-          stCur.challengeReason || "未滿足"
-        );
   const passiveLine = passives.map((p) => p.label).join(" · ");
   const variantLine = dCur?.dailyVariantLabel
     ? `<span class="muted daily-variant">今日：${escapeHtml(dCur.dailyVariantLabel)}</span>`
     : "";
+
+  let metN = 0;
+  let missN = 0;
+  if (tutWaiveDungeon) {
+    metN = 1;
+  } else {
+    for (const c of conds.slice(0, 2)) {
+      if (c.ok) metN += 1;
+      else missN += 1;
+    }
+    if (stCur?.challenge) {
+      if (stCur.challengeMet) metN += 1;
+      else missN += 1;
+    }
+    if (trial) {
+      if (stCur.trialMet) metN += 1;
+      else missN += 1;
+    }
+  }
+  const condTrigger =
+    dCur && (tutWaiveDungeon || metN + missN > 0)
+      ? `<button type="button" class="cond-sheet-trigger" data-act="toggle-cond-sheet">
+          <span>敵情條件</span>
+          <strong>${tutWaiveDungeon ? "教學豁免" : `達成 ${metN}`}${!tutWaiveDungeon && missN ? ` · 未達 ${missN}` : ""}</strong>
+          <span class="muted">查看</span>
+        </button>`
+      : "";
+
   const dungeonCard = dCur
     ? `<li class="dungeon-card">
         <div class="dungeon-head">
@@ -2207,7 +2272,7 @@ function dungeonPanel() {
             ${passiveLine ? `<span class="muted">${escapeHtml(passiveLine)}</span>` : ""}
           </div>
         </div>
-        <ul class="cond-list">${tutWaiveDungeon ? condList : `${challengeRow}${condList}${trialRow}`}</ul>
+        ${condTrigger}
       </li>`
     : `<li class="empty">尚無可挑戰秘境。</li>`;
   const pager =
@@ -2294,6 +2359,7 @@ function bind() {
         stopPlayback();
       }
       panelSub = { ...panelSub, [group]: id };
+      if (group === "dungeon") condSheetOpen = false;
       markTutorialSubVisit(group, id);
       render();
     });
@@ -2302,6 +2368,7 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled || dungeonIdx <= 0) return;
       dungeonIdx -= 1;
+      condSheetOpen = false;
       render();
     });
   });
@@ -2309,6 +2376,7 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       dungeonIdx += 1;
+      condSheetOpen = false;
       render();
     });
   });
@@ -2427,7 +2495,25 @@ function bind() {
         clearCombatPlayback({ goSetup: true });
       } else if (act === "skip-combat") {
         skipPlayback();
+      } else if (act === "toggle-cond-sheet") {
+        condSheetOpen = !condSheetOpen;
+        render();
+      } else if (act === "close-cond-sheet") {
+        condSheetOpen = false;
+        render();
+      } else if (act === "toggle-reward-details") {
+        rewardDetailsOpen = !rewardDetailsOpen;
+        render();
       }
+    });
+  });
+  app.querySelectorAll("[data-sheet-card]").forEach((el) => {
+    el.addEventListener("click", (e) => e.stopPropagation());
+  });
+  app.querySelectorAll(".sheet-overlay").forEach((el) => {
+    el.addEventListener("click", () => {
+      condSheetOpen = false;
+      render();
     });
   });
   app.querySelectorAll("[data-act=toggle-combat-fast]").forEach((input) => {
