@@ -154,6 +154,7 @@ import {
   pickDailyTrainSpotlight,
   DAILY_ALL_CLEAR_BONUS,
   DUNGEON_SWEEP_COUNTS,
+  DUNGEON_SWEEP_STONE_COST_RATIO,
 } from "./data.js";
 import {
   normalizeTutorial,
@@ -1760,10 +1761,10 @@ export function claimHatch(state, eggUid) {
     const sec = Math.ceil((egg.readyAt - Date.now()) / 1000);
     return { ok: false, msg: `尚未孵出（${sec}s）。` };
   }
-  const owned = state.pets.length + state.ranch.length;
+  // 蛋入牧場欄；出戰欄唔佔牧場容量（同契約／繁殖／撤回一致）
   const cap = ranchCap(state);
-  if (owned >= cap) {
-    return { ok: false, msg: `牧場已滿（${cap}），無法領取。` };
+  if (state.ranch.length >= cap) {
+    return { ok: false, msg: `牧場已滿（${state.ranch.length}/${cap}），無法領取。可先出戰或放歸。` };
   }
   const pet = normalizePet(hatchPetFromEgg(egg, { realm: state.realm, starter: egg.source === "starter" }));
   state.eggs.splice(i, 1);
@@ -2951,7 +2952,16 @@ export function runDungeon(state, dungeonId, opts = {}) {
 }
 
 /** 已通關秘境是否可掃蕩（教學期禁用） */
-export function canDungeonSweep(state, dungeonId) {
+export function dungeonSweepCost(state, dungeonId, count) {
+  const d = resolveDungeon(state, dungeonId);
+  if (!d) return { perRun: 0, total: 0, canAfford: false };
+  const n = Math.max(1, count | 0);
+  const perRun = Math.max(3, Math.round((d.reward?.stones || 10) * DUNGEON_SWEEP_STONE_COST_RATIO));
+  const total = perRun * n;
+  return { perRun, total, canAfford: (state.stones || 0) >= total };
+}
+
+export function canDungeonSweep(state, dungeonId, count = null) {
   const d = resolveDungeon(state, dungeonId);
   if (!d) return { ok: false, reason: "秘境不存在。" };
   if (tutorialActive(state)) return { ok: false, reason: "教學期間請單次進攻。" };
@@ -2964,6 +2974,13 @@ export function canDungeonSweep(state, dungeonId) {
   if (st?.cooldownLeftMs > 0) {
     const sec = Math.ceil(st.cooldownLeftMs / 1000);
     return { ok: false, reason: `冷卻中（${sec}s）` };
+  }
+  if (count != null) {
+    const cost = dungeonSweepCost(state, dungeonId, count);
+    if (!cost.canAfford) {
+      return { ok: false, reason: `靈石不足（需 ${cost.total}）`, cost };
+    }
+    return { ok: true, cost };
   }
   return { ok: true };
 }
@@ -2988,26 +3005,43 @@ function aggregateSweepRewards(results) {
 }
 
 /**
- * 已通關層連刷 N 次：批次結算，掃蕩期間跳過 CD／遇寵，結束後只觸發 1 次契約遭遇。
+ * 已通關層連刷 N 次：耗靈石 + CD 按次數延長；批次結算；結束後只觸發 1 次契約遭遇。
  */
 export function runDungeonSweep(state, dungeonId, count) {
-  const check = canDungeonSweep(state, dungeonId);
-  if (!check.ok) return { ok: false, msg: check.reason };
   const allowed = DUNGEON_SWEEP_COUNTS;
   const n = allowed.includes(count) ? count : allowed[allowed.length - 1];
+  const check = canDungeonSweep(state, dungeonId, n);
+  if (!check.ok) return { ok: false, msg: check.reason };
+  const cost = check.cost || dungeonSweepCost(state, dungeonId, n);
+  state.stones -= cost.total;
   const results = [];
   for (let i = 0; i < n; i += 1) {
     const r = runDungeon(state, dungeonId, { sweepInternal: true, deferEncounter: true });
     if (!r.ok) {
-      if (results.length === 0) return r;
+      if (results.length === 0) {
+        state.stones += cost.total;
+        return r;
+      }
       break;
     }
     results.push(r);
   }
-  if (!results.length) return { ok: false, msg: "掃蕩失敗。" };
+  if (!results.length) {
+    state.stones += cost.total;
+    return { ok: false, msg: "掃蕩失敗。" };
+  }
+  // 未刷滿則按實際場數退還差額
+  if (results.length < n) {
+    const used = cost.perRun * results.length;
+    state.stones += cost.total - used;
+    cost.total = used;
+  }
   const d = resolveDungeon(state, dungeonId);
-  const cd = d?.cooldownMs || 0;
-  if (cd > 0) state.dungeonReadyAt[dungeonId] = Date.now() + cd;
+  const baseCd = d?.cooldownMs || 0;
+  // CD 按實際場數延長：20 刷 = 等 20 倍單次 CD
+  if (baseCd > 0) {
+    state.dungeonReadyAt[dungeonId] = Date.now() + baseCd * results.length;
+  }
   const agg = aggregateSweepRewards(results);
   let encounter = null;
   let encounterBlocked = false;
@@ -3022,7 +3056,8 @@ export function runDungeonSweep(state, dungeonId, count) {
       );
     }
   }
-  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 合計 +${agg.totalStones} 石`;
+  const cdSec = Math.ceil((baseCd * results.length) / 1000);
+  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 耗 ${cost.total} 石 · 合計 +${agg.totalStones} 石 · CD ${cdSec}s`;
   pushLog(state, msg);
   return {
     ok: true,
@@ -3033,6 +3068,8 @@ export function runDungeonSweep(state, dungeonId, count) {
     losses: agg.losses,
     totalStones: agg.totalStones,
     totalScrap: agg.totalScrap,
+    stoneCost: cost.total,
+    cooldownMs: baseCd * results.length,
     perRun: agg.perRun,
     encounter,
     encounterBlocked,

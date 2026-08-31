@@ -4161,8 +4161,11 @@ export const DAILY_ALL_CLEAR_BONUS = {
   materials: { breed_ticket: 1 },
 };
 
-/** 已通關秘境掃蕩可選次數 */
-export const DUNGEON_SWEEP_COUNTS = [1, 5, 10, 20];
+/** 已通關秘境掃蕩可選次數（單次請用「進攻」） */
+export const DUNGEON_SWEEP_COUNTS = [5, 10, 20];
+
+/** 掃蕩每場耗石倍率（相對本層通關基礎靈石） */
+export const DUNGEON_SWEEP_STONE_COST_RATIO = 0.25;
 
 /**
  * 求道目標板：三條長線（收集／育成／挑戰）

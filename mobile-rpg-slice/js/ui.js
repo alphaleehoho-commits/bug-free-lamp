@@ -18,6 +18,7 @@ import {
   runDungeon,
   runDungeonSweep,
   canDungeonSweep,
+  dungeonSweepCost,
   forgeHint,
   tryBreed,
   breedStatus,
@@ -833,11 +834,11 @@ function panelSubNav(group, items) {
 
 function wrapStage(subnavHtml, scrollHtml, dockHtml = "") {
   return `
-    ${subnavHtml || ""}
     <div class="panel-stage">
       <div class="stage-scroll">${scrollHtml}</div>
       ${dockHtml ? `<div class="stage-dock">${dockHtml}</div>` : ""}
-    </div>`;
+    </div>
+    ${subnavHtml ? `<div class="panel-subnav-dock">${subnavHtml}</div>` : ""}`;
 }
 
 function syncAppHeight() {
@@ -1213,6 +1214,18 @@ function render() {
   const nav = syncTutorialNavigation(state, { tab, panelSub });
   tab = nav.tab;
   panelSub = nav.panelSub;
+  // 戰術步：sync 會強制進入 setup，但唔會觸發 panel-sub click → 喺此補完旗標
+  if (
+    tutorialActive(state) &&
+    state.tutorial.step === "tactics" &&
+    panelSub.dungeon === "setup" &&
+    !state.tutorial.flags?.tacticsVisited
+  ) {
+    const adv = markTutorialFlag(state, "tacticsVisited");
+    if (adv.advanced && adv.unlockMsg) {
+      setFlash(adv.unlockMsg, "unlock");
+    }
+  }
 
   const stage = realmInfo(state);
   const next = nextRealm(state);
@@ -1753,7 +1766,7 @@ function petsListView() {
     return wrapStage(
       nav,
       `<h2>靈寵 · 牧場</h2>
-      <p class="lead">牧場 ${ranch.length}/${cap} · 蛋 ${(state.eggs || []).length}/6</p>
+      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 蛋 ${(state.eggs || []).length}/6</p>
       <h3>寵物蛋</h3>
       <ul class="list">${eggRows}</ul>
       <div class="row"><button type="button" class="primary${tutGlow({ type: "act", act: "open-breed" })}" data-act="open-breed">繁殖</button></div>
@@ -2258,7 +2271,7 @@ function sweepModalHtml() {
           <div class="settle-summary-row">
             <div>
               <strong class="settle-total">+${r.totalStones} 靈石</strong>
-              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 碎片 +${r.totalScrap || 0}</span>
+              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 耗 ${r.stoneCost || 0}石 · 碎片 +${r.totalScrap || 0}</span>
             </div>
           </div>
           ${encounterLine}
@@ -2471,17 +2484,26 @@ function dungeonPanel() {
   const fieldDock =
     panelSub.dungeon === "field"
       ? (() => {
-          const sweepOk = dCur && canDungeonSweep(state, dCur.id).ok;
-          const sweepBtns = DUNGEON_SWEEP_COUNTS.map(
-            (n) =>
-              `<button type="button" class="sweep-count-btn ${sweepCount === n ? "primary" : ""}" data-sweep-count="${n}" ${sweepOk ? "" : "disabled"}">${n}</button>`
-          ).join("");
+          const sweepGate = dCur ? canDungeonSweep(state, dCur.id) : { ok: false };
+          const sweepOk = !!sweepGate.ok;
+          const costInfo = dCur ? dungeonSweepCost(state, dCur.id, sweepCount) : null;
+          const affordOk = !!costInfo?.canAfford;
+          const baseCdMs = dCur ? resolveDungeon(state, dCur.id)?.cooldownMs || 0 : 0;
+          const sweepCdSec = Math.ceil((baseCdMs * sweepCount) / 1000);
+          const sweepBtns = DUNGEON_SWEEP_COUNTS.map((n) => {
+            const c = dungeonSweepCost(state, dCur.id, n);
+            return `<button type="button" class="sweep-count-btn ${sweepCount === n ? "primary" : ""}" data-sweep-count="${n}" ${
+              sweepOk ? "" : "disabled"
+            } title="耗${c.total}石 · CD×${n}">${n}</button>`;
+          }).join("");
           const sweepRow =
             sweepOk
               ? `<div class="sweep-controls">
-                  <span class="sweep-label">連刷</span>
+                  <span class="sweep-label">連刷 · 耗石＋CD×場數</span>
                   <div class="row sweep-count-row">${sweepBtns}</div>
-                  <button type="button" class="primary sweep-run-btn" data-sweep="${escapeHtml(dCur.id)}">掃蕩 ×${sweepCount}</button>
+                  <button type="button" class="primary sweep-run-btn" data-sweep="${escapeHtml(dCur.id)}" ${
+                    affordOk ? "" : "disabled"
+                  }>掃蕩 ×${sweepCount} · ${costInfo.total}石 · CD ${sweepCdSec}s</button>
                 </div>`
               : "";
           return `<div class="dungeon-dock-stack">

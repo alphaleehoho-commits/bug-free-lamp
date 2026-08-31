@@ -105,6 +105,7 @@ import {
   eggTierInfo,
   DAILY_ALL_CLEAR_BONUS,
   DUNGEON_SWEEP_COUNTS,
+  DUNGEON_SWEEP_STONE_COST_RATIO,
   todayKey,
 } from "./data.js";
 import {
@@ -112,6 +113,7 @@ import {
   runDungeon,
   runDungeonSweep,
   canDungeonSweep,
+  dungeonSweepCost,
   claimAllDailies,
   claimDailyAllClear,
   dailyAllClearView,
@@ -1057,6 +1059,8 @@ assert(tacticsNav.panelSub.dungeon === "setup", "tactics sync forces setup sub")
 
 /* Week A: dungeon sweep + daily all-clear */
 assert(DUNGEON_SWEEP_COUNTS.includes(10), "sweep counts include 10");
+assert(!DUNGEON_SWEEP_COUNTS.includes(1), "sweep drops single-run (use 進攻)");
+assert(DUNGEON_SWEEP_STONE_COST_RATIO > 0, "sweep stone cost ratio");
 assert(DAILY_ALL_CLEAR_BONUS.stones >= 1, "all clear bonus defined");
 assert(!canDungeonSweep(combatSt, "tide_1").ok, "no sweep before clear");
 const sweepSt = {
@@ -1087,6 +1091,55 @@ assert(canDungeonSweep(sweepSt, "tide_1").ok, "sweep after clear");
 const sweepRes = runDungeonSweep(sweepSt, "tide_1", 5);
 assert(sweepRes.ok && sweepRes.sweep && sweepRes.count === 5, "sweep 5 runs");
 assert(sweepRes.wins >= 1 && sweepRes.totalStones > 0, "sweep aggregate stones");
+assert(sweepRes.stoneCost > 0, "sweep spends stones");
+assert((sweepSt.dungeonReadyAt.tide_1 || 0) > Date.now() + 60_000, "sweep CD scales with count (5×)");
+const cost5 = dungeonSweepCost({ ...sweepSt, stones: 99999, dungeonReadyAt: {} }, "tide_1", 5);
+const cost20 = dungeonSweepCost({ ...sweepSt, stones: 99999, dungeonReadyAt: {} }, "tide_1", 20);
+assert(cost20.total > cost5.total, "20-sweep costs more than 5");
+
+/* ranch claim: only ranch slots count (deployed pets don't block) */
+const ranchClaimSt = {
+  realm: 1,
+  stones: 100,
+  scrap: 0,
+  feed: 0,
+  dust: 0,
+  pets: [combatFox],
+  ranch: [
+    { ...combatFox, uid: "r1" },
+    { ...combatFox, uid: "r2" },
+    { ...combatFox, uid: "r3" },
+    { ...combatFox, uid: "r4" },
+  ],
+  eggs: [],
+  pending: [],
+  bestiary: {},
+  stats: {},
+  log: [],
+  tutorial: { done: true, step: "complete", flags: {} },
+};
+const claimEggReady = makeEgg("C", "test");
+claimEggReady.startedAt = Date.now() - 1000;
+claimEggReady.readyAt = Date.now() - 500;
+ranchClaimSt.eggs = [claimEggReady];
+assert(ranchClaimSt.ranch.length === 4 && ranchClaimSt.pets.length === 1, "4 ranch + 1 fight");
+const hatchOk = claimHatch(ranchClaimSt, claimEggReady.uid);
+assert(hatchOk.ok && ranchClaimSt.ranch.length === 5, "claim egg when ranch has space");
+
+/* late tutorial tactics: visiting setup completes step */
+const lateTac = {
+  realm: 2,
+  tutorial: { done: false, step: "tactics", flags: {}, latePending: true },
+};
+normalizeTutorial(lateTac);
+const lateNav = syncTutorialNavigation(lateTac, {
+  tab: "dungeon",
+  panelSub: { dungeon: "field", party: "fight", cultivate: "train", codex: "dex" },
+});
+assert(lateNav.panelSub.dungeon === "setup", "late tactics forces setup");
+lateTac.tutorial.flags.tacticsVisited = true;
+assert(advanceTutorialIfReady(lateTac).advanced && lateTac.tutorial.done, "tactics visit completes late tutorial");
+
 const dayKey = todayKey();
 const dailyAllSt = {
   realm: 2,
@@ -1136,6 +1189,7 @@ assert(allRes.ok && allRes.claimed === DAILY_QUESTS.length, "claim all dailies")
 const __dir = dirname(fileURLToPath(import.meta.url));
 const uiSrc = readFileSync(join(__dir, "ui.js"), "utf8");
 assert(uiSrc.includes("data-sweep"), "ui sweep bind");
+assert(uiSrc.includes("panel-subnav-dock"), "ui subnav near bottom tabs");
 assert(uiSrc.includes("function wrapStage"), "ui has wrapStage layout helper");
 assert(uiSrc.includes("tabs-bottom"), "ui has bottom tab bar");
 assert(uiSrc.includes("statsSheetHtml"), "ui has stats resource sheet");
