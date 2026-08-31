@@ -115,6 +115,8 @@ import {
   runDungeonSweep,
   canDungeonSweep,
   dungeonSweepCost,
+  startDungeonSummon,
+  dungeonGateView,
   claimAllDailies,
   claimDailyAllClear,
   dailyAllClearView,
@@ -1104,14 +1106,19 @@ const sweepSt = {
 };
 assert(canDungeonSweep(sweepSt, "tide_1").ok, "sweep after clear");
 const tokensBefore = sweepSt.materials.mist_token;
+const summon = startDungeonSummon(sweepSt, "tide_1", 5);
+assert(summon.ok && summon.batch === 5, "summon ×5 starts");
+assert(sweepSt.materials.mist_token === tokensBefore - summon.tokenCost, "tokens spent on summon");
+assert(dungeonGateView(sweepSt, "tide_1").phase === "summoning", "summoning phase");
+// 快轉就緒
+sweepSt.dungeonSummon.tide_1.readyAt = Date.now() - 1;
+assert(dungeonGateView(sweepSt, "tide_1").phase === "ready", "summon ready");
 const sweepRes = runDungeonSweep(sweepSt, "tide_1", 5);
 assert(sweepRes.ok && sweepRes.sweep && sweepRes.count === 5, "sweep 5 runs");
 assert(sweepRes.wins >= 1 && sweepRes.totalStones > 0, "sweep aggregate stones");
-assert(sweepRes.tokenCost > 0, "sweep spends mist tokens");
-assert(sweepSt.materials.mist_token === tokensBefore - sweepRes.tokenCost, "tokens deducted");
-assert((sweepSt.dungeonReadyAt.tide_1 || 0) > Date.now() + 60_000, "sweep CD scales with count (5×)");
-const cost5 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {} }, "tide_1", 5);
-const cost20 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {} }, "tide_1", 20);
+assert(dungeonGateView(sweepSt, "tide_1").phase === "idle", "gate idle after sweep");
+const cost5 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 5);
+const cost20 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 20);
 assert(cost20.total > cost5.total, "20-sweep costs more than 5");
 assert(dungeonEntryMatCost("tide_1", 1).mist_token >= 1, "entry cost defined");
 assert(!Object.values(DUNGEON_MAT_DROPS).some((t) => t.weights?.mist_token), "token absent from all dungeon tables");
@@ -1208,6 +1215,7 @@ assert(allRes.ok && allRes.claimed === DAILY_QUESTS.length, "claim all dailies")
 const __dir = dirname(fileURLToPath(import.meta.url));
 const uiSrc = readFileSync(join(__dir, "ui.js"), "utf8");
 assert(uiSrc.includes("data-sweep"), "ui sweep bind");
+assert(uiSrc.includes("data-summon"), "ui summon bind");
 assert(uiSrc.includes("panel-subnav-dock"), "ui subnav near bottom tabs");
 assert(uiSrc.includes("function wrapStage"), "ui has wrapStage layout helper");
 assert(uiSrc.includes("tabs-bottom"), "ui has bottom tab bar");

@@ -19,6 +19,8 @@ import {
   runDungeonSweep,
   canDungeonSweep,
   dungeonSweepCost,
+  startDungeonSummon,
+  dungeonGateView,
   forgeHint,
   tryBreed,
   breedStatus,
@@ -2417,8 +2419,8 @@ function dungeonPanel() {
   const stCur = dCur ? dungeonStatus(state, dCur.id) : null;
   const tutWaiveDungeon = dCur ? tutorialWaivesDungeonChallenge(state, dCur.id) : false;
   const locked = dCur ? state.realm < dCur.needRealm : true;
-  const cdSec = stCur ? Math.ceil(stCur.cooldownLeftMs / 1000) : 0;
-  const onCd = cdSec > 0;
+  const gate = stCur?.gate || (dCur ? dungeonGateView(state, dCur.id) : null);
+  const summonSec = gate ? Math.ceil((gate.summonLeftMs || 0) / 1000) : 0;
   const clearNote = stCur?.cleared ? "已通" : `首通+${dCur?.firstClearBonus?.stones || 0}石`;
   const roles = stCur?.roles;
   const waveN = roles?.waves || (dCur ? dungeonWaves(dCur).length : 0);
@@ -2430,6 +2432,17 @@ function dungeonPanel() {
   const variantLine = dCur?.dailyVariantLabel
     ? `<span class="muted daily-variant">今日：${escapeHtml(dCur.dailyVariantLabel)}</span>`
     : "";
+  const gateNote = !gate
+    ? ""
+    : gate.summoning
+      ? ` · 凝聚中 ${summonSec}s`
+      : gate.needsSummon && gate.phase === "ready"
+        ? gate.batch > 1
+          ? ` · 就緒 · 掃蕩×${gate.batch}`
+          : " · 就緒可挑戰"
+        : gate.needsSummon
+          ? " · 待召喚"
+          : "";
 
   let metN = 0;
   let missN = 0;
@@ -2466,7 +2479,7 @@ function dungeonPanel() {
             ${variantLine}
             <span class="muted">${escapeHtml(roleBits)} · ${dCur.reward.stones}石 · ${clearNote}${
               locked ? ` · 需${escapeHtml(stageAt(dCur.needRealm).name)}` : ""
-            }${onCd ? ` · CD ${cdSec}s` : ""}</span>
+            }${gateNote}</span>
             ${passiveLine ? `<span class="muted">${escapeHtml(passiveLine)}</span>` : ""}
           </div>
         </div>
@@ -2484,46 +2497,75 @@ function dungeonPanel() {
   const fieldDock =
     panelSub.dungeon === "field"
       ? (() => {
-          const sweepGate = dCur ? canDungeonSweep(state, dCur.id) : { ok: false };
-          const sweepOk = !!sweepGate.ok;
-          const costInfo = dCur ? dungeonSweepCost(state, dCur.id, sweepCount) : null;
-          const affordOk = !!costInfo?.canAfford;
-          const baseCdMs = dCur ? resolveDungeon(state, dCur.id)?.cooldownMs || 0 : 0;
-          const sweepCdSec = Math.ceil((baseCdMs * sweepCount) / 1000);
+          if (!dCur) return `<div class="row dungeon-dock-row">${pager}</div>`;
           const tokenHave = Math.floor(state.materials?.mist_token || 0);
-          const entryCost1 = dCur && stCur?.cleared ? dungeonSweepCost(state, dCur.id, 1) : null;
-          const attackAfford = !entryCost1 || entryCost1.canAfford;
+          const baseCdMs = dCur.cooldownMs || gate?.baseCdMs || 20_000;
+
+          // 首通／教學：直接進攻
+          if (!gate?.needsSummon) {
+            return `<div class="dungeon-dock-stack">
+          <div class="row dungeon-dock-row">
+            ${pager}
+            <button type="button" class="primary dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}" ${
+              locked ? "disabled" : ""
+            }>進攻 · ${escapeHtml(dCur.name)}</button>
+          </div>
+        </div>`;
+          }
+
+          // 凝聚中
+          if (gate.summoning) {
+            return `<div class="dungeon-dock-stack">
+          <div class="row dungeon-dock-row">
+            ${pager}
+            <button type="button" class="dungeon-attack-btn" disabled>潮霧凝聚中… ${summonSec}s${
+              gate.batch > 1 ? ` · ×${gate.batch}` : ""
+            }</button>
+          </div>
+          <p class="sweep-label muted">凝聚完成後即可開始挑戰</p>
+        </div>`;
+          }
+
+          // 就緒：開始挑戰／掃蕩
+          if (gate.phase === "ready") {
+            const batch = gate.batch || 1;
+            const challengeBtn =
+              batch > 1
+                ? `<button type="button" class="primary dungeon-attack-btn sweep-run-btn" data-sweep="${escapeHtml(dCur.id)}" data-sweep-ready="1">開始掃蕩 ×${batch}</button>`
+                : `<button type="button" class="primary dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}">開始挑戰 · ${escapeHtml(dCur.name)}</button>`;
+            return `<div class="dungeon-dock-stack">
+          <div class="row dungeon-dock-row">
+            ${pager}
+            ${challengeBtn}
+          </div>
+          <p class="sweep-label">秘境已現形 — 開戰後將散去，需再召喚</p>
+        </div>`;
+          }
+
+          // 待召喚：選場數 + 召喚
+          const costInfo = dungeonSweepCost(state, dCur.id, sweepCount);
+          const affordOk = !!costInfo?.canAfford;
+          const summonSecEst = Math.ceil((baseCdMs * sweepCount) / 1000);
           const sweepBtns = DUNGEON_SWEEP_COUNTS.map((n) => {
             const c = dungeonSweepCost(state, dCur.id, n);
-            return `<button type="button" class="sweep-count-btn ${sweepCount === n ? "primary" : ""}" data-sweep-count="${n}" ${
-              sweepOk ? "" : "disabled"
-            } title="${c.label} · CD×${n}">${n}</button>`;
+            const est = Math.ceil((baseCdMs * n) / 1000);
+            return `<button type="button" class="sweep-count-btn ${sweepCount === n ? "primary" : ""}" data-sweep-count="${n}" title="${c.label} · 凝聚${est}s">${n}</button>`;
           }).join("");
-          const sweepRow =
-            sweepOk
-              ? `<div class="sweep-controls">
-                  <span class="sweep-label">連刷 · 潮霧令 ${tokenHave} · CD×場數（秘境不掉令）</span>
-                  <div class="row sweep-count-row">${sweepBtns}</div>
-                  <button type="button" class="primary sweep-run-btn" data-sweep="${escapeHtml(dCur.id)}" ${
-                    affordOk ? "" : "disabled"
-                  }>掃蕩 ×${sweepCount} · ${costInfo.label} · CD ${sweepCdSec}s</button>
-                </div>`
-              : "";
-          const attackLabel = entryCost1
-            ? `進攻 · ${dCur.name}（${entryCost1.label}）`
-            : `進攻 · ${dCur.name}`;
+          const singleCost = dungeonSweepCost(state, dCur.id, 1);
           return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">
             ${pager}
-            ${
-              dCur
-                ? `<button type="button" class="${sweepOk ? "" : "primary"} dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}" ${
-                    locked || onCd || !attackAfford ? "disabled" : ""
-                  }>${escapeHtml(attackLabel)}</button>`
-                : ""
-            }
+            <button type="button" class="primary dungeon-attack-btn" data-summon="${escapeHtml(dCur.id)}" data-summon-count="1" ${
+              locked || !singleCost.canAfford ? "disabled" : ""
+            }>召喚秘境（${singleCost.label} · ${Math.ceil(baseCdMs / 1000)}s）</button>
           </div>
-          ${sweepRow}
+          <div class="sweep-controls">
+            <span class="sweep-label">連召掃蕩 · 潮霧令 ${tokenHave}（秘境不掉令）</span>
+            <div class="row sweep-count-row">${sweepBtns}</div>
+            <button type="button" class="primary sweep-run-btn" data-summon="${escapeHtml(dCur.id)}" data-summon-count="${sweepCount}" ${
+              locked || !affordOk ? "disabled" : ""
+            }>召喚 ×${sweepCount} · ${costInfo.label} · ${summonSecEst}s</button>
+          </div>
         </div>`;
         })()
       : "";
@@ -2553,7 +2595,7 @@ function dungeonPanel() {
   return wrapStage(
     nav,
     `<h2>潮汐秘境</h2>
-    <p class="lead">波次自動戰鬥 · 逐層翻頁 · 每層每日挑戰／敵情輪換</p>
+    <p class="lead">已通關層需先召喚凝聚 · 就緒後挑戰 · 戰後散去</p>
     <label class="combat-pref-toggle"><input type="checkbox" data-act="toggle-combat-fast" ${combatPrefs.fastMode ? "checked" : ""}/> 已通關秘境快速戰鬥</label>
     ${
       dailyMod
@@ -3123,11 +3165,23 @@ function bind() {
       render();
     });
   });
+  app.querySelectorAll("[data-summon]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const n = Number(btn.dataset.summonCount) || 1;
+      const r = startDungeonSummon(state, btn.dataset.summon, n);
+      saveState(state);
+      render();
+      setFlash(r.msg, r.ok ? "unlock" : "");
+    });
+  });
   app.querySelectorAll("[data-sweep]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       if (playback && !playback.done) return;
-      const r = runDungeonSweep(state, btn.dataset.sweep, sweepCount);
+      const gate = dungeonGateView(state, btn.dataset.sweep);
+      const n = gate.batch > 1 ? gate.batch : sweepCount;
+      const r = runDungeonSweep(state, btn.dataset.sweep, n);
       saveState(state);
       if (!r.ok) {
         setFlash(r.msg);
@@ -3203,6 +3257,23 @@ setInterval(() => {
   const eggReadyNow = patchLive();
   const adv = advanceTutorialIfReady(state);
   const snap = tutorialLiveSnapshot(state);
+  let summonFlip = false;
+  if (tab === "dungeon" && panelSub.dungeon === "field") {
+    const ids = dungeonsForRealm(state.realm).filter((id) => resolveDungeon(state, id));
+    const id = ids[dungeonIdx];
+    if (id) {
+      const before = state.dungeonSummon?.[id]?.phase;
+      const gate = dungeonGateView(state, id);
+      summonFlip = before === "summoning" && gate.phase === "ready";
+      if (gate.summoning || summonFlip) {
+        // 凝聚倒數／就緒：刷新 dock
+        saveState(state);
+        render();
+        if (summonFlip) setFlash("潮霧已凝成秘境——可以開始挑戰！", "unlock");
+        return;
+      }
+    }
+  }
   if (eggReadyNow || adv.advanced || snap !== tutorialSnapCache) {
     tutorialSnapCache = snap;
     saveState(state);
