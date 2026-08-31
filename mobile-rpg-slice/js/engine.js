@@ -154,7 +154,9 @@ import {
   pickDailyTrainSpotlight,
   DAILY_ALL_CLEAR_BONUS,
   DUNGEON_SWEEP_COUNTS,
-  DUNGEON_SWEEP_STONE_COST_RATIO,
+  DUNGEON_ENTRY_MAT_ID,
+  dungeonEntryMatCost,
+  dungeonEntryTokenPerRun,
 } from "./data.js";
 import {
   normalizeTutorial,
@@ -1173,6 +1175,9 @@ export function tryBreakthrough(state) {
   const costNote = view.costLabel ? `（耗 ${view.costLabel}）` : "";
   pushLog(state, `階段突破——晉升【${next.name}】${costNote}。御靈之力加深。`);
   pushLog(state, `牧場容量擴展至 ${ranchCap(state)}。`);
+  const tokenGain = 3 + Math.floor(next.id * 1.5);
+  addMaterials(state, { [DUNGEON_ENTRY_MAT_ID]: tokenGain });
+  pushLog(state, `升階賜潮霧令×${tokenGain}（秘境入場憑證）。`);
   bumpDaily(state, "idle", 1);
   const unlocked = MASTER_UNLOCK_MSG(state.realm);
   if (unlocked) pushLog(state, unlocked);
@@ -2416,6 +2421,20 @@ export function runDungeon(state, dungeonId, opts = {}) {
     return { ok: false, msg: "請先派出至少一隻靈寵再進秘境。" };
   }
 
+  // 已通關農場：耗潮霧令（教學／首通免費）；掃蕩批次另計
+  let entryCost = null;
+  if (!sweepInternal && !tutorialActive(state) && state.clearedDungeons[dungeonId]) {
+    entryCost = dungeonEntryMatCost(dungeonId, 1);
+    if (!spendMaterials(state, entryCost)) {
+      const need = entryCost[DUNGEON_ENTRY_MAT_ID] || 1;
+      const have = Math.floor(state.materials?.[DUNGEON_ENTRY_MAT_ID] || 0);
+      return {
+        ok: false,
+        msg: `潮霧令不足（需 ${need}，現 ${have}）。練功／每日／升階可獲。`,
+      };
+    }
+  }
+
   const dailyPack = ensureDungeonDaily(state);
   const dailyMod = dailyPack?.mod || null;
   const tutWaiveChallenge = tutorialWaivesDungeonChallenge(state, dungeonId);
@@ -2951,14 +2970,24 @@ export function runDungeon(state, dungeonId, opts = {}) {
   };
 }
 
-/** 已通關秘境是否可掃蕩（教學期禁用） */
+/** 已通關秘境入場／掃蕩耗潮霧令 */
 export function dungeonSweepCost(state, dungeonId, count) {
   const d = resolveDungeon(state, dungeonId);
-  if (!d) return { perRun: 0, total: 0, canAfford: false };
+  if (!d) return { perRun: 0, total: 0, mats: {}, canAfford: false, label: "" };
   const n = Math.max(1, count | 0);
-  const perRun = Math.max(3, Math.round((d.reward?.stones || 10) * DUNGEON_SWEEP_STONE_COST_RATIO));
-  const total = perRun * n;
-  return { perRun, total, canAfford: (state.stones || 0) >= total };
+  const perRun = dungeonEntryTokenPerRun(dungeonId);
+  const mats = dungeonEntryMatCost(dungeonId, n);
+  const total = mats[DUNGEON_ENTRY_MAT_ID] || 0;
+  const have = Math.floor(state.materials?.[DUNGEON_ENTRY_MAT_ID] || 0);
+  const name = MATERIALS[DUNGEON_ENTRY_MAT_ID]?.name || "潮霧令";
+  return {
+    perRun,
+    total,
+    mats,
+    canAfford: have >= total,
+    have,
+    label: `${name}×${total}`,
+  };
 }
 
 export function canDungeonSweep(state, dungeonId, count = null) {
@@ -2978,7 +3007,11 @@ export function canDungeonSweep(state, dungeonId, count = null) {
   if (count != null) {
     const cost = dungeonSweepCost(state, dungeonId, count);
     if (!cost.canAfford) {
-      return { ok: false, reason: `靈石不足（需 ${cost.total}）`, cost };
+      return {
+        ok: false,
+        reason: `潮霧令不足（需 ${cost.total}，現 ${cost.have}）`,
+        cost,
+      };
     }
     return { ok: true, cost };
   }
@@ -3005,7 +3038,7 @@ function aggregateSweepRewards(results) {
 }
 
 /**
- * 已通關層連刷 N 次：耗靈石 + CD 按次數延長；批次結算；結束後只觸發 1 次契約遭遇。
+ * 已通關層連刷 N 次：耗潮霧令 + CD 按次數延長；批次結算；結束後只觸發 1 次契約遭遇。
  */
 export function runDungeonSweep(state, dungeonId, count) {
   const allowed = DUNGEON_SWEEP_COUNTS;
@@ -3013,13 +3046,15 @@ export function runDungeonSweep(state, dungeonId, count) {
   const check = canDungeonSweep(state, dungeonId, n);
   if (!check.ok) return { ok: false, msg: check.reason };
   const cost = check.cost || dungeonSweepCost(state, dungeonId, n);
-  state.stones -= cost.total;
+  if (!spendMaterials(state, cost.mats)) {
+    return { ok: false, msg: check.reason || "潮霧令不足。" };
+  }
   const results = [];
   for (let i = 0; i < n; i += 1) {
     const r = runDungeon(state, dungeonId, { sweepInternal: true, deferEncounter: true });
     if (!r.ok) {
       if (results.length === 0) {
-        state.stones += cost.total;
+        addMaterials(state, cost.mats);
         return r;
       }
       break;
@@ -3027,18 +3062,19 @@ export function runDungeonSweep(state, dungeonId, count) {
     results.push(r);
   }
   if (!results.length) {
-    state.stones += cost.total;
+    addMaterials(state, cost.mats);
     return { ok: false, msg: "掃蕩失敗。" };
   }
   // 未刷滿則按實際場數退還差額
   if (results.length < n) {
-    const used = cost.perRun * results.length;
-    state.stones += cost.total - used;
-    cost.total = used;
+    const used = { [DUNGEON_ENTRY_MAT_ID]: cost.perRun * results.length };
+    const refund = cost.total - used[DUNGEON_ENTRY_MAT_ID];
+    if (refund > 0) addMaterials(state, { [DUNGEON_ENTRY_MAT_ID]: refund });
+    cost.total = used[DUNGEON_ENTRY_MAT_ID];
+    cost.mats = used;
   }
   const d = resolveDungeon(state, dungeonId);
   const baseCd = d?.cooldownMs || 0;
-  // CD 按實際場數延長：20 刷 = 等 20 倍單次 CD
   if (baseCd > 0) {
     state.dungeonReadyAt[dungeonId] = Date.now() + baseCd * results.length;
   }
@@ -3057,7 +3093,8 @@ export function runDungeonSweep(state, dungeonId, count) {
     }
   }
   const cdSec = Math.ceil((baseCd * results.length) / 1000);
-  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 耗 ${cost.total} 石 · 合計 +${agg.totalStones} 石 · CD ${cdSec}s`;
+  const tokenName = MATERIALS[DUNGEON_ENTRY_MAT_ID]?.name || "潮霧令";
+  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 耗${tokenName}×${cost.total} · 合計 +${agg.totalStones} 石 · CD ${cdSec}s`;
   pushLog(state, msg);
   return {
     ok: true,
@@ -3068,7 +3105,8 @@ export function runDungeonSweep(state, dungeonId, count) {
     losses: agg.losses,
     totalStones: agg.totalStones,
     totalScrap: agg.totalScrap,
-    stoneCost: cost.total,
+    stoneCost: 0,
+    tokenCost: cost.total,
     cooldownMs: baseCd * results.length,
     perRun: agg.perRun,
     encounter,

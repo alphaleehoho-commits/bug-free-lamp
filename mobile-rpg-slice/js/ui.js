@@ -2271,7 +2271,7 @@ function sweepModalHtml() {
           <div class="settle-summary-row">
             <div>
               <strong class="settle-total">+${r.totalStones} 靈石</strong>
-              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 耗 ${r.stoneCost || 0}石 · 碎片 +${r.totalScrap || 0}</span>
+              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 耗潮霧令×${r.tokenCost || 0} · 碎片 +${r.totalScrap || 0}</span>
             </div>
           </div>
           ${encounterLine}
@@ -2490,28 +2490,36 @@ function dungeonPanel() {
           const affordOk = !!costInfo?.canAfford;
           const baseCdMs = dCur ? resolveDungeon(state, dCur.id)?.cooldownMs || 0 : 0;
           const sweepCdSec = Math.ceil((baseCdMs * sweepCount) / 1000);
+          const tokenHave = Math.floor(state.materials?.mist_token || 0);
+          const entryCost1 = dCur && stCur?.cleared ? dungeonSweepCost(state, dCur.id, 1) : null;
+          const attackAfford = !entryCost1 || entryCost1.canAfford;
           const sweepBtns = DUNGEON_SWEEP_COUNTS.map((n) => {
             const c = dungeonSweepCost(state, dCur.id, n);
             return `<button type="button" class="sweep-count-btn ${sweepCount === n ? "primary" : ""}" data-sweep-count="${n}" ${
               sweepOk ? "" : "disabled"
-            } title="耗${c.total}石 · CD×${n}">${n}</button>`;
+            } title="${c.label} · CD×${n}">${n}</button>`;
           }).join("");
           const sweepRow =
             sweepOk
               ? `<div class="sweep-controls">
-                  <span class="sweep-label">連刷 · 耗石＋CD×場數</span>
+                  <span class="sweep-label">連刷 · 潮霧令 ${tokenHave} · CD×場數（秘境不掉令）</span>
                   <div class="row sweep-count-row">${sweepBtns}</div>
                   <button type="button" class="primary sweep-run-btn" data-sweep="${escapeHtml(dCur.id)}" ${
                     affordOk ? "" : "disabled"
-                  }>掃蕩 ×${sweepCount} · ${costInfo.total}石 · CD ${sweepCdSec}s</button>
+                  }>掃蕩 ×${sweepCount} · ${costInfo.label} · CD ${sweepCdSec}s</button>
                 </div>`
               : "";
+          const attackLabel = entryCost1
+            ? `進攻 · ${dCur.name}（${entryCost1.label}）`
+            : `進攻 · ${dCur.name}`;
           return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">
             ${pager}
             ${
               dCur
-                ? `<button type="button" class="${sweepOk ? "" : "primary"} dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}" ${locked || onCd ? "disabled" : ""}>進攻 · ${escapeHtml(dCur.name)}</button>`
+                ? `<button type="button" class="${sweepOk ? "" : "primary"} dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}" ${
+                    locked || onCd || !attackAfford ? "disabled" : ""
+                  }>${escapeHtml(attackLabel)}</button>`
                 : ""
             }
           </div>

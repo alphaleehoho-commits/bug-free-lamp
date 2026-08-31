@@ -3361,23 +3361,23 @@ export function rollGearDrop(dungeonId, opts = {}) {
   return null;
 }
 
-/** 秘境勝利掉落：偏專屬催化；bulk 僅作少量爆發補充 */
+/** 秘境勝利掉落：只出專屬催化（bulk／入場令永不進秘境池） */
 export const DUNGEON_MAT_DROPS = {
   tide_1: {
-    chance: 0.42,
-    weights: { temper_oil: 3, tide_dew: 2, coral_shard: 2 },
+    chance: 0.36,
+    weights: { temper_oil: 5 },
   },
   tide_2: {
-    chance: 0.48,
-    weights: { temper_oil: 2, blood_catalyst: 3, mist_silk: 2 },
+    chance: 0.4,
+    weights: { temper_oil: 2, blood_catalyst: 4 },
   },
   tide_3: {
-    chance: 0.52,
-    weights: { blood_catalyst: 3, breed_ticket: 2, abyss_ink: 2 },
+    chance: 0.44,
+    weights: { blood_catalyst: 3, breed_ticket: 3 },
   },
   tide_4: {
-    chance: 0.58,
-    weights: { breed_ticket: 3, temper_oil: 2, blood_catalyst: 2, seal_ember: 1 },
+    chance: 0.48,
+    weights: { breed_ticket: 3, temper_oil: 2, blood_catalyst: 3 },
   },
 };
 
@@ -3580,6 +3580,13 @@ export const MATERIALS = {
     desc: "秘境專屬：立即重置繁殖冷卻",
     tier: "dungeon",
   },
+  /** 入場憑證：練功／每日／升階產出；秘境永不掉落 */
+  mist_token: {
+    id: "mist_token",
+    name: "潮霧令",
+    desc: "已通關秘境入場／掃蕩消耗 · 練功、每日、升階產出",
+    tier: "gate",
+  },
 };
 
 export const MATERIAL_IDS = Object.keys(MATERIALS);
@@ -3623,6 +3630,7 @@ export function fusionMatCost(targetStage) {
  * 練功地點：首通秘境解鎖；每地專精一種 bulk（唔再愈深愈全能）
  * focus: UI 短標；primaryMat: 專精主產物；drops: perSec 期望產出／秒
  * 秘境專屬料（洗劑／催化／催生符）永不進 AFK
+ * 入場令（潮霧令）只走練功／每日／升階，永不進秘境掉落
  */
 export const TRAIN_FOCUS_BONUS = 1.35;
 export const TRAIN_DAILY_SPOT_BONUS = 1.25;
@@ -3635,9 +3643,10 @@ export const TRAIN_SITES = [
     qiMult: 1,
     focus: "升級",
     primaryMat: "tide_dew",
-    desc: "專精升級 · 潮露／飼料",
+    desc: "專精升級 · 潮露／飼料／潮霧令",
     drops: [
       { mat: "tide_dew", perSec: 0.042 },
+      { mat: "mist_token", perSec: 0.01 },
       { feed: 0.045 },
       { dust: 0.01 },
     ],
@@ -3649,9 +3658,10 @@ export const TRAIN_SITES = [
     qiMult: 1.04,
     focus: "繁殖",
     primaryMat: "coral_shard",
-    desc: "專精繁殖 · 珊瑚屑",
+    desc: "專精繁殖 · 珊瑚屑／潮霧令",
     drops: [
       { mat: "coral_shard", perSec: 0.038 },
+      { mat: "mist_token", perSec: 0.008 },
       { feed: 0.02 },
       { dust: 0.015 },
     ],
@@ -3663,9 +3673,10 @@ export const TRAIN_SITES = [
     qiMult: 1.06,
     focus: "高階升級",
     primaryMat: "mist_silk",
-    desc: "專精高階升級 · 霧絲",
+    desc: "專精高階升級 · 霧絲／潮霧令",
     drops: [
       { mat: "mist_silk", perSec: 0.032 },
+      { mat: "mist_token", perSec: 0.009 },
       { feed: 0.022 },
       { dust: 0.012 },
     ],
@@ -3677,9 +3688,10 @@ export const TRAIN_SITES = [
     qiMult: 1.05,
     focus: "技能",
     primaryMat: "echo_resin",
-    desc: "專精技能 · 靈響脂／靈塵",
+    desc: "專精技能 · 靈響脂／靈塵／潮霧令",
     drops: [
       { mat: "echo_resin", perSec: 0.028 },
+      { mat: "mist_token", perSec: 0.009 },
       { dust: 0.035 },
       { feed: 0.012 },
     ],
@@ -3691,9 +3703,10 @@ export const TRAIN_SITES = [
     qiMult: 1.08,
     focus: "雜交",
     primaryMat: "abyss_ink",
-    desc: "專精雜交繁殖 · 深淵墨",
+    desc: "專精雜交繁殖 · 深淵墨／潮霧令",
     drops: [
       { mat: "abyss_ink", perSec: 0.03 },
+      { mat: "mist_token", perSec: 0.01 },
       { dust: 0.018 },
     ],
   },
@@ -3704,9 +3717,10 @@ export const TRAIN_SITES = [
     qiMult: 1.07,
     focus: "融合",
     primaryMat: "fuse_sand",
-    desc: "專精融合 · 融砂",
+    desc: "專精融合 · 融砂／潮霧令",
     drops: [
       { mat: "fuse_sand", perSec: 0.026 },
+      { mat: "mist_token", perSec: 0.01 },
       { feed: 0.015 },
       { dust: 0.014 },
     ],
@@ -3718,9 +3732,10 @@ export const TRAIN_SITES = [
     qiMult: 1.1,
     focus: "突破",
     primaryMat: "seal_ember",
-    desc: "專精突破 · 契火",
+    desc: "專精突破 · 契火／潮霧令",
     drops: [
       { mat: "seal_ember", perSec: 0.024 },
+      { mat: "mist_token", perSec: 0.012 },
       { dust: 0.02 },
     ],
   },
@@ -3824,6 +3839,7 @@ export const MATERIAL_USES = {
   temper_oil: "洗性格",
   blood_catalyst: "縮短繁殖冷卻",
   breed_ticket: "重置繁殖冷卻",
+  mist_token: "秘境入場／掃蕩",
 };
 
 /** 材料來源索引（練功地／派遣） */
@@ -3856,6 +3872,7 @@ export const MATERIAL_SOURCE_INDEX = buildMaterialSourceIndex();
 export function materialSourceLabel(matId) {
   const mat = MATERIALS[matId];
   if (mat?.tier === "dungeon") return "秘境專屬";
+  if (mat?.tier === "gate") return "練功／每日／升階（秘境不掉）";
   const e = MATERIAL_SOURCE_INDEX[matId];
   if (!e) return mat?.desc || "";
   const parts = [];
@@ -4116,7 +4133,7 @@ export const DAILY_QUESTS = [
     name: "潮汐試煉",
     desc: "挑戰秘境 1 次（不論勝負）",
     need: 1,
-    reward: { stones: 30, scrap: 1 },
+    reward: { stones: 30, scrap: 1, materials: { mist_token: 2 } },
   },
   {
     id: "bond",
@@ -4137,14 +4154,14 @@ export const DAILY_QUESTS = [
     name: "秘境取勝",
     desc: "秘境勝利 1 場",
     need: 1,
-    reward: { stones: 35, dust: 4 },
+    reward: { stones: 35, dust: 4, materials: { mist_token: 2 } },
   },
   {
     id: "dispatch",
     name: "外派歸來",
     desc: "領取 1 次牧場派遣獎勵",
     need: 1,
-    reward: { stones: 22, materials: { tide_dew: 1 } },
+    reward: { stones: 22, materials: { tide_dew: 1, mist_token: 1 } },
   },
   {
     id: "fuse",
@@ -4158,14 +4175,31 @@ export const DAILY_QUESTS = [
 /** 7 個每日任務全領後的全清獎（每日一次） */
 export const DAILY_ALL_CLEAR_BONUS = {
   stones: 60,
-  materials: { breed_ticket: 1 },
+  materials: { mist_token: 5, breed_ticket: 1 },
 };
 
 /** 已通關秘境掃蕩可選次數（單次請用「進攻」） */
 export const DUNGEON_SWEEP_COUNTS = [5, 10, 20];
 
-/** 掃蕩每場耗石倍率（相對本層通關基礎靈石） */
-export const DUNGEON_SWEEP_STONE_COST_RATIO = 0.25;
+/** 入場令 id（秘境永不掉落） */
+export const DUNGEON_ENTRY_MAT_ID = "mist_token";
+
+/**
+ * 已通關秘境入場／掃蕩耗潮霧令（每場）；首通／教學免費。
+ * 高階層略貴。
+ */
+export function dungeonEntryTokenPerRun(dungeonId) {
+  const tier = parseDungeonTier(dungeonId) || 1;
+  if (tier <= 2) return 1;
+  if (tier <= 4) return 2;
+  return 2 + Math.floor((tier - 4) / 2);
+}
+
+export function dungeonEntryMatCost(dungeonId, count = 1) {
+  const n = Math.max(1, count | 0);
+  const per = dungeonEntryTokenPerRun(dungeonId);
+  return { [DUNGEON_ENTRY_MAT_ID]: per * n };
+}
 
 /**
  * 求道目標板：三條長線（收集／育成／挑戰）
@@ -4498,13 +4532,13 @@ export const ACHIEVEMENTS = [
 
 /** 7 日登入連續獎勵（cycle） */
 export const LOGIN_STREAK_REWARDS = [
-  { day: 1, name: "初潮", reward: { stones: 30, feed: 5 } },
-  { day: 2, name: "雙契", reward: { stones: 35, feed: 8 } },
-  { day: 3, name: "三潮", reward: { stones: 40, dust: 6, materials: { tide_dew: 2 } } },
-  { day: 4, name: "暗潮蛋", reward: { stones: 45, eggTier: "B" } },
-  { day: 5, name: "五潮", reward: { stones: 50, scrap: 1, materials: { coral_shard: 2 } } },
-  { day: 6, name: "血脈", reward: { stones: 55, materials: { breed_ticket: 1, blood_catalyst: 1 } } },
-  { day: 7, name: "心核", reward: { stones: 80, eggTier: "A", materials: { mist_silk: 2 } } },
+  { day: 1, name: "初潮", reward: { stones: 30, feed: 5, materials: { mist_token: 2 } } },
+  { day: 2, name: "雙契", reward: { stones: 35, feed: 8, materials: { mist_token: 2 } } },
+  { day: 3, name: "三潮", reward: { stones: 40, dust: 6, materials: { tide_dew: 2, mist_token: 3 } } },
+  { day: 4, name: "暗潮蛋", reward: { stones: 45, eggTier: "B", materials: { mist_token: 3 } } },
+  { day: 5, name: "五潮", reward: { stones: 50, scrap: 1, materials: { coral_shard: 2, mist_token: 3 } } },
+  { day: 6, name: "血脈", reward: { stones: 55, materials: { breed_ticket: 1, blood_catalyst: 1, mist_token: 4 } } },
+  { day: 7, name: "心核", reward: { stones: 80, eggTier: "A", materials: { mist_silk: 2, mist_token: 5 } } },
 ];
 
 export function yesterdayKey(now = Date.now()) {

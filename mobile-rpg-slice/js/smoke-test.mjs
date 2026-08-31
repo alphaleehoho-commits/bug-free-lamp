@@ -105,7 +105,8 @@ import {
   eggTierInfo,
   DAILY_ALL_CLEAR_BONUS,
   DUNGEON_SWEEP_COUNTS,
-  DUNGEON_SWEEP_STONE_COST_RATIO,
+  DUNGEON_ENTRY_MAT_ID,
+  dungeonEntryMatCost,
   todayKey,
 } from "./data.js";
 import {
@@ -566,17 +567,30 @@ const fakeMats = { materials: { tide_dew: 0, mist_silk: 2 } };
 const aff = affordMaterials(fakeMats, { tide_dew: 2, mist_silk: 1 });
 assert(!aff.ok && aff.items.find((i) => i.id === "tide_dew")?.short === 2, "afford short");
 
-/* P18: specialize — ruins primary is coral not tide mix */
+/* P18: specialize — ruins primary is coral; mist_token is shared gate mat */
 const ruins = TRAIN_SITES.find((s) => s.id === "ruins");
-assert(ruins.focus === "繁殖" && ruins.drops.every((d) => !d.mat || d.mat === "coral_shard"), "ruins coral focus");
+assert(
+  ruins.focus === "繁殖" &&
+    ruins.primaryMat === "coral_shard" &&
+    ruins.drops.every((d) => !d.mat || d.mat === "coral_shard" || d.mat === "mist_token"),
+  "ruins coral focus"
+);
 const abyssSite = TRAIN_SITES.find((s) => s.id === "abyss");
 assert(
-  abyssSite.focus === "突破" && abyssSite.drops.every((d) => !d.mat || d.mat === "seal_ember"),
+  abyssSite.focus === "突破" &&
+    abyssSite.primaryMat === "seal_ember" &&
+    abyssSite.drops.every((d) => !d.mat || d.mat === "seal_ember" || d.mat === "mist_token"),
   "abyss ember focus"
 );
 assert(DUNGEON_MAT_DROPS.tide_4.weights.breed_ticket >= 2, "dungeon exclusive weight");
 assert(!DUNGEON_MAT_DROPS.tide_1.weights.echo_resin, "no resin in dungeon");
 assert(!DUNGEON_MAT_DROPS.tide_1.weights.fuse_sand, "no fuse sand in dungeon");
+assert(!DUNGEON_MAT_DROPS.tide_1.weights.tide_dew, "no bulk tide_dew in dungeon");
+assert(!DUNGEON_MAT_DROPS.tide_4.weights.seal_ember, "no bulk seal_ember in dungeon");
+assert(!DUNGEON_MAT_DROPS.tide_1.weights.mist_token, "entry token never dungeon drop");
+assert(MATERIALS.mist_token?.tier === "gate", "mist_token is gate tier");
+assert(materialSourceLabel("mist_token").includes("秘境不掉"), "token source label");
+assert(TRAIN_SITES.every((s) => (s.drops || []).some((d) => d.mat === "mist_token")), "all sites drip tokens");
 
 /* P19: shortage → train site nav */
 assert(primaryTrainSiteForMat("coral_shard")?.id === "ruins", "coral → ruins");
@@ -1060,7 +1074,7 @@ assert(tacticsNav.panelSub.dungeon === "setup", "tactics sync forces setup sub")
 /* Week A: dungeon sweep + daily all-clear */
 assert(DUNGEON_SWEEP_COUNTS.includes(10), "sweep counts include 10");
 assert(!DUNGEON_SWEEP_COUNTS.includes(1), "sweep drops single-run (use 進攻)");
-assert(DUNGEON_SWEEP_STONE_COST_RATIO > 0, "sweep stone cost ratio");
+assert(DUNGEON_ENTRY_MAT_ID === "mist_token", "entry mat is mist_token");
 assert(DAILY_ALL_CLEAR_BONUS.stones >= 1, "all clear bonus defined");
 assert(!canDungeonSweep(combatSt, "tide_1").ok, "no sweep before clear");
 const sweepSt = {
@@ -1070,6 +1084,7 @@ const sweepSt = {
   scrap: 99,
   dust: 99,
   feed: 99,
+  materials: { mist_token: 50 },
   pets: [combatFox],
   ranch: [],
   pending: [],
@@ -1088,14 +1103,18 @@ const sweepSt = {
   tutorial: { done: true, step: "complete", flags: {} },
 };
 assert(canDungeonSweep(sweepSt, "tide_1").ok, "sweep after clear");
+const tokensBefore = sweepSt.materials.mist_token;
 const sweepRes = runDungeonSweep(sweepSt, "tide_1", 5);
 assert(sweepRes.ok && sweepRes.sweep && sweepRes.count === 5, "sweep 5 runs");
 assert(sweepRes.wins >= 1 && sweepRes.totalStones > 0, "sweep aggregate stones");
-assert(sweepRes.stoneCost > 0, "sweep spends stones");
+assert(sweepRes.tokenCost > 0, "sweep spends mist tokens");
+assert(sweepSt.materials.mist_token === tokensBefore - sweepRes.tokenCost, "tokens deducted");
 assert((sweepSt.dungeonReadyAt.tide_1 || 0) > Date.now() + 60_000, "sweep CD scales with count (5×)");
-const cost5 = dungeonSweepCost({ ...sweepSt, stones: 99999, dungeonReadyAt: {} }, "tide_1", 5);
-const cost20 = dungeonSweepCost({ ...sweepSt, stones: 99999, dungeonReadyAt: {} }, "tide_1", 20);
+const cost5 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {} }, "tide_1", 5);
+const cost20 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {} }, "tide_1", 20);
 assert(cost20.total > cost5.total, "20-sweep costs more than 5");
+assert(dungeonEntryMatCost("tide_1", 1).mist_token >= 1, "entry cost defined");
+assert(!Object.values(DUNGEON_MAT_DROPS).some((t) => t.weights?.mist_token), "token absent from all dungeon tables");
 
 /* ranch claim: only ranch slots count (deployed pets don't block) */
 const ranchClaimSt = {
