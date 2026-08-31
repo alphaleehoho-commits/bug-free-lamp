@@ -8,7 +8,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "hatch_starter",
     title: "孵化首寵",
-    hint: "打開「靈寵 → 牧場」，等待潮霧蛋孵化並領取首隻靈寵。",
+    hint: "潮霧蛋孵化中。等待期間可先「修行 → 練功」掛機，完成後回牧場領取。",
   },
   {
     id: "meet_pet",
@@ -191,11 +191,11 @@ function locksForStep(stepId) {
   switch (stepId) {
     case "hatch_starter":
       return {
-        tabs: { cultivate: true, dungeon: true, codex: true, log: true },
-        cultivateSub: { ...allCult },
+        tabs: { dungeon: true, codex: true, log: true },
+        cultivateSub: { advance: true, shop: true },
         partySub: { fight: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
-        trainSites: true,
+        trainSites: false,
       };
     case "meet_pet":
       return {
@@ -505,15 +505,14 @@ export function syncTutorialNavigation(state, nav) {
   const step = state.tutorial.step;
   const next = { ...nav };
 
-  if (
-    step === "hatch_starter" ||
-    step === "meet_pet" ||
-    step === "deploy" ||
-    step === "hatch_second" ||
-    step === "breed_intro"
-  ) {
+  if (step === "meet_pet" || step === "deploy" || step === "breed_intro") {
     next.tab = "party";
     next.panelSub = { ...next.panelSub, party: "ranch" };
+  } else if (step === "hatch_starter" || step === "hatch_second") {
+    if (next.tab !== "cultivate" && next.tab !== "party") {
+      next.tab = "party";
+      next.panelSub = { ...next.panelSub, party: "ranch" };
+    }
   } else if (step === "train_pet") {
     next.tab = "cultivate";
     next.panelSub = { ...next.panelSub, cultivate: "train" };
@@ -545,14 +544,17 @@ export function tutorialHighlights(state, nav = {}) {
   const eggIdle = (state.eggs || []).some((e) => e.startedAt == null);
 
   switch (step) {
-    case "hatch_starter":
+    case "hatch_starter": {
       if (tab === "party" && ps.party === "ranch") {
         if (eggReady) return [{ type: "claim-hatch" }];
         if (eggIdle) return [{ type: "start-hatch" }];
-        return [];
+        return [{ type: "tab", id: "cultivate" }];
       }
+      if (tab === "cultivate" && ps.cultivate === "train") return [];
+      if (tab === "cultivate") return [{ type: "panel-sub", group: "cultivate", id: "train" }];
       if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
       return [{ type: "tab", id: "party" }];
+    }
     case "meet_pet":
       if (tab === "party" && ps.party === "ranch") return [{ type: "pet-detail" }];
       if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
@@ -767,6 +769,6 @@ export function tutorialBannerHtml(state) {
         <strong>${info.title}</strong>
         <button type="button" class="ghost tutorial-skip" data-act="skip-tutorial">跳過教學</button>
       </div>
-      <p class="tutorial-hint">${hint}</p>
+      <p class="tutorial-hint" data-live="tutorial-hint">${hint}</p>
     </div>`;
 }

@@ -127,6 +127,7 @@ import {
   trainSiteById,
   makeStarterPet,
   makeStarterEgg,
+  STARTER_EGG_HATCH_MS,
   makeEgg,
   hatchPetFromEgg,
   eggTierInfo,
@@ -315,13 +316,20 @@ function normalizeEggs(list) {
     .filter((e) => e && e.uid && !e.claimed)
     .map((e) => {
       const t = eggTierInfo(e.tier || "C");
+      let startedAt = e.startedAt ?? null;
+      let readyAt = e.readyAt ?? null;
+      if (e.source === "starter" && startedAt != null && readyAt != null) {
+        const maxReady = startedAt + STARTER_EGG_HATCH_MS;
+        if (readyAt > maxReady) readyAt = maxReady;
+      }
       return {
         uid: e.uid,
         tier: t.id,
         name: e.name || t.name,
         source: e.source || "unknown",
-        startedAt: e.startedAt ?? null,
-        readyAt: e.readyAt ?? null,
+        desc: e.desc,
+        startedAt,
+        readyAt,
         claimed: false,
       };
     });
