@@ -143,6 +143,36 @@ let pwaDismissed = localStorage.getItem("void-tide-pwa-dismiss") === "1";
 let tutorialSnapCache = "";
 let tutMisclickCount = 0;
 let tutSpotlightEl = null;
+/** Phase 2–5 UI chrome toggles */
+let condSheetOpen = false;
+let rewardDetailsOpen = false;
+let tutorialCollapsed = false;
+let matSectionOpen = false;
+let trainRatesOpen = false;
+let statsSheetOpen = false;
+
+const UI_PREFS_KEY = "void-tide-ui-prefs";
+
+function loadUiPrefs() {
+  try {
+    const raw = sessionStorage.getItem(UI_PREFS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function saveUiPrefs() {
+  sessionStorage.setItem(
+    UI_PREFS_KEY,
+    JSON.stringify({ matSectionOpen, trainRatesOpen })
+  );
+}
+
+const uiPrefsBoot = loadUiPrefs();
+matSectionOpen = !!uiPrefsBoot.matSectionOpen;
+trainRatesOpen = !!uiPrefsBoot.trainRatesOpen;
 
 const COMBAT_PREFS_KEY = "void-tide-combat-prefs";
 
@@ -220,6 +250,10 @@ function onTutorialMisclick(ev) {
     return;
   }
   tutMisclickCount += 1;
+  if (tutorialCollapsed) {
+    tutorialCollapsed = false;
+    render();
+  }
   if (tutMisclickCount >= 2) positionTutorialSpotlight(true);
 }
 
@@ -274,7 +308,7 @@ function patchTutorialBanner() {
     ensureSpotlight().hidden = true;
     return;
   }
-  const html = tutorialBannerHtml(state);
+  const html = tutorialBannerHtml(state, { collapsed: tutorialCollapsed });
   if (cur) {
     const wrap = document.createElement("div");
     wrap.innerHTML = html.trim();
@@ -726,6 +760,8 @@ function switchTab(id) {
   if (playback && !playback.done) return;
   if (isTabLocked(state, id)) return;
   tab = id;
+  condSheetOpen = false;
+  statsSheetOpen = false;
   tutMisclickCount = 0;
   if (tutorialActive(state)) {
     const step = state.tutorial.step;
@@ -787,6 +823,20 @@ function panelSubNav(group, items) {
     .join("")}</nav>`;
 }
 
+function wrapStage(subnavHtml, scrollHtml, dockHtml = "") {
+  return `
+    ${subnavHtml || ""}
+    <div class="panel-stage">
+      <div class="stage-scroll">${scrollHtml}</div>
+      ${dockHtml ? `<div class="stage-dock">${dockHtml}</div>` : ""}
+    </div>`;
+}
+
+function syncAppHeight() {
+  const h = window.visualViewport?.height ?? window.innerHeight;
+  document.documentElement.style.setProperty("--app-h", `${Math.round(h)}px`);
+}
+
 function matAffordHtml(cost) {
   const a = affordMaterials(state, cost);
   if (!a.items.length) return "";
@@ -833,6 +883,35 @@ function matHintListHtml() {
     .join("")}</ul>`;
 }
 
+function matOwnedCount() {
+  return materialHintsView(state).filter((m) => m.count > 0).length;
+}
+
+function materialsBlockHtml() {
+  const owned = matOwnedCount();
+  return `<div class="fold-section">
+      <button type="button" class="section-toggle" data-act="toggle-mat-section">
+        <span>材料</span>
+        <strong>${owned} 種持有</strong>
+        <span class="muted">${matSectionOpen ? "收起來源" : "用途／來源"}</span>
+      </button>
+      <div class="chip-row chip-row-scroll">${matChipsHtml()}</div>
+      ${matSectionOpen ? matHintListHtml() : ""}
+    </div>`;
+}
+
+function trainRatesBlockHtml(rateLines) {
+  if (!rateLines) return "";
+  const list = `<ul class="train-rate-list">${rateLines}</ul>`;
+  return `<div class="fold-section fold-section-inline">
+      <button type="button" class="section-toggle" data-act="toggle-train-rates">
+        <span>產出速率</span>
+        <span class="muted">${trainRatesOpen ? "收起" : "點開明細"}</span>
+      </button>
+      ${trainRatesOpen ? list : ""}
+    </div>`;
+}
+
 function patchMatChipsLive() {
   let changed = false;
   document.querySelectorAll("[data-mat-count]").forEach((el) => {
@@ -874,9 +953,11 @@ function patchEggLive() {
 }
 
 function patchTutorialHintLive() {
-  const hintEl = document.querySelector("[data-live=tutorial-hint]");
-  if (!hintEl || !tutorialActive(state)) return;
-  hintEl.textContent = tutorialBannerHint(state);
+  if (!tutorialActive(state)) return;
+  const hint = tutorialBannerHint(state);
+  document.querySelectorAll("[data-live=tutorial-hint]").forEach((hintEl) => {
+    hintEl.textContent = hint;
+  });
 }
 
 function patchLive() {
@@ -904,7 +985,7 @@ function patchLive() {
   if (feed) feed.textContent = String(Math.floor(state.feed || 0));
   if (dust) dust.textContent = String(Math.floor(state.dust || 0));
   if (stageEl) stageEl.textContent = stage.name;
-  if (wins) wins.textContent = `勝場 ${state.combatsWon}`;
+  if (wins) wins.textContent = `勝 ${state.combatsWon}`;
 
   const eggReadyNow = patchEggLive();
   patchTutorialHintLive();
@@ -977,6 +1058,17 @@ function updatePlaybackDom(latestEvent = null) {
   }
 }
 
+function clearCombatPlayback(opts = {}) {
+  const goSetup = !!opts.goSetup;
+  stopPlayback();
+  rewardDetailsOpen = false;
+  if (goSetup) {
+    panelSub = { ...panelSub, dungeon: "setup" };
+    markTutorialSubVisit("dungeon", "setup");
+  }
+  render();
+}
+
 function finishPlayback() {
   if (!playback) return;
   playback.done = true;
@@ -992,15 +1084,24 @@ function finishPlayback() {
       adv = advanceTutorialIfReady(state);
     }
   }
-  saveState(state);
-  render();
-  const unlocks = playback.result.unlockedSites || [];
+  const tacticsStep = tutorialActive(state) && state.tutorial.step === "tactics";
+  const result = playback.result;
+  const unlocks = result?.unlockedSites || [];
+  const resultMsg = result?.msg;
+  const wasSkipped = playback.skipped;
+  if (tacticsStep && wasSkipped) {
+    saveState(state);
+    clearCombatPlayback({ goSetup: true });
+  } else {
+    saveState(state);
+    render();
+  }
   if (adv.advanced && adv.unlockMsg) {
     setFlash(adv.unlockMsg, "unlock");
   } else if (unlocks.length) {
-    setFlash(`解鎖練功地【${unlocks.join("】【")}】！ ${playback.result.msg}`, "unlock");
-  } else {
-    setFlash(playback.result.msg);
+    setFlash(`解鎖練功地【${unlocks.join("】【")}】！ ${resultMsg}`, "unlock");
+  } else if (resultMsg) {
+    setFlash(resultMsg);
   }
 }
 
@@ -1037,6 +1138,8 @@ function advancePlayback() {
 function startPlayback(result) {
   stopPlayback();
   tab = "dungeon";
+  condSheetOpen = false;
+  rewardDetailsOpen = false;
   const events =
     result.combatEvents ||
     (result.transcript || []).map((text) => ({ type: "text", text }));
@@ -1109,37 +1212,25 @@ function render() {
   const m = state.master;
   const enterClass = shellReady ? "is-settled" : "is-enter";
   const busy = playback && !playback.done;
+  const inTutorial = tutorialActive(state);
 
-  app.className = enterClass;
+  app.className = `${enterClass}${inTutorial ? " is-tutorial" : ""}`;
   app.innerHTML = `
-    <header class="top">
-      <p class="brand">暗潮</p>
-      <p class="tag">靈寵修行</p>
+    <header class="top top-compact">
+      <div class="brand-row">
+        <p class="brand">暗潮</p>
+        <p class="tag">靈寵修行 · <span data-live="wins">勝 ${state.combatsWon}</span></p>
+      </div>
     </header>
 
-    <div class="stats">
-      <div><span>階段</span><strong data-live="stage">${stage.name}</strong></div>
-      <div><span>靈石</span><strong data-live="stones">${Math.floor(state.stones)}</strong></div>
-      <div><span>碎片</span><strong data-live="scrap">${state.scrap}</strong></div>
-      <div><span>飼料</span><strong data-live="feed">${Math.floor(state.feed || 0)}</strong></div>
-      <div><span>靈塵</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
-    </div>
+    ${inTutorial ? tutorialStatsStrip() : statsStripHtml(stage)}
 
-    ${offlineBanner()}
-    ${installBanner()}
     ${nextGoalChipHtml()}
 
-    <nav class="tabs" role="tablist">
-      ${tabBtn("cultivate", "修行", busy)}
-      ${tabBtn("party", "靈寵", busy)}
-      ${tabBtn("dungeon", "秘境", busy)}
-      ${tabBtn("codex", "圖鑑", busy)}
-      ${tabBtn("log", "見聞", busy)}
-    </nav>
+    ${inTutorial ? tutorialBannerHtml(state, { collapsed: tutorialCollapsed }) : ""}
 
     <main class="panel">
       <div class="panel-body">
-      ${tutorialBannerHtml(state)}
       ${tab === "cultivate" ? cultivatePanel(qiPct, next, m) : ""}
       ${tab === "party" ? petsPanel() : ""}
       ${tab === "dungeon" ? dungeonPanel() : ""}
@@ -1148,15 +1239,27 @@ function render() {
       </div>
     </main>
 
-    <footer class="foot">
-      <span data-live="wins">勝場 ${state.combatsWon}</span>
-    </footer>
+    <nav class="tabs tabs-bottom" role="tablist">
+      ${tabBtn("cultivate", "修行", busy)}
+      ${tabBtn("party", "靈寵", busy)}
+      ${tabBtn("dungeon", "秘境", busy)}
+      ${tabBtn("codex", "圖鑑", busy)}
+      ${tabBtn("log", "見聞", busy)}
+    </nav>
+    ${playback ? combatModalHtml() : ""}
+    ${condSheetOpen ? dungeonCondSheetHtml() : ""}
+    ${statsSheetOpen ? statsSheetHtml() : ""}
     ${dailyHubHtml()}
+    ${offlineBanner()}
+    ${inTutorial ? "" : installBanner()}
   `;
 
   bind();
   shellReady = true;
-  if (tutorialSnapCache !== tutorialLiveSnapshot(state)) tutMisclickCount = 0;
+  if (tutorialSnapCache !== tutorialLiveSnapshot(state)) {
+    tutMisclickCount = 0;
+    tutorialCollapsed = false;
+  }
   tutorialSnapCache = tutorialLiveSnapshot(state);
   saveState(state);
   requestAnimationFrame(() => {
@@ -1178,14 +1281,70 @@ function dispatchMatBits(mission) {
 
 let dailyHubDismissedSession = false;
 
+function statsStripHtml(stage) {
+  return `<button type="button" class="stats stats-compact stats-tappable" data-act="toggle-stats-sheet" aria-label="查看資源詳情">
+      <div><span>階段</span><strong data-live="stage">${stage.name}</strong></div>
+      <div><span>靈石</span><strong data-live="stones">${Math.floor(state.stones)}</strong></div>
+      <div><span>碎片</span><strong data-live="scrap">${state.scrap}</strong></div>
+      <div><span>飼料</span><strong data-live="feed">${Math.floor(state.feed || 0)}</strong></div>
+      <div><span>靈塵</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
+    </button>`;
+}
+
+function statsSheetHtml() {
+  const stage = realmInfo(state);
+  const next = nextRealm(state);
+  const br = breakthroughView(state);
+  const qiPct = next ? Math.min(100, Math.round((state.qi / next.need) * 100)) : 100;
+  const ranchN = (state.ranch?.length || 0) + state.pets.length;
+  const matRows = materialHintsView(state)
+    .filter((m) => m.count > 0)
+    .slice(0, 8)
+    .map(
+      (m) =>
+        `<li class="stat-sheet-mat"><span>${escapeHtml(m.name)}</span><strong>${m.count}</strong><span class="muted">${escapeHtml(m.use)}</span></li>`
+    )
+    .join("");
+  return `
+    <div class="sheet-overlay" role="presentation">
+      <div class="sheet-card stat-sheet-card" role="dialog" aria-label="資源詳情" data-sheet-card>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <h3>資源詳情</h3>
+        <ul class="stat-sheet-grid">
+          <li><span>階段</span><strong>${escapeHtml(stage.name)}</strong></li>
+          <li><span>靈石</span><strong>${Math.floor(state.stones)}</strong></li>
+          <li><span>碎片</span><strong>${state.scrap}</strong></li>
+          <li><span>飼料</span><strong>${Math.floor(state.feed || 0)}</strong></li>
+          <li><span>靈塵</span><strong>${Math.floor(state.dust || 0)}</strong></li>
+          <li><span>勝場</span><strong>${state.combatsWon}</strong></li>
+          <li><span>牧場</span><strong>${ranchN}／${ranchCap(state)}</strong></li>
+          <li><span>出戰</span><strong>${state.pets.length}／${ACTIVE_PET_MAX}</strong></li>
+        </ul>
+        <p class="meta">靈契 ${Math.floor(state.qi)} / ${next?.need || "—"} · ${qiPct}% →【${escapeHtml(br.next?.name || "")}】</p>
+        ${matRows ? `<h4>持有材料</h4><ul class="stat-sheet-mats">${matRows}</ul>` : ""}
+        <button type="button" class="primary sheet-close" data-act="close-stats-sheet">關閉</button>
+      </div>
+    </div>`;
+}
+
+function tutorialStatsStrip() {
+  const stage = realmInfo(state);
+  return `<div class="tutorial-stats-strip">
+    <span data-live="stage">${escapeHtml(stage.name)}</span>
+    <span><strong data-live="stones">${Math.floor(state.stones)}</strong> 石</span>
+    <span>飼 <strong data-live="feed">${Math.floor(state.feed || 0)}</strong></span>
+    <span>塵 <strong data-live="dust">${Math.floor(state.dust || 0)}</strong></span>
+  </div>`;
+}
+
 function nextGoalChipHtml() {
   if (tutorialActive(state)) return "";
   const goal = nextGoalView(state);
   if (!goal) return "";
-  return `<button type="button" class="next-goal-chip" data-act="goto-goal" data-goal-tab="${escapeHtml(goal.tab)}" data-goal-sub="${escapeHtml(goal.sub || "")}">
-    <span class="next-goal-kicker">${escapeHtml(goal.kind === "breakthrough" ? "下一突破" : "求道")}</span>
+  return `<button type="button" class="next-goal-chip next-goal-compact" data-act="goto-goal" data-goal-tab="${escapeHtml(goal.tab)}" data-goal-sub="${escapeHtml(goal.sub || "")}">
+    <span class="next-goal-kicker">${escapeHtml(goal.kind === "breakthrough" ? "突破" : "求道")}</span>
     <strong>${escapeHtml(goal.label)}</strong>
-    <span class="muted">${escapeHtml(goal.progress)}${goal.targetName ? ` → ${escapeHtml(goal.targetName)}` : ""}</span>
+    <span class="muted">${escapeHtml(goal.progress)}</span>
   </button>`;
 }
 
@@ -1240,7 +1399,7 @@ function dailyHubHtml() {
 function installBanner() {
   if (pwaDismissed || !pwaInstallEvt) return "";
   return `
-    <div class="install-banner" data-live="install-banner">
+    <div class="chrome-toast install-toast" data-live="install-banner">
       <p>可將暗潮加入主畫面，離線也能掛機修行。</p>
       <div class="row">
         <button type="button" class="primary" data-act="pwa-install">安裝</button>
@@ -1263,7 +1422,7 @@ function offlineBanner() {
     matLine ? ` · ${matLine}` : ""
   }${h.siteName ? `（${h.siteName}）` : ""}`;
   return `
-    <div class="offline-banner" data-live="offline">
+    <div class="chrome-toast offline-toast" data-live="offline">
       <div class="offline-body">
         <strong>離線約 ${min} 分鐘</strong>
         <p class="offline-detail">${escapeHtml(detail)}</p>
@@ -1308,9 +1467,6 @@ function cultivatePanel(qiPct, next, m) {
         `<li class="train-rate ${r.tag ? "is-boosted" : ""}"><span>${escapeHtml(r.name)}</span><span class="muted">≈${r.perHr}/時${r.tag ? ` · ${escapeHtml(r.tag)}` : ""}</span></li>`
     )
     .join("");
-  const rateBlock = rateLines
-    ? `<ul class="train-rate-list">${rateLines}</ul>`
-    : "";
 
   const shopOffers = shopView(state);
   const ranchFull = (state.ranch?.length || 0) + state.pets.length >= ranchCap(state);
@@ -1353,11 +1509,12 @@ function cultivatePanel(qiPct, next, m) {
   ]);
 
   if (sub === "shop") {
-    return `
-      ${nav}
-      <h2>商肆 · 今日</h2>
+    return wrapStage(
+      nav,
+      `<h2>商肆 · 今日</h2>
       <p class="lead">靈石 ${Math.floor(state.stones)} · 牧場 ${ranchN}／${ranchCap(state)}</p>
-      <ul class="list">${shopRows}</ul>`;
+      <ul class="list">${shopRows}</ul>`
+    );
   }
 
   if (sub === "advance") {
@@ -1374,20 +1531,21 @@ function cultivatePanel(qiPct, next, m) {
       </li>`
       )
       .join("");
-    return `
-      ${nav}
-      <h2>契壇修行 · 進階</h2>
+    return wrapStage(
+      nav,
+      `<h2>契壇修行 · 進階</h2>
       <p class="lead">→【${escapeHtml(br.next.name)}】潮印 ${seal.seals}/${seal.max} · 全隊 ×${seal.mult.toFixed(2)}</p>
-      <ul class="cond-list">${gateRowsCompact}</ul>
-      <div class="row">
+      <ul class="cond-list">${gateRowsCompact}</ul>`,
+      `<div class="row">
         <button type="button" class="primary${tutGlow({ type: "act", act: "break" })}" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
         <button type="button" data-act="tide-seal" ${seal.canSeal ? "" : "disabled"}>鑄潮印${seal.canSeal ? `+${seal.nextGain}` : ""}</button>
-      </div>`;
+      </div>`
+    );
   }
 
-  return `
-    ${nav}
-    <h2>契壇修行</h2>
+  return wrapStage(
+    nav,
+    `<h2>契壇修行</h2>
     <p class="lead">御靈師【${escapeHtml(m.name)}】· 牧場 ${ranchN}／${ranchCap(state)} · 重心在靈寵</p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 【${escapeHtml(br.cur?.name || "")}】→【${escapeHtml(br.next.name)}】</p>
@@ -1401,16 +1559,14 @@ function cultivatePanel(qiPct, next, m) {
     <div class="row tactics-row">${siteBtns}</div>
     ${trainLockNote}
     <p class="meta">${escapeHtml(siteCur?.desc || "")} · 專精主產物 +35% · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
-    ${rateBlock}
+    ${trainRatesBlockHtml(rateLines)}
     <p class="meta muted">練功打 bulk；洗劑／催化／催生符僅秘境</p>
-    <h3>材料 <span class="meta-inline">用途／來源</span></h3>
-    <div class="chip-row">${matChipsHtml()}</div>
-    ${matHintListHtml()}
-    <div class="row">
+    ${materialsBlockHtml()}`,
+    `<div class="row">
       <button type="button" data-act="use-breed-ticket" ${(state.materials?.breed_ticket || 0) < 1 ? "disabled" : ""}>催生符</button>
       <button type="button" data-act="use-blood-catalyst" ${(state.materials?.blood_catalyst || 0) < 1 ? "disabled" : ""}>血統催化</button>
-    </div>
-  `;
+    </div>`
+  );
 }
 
 function petRow(p, extraBtn = "") {
@@ -1560,37 +1716,40 @@ function petsListView() {
   const sub = panelSub.party;
 
   if (sub === "ranch") {
-    return `
-      ${nav}
-      <h2>靈寵 · 牧場</h2>
+    return wrapStage(
+      nav,
+      `<h2>靈寵 · 牧場</h2>
       <p class="lead">牧場 ${ranch.length}/${cap} · 蛋 ${(state.eggs || []).length}/6</p>
       <h3>寵物蛋</h3>
       <ul class="list">${eggRows}</ul>
       <div class="row"><button type="button" class="primary${tutGlow({ type: "act", act: "open-breed" })}" data-act="open-breed">繁殖</button></div>
-      <ul class="list">${ranchList}</ul>`;
+      <ul class="list">${ranchList}</ul>`
+    );
   }
   if (sub === "dispatch") {
-    return `
-      ${nav}
-      <h2>靈寵 · 派遣</h2>
+    return wrapStage(
+      nav,
+      `<h2>靈寵 · 派遣</h2>
       <p class="lead">槽位 ${dv.slotsUsed}/${dv.slotsMax} · 已選 ${dispatchPick.length} 隻</p>
       <ul class="list">${missionRows}</ul>
-      <ul class="list">${activeDisp}</ul>`;
+      <ul class="list">${activeDisp}</ul>`
+    );
   }
   if (sub === "bond") {
-    return `
-      ${nav}
-      <h2>靈寵 · 待契約</h2>
+    return wrapStage(
+      nav,
+      `<h2>靈寵 · 待契約</h2>
       <p class="lead">待契約 ${(state.pending || []).length}/${PENDING_BOND_MAX}</p>
-      <ul class="list">${pending}</ul>`;
+      <ul class="list">${pending}</ul>`
+    );
   }
 
-  return `
-    ${nav}
-    <h2>靈寵 · 出戰</h2>
+  return wrapStage(
+    nav,
+    `<h2>靈寵 · 出戰</h2>
     <p class="lead">${state.pets.length}/${ACTIVE_PET_MAX} · ${escapeHtml(synNote)}</p>
-    <ul class="list">${roster}</ul>
-  `;
+    <ul class="list">${roster}</ul>`
+  );
 }
 
 function statRangeHtml(range) {
@@ -1706,15 +1865,17 @@ function petsBreedView() {
   const bMatHtml = matAffordHtml(bMat);
 
   const ready = selected.size === 2 && bs.ready && ranch.length < ranchCap(state);
-  return `
-    <h2>繁殖</h2>
+  return wrapStage(
+    "",
+    `<h2>繁殖</h2>
     ${preview ? breedPreviewHtml(preview, bMatHtml) : `<p class="lead">${BREED_STONE_COST} 石＋材料 · 選擇雙親預覽結果</p>`}
     ${!bs.ready ? `<p class="meta">冷卻 ${cdSec}s</p>` : ""}
-    <ul class="list">${list}</ul>
-    <div class="row">
+    <ul class="list">${list}</ul>`,
+    `<div class="row">
       <button type="button" class="primary" data-breed-confirm ${ready ? "" : "disabled"}>確認（${selected.size}/2）</button>
       <button type="button" data-pet-back>返回</button>
-    </div>`;
+    </div>`
+  );
 }
 
 function petsDetailView() {
@@ -1767,8 +1928,9 @@ function petsDetailView() {
   const skillMatHtml =
     skillMatsNeed && Object.keys(skillMatsNeed).length ? matAffordHtml(skillMatsNeed) : "";
   const lineage = petLineage(state, pet.uid);
-  return `
-    <h2>${escapeHtml(displayPetName(pet))}</h2>
+  return wrapStage(
+    "",
+    `<h2>${escapeHtml(displayPetName(pet))}</h2>
     <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
     <ul class="skill-list">
       <li><strong>屬性</strong> — ${escapeHtml(pet.kind)}·${escapeHtml(pet.elementName)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span></li>
@@ -1787,8 +1949,8 @@ function petsDetailView() {
     <div class="row gear-row">
       <label>暱稱<input type="text" maxlength="${NICK_MAX_LEN}" data-nick-input value="${escapeHtml(pet.nick || "")}" placeholder="${escapeHtml(pet.name)}" /></label>
       <button type="button" data-rename="${escapeHtml(pet.uid)}">命名</button>
-    </div>
-    <div class="row">
+    </div>`,
+    `<div class="row">
       <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade="${escapeHtml(pet.uid)}">升級</button>
       <button type="button" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升</button>
       <button type="button" data-upgrade-skill="${escapeHtml(pet.uid)}" ${skillMaxed ? "disabled" : ""}>技能</button>
@@ -1803,7 +1965,8 @@ function petsDetailView() {
       }
       <button type="button" data-release="${escapeHtml(pet.uid)}">放歸</button>
       <button type="button" data-pet-back>返回</button>
-    </div>`;
+    </div>`
+  );
 }
 
 function petsFuseView() {
@@ -1842,16 +2005,17 @@ function petsFuseView() {
     `<li class="empty">沒有同種族（${escapeHtml(base.speciesName)}）可作素材。</li>`;
 
   const ready = lvOk && selected.size === needMats;
-  return `
-    <h2>融合 · 融階 ${target}</h2>
+  return wrapStage(
+    "",
+    `<h2>融合 · 融階 ${target}</h2>
     <p class="lead">主體 ${escapeHtml(base.name)} Lv.${baseLv}${lvOk ? "" : `（需 ≥${needLv}）`} · 已選素材 ${selected.size}/${needMats} · 耗 ${cost} 靈石 · 結果繼承主體等級</p>
-    <ul class="list">${mats}</ul>
-    <div class="row" style="margin-top:0.85rem">
+    <ul class="list">${mats}</ul>`,
+    `<div class="row">
       <button type="button" class="primary" data-fuse-confirm ${ready ? "" : "disabled"}>確認融合</button>
       <button type="button" data-pet-detail="${escapeHtml(base.uid)}">返回詳情</button>
       <button type="button" data-pet-back>返回列表</button>
-    </div>
-  `;
+    </div>`
+  );
 }
 
 function petsPanel() {
@@ -1927,20 +2091,19 @@ function codexPanel() {
     )
     .join("");
 
-  return `
-    ${panelSubNav("codex", [
+  return wrapStage(
+    panelSubNav("codex", [
       { id: "dex", label: "圖鑑" },
       { id: "path", label: "求道" },
       { id: "tasks", label: "任務" },
       { id: "recipe", label: "配方" },
-    ])}
-    ${
-      panelSub.codex === "dex"
-        ? `<h2>靈寵圖鑑</h2>
+    ]),
+    panelSub.codex === "dex"
+      ? `<h2>靈寵圖鑑</h2>
     <p class="lead">已錄 ${dex.discovered}/${dex.total}${dex.label ? ` · ${escapeHtml(dex.label)}` : ""} · 種×屬×性格×血脈</p>
     <ul class="list">${speciesRows || '<li class="empty">尚未登錄</li>'}</ul>`
-        : panelSub.codex === "path"
-          ? `<h2>求道</h2>
+      : panelSub.codex === "path"
+        ? `<h2>求道</h2>
     <p class="lead">長線目標：收集／育成／挑戰</p>
     ${pathTracks}`
         : panelSub.codex === "tasks"
@@ -1971,29 +2134,12 @@ function codexPanel() {
           )}%</span></li>`
       )
       .join("")}</ul>`
-    }
-  `;
+  );
 }
 
-function dungeonPanel() {
-  if (playback) {
-    const pct = Math.min(
-      100,
-      Math.round((playback.index / Math.max(1, playback.events.length)) * 100)
-    );
-    const lines = playback.shown
-      .slice()
-      .reverse()
-      .map((t, i) => {
-        const revIdx = playback.shown.length - 1 - i;
-        const ev = playback.events[revIdx];
-        return combatLogLineHtml(t, ev);
-      })
-      .join("");
-    const bd = playback.result?.rewardBreakdown;
-    const breakdownHtml =
-      playback.done && bd && playback.result.won
-        ? `<ul class="cond-list reward-breakdown">
+function combatRewardBreakdownHtml(bd) {
+  if (!bd) return "";
+  return `<ul class="cond-list reward-breakdown">
             <li class="cond-item is-met"><span class="cond-badge">基礎</span><div class="cond-body"><strong>通關獎勵</strong><span class="muted">+${bd.base.stones}石／${bd.base.scrap}碎片</span></div></li>
             ${
               bd.firstClear?.stones
@@ -2052,30 +2198,112 @@ function dungeonPanel() {
                 : ""
             }
             <li class="cond-item is-met"><span class="cond-badge">合計</span><div class="cond-body"><strong>+${bd.totalStones} 靈石</strong><span class="muted">各項分開累加</span></div></li>
-          </ul>`
-        : "";
-    /* 結束後只顯示結算，不保留戰報流水 */
-    const logBlock = playback.done
-      ? ""
-      : `<div class="combat-scroll" data-live="combat-scroll">
+          </ul>`;
+}
+
+function combatModalHtml() {
+  if (!playback) return "";
+  const pct = Math.min(
+    100,
+    Math.round((playback.index / Math.max(1, playback.events.length)) * 100)
+  );
+  const lines = playback.shown
+    .slice()
+    .reverse()
+    .map((t, i) => {
+      const revIdx = playback.shown.length - 1 - i;
+      const ev = playback.events[revIdx];
+      return combatLogLineHtml(t, ev);
+    })
+    .join("");
+  const bd = playback.result?.rewardBreakdown;
+  const wonSettle = playback.done && bd && playback.result.won;
+  const settleHead = wonSettle
+    ? `<div class="settle-summary-row">
+        <div>
+          <strong class="settle-total">+${bd.totalStones} 靈石</strong>
+          <span class="muted">${bd.base?.scrap ? `基礎通碎片 +${bd.base.scrap}` : "通關結算"}</span>
+        </div>
+        <button type="button" class="ghost" data-act="toggle-reward-details">${rewardDetailsOpen ? "收起明細" : "獎勵明細"}</button>
+      </div>
+      ${rewardDetailsOpen ? combatRewardBreakdownHtml(bd) : ""}`
+    : "";
+  const logBlock = playback.done
+    ? ""
+    : `<div class="combat-scroll" data-live="combat-scroll">
         <ul class="combat" data-live="combat-log">${lines}</ul>
       </div>`;
-    return `
-      <h2>${playback.done ? "結算" : "戰報"}${playback.isFarm && combatPrefs.fastMode ? `<span class="combat-fast-badge">快速</span>` : ""}</h2>
-      ${playback.waveLabel && !playback.done ? `<p class="combat-wave-banner" data-live="combat-wave">${escapeHtml(playback.waveLabel)}</p>` : `<p class="combat-wave-banner" data-live="combat-wave" hidden></p>`}
-      ${renderCombatRoster(playback)}
-      <p class="lead" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
-      <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
-      ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
-      ${logBlock}
-      ${breakdownHtml}
-      <div class="row">
-        <button type="button" data-act="skip-combat" ${playback.done ? "hidden" : ""}>跳過動畫</button>
-        <button type="button" data-act="clear-combat" ${playback.done ? "" : "disabled"}>返回秘境</button>
+  const tacticsStep = tutorialActive(state) && state.tutorial.step === "tactics";
+  const clearLabel = tacticsStep ? "前往戰術設定" : "返回秘境";
+  const clearAct = tacticsStep ? "clear-combat-setup" : "clear-combat";
+  return `
+    <div class="combat-modal-overlay" data-live="combat-modal" role="dialog" aria-label="${playback.done ? "結算" : "戰報"}">
+      <div class="combat-modal-card">
+        <div class="combat-modal-scroll">
+          <h2>${playback.done ? "結算" : "戰報"}${playback.isFarm && combatPrefs.fastMode ? `<span class="combat-fast-badge">快速</span>` : ""}</h2>
+          ${playback.waveLabel && !playback.done ? `<p class="combat-wave-banner" data-live="combat-wave">${escapeHtml(playback.waveLabel)}</p>` : `<p class="combat-wave-banner" data-live="combat-wave" hidden></p>`}
+          ${renderCombatRoster(playback)}
+          <p class="lead" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
+          <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
+          ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
+          ${logBlock}
+          ${settleHead}
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" data-act="skip-combat" ${playback.done ? "hidden" : ""}>跳過動畫</button>
+          <button type="button" class="primary" data-act="${clearAct}" ${playback.done ? "" : "disabled"}>${escapeHtml(clearLabel)}</button>
+        </div>
       </div>
-    `;
-  }
+    </div>`;
+}
 
+function dungeonCondSheetHtml() {
+  const dungeonIds = dungeonsForRealm(state.realm).filter((id) => resolveDungeon(state, id));
+  const curId = dungeonIds[dungeonIdx];
+  const dCur = curId ? resolveDungeon(state, curId) : null;
+  if (!dCur) return "";
+  const stCur = dungeonStatus(state, dCur.id);
+  const tutWaiveDungeon = tutorialWaivesDungeonChallenge(state, dCur.id);
+  const conds = (stCur?.conditions || []).filter((c) => !c.passive);
+  const passives = (stCur?.conditions || []).filter((c) => c.passive);
+  const condList = tutWaiveDungeon
+    ? `<li class="cond-item is-met is-tut-waive"><span class="cond-badge">教學</span><div class="cond-body"><strong>教學模式</strong><span class="muted">今日挑戰／試煉條件已豁免，可直接進攻</span></div></li>`
+    : conds
+        .map((c) => condStatusRow(c.label.replace(/^條件[:：]?\s*/, ""), c.ok, rewardBitsHtml(c.bonus), c.reason))
+        .join("");
+  const trial = stCur?.trial;
+  const trialRow =
+    tutWaiveDungeon || !trial
+      ? ""
+      : condStatusRow(
+          trial.label.replace(/^試煉[:：]?\s*/, "試煉："),
+          stCur.trialMet,
+          `+${trial.bonus?.stones || 0}石`,
+          stCur.trialReason || "未滿足"
+        );
+  const challengeRow =
+    tutWaiveDungeon || !stCur?.challenge
+      ? ""
+      : condStatusRow(
+          stCur.challenge.label.replace(/^挑戰[:：]?\s*/, "挑戰："),
+          stCur.challengeMet,
+          rewardBitsHtml(stCur.challenge.bonus),
+          stCur.challengeReason || "未滿足"
+        );
+  const passiveLine = passives.map((p) => p.label).join(" · ");
+  return `
+    <div class="sheet-overlay" role="presentation">
+      <div class="sheet-card" role="dialog" aria-label="本層條件" data-sheet-card>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <h3>本層條件 · ${escapeHtml(dCur.name)}</h3>
+        ${passiveLine ? `<p class="meta">${escapeHtml(passiveLine)}</p>` : ""}
+        <ul class="cond-list">${tutWaiveDungeon ? condList : `${challengeRow}${condList}${trialRow}`}</ul>
+        <button type="button" class="primary sheet-close" data-act="close-cond-sheet">關閉</button>
+      </div>
+    </div>`;
+}
+
+function dungeonPanel() {
   const dailyMod = dungeonDailyView(state);
   const tactics = tacticsView(state);
   const tacticBtns = tactics
@@ -2114,34 +2342,38 @@ function dungeonPanel() {
   const trial = stCur?.trial;
   const conds = (stCur?.conditions || []).filter((c) => !c.passive);
   const passives = (stCur?.conditions || []).filter((c) => c.passive);
-  const condList = tutWaiveDungeon
-    ? `<li class="cond-item is-met is-tut-waive"><span class="cond-badge">教學</span><div class="cond-body"><strong>教學模式</strong><span class="muted">今日挑戰／試煉條件已豁免，可直接進攻</span></div></li>`
-    : conds
-        .slice(0, 2)
-        .map((c) => condStatusRow(c.label.replace(/^條件[:：]?\s*/, ""), c.ok, rewardBitsHtml(c.bonus), c.reason))
-        .join("");
-  const trialRow =
-    tutWaiveDungeon || !trial
-      ? ""
-      : condStatusRow(
-          trial.label.replace(/^試煉[:：]?\s*/, "試煉："),
-          stCur.trialMet,
-          `+${trial.bonus?.stones || 0}石`,
-          stCur.trialReason || "未滿足"
-        );
-  const challengeRow =
-    tutWaiveDungeon || !stCur?.challenge
-      ? ""
-      : condStatusRow(
-          stCur.challenge.label.replace(/^挑戰[:：]?\s*/, "挑戰："),
-          stCur.challengeMet,
-          rewardBitsHtml(stCur.challenge.bonus),
-          stCur.challengeReason || "未滿足"
-        );
   const passiveLine = passives.map((p) => p.label).join(" · ");
   const variantLine = dCur?.dailyVariantLabel
     ? `<span class="muted daily-variant">今日：${escapeHtml(dCur.dailyVariantLabel)}</span>`
     : "";
+
+  let metN = 0;
+  let missN = 0;
+  if (tutWaiveDungeon) {
+    metN = 1;
+  } else {
+    for (const c of conds.slice(0, 2)) {
+      if (c.ok) metN += 1;
+      else missN += 1;
+    }
+    if (stCur?.challenge) {
+      if (stCur.challengeMet) metN += 1;
+      else missN += 1;
+    }
+    if (trial) {
+      if (stCur.trialMet) metN += 1;
+      else missN += 1;
+    }
+  }
+  const condTrigger =
+    dCur && (tutWaiveDungeon || metN + missN > 0)
+      ? `<button type="button" class="cond-sheet-trigger" data-act="toggle-cond-sheet">
+          <span>敵情條件</span>
+          <strong>${tutWaiveDungeon ? "教學豁免" : `達成 ${metN}`}${!tutWaiveDungeon && missN ? ` · 未達 ${missN}` : ""}</strong>
+          <span class="muted">查看</span>
+        </button>`
+      : "";
+
   const dungeonCard = dCur
     ? `<li class="dungeon-card">
         <div class="dungeon-head">
@@ -2153,9 +2385,8 @@ function dungeonPanel() {
             }${onCd ? ` · CD ${cdSec}s` : ""}</span>
             ${passiveLine ? `<span class="muted">${escapeHtml(passiveLine)}</span>` : ""}
           </div>
-          <button type="button" class="primary${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}" ${locked || onCd ? "disabled" : ""}>進攻</button>
         </div>
-        <ul class="cond-list">${tutWaiveDungeon ? condList : `${challengeRow}${condList}${trialRow}`}</ul>
+        ${condTrigger}
       </li>`
     : `<li class="empty">尚無可挑戰秘境。</li>`;
   const pager =
@@ -2166,15 +2397,26 @@ function dungeonPanel() {
           <button type="button" data-dungeon-next ${dungeonIdx >= dungeonIds.length - 1 ? "disabled" : ""}>下一層</button>
         </div>`
       : "";
+  const fieldDock =
+    panelSub.dungeon === "field"
+      ? `<div class="row dungeon-dock-row">
+          ${pager}
+          ${
+            dCur
+              ? `<button type="button" class="primary dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}" ${locked || onCd ? "disabled" : ""}>進攻 · ${escapeHtml(dCur.name)}</button>`
+              : ""
+          }
+        </div>`
+      : "";
+  const nav = panelSubNav("dungeon", [
+    { id: "field", label: "秘境" },
+    { id: "setup", label: "戰術" },
+  ]);
 
-  return `
-    ${panelSubNav("dungeon", [
-      { id: "field", label: "秘境" },
-      { id: "setup", label: "戰術" },
-    ])}
-    ${
-      panelSub.dungeon === "setup"
-        ? `<h2>戰術／陣型</h2>
+  if (panelSub.dungeon === "setup") {
+    return wrapStage(
+      nav,
+      `<h2>戰術／陣型</h2>
     <p class="meta">${escapeHtml(tacticCur?.desc || "")}</p>
     <div class="row tactics-row">${tacticBtns}</div>
     <p class="meta">${escapeHtml(formCur?.desc || "")}</p>
@@ -2186,7 +2428,12 @@ function dungeonPanel() {
           )}</strong></div></li></ul>`
         : ""
     }`
-        : `<h2>潮汐秘境</h2>
+    );
+  }
+
+  return wrapStage(
+    nav,
+    `<h2>潮汐秘境</h2>
     <p class="lead">波次自動戰鬥 · 逐層翻頁 · 每層每日挑戰／敵情輪換</p>
     <label class="combat-pref-toggle"><input type="checkbox" data-act="toggle-combat-fast" ${combatPrefs.fastMode ? "checked" : ""}/> 已通關秘境快速戰鬥</label>
     ${
@@ -2194,20 +2441,22 @@ function dungeonPanel() {
         ? `<p class="dungeon-daily-mod">${escapeHtml(dailyMod.label)}</p>`
         : ""
     }
-    <ul class="list dungeon-list">${dungeonCard}</ul>
-    ${pager}`
-    }
-  `;
+    <ul class="list dungeon-list">${dungeonCard}</ul>`,
+    fieldDock
+  );
 }
 
 function logPanel() {
   const lines = state.log.map((l) => `<li>${escapeHtml(l)}</li>`).join("");
   const busy = playback && !playback.done;
-  return `<h2>見聞錄</h2><div class="log-scroll"><ul class="log">${lines || "<li class='empty'>尚無見聞。</li>"}</ul></div>
-    <div class="log-tools row">
+  return wrapStage(
+    "",
+    `<h2>見聞錄</h2><ul class="log">${lines || "<li class='empty'>尚無見聞。</li>"}</ul>`,
+    `<div class="row log-tools">
       <button type="button" class="ghost" data-act="notify-perm">開啟通知</button>
       <button type="button" class="ghost" data-act="reset" ${busy ? "disabled" : ""}>重置存檔</button>
-    </div>`;
+    </div>`
+  );
 }
 
 function bind() {
@@ -2219,7 +2468,12 @@ function bind() {
       if (group === "cultivate" && isCultivateSubLocked(state, id)) return;
       if (group === "party" && isPartySubLocked(state, id)) return;
       if (group === "dungeon" && isDungeonSubLocked(state, id)) return;
+      if (playback) {
+        if (!playback.done) return;
+        stopPlayback();
+      }
       panelSub = { ...panelSub, [group]: id };
+      if (group === "dungeon") condSheetOpen = false;
       markTutorialSubVisit(group, id);
       render();
     });
@@ -2228,6 +2482,7 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled || dungeonIdx <= 0) return;
       dungeonIdx -= 1;
+      condSheetOpen = false;
       render();
     });
   });
@@ -2235,6 +2490,7 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       dungeonIdx += 1;
+      condSheetOpen = false;
       render();
     });
   });
@@ -2348,11 +2604,51 @@ function bind() {
           setFlash("存檔已重置。");
         }
       } else if (act === "clear-combat") {
-        stopPlayback();
-        render();
+        clearCombatPlayback();
+      } else if (act === "clear-combat-setup") {
+        clearCombatPlayback({ goSetup: true });
       } else if (act === "skip-combat") {
         skipPlayback();
+      } else if (act === "toggle-cond-sheet") {
+        condSheetOpen = !condSheetOpen;
+        render();
+      } else if (act === "close-cond-sheet") {
+        condSheetOpen = false;
+        render();
+      } else if (act === "toggle-reward-details") {
+        rewardDetailsOpen = !rewardDetailsOpen;
+        render();
+      } else if (act === "collapse-tutorial") {
+        tutorialCollapsed = true;
+        render();
+      } else if (act === "expand-tutorial") {
+        tutorialCollapsed = false;
+        render();
+      } else if (act === "toggle-mat-section") {
+        matSectionOpen = !matSectionOpen;
+        saveUiPrefs();
+        render();
+      } else if (act === "toggle-train-rates") {
+        trainRatesOpen = !trainRatesOpen;
+        saveUiPrefs();
+        render();
+      } else if (act === "toggle-stats-sheet") {
+        statsSheetOpen = !statsSheetOpen;
+        render();
+      } else if (act === "close-stats-sheet") {
+        statsSheetOpen = false;
+        render();
       }
+    });
+  });
+  app.querySelectorAll("[data-sheet-card]").forEach((el) => {
+    el.addEventListener("click", (e) => e.stopPropagation());
+  });
+  app.querySelectorAll(".sheet-overlay").forEach((el) => {
+    el.addEventListener("click", () => {
+      condSheetOpen = false;
+      statsSheetOpen = false;
+      render();
     });
   });
   app.querySelectorAll("[data-act=toggle-combat-fast]").forEach((input) => {
@@ -2724,6 +3020,9 @@ function escapeHtml(s) {
 render();
 ensureFlashHost();
 ensureSpotlight();
+syncAppHeight();
+window.visualViewport?.addEventListener("resize", syncAppHeight);
+window.visualViewport?.addEventListener("scroll", syncAppHeight);
 if (flash) setFlash(flash, flashTone);
 const lateBoot = maybeStartLateTutorial(state);
 if (lateBoot.started) {
@@ -2735,7 +3034,10 @@ maybeNotifyOffline(state.offlineHint);
 
 document.addEventListener("click", onTutorialMisclick, true);
 document.addEventListener("touchend", onTutorialMisclick, true);
-window.addEventListener("resize", () => positionTutorialSpotlight(false));
+window.addEventListener("resize", () => {
+  syncAppHeight();
+  positionTutorialSpotlight(false);
+});
 
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
