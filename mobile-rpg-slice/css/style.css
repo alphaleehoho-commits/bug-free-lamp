@@ -552,6 +552,108 @@ body {
 }
 .chip.is-empty { border-color: rgba(200, 100, 90, 0.35); opacity: 0.82; }
 
+.chip-row-scroll {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  padding-bottom: 0.08rem;
+}
+.chip-row-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.fold-section {
+  margin: 0.15rem 0 0.25rem;
+}
+.fold-section-inline {
+  margin-top: 0.2rem;
+}
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  margin: 0 0 0.22rem;
+  padding: 0.32rem 0.42rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.68rem;
+  text-align: left;
+  cursor: pointer;
+}
+.section-toggle strong {
+  flex: 1;
+  color: var(--jade-bright);
+  font-weight: 600;
+}
+.section-toggle .muted {
+  font-size: 0.58rem;
+  color: var(--fog);
+}
+
+.chrome-toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(400px, calc(100vw - 1.1rem));
+  max-width: 430px;
+  z-index: 560;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.38rem 0.5rem;
+  border-radius: 10px;
+  font-size: 0.65rem;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+  animation: toastIn 0.32s ease-out;
+}
+.offline-toast {
+  bottom: calc(3.85rem + env(safe-area-inset-bottom, 0px));
+  border: 1px solid rgba(90, 160, 140, 0.55);
+  background: rgba(18, 32, 44, 0.94);
+}
+.offline-toast .offline-body {
+  flex: 1;
+  min-width: 0;
+}
+.offline-toast .offline-detail {
+  margin: 0.08rem 0 0;
+  font-size: 0.6rem;
+  color: var(--fog);
+  line-height: 1.3;
+}
+.offline-toast button {
+  flex-shrink: 0;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.62rem;
+}
+.install-toast {
+  top: calc(env(safe-area-inset-top, 0px) + 0.45rem);
+  border: 1px solid rgba(109, 179, 217, 0.45);
+  background: rgba(18, 32, 44, 0.94);
+}
+.install-toast p {
+  margin: 0;
+  flex: 1;
+  line-height: 1.25;
+}
+.install-toast .row {
+  flex-shrink: 0;
+  gap: 0.2rem;
+}
+.install-toast button {
+  padding: 0.25rem 0.4rem;
+  font-size: 0.62rem;
+}
+
 .flash-truncate {
   display: -webkit-box;
   -webkit-line-clamp: 3;

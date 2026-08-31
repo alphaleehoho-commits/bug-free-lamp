@@ -1,0 +1,71 @@
+name: Preview pull request
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: pages-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-preview:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages-preview-${{ github.event.pull_request.number }}
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build preview
+        run: |
+          mkdir -p _site
+          cp -r mobile-rpg-slice/* _site/
+          touch _site/.nojekyll
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy preview
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Comment preview link
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = `${{ steps.deployment.outputs.page_url }}`;
+            const body = `📱 **PR Preview:** ${url}\n\nMerge 前可用此連結在 Safari 試玩（無需等 main 部署）。`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const marker = "<!-- pr-preview-url -->";
+            const existing = comments.find((c) => c.body?.includes(marker));
+            const fullBody = `${marker}\n${body}`;
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: fullBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: fullBody,
+              });
+            }

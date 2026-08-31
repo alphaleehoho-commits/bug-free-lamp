@@ -143,10 +143,12 @@ let pwaDismissed = localStorage.getItem("void-tide-pwa-dismiss") === "1";
 let tutorialSnapCache = "";
 let tutMisclickCount = 0;
 let tutSpotlightEl = null;
-/** Phase 2–3 UI chrome toggles */
+/** Phase 2–4 UI chrome toggles */
 let condSheetOpen = false;
 let rewardDetailsOpen = false;
 let tutorialCollapsed = false;
+let matSectionOpen = false;
+let trainRatesOpen = false;
 
 const COMBAT_PREFS_KEY = "void-tide-combat-prefs";
 
@@ -856,6 +858,35 @@ function matHintListHtml() {
     .join("")}</ul>`;
 }
 
+function matOwnedCount() {
+  return materialHintsView(state).filter((m) => m.count > 0).length;
+}
+
+function materialsBlockHtml() {
+  const owned = matOwnedCount();
+  return `<div class="fold-section">
+      <button type="button" class="section-toggle" data-act="toggle-mat-section">
+        <span>材料</span>
+        <strong>${owned} 種持有</strong>
+        <span class="muted">${matSectionOpen ? "收起來源" : "用途／來源"}</span>
+      </button>
+      <div class="chip-row chip-row-scroll">${matChipsHtml()}</div>
+      ${matSectionOpen ? matHintListHtml() : ""}
+    </div>`;
+}
+
+function trainRatesBlockHtml(rateLines) {
+  if (!rateLines) return "";
+  const list = `<ul class="train-rate-list">${rateLines}</ul>`;
+  return `<div class="fold-section fold-section-inline">
+      <button type="button" class="section-toggle" data-act="toggle-train-rates">
+        <span>產出速率</span>
+        <span class="muted">${trainRatesOpen ? "收起" : "點開明細"}</span>
+      </button>
+      ${trainRatesOpen ? list : ""}
+    </div>`;
+}
+
 function patchMatChipsLive() {
   let changed = false;
   document.querySelectorAll("[data-mat-count]").forEach((el) => {
@@ -1169,8 +1200,6 @@ function render() {
 
     ${inTutorial ? tutorialStatsStrip() : statsStripHtml(stage)}
 
-    ${offlineBanner()}
-    ${inTutorial ? "" : installBanner()}
     ${nextGoalChipHtml()}
 
     ${inTutorial ? tutorialBannerHtml(state, { collapsed: tutorialCollapsed }) : ""}
@@ -1195,6 +1224,8 @@ function render() {
     ${playback ? combatModalHtml() : ""}
     ${condSheetOpen ? dungeonCondSheetHtml() : ""}
     ${dailyHubHtml()}
+    ${offlineBanner()}
+    ${inTutorial ? "" : installBanner()}
   `;
 
   bind();
@@ -1306,7 +1337,7 @@ function dailyHubHtml() {
 function installBanner() {
   if (pwaDismissed || !pwaInstallEvt) return "";
   return `
-    <div class="install-banner" data-live="install-banner">
+    <div class="chrome-toast install-toast" data-live="install-banner">
       <p>可將暗潮加入主畫面，離線也能掛機修行。</p>
       <div class="row">
         <button type="button" class="primary" data-act="pwa-install">安裝</button>
@@ -1329,7 +1360,7 @@ function offlineBanner() {
     matLine ? ` · ${matLine}` : ""
   }${h.siteName ? `（${h.siteName}）` : ""}`;
   return `
-    <div class="offline-banner" data-live="offline">
+    <div class="chrome-toast offline-toast" data-live="offline">
       <div class="offline-body">
         <strong>離線約 ${min} 分鐘</strong>
         <p class="offline-detail">${escapeHtml(detail)}</p>
@@ -1374,9 +1405,6 @@ function cultivatePanel(qiPct, next, m) {
         `<li class="train-rate ${r.tag ? "is-boosted" : ""}"><span>${escapeHtml(r.name)}</span><span class="muted">≈${r.perHr}/時${r.tag ? ` · ${escapeHtml(r.tag)}` : ""}</span></li>`
     )
     .join("");
-  const rateBlock = rateLines
-    ? `<ul class="train-rate-list">${rateLines}</ul>`
-    : "";
 
   const shopOffers = shopView(state);
   const ranchFull = (state.ranch?.length || 0) + state.pets.length >= ranchCap(state);
@@ -1469,11 +1497,9 @@ function cultivatePanel(qiPct, next, m) {
     <div class="row tactics-row">${siteBtns}</div>
     ${trainLockNote}
     <p class="meta">${escapeHtml(siteCur?.desc || "")} · 專精主產物 +35% · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
-    ${rateBlock}
+    ${trainRatesBlockHtml(rateLines)}
     <p class="meta muted">練功打 bulk；洗劑／催化／催生符僅秘境</p>
-    <h3>材料 <span class="meta-inline">用途／來源</span></h3>
-    <div class="chip-row">${matChipsHtml()}</div>
-    ${matHintListHtml()}`,
+    ${materialsBlockHtml()}`,
     `<div class="row">
       <button type="button" data-act="use-breed-ticket" ${(state.materials?.breed_ticket || 0) < 1 ? "disabled" : ""}>催生符</button>
       <button type="button" data-act="use-blood-catalyst" ${(state.materials?.blood_catalyst || 0) < 1 ? "disabled" : ""}>血統催化</button>
@@ -2535,6 +2561,12 @@ function bind() {
         render();
       } else if (act === "expand-tutorial") {
         tutorialCollapsed = false;
+        render();
+      } else if (act === "toggle-mat-section") {
+        matSectionOpen = !matSectionOpen;
+        render();
+      } else if (act === "toggle-train-rates") {
+        trainRatesOpen = !trainRatesOpen;
         render();
       }
     });
