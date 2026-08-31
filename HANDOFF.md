@@ -5,9 +5,9 @@
 - Path: `mobile-rpg-slice/`
 - Stack: vanilla HTML/CSS/JS PWA (portrait mobile)
 - Live: `https://alphaleehoho-commits.github.io/bug-free-lamp/`
-- SW cache: `void-tide-pets-v46`
+- SW cache: `void-tide-pets-v47`
 
-## 最新：暫停教學 · 進度解鎖（`cursor/pause-tutorial-progression-d7bb`）
+## 最新：暫停教學 · 進度解鎖 + 玩家 UX（`cursor/pause-tutorial-progression-d7bb`）
 
 ### Phase 0 — 教學軟關閉
 - `TUTORIAL_ENABLED = false`：無 banner／spotlight／tab 教學鎖
@@ -25,6 +25,11 @@
 | realm ≥ 1 | 修行·進階 |
 | tide_2 或 realm ≥ 2 | 派遣 |
 | realm ≥ 2 | 圖鑑、秘境·戰術 |
+
+### 玩家 UX（同 PR）
+- **P0** 進階分頁：靈契 ≥ 下一階 need 即解鎖（修突破 soft-lock）；練功頁 CTA 用 `progressionQiBreakReady`
+- **P1** 新存檔預設靈寵→牧場；welcome banner；蛋 ready toast；秘境只認 Lv≥3
+- **P1–P2** 牧場「可升級→」；`nextGoalHint` 主線 HUD；🔒 tab/sub 點擊顯示原因；解鎖 toast queue
 
 - `pollProgressionUnlocks` + unlock toast；鎖定 tab 顯示 🔒 + tooltip
 - `healProgressionAnnouncements` 避免舊存檔連彈提示

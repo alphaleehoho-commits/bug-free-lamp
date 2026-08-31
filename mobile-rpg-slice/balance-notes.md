@@ -12,3 +12,13 @@
 | 商肆素材 | ~20% 槽位 | 通關一層後保證至少一項素材包 |
 
 驗證：`node js/smoke-test.mjs`；手動 0→realm1 走一輪確認解鎖 toast 與節奏。
+
+## 玩家 UX 補強（同 PR #16）
+
+| 問題 | 修正 |
+|------|------|
+| 靈契滿但進階 Tab 鎖 | 靈契 ≥ need 解鎖進階 |
+| 開局唔知去牧場 | 預設 Tab + welcome banner |
+| 蛋孵好無提示 | ready toast + pollEggReadyNotices |
+| Lv1 出戰就開秘境 | 只認 Lv≥3 |
+| 無主線 | nextGoalHint HUD |
