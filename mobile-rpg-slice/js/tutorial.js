@@ -331,7 +331,7 @@ function locksForStep(stepId) {
         tabs: { log: true },
         cultivateSub: { advance: true },
         partySub: {},
-        dungeonSub: { field: false, setup: false },
+        dungeonSub: { field: true, setup: false },
         trainSites: false,
       };
     default:
@@ -629,6 +629,7 @@ export function syncTutorialNavigation(state, nav) {
       break;
     case "tactics":
       next = clampTutorialTabs(nav, ["dungeon"]);
+      next.panelSub = { ...next.panelSub, dungeon: "setup" };
       break;
     default:
       next = cloneNav(nav);

@@ -144,6 +144,7 @@ import {
   tutorialEggReady,
   tutorialNeedsRanchSub,
   tutorialTargetSelector,
+  isDungeonSubLocked,
 } from "./tutorial.js";
 
 function assertNavKeepsTab(state, step, tab, panelSub = {}) {
@@ -1029,6 +1030,19 @@ const stepCodex = { tutorial: { done: false, step: "codex", flags: {}, latePendi
 normalizeTutorial(stepCodex);
 const codexInfo = tutorialStepInfo(stepCodex);
 assert(codexInfo.index === 12 && codexInfo.total === 12, "core tutorial 12/12 at codex");
+
+const tacticsSt = {
+  realm: 2,
+  tutorial: { done: false, step: "tactics", flags: {}, latePending: true, lateCompleted: false },
+};
+normalizeTutorial(tacticsSt);
+assert(isDungeonSubLocked(tacticsSt, "field"), "tactics locks dungeon field");
+assert(!isDungeonSubLocked(tacticsSt, "setup"), "tactics allows setup");
+const tacticsNav = syncTutorialNavigation(tacticsSt, {
+  tab: "dungeon",
+  panelSub: { dungeon: "field", party: "fight", cultivate: "train", codex: "dex" },
+});
+assert(tacticsNav.panelSub.dungeon === "setup", "tactics sync forces setup sub");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

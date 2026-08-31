@@ -977,6 +977,16 @@ function updatePlaybackDom(latestEvent = null) {
   }
 }
 
+function clearCombatPlayback(opts = {}) {
+  const goSetup = !!opts.goSetup;
+  stopPlayback();
+  if (goSetup) {
+    panelSub = { ...panelSub, dungeon: "setup" };
+    markTutorialSubVisit("dungeon", "setup");
+  }
+  render();
+}
+
 function finishPlayback() {
   if (!playback) return;
   playback.done = true;
@@ -992,15 +1002,24 @@ function finishPlayback() {
       adv = advanceTutorialIfReady(state);
     }
   }
-  saveState(state);
-  render();
-  const unlocks = playback.result.unlockedSites || [];
+  const tacticsStep = tutorialActive(state) && state.tutorial.step === "tactics";
+  const result = playback.result;
+  const unlocks = result?.unlockedSites || [];
+  const resultMsg = result?.msg;
+  const wasSkipped = playback.skipped;
+  if (tacticsStep && wasSkipped) {
+    saveState(state);
+    clearCombatPlayback({ goSetup: true });
+  } else {
+    saveState(state);
+    render();
+  }
   if (adv.advanced && adv.unlockMsg) {
     setFlash(adv.unlockMsg, "unlock");
   } else if (unlocks.length) {
-    setFlash(`解鎖練功地【${unlocks.join("】【")}】！ ${playback.result.msg}`, "unlock");
-  } else {
-    setFlash(playback.result.msg);
+    setFlash(`解鎖練功地【${unlocks.join("】【")}】！ ${resultMsg}`, "unlock");
+  } else if (resultMsg) {
+    setFlash(resultMsg);
   }
 }
 
@@ -2060,18 +2079,29 @@ function dungeonPanel() {
       : `<div class="combat-scroll" data-live="combat-scroll">
         <ul class="combat" data-live="combat-log">${lines}</ul>
       </div>`;
+    const tacticsStep = tutorialActive(state) && state.tutorial.step === "tactics";
+    const clearLabel = tacticsStep ? "前往戰術設定" : "返回秘境";
+    const clearAct = tacticsStep ? "clear-combat-setup" : "clear-combat";
     return `
-      <h2>${playback.done ? "結算" : "戰報"}${playback.isFarm && combatPrefs.fastMode ? `<span class="combat-fast-badge">快速</span>` : ""}</h2>
-      ${playback.waveLabel && !playback.done ? `<p class="combat-wave-banner" data-live="combat-wave">${escapeHtml(playback.waveLabel)}</p>` : `<p class="combat-wave-banner" data-live="combat-wave" hidden></p>`}
-      ${renderCombatRoster(playback)}
-      <p class="lead" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
-      <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
-      ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
-      ${logBlock}
-      ${breakdownHtml}
-      <div class="row">
-        <button type="button" data-act="skip-combat" ${playback.done ? "hidden" : ""}>跳過動畫</button>
-        <button type="button" data-act="clear-combat" ${playback.done ? "" : "disabled"}>返回秘境</button>
+      ${panelSubNav("dungeon", [
+        { id: "field", label: "秘境" },
+        { id: "setup", label: "戰術" },
+      ])}
+      <div class="combat-settlement-wrap">
+        <div class="combat-settlement-scroll">
+          <h2>${playback.done ? "結算" : "戰報"}${playback.isFarm && combatPrefs.fastMode ? `<span class="combat-fast-badge">快速</span>` : ""}</h2>
+          ${playback.waveLabel && !playback.done ? `<p class="combat-wave-banner" data-live="combat-wave">${escapeHtml(playback.waveLabel)}</p>` : `<p class="combat-wave-banner" data-live="combat-wave" hidden></p>`}
+          ${renderCombatRoster(playback)}
+          <p class="lead" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
+          <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
+          ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
+          ${logBlock}
+          ${breakdownHtml}
+        </div>
+        <div class="combat-settlement-actions row">
+          <button type="button" data-act="skip-combat" ${playback.done ? "hidden" : ""}>跳過動畫</button>
+          <button type="button" class="primary" data-act="${clearAct}" ${playback.done ? "" : "disabled"}>${escapeHtml(clearLabel)}</button>
+        </div>
       </div>
     `;
   }
@@ -2219,6 +2249,10 @@ function bind() {
       if (group === "cultivate" && isCultivateSubLocked(state, id)) return;
       if (group === "party" && isPartySubLocked(state, id)) return;
       if (group === "dungeon" && isDungeonSubLocked(state, id)) return;
+      if (playback) {
+        if (!playback.done) return;
+        stopPlayback();
+      }
       panelSub = { ...panelSub, [group]: id };
       markTutorialSubVisit(group, id);
       render();
@@ -2348,8 +2382,9 @@ function bind() {
           setFlash("存檔已重置。");
         }
       } else if (act === "clear-combat") {
-        stopPlayback();
-        render();
+        clearCombatPlayback();
+      } else if (act === "clear-combat-setup") {
+        clearCombatPlayback({ goSetup: true });
       } else if (act === "skip-combat") {
         skipPlayback();
       }

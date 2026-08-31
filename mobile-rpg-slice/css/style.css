@@ -216,6 +216,39 @@ body {
   flex-shrink: 0;
 }
 
+.combat-settlement-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0 -0.05rem;
+}
+.combat-settlement-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-right: 0.1rem;
+}
+.combat-settlement-scroll .reward-breakdown {
+  margin-bottom: 0.25rem;
+}
+.combat-settlement-actions {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.45rem 0 0.15rem;
+  padding-bottom: max(0.15rem, env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(18, 32, 44, 0.72) 0%, rgba(18, 32, 44, 0.98) 35%);
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+}
+.combat-settlement-actions .primary {
+  flex: 1;
+}
+
 .flash[hidden] { display: none !important; }
 
 .panel h2 {
