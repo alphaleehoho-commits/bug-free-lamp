@@ -698,7 +698,7 @@ function matChipsHtml() {
   return materialHintsView(state)
     .map((m) => {
       const empty = m.count <= 0;
-      return `<span class="chip ${empty ? "is-empty" : ""}" title="${escapeHtml(m.source)}"><strong>${escapeHtml(m.name)}</strong> ${m.count}<span class="chip-use">${escapeHtml(m.use)}</span></span>`;
+      return `<span class="chip ${empty ? "is-empty" : ""}" data-mat-chip="${escapeHtml(m.id)}" title="${escapeHtml(m.source)}"><strong>${escapeHtml(m.name)}</strong> <span data-mat-count="${escapeHtml(m.id)}">${m.count}</span><span class="chip-use">${escapeHtml(m.use)}</span></span>`;
     })
     .join("");
 }
@@ -727,6 +727,23 @@ function matHintListHtml() {
     </li>`;
     })
     .join("")}</ul>`;
+}
+
+function patchMatChipsLive() {
+  let changed = false;
+  document.querySelectorAll("[data-mat-count]").forEach((el) => {
+    const id = el.dataset.matCount;
+    if (!id) return;
+    const next = Math.floor(state.materials?.[id] || 0);
+    const prev = Number(el.textContent);
+    if (prev !== next) {
+      el.textContent = String(next);
+      changed = true;
+      const chip = el.closest("[data-mat-chip]");
+      if (chip) chip.classList.toggle("is-empty", next <= 0);
+    }
+  });
+  return changed;
 }
 
 function patchEggLive() {
@@ -787,6 +804,7 @@ function patchLive() {
 
   const eggReadyNow = patchEggLive();
   patchTutorialHintLive();
+  patchMatChipsLive();
 
   const snap = tutorialLiveSnapshot(state);
   if (snap !== tutorialSnapCache) {

@@ -113,6 +113,7 @@ import {
   claimHatch,
   startHatch,
   eggsView,
+  tickCultivation,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -135,6 +136,8 @@ import {
   tutorialWaivesDungeonChallenge,
   tutorialStepInfo,
   LATE_TUTORIAL_MIN_REALM,
+  trainPetCanUpgrade,
+  TUTORIAL_STARTER_TIDE_DEW,
 } from "./tutorial.js";
 
 function assert(cond, msg) {
@@ -729,6 +732,52 @@ const hatchLockSt = { tutorial: { done: false, step: "hatch_starter", flags: {} 
 assert(!isTabLocked(hatchLockSt, "cultivate"), "hatch_starter unlocks cultivate tab");
 assert(!isCultivateSubLocked(hatchLockSt, "train"), "hatch_starter unlocks train");
 assert(isCultivateSubLocked(hatchLockSt, "shop"), "hatch_starter locks shop");
+
+assert(TUTORIAL_STARTER_TIDE_DEW >= 3, "starter dew for lv3");
+const trainNavSt = {
+  tutorial: { done: false, step: "train_pet", flags: {} },
+  materials: { tide_dew: 3 },
+  stones: 120,
+  pets: [],
+  ranch: [{ uid: "p1", level: 1, name: "x" }],
+};
+const navParty = syncTutorialNavigation(trainNavSt, {
+  tab: "party",
+  panelSub: { party: "ranch", cultivate: "train" },
+});
+assert(navParty.tab === "party", "train_pet allows party tab");
+assert(trainPetCanUpgrade(trainNavSt), "train can upgrade with dew");
+const trainHi = tutorialHighlights(trainNavSt, {
+  tab: "cultivate",
+  panelSub: { cultivate: "train" },
+});
+assert(trainHi.some((h) => h.type === "tab" && h.id === "party"), "train highlights party when mats ready");
+const trainHiWait = tutorialHighlights(
+  { ...trainNavSt, materials: { tide_dew: 0 } },
+  { tab: "cultivate", panelSub: { cultivate: "train" } }
+);
+assert(trainHiWait.length === 0, "train no party push while waiting mats");
+
+const tickMatSt = {
+  realm: 0,
+  qi: 0,
+  stones: 0,
+  feed: 0,
+  dust: 0,
+  materials: { tide_dew: 0 },
+  trainSite: "shore",
+  pets: [],
+  ranch: [],
+  lastTick: Date.now() - 25_000,
+  daily: { date: "x", idleSec: 0, progress: {}, claimed: {} },
+  achievements: {},
+  stats: {},
+  clearedDungeons: {},
+  master: { name: "t", equip: {}, skillIds: [] },
+  log: [],
+};
+tickCultivation(tickMatSt);
+assert(Math.floor(tickMatSt.materials.tide_dew) >= 1, "deterministic train mats over 25s");
 
 /* P13: egg-first tutorial flow */
 const tut = { done: false, step: "hatch_starter", flags: { starterHatched: true } };
