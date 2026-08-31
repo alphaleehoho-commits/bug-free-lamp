@@ -154,6 +154,9 @@ import {
   pickDailyTrainSpotlight,
   DAILY_ALL_CLEAR_BONUS,
   DUNGEON_SWEEP_COUNTS,
+  DUNGEON_ENTRY_MAT_ID,
+  dungeonEntryMatCost,
+  dungeonEntryTokenPerRun,
 } from "./data.js";
 import {
   normalizeTutorial,
@@ -237,6 +240,7 @@ function defaultState() {
     breedingUnlocked: true,
     clearedDungeons: {},
     dungeonReadyAt: {},
+    dungeonSummon: {},
     breedReadyAt: 0,
     /** P2 */
     bestiary: {},
@@ -462,6 +466,7 @@ export function loadState() {
       pending: Array.isArray(parsed.pending) ? parsed.pending : [],
       clearedDungeons: parsed.clearedDungeons || {},
       dungeonReadyAt: parsed.dungeonReadyAt || {},
+      dungeonSummon: parsed.dungeonSummon || {},
       breedReadyAt: parsed.breedReadyAt || 0,
       breedingUnlocked: true,
       bestiary,
@@ -1172,6 +1177,9 @@ export function tryBreakthrough(state) {
   const costNote = view.costLabel ? `（耗 ${view.costLabel}）` : "";
   pushLog(state, `階段突破——晉升【${next.name}】${costNote}。御靈之力加深。`);
   pushLog(state, `牧場容量擴展至 ${ranchCap(state)}。`);
+  const tokenGain = 3 + Math.floor(next.id * 1.5);
+  addMaterials(state, { [DUNGEON_ENTRY_MAT_ID]: tokenGain });
+  pushLog(state, `升階賜潮霧令×${tokenGain}（秘境入場憑證）。`);
   bumpDaily(state, "idle", 1);
   const unlocked = MASTER_UNLOCK_MSG(state.realm);
   if (unlocked) pushLog(state, unlocked);
@@ -1760,10 +1768,10 @@ export function claimHatch(state, eggUid) {
     const sec = Math.ceil((egg.readyAt - Date.now()) / 1000);
     return { ok: false, msg: `尚未孵出（${sec}s）。` };
   }
-  const owned = state.pets.length + state.ranch.length;
+  // 蛋入牧場欄；出戰欄唔佔牧場容量（同契約／繁殖／撤回一致）
   const cap = ranchCap(state);
-  if (owned >= cap) {
-    return { ok: false, msg: `牧場已滿（${cap}），無法領取。` };
+  if (state.ranch.length >= cap) {
+    return { ok: false, msg: `牧場已滿（${state.ranch.length}/${cap}），無法領取。可先出戰或放歸。` };
   }
   const pet = normalizePet(hatchPetFromEgg(egg, { realm: state.realm, starter: egg.source === "starter" }));
   state.eggs.splice(i, 1);
@@ -2398,11 +2406,8 @@ export function runDungeon(state, dungeonId, opts = {}) {
   if (!state.dungeonReadyAt) state.dungeonReadyAt = {};
   if (!state.clearedDungeons) state.clearedDungeons = {};
   const now = Date.now();
-  const readyAt = state.dungeonReadyAt[dungeonId] || 0;
-  if (!sweepInternal && readyAt > now) {
-    const sec = Math.ceil((readyAt - now) / 1000);
-    return { ok: false, msg: `秘境冷卻中（${sec}s）。` };
-  }
+  // 舊 CD 欄位僅相容；新流程用 summon gate
+  syncDungeonSummon(state, dungeonId, now);
 
   const waves = dungeonWaves(d);
   if (!waves.length) return { ok: false, msg: "此秘境無敵人。" };
@@ -2413,6 +2418,15 @@ export function runDungeon(state, dungeonId, opts = {}) {
 
   if (!state.pets.length) {
     return { ok: false, msg: "請先派出至少一隻靈寵再進秘境。" };
+  }
+
+  const gate = dungeonGateView(state, dungeonId, now);
+  // 已通關：必須先召喚就緒；教學／首通可直打
+  if (!sweepInternal && gate.needsSummon && gate.phase !== "ready") {
+    if (gate.phase === "summoning") {
+      return { ok: false, msg: `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……` };
+    }
+    return { ok: false, msg: "請先召喚秘境。" };
   }
 
   const dailyPack = ensureDungeonDaily(state);
@@ -2847,10 +2861,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
     say("戰鬥逾時，撤退。");
   }
 
-  // 冷卻：無論勝負都進入（防無限刷）；掃蕩批次內跳過，由 sweep 結束後統一套用
+  // 打完散去：回到待召喚（掃蕩批次內唔清，由 sweep 統一清）
   if (!sweepInternal) {
-    const cd = d.cooldownMs || 0;
-    if (cd > 0) state.dungeonReadyAt[dungeonId] = Date.now() + cd;
+    clearDungeonSummon(state, dungeonId);
   }
 
   let encounter = null;
@@ -2950,8 +2963,138 @@ export function runDungeon(state, dungeonId, opts = {}) {
   };
 }
 
-/** 已通關秘境是否可掃蕩（教學期禁用） */
-export function canDungeonSweep(state, dungeonId) {
+/** 已通關秘境入場／掃蕩耗潮霧令 */
+export function dungeonSweepCost(state, dungeonId, count) {
+  const d = resolveDungeon(state, dungeonId);
+  if (!d) return { perRun: 0, total: 0, mats: {}, canAfford: false, label: "" };
+  const n = Math.max(1, count | 0);
+  const perRun = dungeonEntryTokenPerRun(dungeonId);
+  const mats = dungeonEntryMatCost(dungeonId, n);
+  const total = mats[DUNGEON_ENTRY_MAT_ID] || 0;
+  const have = Math.floor(state.materials?.[DUNGEON_ENTRY_MAT_ID] || 0);
+  const name = MATERIALS[DUNGEON_ENTRY_MAT_ID]?.name || "潮霧令";
+  return {
+    perRun,
+    total,
+    mats,
+    canAfford: have >= total,
+    have,
+    label: `${name}×${total}`,
+  };
+}
+
+function emptySummonSlot() {
+  return { phase: "idle", readyAt: 0, batch: 1 };
+}
+
+function ensureDungeonSummonMap(state) {
+  if (!state.dungeonSummon) state.dungeonSummon = {};
+  return state.dungeonSummon;
+}
+
+/** 同步召喚狀態（凝聚完 → ready） */
+export function syncDungeonSummon(state, dungeonId, now = Date.now()) {
+  const map = ensureDungeonSummonMap(state);
+  let slot = map[dungeonId];
+  if (!slot) {
+    // 舊存檔：若仍在舊 CD 倒數，轉成凝聚中
+    const legacy = (state.dungeonReadyAt || {})[dungeonId] || 0;
+    if (legacy > now) {
+      slot = { phase: "summoning", readyAt: legacy, batch: 1 };
+    } else {
+      slot = emptySummonSlot();
+    }
+    map[dungeonId] = slot;
+  }
+  if (slot.phase === "summoning" && (slot.readyAt || 0) <= now) {
+    slot.phase = "ready";
+    slot.readyAt = 0;
+  }
+  return slot;
+}
+
+export function clearDungeonSummon(state, dungeonId) {
+  const map = ensureDungeonSummonMap(state);
+  map[dungeonId] = emptySummonSlot();
+  if (state.dungeonReadyAt) state.dungeonReadyAt[dungeonId] = 0;
+}
+
+/**
+ * 秘境閘門檢視：idle → summoning → ready →（開戰後）idle
+ * 首通／教學：needsSummon=false，可直打
+ */
+export function dungeonGateView(state, dungeonId, now = Date.now()) {
+  const d = resolveDungeon(state, dungeonId);
+  const cleared = !!(state.clearedDungeons || {})[dungeonId];
+  const tut = tutorialActive(state);
+  const needsSummon = cleared && !tut;
+  const slot = syncDungeonSummon(state, dungeonId, now);
+  const baseCd = d?.cooldownMs || 20_000;
+  let phase = needsSummon ? slot.phase || "idle" : "ready";
+  if (!needsSummon) phase = "ready";
+  const summonLeftMs =
+    phase === "summoning" ? Math.max(0, (slot.readyAt || 0) - now) : 0;
+  const batch = Math.max(1, slot.batch || 1);
+  return {
+    needsSummon,
+    phase,
+    batch,
+    summonLeftMs,
+    baseCdMs: baseCd,
+    canSummon: needsSummon && phase === "idle",
+    canChallenge: phase === "ready",
+    summoning: phase === "summoning",
+  };
+}
+
+/** 開始召喚／凝聚秘境（可選連刷場數；令在召喚時扣） */
+export function startDungeonSummon(state, dungeonId, count = 1) {
+  const d = resolveDungeon(state, dungeonId);
+  if (!d) return { ok: false, msg: "秘境不存在。" };
+  if (tutorialActive(state)) return { ok: false, msg: "教學期間請直接進攻。" };
+  if (state.realm < d.needRealm) {
+    return { ok: false, msg: `需要階段：${stageAt(d.needRealm).name}` };
+  }
+  if (!state.pets?.length) return { ok: false, msg: "請先派出靈寵。" };
+  if (!state.clearedDungeons?.[dungeonId]) {
+    return { ok: false, msg: "首通無需召喚，直接進攻即可。" };
+  }
+  const gate = dungeonGateView(state, dungeonId);
+  if (gate.phase === "summoning") {
+    return { ok: false, msg: `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……` };
+  }
+  if (gate.phase === "ready") {
+    return { ok: false, msg: "秘境已就緒，請開始挑戰。" };
+  }
+  const allowed = DUNGEON_SWEEP_COUNTS;
+  const n = count === 1 || allowed.includes(count) ? count : 1;
+  const cost = dungeonSweepCost(state, dungeonId, n);
+  if (!cost.canAfford) {
+    return {
+      ok: false,
+      msg: `潮霧令不足（需 ${cost.total}，現 ${cost.have}）。練功／每日／升階可獲。`,
+    };
+  }
+  if (!spendMaterials(state, cost.mats)) {
+    return { ok: false, msg: "潮霧令不足。" };
+  }
+  const baseCd = d.cooldownMs || 20_000;
+  const readyAt = Date.now() + baseCd * n;
+  const map = ensureDungeonSummonMap(state);
+  map[dungeonId] = { phase: "summoning", readyAt, batch: n };
+  if (!state.dungeonReadyAt) state.dungeonReadyAt = {};
+  state.dungeonReadyAt[dungeonId] = readyAt;
+  const sec = Math.ceil((baseCd * n) / 1000);
+  const tokenName = MATERIALS[DUNGEON_ENTRY_MAT_ID]?.name || "潮霧令";
+  const msg =
+    n > 1
+      ? `開始凝聚【${d.name}】×${n}（耗${tokenName}×${cost.total} · 約 ${sec}s）`
+      : `開始凝聚【${d.name}】（耗${tokenName}×${cost.total} · 約 ${sec}s）`;
+  pushLog(state, msg);
+  return { ok: true, msg, readyAt, batch: n, tokenCost: cost.total };
+}
+
+export function canDungeonSweep(state, dungeonId, count = null) {
   const d = resolveDungeon(state, dungeonId);
   if (!d) return { ok: false, reason: "秘境不存在。" };
   if (tutorialActive(state)) return { ok: false, reason: "教學期間請單次進攻。" };
@@ -2960,12 +3103,29 @@ export function canDungeonSweep(state, dungeonId) {
   }
   if (!state.pets?.length) return { ok: false, reason: "請先派出靈寵。" };
   if (!state.clearedDungeons?.[dungeonId]) return { ok: false, reason: "需先通關本層。" };
-  const st = dungeonStatus(state, dungeonId);
-  if (st?.cooldownLeftMs > 0) {
-    const sec = Math.ceil(st.cooldownLeftMs / 1000);
-    return { ok: false, reason: `冷卻中（${sec}s）` };
+  const gate = dungeonGateView(state, dungeonId);
+  if (gate.phase === "summoning") {
+    return { ok: false, reason: `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）` };
   }
-  return { ok: true };
+  // idle：可發起召喚連刷；ready：batch 須吻合
+  if (gate.phase === "ready") {
+    if (count != null && gate.batch !== count) {
+      return { ok: false, reason: `已就緒批次為 ×${gate.batch}` };
+    }
+    return { ok: true, cost: { total: 0, mats: {}, canAfford: true, label: "已就緒" }, ready: true };
+  }
+  if (count != null) {
+    const cost = dungeonSweepCost(state, dungeonId, count);
+    if (!cost.canAfford) {
+      return {
+        ok: false,
+        reason: `潮霧令不足（需 ${cost.total}，現 ${cost.have}）`,
+        cost,
+      };
+    }
+    return { ok: true, cost, ready: false };
+  }
+  return { ok: true, ready: false };
 }
 
 function aggregateSweepRewards(results) {
@@ -2988,13 +3148,17 @@ function aggregateSweepRewards(results) {
 }
 
 /**
- * 已通關層連刷 N 次：批次結算，掃蕩期間跳過 CD／遇寵，結束後只觸發 1 次契約遭遇。
+ * 已通關層連刷：須先召喚就緒（batch=N）；開戰時唔再扣令。
  */
 export function runDungeonSweep(state, dungeonId, count) {
-  const check = canDungeonSweep(state, dungeonId);
-  if (!check.ok) return { ok: false, msg: check.reason };
   const allowed = DUNGEON_SWEEP_COUNTS;
   const n = allowed.includes(count) ? count : allowed[allowed.length - 1];
+  const gate = dungeonGateView(state, dungeonId);
+  if (gate.phase !== "ready" || gate.batch !== n) {
+    return { ok: false, msg: "請先召喚對應場數並等待潮霧凝聚完成。" };
+  }
+  const check = canDungeonSweep(state, dungeonId, n);
+  if (!check.ok) return { ok: false, msg: check.reason };
   const results = [];
   for (let i = 0; i < n; i += 1) {
     const r = runDungeon(state, dungeonId, { sweepInternal: true, deferEncounter: true });
@@ -3005,9 +3169,8 @@ export function runDungeonSweep(state, dungeonId, count) {
     results.push(r);
   }
   if (!results.length) return { ok: false, msg: "掃蕩失敗。" };
+  clearDungeonSummon(state, dungeonId);
   const d = resolveDungeon(state, dungeonId);
-  const cd = d?.cooldownMs || 0;
-  if (cd > 0) state.dungeonReadyAt[dungeonId] = Date.now() + cd;
   const agg = aggregateSweepRewards(results);
   let encounter = null;
   let encounterBlocked = false;
@@ -3022,7 +3185,7 @@ export function runDungeonSweep(state, dungeonId, count) {
       );
     }
   }
-  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 合計 +${agg.totalStones} 石`;
+  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 合計 +${agg.totalStones} 石 · 秘境已散去`;
   pushLog(state, msg);
   return {
     ok: true,
@@ -3033,6 +3196,9 @@ export function runDungeonSweep(state, dungeonId, count) {
     losses: agg.losses,
     totalStones: agg.totalStones,
     totalScrap: agg.totalScrap,
+    stoneCost: 0,
+    tokenCost: 0,
+    cooldownMs: 0,
     perRun: agg.perRun,
     encounter,
     encounterBlocked,
@@ -3046,7 +3212,7 @@ export function dungeonStatus(state, dungeonId) {
   const d = resolveDungeon(state, dungeonId);
   if (!d) return null;
   const now = Date.now();
-  const readyAt = (state.dungeonReadyAt || {})[dungeonId] || 0;
+  const gate = dungeonGateView(state, dungeonId, now);
   const trial = dungeonTrialFor(dungeonId) || null;
   const trialCheck = trial ? partyMeetsTrial(state.pets, trial) : null;
   const waves = dungeonWaves(d);
@@ -3057,7 +3223,8 @@ export function dungeonStatus(state, dungeonId) {
   const chalEval = evaluateDungeonChallenge(state.pets, d.challenge, {});
   return {
     cleared: !!(state.clearedDungeons || {})[dungeonId],
-    cooldownLeftMs: Math.max(0, readyAt - now),
+    cooldownLeftMs: gate.summonLeftMs,
+    gate,
     firstClearBonus: d.firstClearBonus || null,
     trial,
     trialMet: trialCheck ? trialCheck.ok : false,

@@ -105,6 +105,8 @@ import {
   eggTierInfo,
   DAILY_ALL_CLEAR_BONUS,
   DUNGEON_SWEEP_COUNTS,
+  DUNGEON_ENTRY_MAT_ID,
+  dungeonEntryMatCost,
   todayKey,
 } from "./data.js";
 import {
@@ -112,6 +114,9 @@ import {
   runDungeon,
   runDungeonSweep,
   canDungeonSweep,
+  dungeonSweepCost,
+  startDungeonSummon,
+  dungeonGateView,
   claimAllDailies,
   claimDailyAllClear,
   dailyAllClearView,
@@ -564,17 +569,30 @@ const fakeMats = { materials: { tide_dew: 0, mist_silk: 2 } };
 const aff = affordMaterials(fakeMats, { tide_dew: 2, mist_silk: 1 });
 assert(!aff.ok && aff.items.find((i) => i.id === "tide_dew")?.short === 2, "afford short");
 
-/* P18: specialize — ruins primary is coral not tide mix */
+/* P18: specialize — ruins primary is coral; mist_token is shared gate mat */
 const ruins = TRAIN_SITES.find((s) => s.id === "ruins");
-assert(ruins.focus === "繁殖" && ruins.drops.every((d) => !d.mat || d.mat === "coral_shard"), "ruins coral focus");
+assert(
+  ruins.focus === "繁殖" &&
+    ruins.primaryMat === "coral_shard" &&
+    ruins.drops.every((d) => !d.mat || d.mat === "coral_shard" || d.mat === "mist_token"),
+  "ruins coral focus"
+);
 const abyssSite = TRAIN_SITES.find((s) => s.id === "abyss");
 assert(
-  abyssSite.focus === "突破" && abyssSite.drops.every((d) => !d.mat || d.mat === "seal_ember"),
+  abyssSite.focus === "突破" &&
+    abyssSite.primaryMat === "seal_ember" &&
+    abyssSite.drops.every((d) => !d.mat || d.mat === "seal_ember" || d.mat === "mist_token"),
   "abyss ember focus"
 );
 assert(DUNGEON_MAT_DROPS.tide_4.weights.breed_ticket >= 2, "dungeon exclusive weight");
 assert(!DUNGEON_MAT_DROPS.tide_1.weights.echo_resin, "no resin in dungeon");
 assert(!DUNGEON_MAT_DROPS.tide_1.weights.fuse_sand, "no fuse sand in dungeon");
+assert(!DUNGEON_MAT_DROPS.tide_1.weights.tide_dew, "no bulk tide_dew in dungeon");
+assert(!DUNGEON_MAT_DROPS.tide_4.weights.seal_ember, "no bulk seal_ember in dungeon");
+assert(!DUNGEON_MAT_DROPS.tide_1.weights.mist_token, "entry token never dungeon drop");
+assert(MATERIALS.mist_token?.tier === "gate", "mist_token is gate tier");
+assert(materialSourceLabel("mist_token").includes("秘境不掉"), "token source label");
+assert(TRAIN_SITES.every((s) => (s.drops || []).some((d) => d.mat === "mist_token")), "all sites drip tokens");
 
 /* P19: shortage → train site nav */
 assert(primaryTrainSiteForMat("coral_shard")?.id === "ruins", "coral → ruins");
@@ -1057,6 +1075,8 @@ assert(tacticsNav.panelSub.dungeon === "setup", "tactics sync forces setup sub")
 
 /* Week A: dungeon sweep + daily all-clear */
 assert(DUNGEON_SWEEP_COUNTS.includes(10), "sweep counts include 10");
+assert(!DUNGEON_SWEEP_COUNTS.includes(1), "sweep drops single-run (use 進攻)");
+assert(DUNGEON_ENTRY_MAT_ID === "mist_token", "entry mat is mist_token");
 assert(DAILY_ALL_CLEAR_BONUS.stones >= 1, "all clear bonus defined");
 assert(!canDungeonSweep(combatSt, "tide_1").ok, "no sweep before clear");
 const sweepSt = {
@@ -1066,6 +1086,7 @@ const sweepSt = {
   scrap: 99,
   dust: 99,
   feed: 99,
+  materials: { mist_token: 50 },
   pets: [combatFox],
   ranch: [],
   pending: [],
@@ -1084,9 +1105,67 @@ const sweepSt = {
   tutorial: { done: true, step: "complete", flags: {} },
 };
 assert(canDungeonSweep(sweepSt, "tide_1").ok, "sweep after clear");
+const tokensBefore = sweepSt.materials.mist_token;
+const summon = startDungeonSummon(sweepSt, "tide_1", 5);
+assert(summon.ok && summon.batch === 5, "summon ×5 starts");
+assert(sweepSt.materials.mist_token === tokensBefore - summon.tokenCost, "tokens spent on summon");
+assert(dungeonGateView(sweepSt, "tide_1").phase === "summoning", "summoning phase");
+// 快轉就緒
+sweepSt.dungeonSummon.tide_1.readyAt = Date.now() - 1;
+assert(dungeonGateView(sweepSt, "tide_1").phase === "ready", "summon ready");
 const sweepRes = runDungeonSweep(sweepSt, "tide_1", 5);
 assert(sweepRes.ok && sweepRes.sweep && sweepRes.count === 5, "sweep 5 runs");
 assert(sweepRes.wins >= 1 && sweepRes.totalStones > 0, "sweep aggregate stones");
+assert(dungeonGateView(sweepSt, "tide_1").phase === "idle", "gate idle after sweep");
+const cost5 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 5);
+const cost20 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 20);
+assert(cost20.total > cost5.total, "20-sweep costs more than 5");
+assert(dungeonEntryMatCost("tide_1", 1).mist_token >= 1, "entry cost defined");
+assert(!Object.values(DUNGEON_MAT_DROPS).some((t) => t.weights?.mist_token), "token absent from all dungeon tables");
+
+/* ranch claim: only ranch slots count (deployed pets don't block) */
+const ranchClaimSt = {
+  realm: 1,
+  stones: 100,
+  scrap: 0,
+  feed: 0,
+  dust: 0,
+  pets: [combatFox],
+  ranch: [
+    { ...combatFox, uid: "r1" },
+    { ...combatFox, uid: "r2" },
+    { ...combatFox, uid: "r3" },
+    { ...combatFox, uid: "r4" },
+  ],
+  eggs: [],
+  pending: [],
+  bestiary: {},
+  stats: {},
+  log: [],
+  tutorial: { done: true, step: "complete", flags: {} },
+};
+const claimEggReady = makeEgg("C", "test");
+claimEggReady.startedAt = Date.now() - 1000;
+claimEggReady.readyAt = Date.now() - 500;
+ranchClaimSt.eggs = [claimEggReady];
+assert(ranchClaimSt.ranch.length === 4 && ranchClaimSt.pets.length === 1, "4 ranch + 1 fight");
+const hatchOk = claimHatch(ranchClaimSt, claimEggReady.uid);
+assert(hatchOk.ok && ranchClaimSt.ranch.length === 5, "claim egg when ranch has space");
+
+/* late tutorial tactics: visiting setup completes step */
+const lateTac = {
+  realm: 2,
+  tutorial: { done: false, step: "tactics", flags: {}, latePending: true },
+};
+normalizeTutorial(lateTac);
+const lateNav = syncTutorialNavigation(lateTac, {
+  tab: "dungeon",
+  panelSub: { dungeon: "field", party: "fight", cultivate: "train", codex: "dex" },
+});
+assert(lateNav.panelSub.dungeon === "setup", "late tactics forces setup");
+lateTac.tutorial.flags.tacticsVisited = true;
+assert(advanceTutorialIfReady(lateTac).advanced && lateTac.tutorial.done, "tactics visit completes late tutorial");
+
 const dayKey = todayKey();
 const dailyAllSt = {
   realm: 2,
@@ -1136,6 +1215,8 @@ assert(allRes.ok && allRes.claimed === DAILY_QUESTS.length, "claim all dailies")
 const __dir = dirname(fileURLToPath(import.meta.url));
 const uiSrc = readFileSync(join(__dir, "ui.js"), "utf8");
 assert(uiSrc.includes("data-sweep"), "ui sweep bind");
+assert(uiSrc.includes("data-summon"), "ui summon bind");
+assert(uiSrc.includes("panel-subnav-dock"), "ui subnav near bottom tabs");
 assert(uiSrc.includes("function wrapStage"), "ui has wrapStage layout helper");
 assert(uiSrc.includes("tabs-bottom"), "ui has bottom tab bar");
 assert(uiSrc.includes("statsSheetHtml"), "ui has stats resource sheet");
