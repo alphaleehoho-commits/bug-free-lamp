@@ -8,7 +8,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "hatch_starter",
     title: "孵化首寵",
-    hint: "潮霧蛋孵化中。等待期間可先「修行 → 練功」掛機，完成後回牧場領取。",
+    hint: "潮霧蛋孵化中。可先「修行 → 練功」掛機；完成後打開「靈寵 → 牧場」領取。",
   },
   {
     id: "meet_pet",
@@ -151,6 +151,22 @@ export function trainPetCanUpgrade(state) {
 
 /** 教學開局潮露：夠連升兩級至 Lv.3（+1 備用） */
 export const TUTORIAL_STARTER_TIDE_DEW = 3;
+
+export function tutorialEggReady(state) {
+  return (state.eggs || []).some((e) => e.startedAt != null && (e.readyAt || 0) <= Date.now());
+}
+
+/** 教學步驟需要牧場 sub 時 */
+export function tutorialNeedsRanchSub(step) {
+  return (
+    step === "hatch_starter" ||
+    step === "hatch_second" ||
+    step === "meet_pet" ||
+    step === "deploy" ||
+    step === "train_pet" ||
+    step === "breed_intro"
+  );
+}
 
 /** 載入／舊存檔正規化 */
 export function normalizeTutorial(state) {
@@ -546,48 +562,79 @@ function clampTutorialTabs(nav, allowedTabs, fallback) {
   return next;
 }
 
+function ensurePartyRanchSub(nav, step) {
+  const next = cloneNav(nav);
+  if (next.tab === "party" && tutorialNeedsRanchSub(step)) {
+    next.panelSub = { ...next.panelSub, party: "ranch" };
+  }
+  return next;
+}
+
 export function syncTutorialNavigation(state, nav) {
   if (!tutorialActive(state)) return nav;
   const step = state.tutorial.step;
+  let next;
 
   switch (step) {
     case "meet_pet":
     case "deploy":
     case "breed_intro":
-      return clampTutorialTabs(nav, ["party"]);
+      next = clampTutorialTabs(nav, ["party"]);
+      break;
     case "hatch_starter":
-    case "hatch_second":
-      return clampTutorialTabs(nav, ["party", "cultivate"], "party");
+    case "hatch_second": {
+      next = clampTutorialTabs(nav, ["party", "cultivate"], tutorialEggReady(state) ? "party" : "party");
+      if (tutorialEggReady(state)) {
+        next.tab = "party";
+        next.panelSub = { ...next.panelSub, party: "ranch" };
+      }
+      break;
+    }
     case "train_pet":
-      if (nav.tab === "cultivate" || nav.tab === "party") return cloneNav(nav);
-      return clampTutorialTabs(
-        {
-          ...nav,
-          tab: trainPetCanUpgrade(state) ? "party" : "cultivate",
-          panelSub: {
-            ...nav.panelSub,
-            ...(trainPetCanUpgrade(state) ? { party: "ranch" } : { cultivate: "train" }),
+      if (nav.tab === "cultivate" || nav.tab === "party") {
+        next = cloneNav(nav);
+      } else {
+        next = clampTutorialTabs(
+          {
+            ...nav,
+            tab: trainPetCanUpgrade(state) ? "party" : "cultivate",
+            panelSub: {
+              ...nav.panelSub,
+              ...(trainPetCanUpgrade(state) ? { party: "ranch" } : { cultivate: "train" }),
+            },
           },
-        },
-        ["cultivate", "party"]
-      );
+          ["cultivate", "party"]
+        );
+      }
+      if (trainPetCanUpgrade(state) && next.tab === "party") {
+        next.panelSub = { ...next.panelSub, party: "ranch" };
+      }
+      break;
     case "dungeon_fight":
     case "dungeon_win":
-      return clampTutorialTabs(nav, ["dungeon"]);
+      next = clampTutorialTabs(nav, ["dungeon"]);
+      break;
     case "shop_egg":
-      return clampTutorialTabs(nav, ["cultivate"]);
+      next = clampTutorialTabs(nav, ["cultivate"]);
+      break;
     case "cultivate_qi":
     case "breakthrough":
-      return clampTutorialTabs(nav, ["cultivate"]);
+      next = clampTutorialTabs(nav, ["cultivate"]);
+      break;
     case "codex":
-      return clampTutorialTabs(nav, ["codex"]);
+      next = clampTutorialTabs(nav, ["codex"]);
+      break;
     case "dispatch":
-      return clampTutorialTabs(nav, ["party"]);
+      next = clampTutorialTabs(nav, ["party"]);
+      break;
     case "tactics":
-      return clampTutorialTabs(nav, ["dungeon"]);
+      next = clampTutorialTabs(nav, ["dungeon"]);
+      break;
     default:
-      return cloneNav(nav);
+      next = cloneNav(nav);
   }
+
+  return ensurePartyRanchSub(next, step);
 }
 
 export function tutorialHighlights(state, nav = {}) {
@@ -600,8 +647,12 @@ export function tutorialHighlights(state, nav = {}) {
 
   switch (step) {
     case "hatch_starter": {
+      if (eggReady) {
+        if (tab === "party" && ps.party === "ranch") return [{ type: "claim-hatch" }];
+        if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
+        return [{ type: "tab", id: "party" }];
+      }
       if (tab === "party" && ps.party === "ranch") {
-        if (eggReady) return [{ type: "claim-hatch" }];
         if (eggIdle) return [{ type: "start-hatch" }];
         return [{ type: "tab", id: "cultivate" }];
       }
@@ -616,15 +667,18 @@ export function tutorialHighlights(state, nav = {}) {
       return [{ type: "tab", id: "party" }];
     case "train_pet": {
       const canUp = trainPetCanUpgrade(state);
-      if (tab === "party") {
-        return [{ type: "act", act: "upgrade" }, { type: "pet-detail" }];
+      const inDetail = !!nav.petDetail;
+      if (tab === "party" && ps.party === "ranch") {
+        if (canUp && inDetail) return [{ type: "upgrade" }];
+        if (canUp) return [{ type: "pet-detail" }];
+        return [{ type: "tab", id: "cultivate" }];
       }
+      if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
       if (!canUp) {
         if (tab === "cultivate" && ps.cultivate === "train") return [];
         if (tab === "cultivate") return [{ type: "panel-sub", group: "cultivate", id: "train" }];
         return [{ type: "tab", id: "cultivate" }];
       }
-      if (tab === "cultivate") return [{ type: "tab", id: "party" }];
       return [{ type: "tab", id: "party" }];
     }
     case "deploy":
@@ -643,8 +697,12 @@ export function tutorialHighlights(state, nav = {}) {
       if (tab === "cultivate") return [{ type: "panel-sub", group: "cultivate", id: "shop" }];
       return [{ type: "tab", id: "cultivate" }];
     case "hatch_second": {
+      if (eggReady) {
+        if (tab === "party" && ps.party === "ranch") return [{ type: "claim-hatch" }];
+        if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
+        return [{ type: "tab", id: "party" }];
+      }
       if (tab === "party" && ps.party === "ranch") {
-        if (eggReady) return [{ type: "claim-hatch" }];
         if (eggIdle) return [{ type: "start-hatch" }];
         return [{ type: "tab", id: "cultivate" }];
       }
@@ -696,6 +754,7 @@ function highlightMatches(h, spec) {
     case "shop-buy":
     case "deploy":
     case "pet-detail":
+    case "upgrade":
     case "start-hatch":
     case "claim-hatch":
       return true;
@@ -725,6 +784,8 @@ export function tutorialTargetSelector(spec) {
       return "[data-deploy]:not([disabled])";
     case "pet-detail":
       return "[data-pet-detail]";
+    case "upgrade":
+      return "[data-upgrade]:not([disabled])";
     case "start-hatch":
       return "[data-start-hatch]:not([disabled])";
     case "claim-hatch":
@@ -839,7 +900,7 @@ export function tutorialBannerHint(state) {
   if (info.stepId === "hatch_starter" || info.stepId === "hatch_second") {
     const eggs = state.eggs || [];
     const ready = eggs.find((e) => e.startedAt != null && (e.readyAt || 0) <= Date.now());
-    if (ready) return `【${ready.name || "蛋"}】已就緒，點「領取」！`;
+    if (ready) return `【${ready.name || "蛋"}】已就緒！打開「靈寵 → 牧場」點「領取」。`;
     const hatching = eggs.find((e) => e.startedAt != null);
     if (hatching) {
       const sec = Math.max(0, Math.ceil(((hatching.readyAt || 0) - Date.now()) / 1000));

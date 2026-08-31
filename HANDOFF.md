@@ -5,7 +5,7 @@
 - Path: `mobile-rpg-slice/`
 - Stack: vanilla HTML/CSS/JS PWA (portrait mobile)
 - Live: `https://alphaleehoho-commits.github.io/bug-free-lamp/`
-- SW cache: `void-tide-pets-v44` (PR #14 pending merge)
+- SW cache: `void-tide-pets-v45` (PR pending)
 
 ## In PR #14 (`cursor/fix-train-pet-tutorial-d7bb`)
 
