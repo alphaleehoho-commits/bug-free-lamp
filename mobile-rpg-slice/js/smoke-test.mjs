@@ -99,6 +99,7 @@ import {
   makeEgg,
   hatchPetFromEgg,
   EGG_TIERS,
+  todayKey,
   eggTierInfo,
 } from "./data.js";
 import {
@@ -125,10 +126,6 @@ import {
   tutorialShopPrice,
   skipTutorial,
   tutorialQiReady,
-  isCultivateSubLocked,
-  isTabLocked,
-  TUTORIAL_SHOP_COST,
-  TUTORIAL_TRAIN_LEVEL,
   syncTutorialNavigation,
   tutorialHighlights,
   tutorialGlowClass,
@@ -144,7 +141,24 @@ import {
   tutorialEggReady,
   tutorialNeedsRanchSub,
   tutorialTargetSelector,
+  TUTORIAL_ENABLED,
+  TUTORIAL_SHOP_COST,
+  TUTORIAL_TRAIN_LEVEL,
 } from "./tutorial.js";
+import {
+  isTabLocked,
+  isCultivateSubLocked,
+  isPartySubLocked,
+  isBreedLocked,
+  canEnterDungeon,
+  hasClearedTide1,
+  pollProgressionUnlocks,
+  PROGRESSION_DUNGEON_LEVEL,
+  canAccessAdvanceSub,
+  progressionQiBreakReady,
+  nextGoalHint,
+  isFreshOnboarding,
+} from "./progression.js";
 
 function assertNavKeepsTab(state, step, tab, panelSub = {}) {
   state.tutorial = { done: false, step, flags: state.tutorial?.flags || {} };
@@ -691,6 +705,33 @@ if (eggOffer.kind === "egg") {
 } else {
   assert(shopSt.ranch.length === 1 && shopSt.pending.length === 0, "shop to ranch");
 }
+
+const matShopSt = {
+  realm: 0,
+  stones: 100,
+  pets: [makeStarterPet()],
+  ranch: [],
+  clearedDungeons: { tide_1: true },
+  materials: {},
+  shop: {
+    date: todayKey(),
+    offers: [
+      {
+        offerId: "mat-test",
+        kind: "mat",
+        matId: "tide_dew",
+        matAmount: 2,
+        name: "潮露",
+        cost: 18,
+        bought: false,
+      },
+    ],
+  },
+  log: [],
+};
+const matBuy = buyShopOffer(matShopSt, "mat-test");
+assert(matBuy.ok && matShopSt.materials.tide_dew === 2, "shop mat buy");
+
 const pitySt = {
   realm: 0,
   qi: 0,
@@ -723,7 +764,7 @@ assert(pity.ok && !pity.success && pitySt.pending.length === 1, "pity keeps pend
 assert(pitySt.stones === stonesBefore, "pity refunds bond cost");
 
 /* P21: eggs */
-assert(EGG_TIERS.C.hatchMs === 120_000 && EGG_TIERS.A.hatchMs >= 1_800_000, "egg tiers");
+assert(EGG_TIERS.C.hatchMs === 90_000 && EGG_TIERS.A.hatchMs >= 1_800_000, "egg tiers");
 assert(STARTER_EGG_HATCH_MS === 20_000, "starter hatch ms");
 const freshEgg = makeStarterEgg();
 assert(freshEgg.readyAt - freshEgg.startedAt === STARTER_EGG_HATCH_MS, "starter egg duration");
@@ -744,10 +785,40 @@ const hatched = claimHatch(hatchSt, egg0.uid);
 assert(hatched.ok && hatchSt.ranch.length === 1 && hatchSt.eggs.length === 0, "claim hatch starter");
 assert(hatchSt.tutorial.step === "meet_pet" || hatchSt.tutorial.flags.starterHatched, "hatch advances");
 
-const hatchLockSt = { tutorial: { done: false, step: "hatch_starter", flags: {} } };
-assert(!isTabLocked(hatchLockSt, "cultivate"), "hatch_starter unlocks cultivate tab");
-assert(!isCultivateSubLocked(hatchLockSt, "train"), "hatch_starter unlocks train");
-assert(isCultivateSubLocked(hatchLockSt, "shop"), "hatch_starter locks shop");
+const hatchLockSt = { pets: [], ranch: [], clearedDungeons: {} };
+assert(!isTabLocked(hatchLockSt, "cultivate"), "fresh unlocks cultivate tab");
+assert(!isCultivateSubLocked(hatchLockSt, "train"), "fresh unlocks train");
+assert(isCultivateSubLocked(hatchLockSt, "shop"), "fresh locks shop until tide_1");
+assert(isTabLocked(hatchLockSt, "dungeon"), "fresh locks dungeon");
+assert(isPartySubLocked(hatchLockSt, "fight"), "fresh locks fight until first pet");
+
+const progPetSt = { pets: [], ranch: [makeStarterPet()], clearedDungeons: {} };
+assert(!isPartySubLocked(progPetSt, "fight"), "first pet unlocks fight");
+assert(isTabLocked(progPetSt, "dungeon"), "lv1 pet still locks dungeon");
+progPetSt.ranch[0].level = PROGRESSION_DUNGEON_LEVEL;
+assert(canEnterDungeon(progPetSt), "lv3 unlocks dungeon gate");
+assert(!isTabLocked(progPetSt, "dungeon"), "lv3 unlocks dungeon tab");
+
+const tide1St = { pets: [makeStarterPet()], ranch: [], clearedDungeons: { tide_1: true } };
+assert(!isCultivateSubLocked(tide1St, "shop"), "tide_1 unlocks shop");
+assert(isBreedLocked({ pets: [makeStarterPet()], ranch: [] }), "breed locked with 1 pet");
+assert(!isBreedLocked({ pets: [makeStarterPet()], ranch: [makeStarterPet()] }), "breed unlocked with 2 pets");
+
+const progUnlockSt = { pets: [], ranch: [makeStarterPet()], clearedDungeons: {}, progression: { announced: {} } };
+const unlockMsgs = pollProgressionUnlocks(progUnlockSt);
+assert(unlockMsgs.length && unlockMsgs[0].includes("出戰"), "progression unlock toast for first pet");
+
+const deploySt = { pets: [makeStarterPet()], ranch: [], clearedDungeons: {} };
+assert(!canEnterDungeon(deploySt), "deploy alone does not unlock dungeon");
+
+const advQiSt = { realm: 0, qi: 55, pets: [], ranch: [makeStarterPet()], materials: {} };
+assert(canAccessAdvanceSub(advQiSt), "qi full unlocks advance access");
+assert(!isCultivateSubLocked(advQiSt, "advance"), "advance sub open when qi ready");
+assert(progressionQiBreakReady(advQiSt), "breakthrough CTA ready");
+
+const freshSt = { pets: [], ranch: [], eggs: [makeStarterEgg()], combatsWon: 0, realm: 0 };
+assert(isFreshOnboarding(freshSt), "fresh onboarding detect");
+assert(nextGoalHint(freshSt).includes("牧場"), "fresh goal hints ranch");
 
 assert(TUTORIAL_STARTER_TIDE_DEW >= 3, "starter dew for lv3");
 const trainNavSt = {
@@ -767,7 +838,11 @@ const trainHi = tutorialHighlights(trainNavSt, {
   tab: "cultivate",
   panelSub: { cultivate: "train" },
 });
-assert(trainHi.some((h) => h.type === "tab" && h.id === "party"), "train highlights party when mats ready");
+if (TUTORIAL_ENABLED) {
+  assert(trainHi.some((h) => h.type === "tab" && h.id === "party"), "train highlights party when mats ready");
+} else {
+  assert(trainHi.length === 0, "train highlights off when tutorial disabled");
+}
 const trainHiWait = tutorialHighlights(
   { ...trainNavSt, materials: { tide_dew: 0 } },
   { tab: "cultivate", panelSub: { cultivate: "train" } }
@@ -785,8 +860,8 @@ assertNavKeepsTab(
   { cultivate: "train" }
 );
 
-const hatch2LockSt = { tutorial: { done: false, step: "hatch_second", flags: {} } };
-assert(!isTabLocked(hatch2LockSt, "cultivate"), "hatch_second unlocks cultivate tab");
+const hatch2LockSt = { pets: [makeStarterPet()], ranch: [], clearedDungeons: {} };
+assert(!isTabLocked(hatch2LockSt, "cultivate"), "mid-game unlocks cultivate tab");
 
 assert(TUTORIAL_EGG_HATCH_MS === STARTER_EGG_HATCH_MS, "tutorial egg hatch ms");
 assert(TUTORIAL_EGG_HATCH_MS < EGG_TIERS.C.hatchMs, "tutorial egg faster than C tier");
@@ -815,7 +890,7 @@ const qiBannerSt = {
   daily: { idleSec: 10 },
   tutorial: { done: false, step: "cultivate_qi", flags: {} },
 };
-assert(tutorialBannerHint(qiBannerSt).includes("35s"), "qi banner shows idle countdown");
+assert(tutorialBannerHint(qiBannerSt).includes(TUTORIAL_ENABLED ? "35s" : "自由探索"), "qi banner hint");
 
 assert(tutorialNeedsRanchSub("train_pet"), "train_pet needs ranch");
 assert(tutorialTargetSelector({ type: "upgrade" }) === "[data-upgrade]:not([disabled])", "upgrade selector");
@@ -826,15 +901,24 @@ const eggReadySt = {
 };
 assert(tutorialEggReady(eggReadySt), "egg ready detect");
 const eggReadyHi = tutorialHighlights(eggReadySt, { tab: "cultivate", panelSub: { cultivate: "train" } });
-assert(eggReadyHi.some((h) => h.type === "tab" && h.id === "party"), "egg ready highlights party from cultivate");
 const eggReadyNav = syncTutorialNavigation(eggReadySt, { tab: "cultivate", panelSub: { cultivate: "train" } });
-assert(eggReadyNav.tab === "party" && eggReadyNav.panelSub.party === "ranch", "egg ready nav to ranch");
+if (TUTORIAL_ENABLED) {
+  assert(eggReadyHi.some((h) => h.type === "tab" && h.id === "party"), "egg ready highlights party from cultivate");
+  assert(eggReadyNav.tab === "party" && eggReadyNav.panelSub.party === "ranch", "egg ready nav to ranch");
+} else {
+  assert(eggReadyHi.length === 0, "egg ready highlights off when disabled");
+  assert(eggReadyNav.tab === "cultivate", "egg ready nav unchanged when disabled");
+}
 
 const trainDetailHi = tutorialHighlights(
   { ...trainNavSt, ranch: [makeStarterPet()] },
   { tab: "party", panelSub: { party: "ranch" }, petDetail: true }
 );
-assert(trainDetailHi.some((h) => h.type === "upgrade"), "train detail highlights upgrade");
+if (TUTORIAL_ENABLED) {
+  assert(trainDetailHi.some((h) => h.type === "upgrade"), "train detail highlights upgrade");
+} else {
+  assert(trainDetailHi.length === 0, "train detail highlights off when disabled");
+}
 
 const tickMatSt = {
   realm: 0,
@@ -873,31 +957,42 @@ const tutSt = {
   daily: { date: "x", idleSec: 0, progress: {}, claimed: {} },
   tutorial: tut,
 };
+assert(!TUTORIAL_ENABLED, "tutorial runtime disabled");
 normalizeTutorial(tutSt);
-assert(tutorialActive(tutSt), "tutorial on for new");
-assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "meet_pet", "hatch_starter done");
-tutSt.tutorial.flags.petDetailVisited = true;
-assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "train_pet", "meet_pet step");
-assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "deploy", "train_pet lv3");
-tutSt.pets = [tutSt.ranch[0]];
-tutSt.ranch = [];
-assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "dungeon_fight", "deploy step");
-tutSt.tutorial.flags.dungeonStarted = true;
-assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "dungeon_win", "dung start");
-tutSt.tutorial.flags.dungeonWonTutorial = true;
-assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "shop_egg", "dung win");
-assert(tutorialShopPrice(tutSt, 60) === TUTORIAL_SHOP_COST, "tutorial shop price");
+assert(!tutorialActive(tutSt), "tutorial inactive at runtime when disabled");
+if (TUTORIAL_ENABLED) {
+  assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "meet_pet", "hatch_starter done");
+  tutSt.tutorial.flags.petDetailVisited = true;
+  assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "train_pet", "meet_pet step");
+  assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "deploy", "train_pet lv3");
+  tutSt.pets = [tutSt.ranch[0]];
+  tutSt.ranch = [];
+  assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "dungeon_fight", "deploy step");
+  tutSt.tutorial.flags.dungeonStarted = true;
+  assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "dungeon_win", "dung start");
+  tutSt.tutorial.flags.dungeonWonTutorial = true;
+  assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "shop_egg", "dung win");
+} else {
+  assert(!advanceTutorialIfReady(tutSt).advanced, "advance no-op when disabled");
+  assert(tutSt.tutorial.done && tutSt.tutorial.step === "complete", "normalize completes tutorial");
+}
+assert(tutorialShopPrice(tutSt, 60) === 60, "tutorial shop price passthrough when disabled");
 ensureShop(tutSt);
 const eggOfferTut = tutSt.shop.offers.find((o) => o.kind === "egg" && !o.bought);
 assert(eggOfferTut, "tutorial egg offer");
 const buyTut = buyShopOffer(tutSt, eggOfferTut.offerId);
 assert(buyTut.ok && tutSt.eggs.length >= 1, "tutorial shop egg");
-assert(tutSt.tutorial.step === "hatch_second", "shop egg step done");
+if (TUTORIAL_ENABLED) {
+  assert(tutSt.tutorial.step === "hatch_second", "shop egg step done");
+}
 const readyEgg = tutSt.eggs[0];
 readyEgg.startedAt = Date.now() - 1;
 readyEgg.readyAt = Date.now() - 1;
 const claim2 = claimHatch(tutSt, readyEgg.uid);
-assert(claim2.ok && tutSt.tutorial.step === "cultivate_qi", "second hatch to qi");
+assert(claim2.ok, "second hatch claim");
+if (TUTORIAL_ENABLED) {
+  assert(tutSt.tutorial.step === "cultivate_qi", "second hatch to qi");
+}
 
 const skipSt = {
   realm: 0,
@@ -910,9 +1005,9 @@ const skipSt = {
   tutorial: { done: false, step: "hatch_starter", flags: {} },
 };
 normalizeTutorial(skipSt);
-assert(tutorialActive(skipSt), "skip pre active");
+assert(!tutorialActive(skipSt), "tutorial disabled after normalize");
 const skipR = skipTutorial(skipSt);
-assert(skipR.ok && !tutorialActive(skipSt), "skip tutorial unlocks");
+assert(skipR.ok && !tutorialActive(skipSt), "skip tutorial marks complete");
 assert(skipSt.tutorial.done && skipSt.tutorial.step === "complete", "skip marks complete");
 
 const meetHi = tutorialHighlights(
@@ -924,7 +1019,11 @@ const meetHi = tutorialHighlights(
   },
   { tab: "party", panelSub: { party: "ranch" } }
 );
-assert(meetHi.some((h) => h.type === "pet-detail"), "meet_pet highlights detail");
+if (TUTORIAL_ENABLED) {
+  assert(meetHi.some((h) => h.type === "pet-detail"), "meet_pet highlights detail");
+} else {
+  assert(meetHi.length === 0, "meet_pet highlights off when disabled");
+}
 
 const ga = genAwakenBonus(3);
 assert(ga?.skillLevel === 2 && ga.atk > 0, "gen3 awaken");
@@ -975,9 +1074,12 @@ const qiSt = {
   daily: { date: "x", idleSec: 120, progress: {}, claimed: {} },
   tutorial: { done: false, step: "cultivate_qi", flags: { qiIdleDone: true } },
 };
-normalizeTutorial(qiSt);
-assert(tutorialQiReady(qiSt), "tutorial qi ready");
-assert(!isCultivateSubLocked(qiSt, "advance"), "advance unlocked when qi ready");
+if (TUTORIAL_ENABLED) {
+  assert(tutorialQiReady(qiSt), "tutorial qi ready");
+} else {
+  assert(!tutorialQiReady(qiSt), "tutorial qi ready off when disabled");
+}
+assert(!isCultivateSubLocked(qiSt, "advance"), "advance unlocked when qi ready at realm 0");
 
 assert((BREAKTHROUGH_GATES[1].checks || []).some((c) => c.type === "owned_pets"), "realm1 needs pet");
 const brGate1 = breakthroughView({ realm: 0, qi: 60, stones: 30, combatsWon: 0, pets: [], ranch: [makeStarterPet()] });
@@ -987,18 +1089,27 @@ assert(!(BREAKTHROUGH_GATES[3].checks || []).some((c) => c.type === "gear_equipp
 const navIn = { tab: "cultivate", panelSub: { cultivate: "train", party: "fight", dungeon: "field", codex: "dex" } };
 const codexSt = { tutorial: { done: false, step: "codex", flags: {} } };
 const navOut = syncTutorialNavigation(codexSt, navIn);
-assert(navOut.tab === "codex", "codex step navigates to codex");
 const codexHi = tutorialHighlights(codexSt, navIn);
-assert(codexHi.length === 1 && codexHi[0].type === "tab" && codexHi[0].id === "codex", "codex highlight tab");
-assert(tutorialGlowClass(codexSt, { type: "tab", id: "codex" }, navIn) === " tut-glow", "codex glow");
+if (TUTORIAL_ENABLED) {
+  assert(navOut.tab === "codex", "codex step navigates to codex");
+  assert(codexHi.length === 1 && codexHi[0].type === "tab" && codexHi[0].id === "codex", "codex highlight tab");
+  assert(tutorialGlowClass(codexSt, { type: "tab", id: "codex" }, navIn) === " tut-glow", "codex glow");
+} else {
+  assert(navOut.tab === "cultivate", "codex nav unchanged when disabled");
+  assert(codexHi.length === 0, "codex highlights off when disabled");
+}
 
 const dungSt = {
   tutorial: { done: false, step: "dungeon_win", flags: { dungeonStarted: true } },
   combatsWon: 1,
 };
-assert(!advanceTutorialIfReady(dungSt).advanced, "dungeon win waits for tutorial flag");
-dungSt.tutorial.flags.dungeonWonTutorial = true;
-assert(advanceTutorialIfReady(dungSt).advanced && dungSt.tutorial.step === "shop_egg", "dungeon win to shop egg");
+if (TUTORIAL_ENABLED) {
+  assert(!advanceTutorialIfReady(dungSt).advanced, "dungeon win waits for tutorial flag");
+  dungSt.tutorial.flags.dungeonWonTutorial = true;
+  assert(advanceTutorialIfReady(dungSt).advanced && dungSt.tutorial.step === "shop_egg", "dungeon win to shop egg");
+} else {
+  assert(!advanceTutorialIfReady(dungSt).advanced, "dungeon advance off when disabled");
+}
 
 const codexDone = {
   realm: 0,
@@ -1006,14 +1117,22 @@ const codexDone = {
 };
 codexDone.tutorial.flags.codexVisited = true;
 const codexAdv = advanceTutorialIfReady(codexDone);
-assert(codexAdv.nextId === "complete" && codexDone.tutorial.done && codexDone.tutorial.latePending, "codex skips late until realm 2");
+if (TUTORIAL_ENABLED) {
+  assert(codexAdv.nextId === "complete" && codexDone.tutorial.done && codexDone.tutorial.latePending, "codex skips late until realm 2");
+} else {
+  assert(!codexAdv.advanced, "codex advance off when disabled");
+}
 
 const lateStart = {
   realm: 2,
   tutorial: { done: true, step: "complete", flags: {}, latePending: true, lateCompleted: false },
 };
 const late = maybeStartLateTutorial(lateStart);
-assert(late.started && lateStart.tutorial.step === "dispatch", "late tutorial at realm 2");
+if (TUTORIAL_ENABLED) {
+  assert(late.started && lateStart.tutorial.step === "dispatch", "late tutorial at realm 2");
+} else {
+  assert(!late.started, "late tutorial off when disabled");
+}
 assert(LATE_TUTORIAL_MIN_REALM === 2, "late realm gate");
 
 const tutDung = {
@@ -1022,13 +1141,16 @@ const tutDung = {
   tutorial: { done: false, step: "dungeon_fight", flags: {} },
 };
 normalizeTutorial(tutDung);
-assert(tutorialWaivesDungeonChallenge(tutDung, "tide_1"), "tutorial waives tide_1 challenge");
-assert(!tutorialWaivesDungeonChallenge(tutDung, "tide_2"), "no waive on t2");
+assert(!tutorialWaivesDungeonChallenge(tutDung, "tide_1"), "no tutorial waive when disabled");
 
 const stepCodex = { tutorial: { done: false, step: "codex", flags: {}, latePending: false } };
 normalizeTutorial(stepCodex);
 const codexInfo = tutorialStepInfo(stepCodex);
-assert(codexInfo.index === 12 && codexInfo.total === 12, "core tutorial 12/12 at codex");
+if (TUTORIAL_ENABLED) {
+  assert(codexInfo.index === 12 && codexInfo.total === 12, "core tutorial 12/12 at codex");
+} else {
+  assert(stepCodex.tutorial.done && stepCodex.tutorial.step === "complete", "normalize marks tutorial done when disabled");
+}
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

@@ -733,6 +733,39 @@ button.flash-act {
   min-width: 5.5rem;
 }
 
+.tabs button.locked {
+  opacity: 0.72;
+  cursor: pointer;
+}
+
+.welcome-banner {
+  margin: 0.35rem 0.5rem 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.35rem;
+  background: rgba(72, 120, 180, 0.18);
+  border: 1px solid rgba(120, 170, 230, 0.35);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.welcome-banner p { margin: 0; }
+
+.goal-hint {
+  margin: 0 0 0.45rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.3rem;
+  background: rgba(60, 100, 70, 0.15);
+  border-left: 3px solid rgba(100, 180, 120, 0.55);
+  font-size: 0.66rem;
+  line-height: 1.35;
+  color: var(--muted, #9ab);
+}
+
+.panel-subnav button.is-locked {
+  opacity: 0.72;
+  cursor: pointer;
+}
+
 .offline-banner {
   display: flex;
   align-items: center;

@@ -89,6 +89,7 @@ import {
   useBloodCatalyst,
   useTemperOil,
 } from "./engine.js";
+import { materialSourceLabel } from "./data.js";
 import {
   tutorialActive,
   tutorialBannerHtml,
@@ -96,11 +97,6 @@ import {
   advanceTutorialIfReady,
   advanceTutorialCascade,
   markTutorialFlag,
-  isTabLocked,
-  isCultivateSubLocked,
-  isPartySubLocked,
-  isDungeonSubLocked,
-  areTrainSitesLocked,
   skipTutorial,
   tutorialQiReady,
   tutorialGlowClass,
@@ -114,17 +110,36 @@ import {
   tutorialNeedsRanchSub,
   tutorialEggReady,
 } from "./tutorial.js";
+import {
+  isTabLocked,
+  isCultivateSubLocked,
+  isPartySubLocked,
+  isDungeonSubLocked,
+  areTrainSitesLocked,
+  isBreedLocked,
+  breedLockReason,
+  lockReason,
+  pollProgressionUnlocks,
+  pollEggReadyNotices,
+  progressionQiBreakReady,
+  nextGoalHint,
+  isFreshOnboarding,
+  petCanUpgrade,
+} from "./progression.js";
 
 const app = document.querySelector("#app");
 
 let state = loadState();
 state = tickCultivation(state);
+const bootUnlockMsgs = pollProgressionUnlocks(state);
 saveState(state);
 
 let flash = "";
 /** @type {'' | 'celebrate' | 'hybrid' | 'legend' | 'unlock'} */
 let flashTone = "";
 let flashTimer = 0;
+/** @type {string[]} */
+let unlockQueue = [];
 let tab = "cultivate";
 /** @type {{ cultivate: string, party: string, dungeon: string, codex: string }} */
 let panelSub = { cultivate: "train", party: "fight", dungeon: "field", codex: "dex" };
@@ -267,7 +282,18 @@ function initTutorialNav() {
   panelSub = nav.panelSub;
 }
 
+function initProgressionNav() {
+  if (tutorialActive(state)) return;
+  if (isFreshOnboarding(state)) {
+    tab = "party";
+    panelSub = { ...panelSub, party: "ranch" };
+  } else if (isPartySubLocked(state, "fight")) {
+    panelSub = { ...panelSub, party: "ranch" };
+  }
+}
+
 initTutorialNav();
+initProgressionNav();
 
 /** @type {null | {
  *  events: object[],
@@ -450,6 +476,14 @@ function patchCombatRosterDom(pb) {
   }
 }
 
+function enqueueUnlocks(msgs) {
+  if (!msgs?.length) return;
+  unlockQueue.push(...msgs);
+  if (!flash && unlockQueue.length) {
+    setFlash(unlockQueue.shift(), "unlock");
+  }
+}
+
 function setFlash(msg, tone = "") {
   flash = msg;
   flashTone = tone || "";
@@ -473,7 +507,13 @@ function setFlash(msg, tone = "") {
   }
   clearTimeout(flashTimer);
   if (msg) {
-    flashTimer = setTimeout(() => setFlash(""), 2800);
+    const ms = flashTone === "unlock" ? 3200 : 2800;
+    flashTimer = setTimeout(() => {
+      setFlash("");
+      if (unlockQueue.length) {
+        setFlash(unlockQueue.shift(), "unlock");
+      }
+    }, ms);
   }
 }
 
@@ -656,7 +696,11 @@ function stopPlayback() {
 
 function switchTab(id) {
   if (playback && !playback.done) return;
-  if (isTabLocked(state, id)) return;
+  if (isTabLocked(state, id)) {
+    const reason = lockReason(state, "tab", id);
+    if (reason) setFlash(reason);
+    return;
+  }
   tab = id;
   tutMisclickCount = 0;
   if (tutorialActive(state)) {
@@ -673,6 +717,12 @@ function switchTab(id) {
       if (step === "dungeon_fight" || step === "dungeon_win") panelSub = { ...panelSub, dungeon: "field" };
       else if (step === "tactics") panelSub = { ...panelSub, dungeon: "setup" };
     }
+  } else if (id === "party" && isPartySubLocked(state, "fight")) {
+    panelSub = { ...panelSub, party: "ranch" };
+  } else if (id === "cultivate" && isCultivateSubLocked(state, "shop") && !isCultivateSubLocked(state, "advance")) {
+    panelSub = { ...panelSub, cultivate: "train" };
+  } else if (id === "cultivate" && !isCultivateSubLocked(state, "advance")) {
+    panelSub = { ...panelSub, cultivate: panelSub.cultivate === "shop" ? "train" : panelSub.cultivate };
   }
   if (id === "codex" && tutorialActive(state) && state.tutorial.step === "codex") {
     const adv = markTutorialFlag(state, "codexVisited");
@@ -714,7 +764,9 @@ function panelSubNav(group, items) {
     .map(({ id, label }) => {
       const locked = lockFn(state, id);
       const glow = tutGlow({ type: "panel-sub", group, id });
-      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${locked ? " is-locked" : ""}${glow}" data-panel-sub="${group}:${id}" ${locked ? "disabled" : ""}>${label}${locked ? "🔒" : ""}</button>`;
+      const hint = locked ? lockReason(state, `${group}Sub`, id) : "";
+      const title = hint ? ` title="${escapeHtml(hint)}"` : "";
+      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${locked ? " is-locked" : ""}${glow}" data-panel-sub="${group}:${id}" data-sub-locked="${locked ? "1" : "0"}"${title}>${label}${locked ? "🔒" : ""}</button>`;
     })
     .join("")}</nav>`;
 }
@@ -841,6 +893,26 @@ function patchLive() {
   const eggReadyNow = patchEggLive();
   patchTutorialHintLive();
   patchMatChipsLive();
+  const goalEl = document.querySelector("[data-live=goal-hint]");
+  if (goalEl && !tutorialActive(state)) {
+    const hint = nextGoalHint(state);
+    goalEl.textContent = hint;
+    goalEl.hidden = !hint;
+  }
+  const welcomeEl = document.querySelector("[data-live=welcome]");
+  if (welcomeEl && isFreshOnboarding(state)) {
+    const eggs = state.eggs || [];
+    const now = Date.now();
+    const hatching = eggs.find((e) => e.startedAt != null && (e.readyAt || 0) > now);
+    const ready = eggs.find((e) => e.startedAt != null && (e.readyAt || 0) <= now);
+    let line = "請在下方蛋欄點「開始孵化」。";
+    if (ready) line = "潮霧蛋已孵化完成！請在下方點「領取」。";
+    else if (hatching) {
+      const sec = Math.max(0, Math.ceil(((hatching.readyAt || 0) - now) / 1000));
+      line = `潮霧蛋孵化中（約 ${sec}s）· 可先修行練功 · 完成後領取首寵`;
+    }
+    welcomeEl.querySelector("p").innerHTML = `<strong>初至暗潮</strong> · ${escapeHtml(line)}`;
+  }
 
   const snap = tutorialLiveSnapshot(state);
   if (snap !== tutorialSnapCache) {
@@ -1047,6 +1119,7 @@ function render() {
     </div>
 
     ${offlineBanner()}
+    ${welcomeBanner()}
     ${installBanner()}
 
     <nav class="tabs" role="tablist">
@@ -1060,6 +1133,7 @@ function render() {
     <main class="panel">
       <div class="panel-body">
       ${tutorialBannerHtml(state)}
+      ${goalHintBanner()}
       ${tab === "cultivate" ? cultivatePanel(qiPct, next, m) : ""}
       ${tab === "party" ? petsPanel() : ""}
       ${tab === "dungeon" ? dungeonPanel() : ""}
@@ -1108,6 +1182,34 @@ function installBanner() {
     </div>`;
 }
 
+function welcomeBanner() {
+  if (!isFreshOnboarding(state)) return "";
+  const eggs = state.eggs || [];
+  const now = Date.now();
+  const hatching = eggs.find((e) => e.startedAt != null && (e.readyAt || 0) > now);
+  const ready = eggs.find((e) => e.startedAt != null && (e.readyAt || 0) <= now);
+  let line = "你抵達契壇，牧場有一枚潮霧蛋。";
+  if (ready) {
+    line = "潮霧蛋已孵化完成！請在下方點「領取」。";
+  } else if (hatching) {
+    const sec = Math.max(0, Math.ceil(((hatching.readyAt || 0) - now) / 1000));
+    line = `潮霧蛋孵化中（約 ${sec}s）· 可先修行練功 · 完成後領取首寵`;
+  } else {
+    line = "請在下方蛋欄點「開始孵化」。";
+  }
+  return `
+    <div class="welcome-banner" data-live="welcome">
+      <p><strong>初至暗潮</strong> · ${escapeHtml(line)}</p>
+    </div>`;
+}
+
+function goalHintBanner() {
+  if (tutorialActive(state)) return "";
+  const hint = nextGoalHint(state);
+  if (!hint) return "";
+  return `<p class="goal-hint" data-live="goal-hint">${escapeHtml(hint)}</p>`;
+}
+
 function offlineBanner() {
   const h = state.offlineHint;
   if (!h) return "";
@@ -1134,7 +1236,10 @@ function offlineBanner() {
 function tabBtn(id, label, busy) {
   const locked = isTabLocked(state, id);
   const glow = tutGlow({ type: "tab", id });
-  return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${locked ? " locked" : ""}${glow}" data-tab="${id}" ${busy && id !== "dungeon" ? "disabled" : ""} ${locked ? "disabled" : ""}>${label}${locked ? "🔒" : ""}</button>`;
+  const hint = locked ? lockReason(state, "tab", id) : "";
+  const title = hint ? ` title="${escapeHtml(hint)}"` : "";
+  const busyOff = busy && id !== "dungeon";
+  return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${locked ? " locked" : ""}${glow}" data-tab="${id}" data-tab-locked="${locked ? "1" : "0"}" ${busyOff ? "disabled" : ""}${title}>${label}${locked ? "🔒" : ""}</button>`;
 }
 
 function cultivatePanel(qiPct, next, m) {
@@ -1179,14 +1284,21 @@ function cultivatePanel(qiPct, next, m) {
       .map((o) => {
         const sold = o.bought;
         const isEgg = o.kind === "egg";
-        const block = isEgg ? eggFull : ranchFull;
+        const isMat = o.kind === "mat";
+        const block = isEgg ? eggFull : isMat ? false : ranchFull;
+        const matHint = isMat && o.matId ? materialSourceLabel(o.matId) : "";
         const sub = isEgg
           ? `${escapeHtml(o.label || "蛋")} · ${escapeHtml(o.desc || "")}`
-          : `${escapeHtml(o.petKind || o.kind || "?")}·${escapeHtml(o.elementName || "")}`;
+          : isMat
+            ? `${escapeHtml(o.desc || "")}${matHint ? ` · ${escapeHtml(matHint)}` : ""}`
+            : `${escapeHtml(o.petKind || o.kind || "?")}·${escapeHtml(o.elementName || "")}`;
+        const title = isMat
+          ? escapeHtml(o.name || MATERIALS[o.matId]?.name || "素材")
+          : escapeHtml(o.speciesName || o.name);
         return `
         <li class="card-row">
           <div>
-            <strong>${escapeHtml(o.speciesName || o.name)}${isEgg ? " ·蛋" : ""}</strong>
+            <strong>${title}${isEgg ? " ·蛋" : isMat ? " ·素材" : ""}</strong>
             <span class="muted">${sub} · ${
               sold ? "已售" : o.tutorialDeal ? `教學 ${o.cost} 靈石` : `${o.cost} 靈石`
             }</span>
@@ -1216,6 +1328,7 @@ function cultivatePanel(qiPct, next, m) {
       ${nav}
       <h2>商肆 · 今日</h2>
       <p class="lead">靈石 ${Math.floor(state.stones)} · 牧場 ${ranchN}／${ranchCap(state)}</p>
+      <p class="meta">通關一層後偶爾出現素材包；標示產地可對照練功地。</p>
       <ul class="list">${shopRows}</ul>`;
   }
 
@@ -1251,7 +1364,7 @@ function cultivatePanel(qiPct, next, m) {
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 【${escapeHtml(br.cur?.name || "")}】→【${escapeHtml(br.next.name)}】</p>
     ${
-      tutorialQiReady(state)
+      progressionQiBreakReady(state)
         ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
         : ""
     }
@@ -1319,7 +1432,7 @@ function petsListView() {
         const selected = pick.has(p.uid);
         const extra = onDisp
           ? `<span class="muted">派遣中</span>`
-          : `<button type="button" class="primary${tutGlow({ type: "deploy" })}" data-deploy="${escapeHtml(p.uid)}">出戰</button>
+          : `${petCanUpgrade(state, p) ? `<button type="button" class="primary" data-pet-detail="${escapeHtml(p.uid)}">可升級→</button>` : ""}<button type="button" class="primary${tutGlow({ type: "deploy" })}" data-deploy="${escapeHtml(p.uid)}">出戰</button>
              <button type="button" class="${selected ? "primary" : ""}" data-dispatch-toggle="${escapeHtml(
                p.uid
              )}">${selected ? "已選派" : "選派"}</button>`;
@@ -1424,7 +1537,7 @@ function petsListView() {
       <p class="lead">牧場 ${ranch.length}/${cap} · 蛋 ${(state.eggs || []).length}/6</p>
       <h3>寵物蛋</h3>
       <ul class="list">${eggRows}</ul>
-      <div class="row"><button type="button" class="primary${tutGlow({ type: "act", act: "open-breed" })}" data-act="open-breed">繁殖</button></div>
+      <div class="row"><button type="button" class="primary${tutGlow({ type: "act", act: "open-breed" })}" data-act="open-breed" ${isBreedLocked(state) ? `disabled title="${escapeHtml(breedLockReason(state))}"` : ""}>繁殖</button></div>
       <ul class="list">${ranchList}</ul>`;
   }
   if (sub === "dispatch") {
@@ -2063,12 +2176,23 @@ function logPanel() {
 function bind() {
   app.querySelectorAll("[data-panel-sub]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (btn.disabled) return;
       const [group, id] = (btn.dataset.panelSub || "").split(":");
       if (!group || !id || panelSub[group] === id) return;
-      if (group === "cultivate" && isCultivateSubLocked(state, id)) return;
-      if (group === "party" && isPartySubLocked(state, id)) return;
-      if (group === "dungeon" && isDungeonSubLocked(state, id)) return;
+      if (group === "cultivate" && isCultivateSubLocked(state, id)) {
+        const reason = lockReason(state, "cultivateSub", id);
+        if (reason) setFlash(reason);
+        return;
+      }
+      if (group === "party" && isPartySubLocked(state, id)) {
+        const reason = lockReason(state, "partySub", id);
+        if (reason) setFlash(reason);
+        return;
+      }
+      if (group === "dungeon" && isDungeonSubLocked(state, id)) {
+        const reason = lockReason(state, "dungeonSub", id);
+        if (reason) setFlash(reason);
+        return;
+      }
       panelSub = { ...panelSub, [group]: id };
       markTutorialSubVisit(group, id);
       render();
@@ -2090,7 +2214,7 @@ function bind() {
   });
   app.querySelectorAll("[data-tab]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (btn.disabled) return;
+      if (btn.disabled && btn.dataset.tabLocked !== "1") return;
       switchTab(btn.dataset.tab);
     });
   });
@@ -2115,6 +2239,10 @@ function bind() {
         render();
         setFlash(r.msg);
       } else if (act === "start-breed" || act === "open-breed") {
+        if (isBreedLocked(state)) {
+          setFlash(breedLockReason(state));
+          return;
+        }
         if (tutorialActive(state) && state.tutorial.step === "breed_intro") {
           const adv = markTutorialFlag(state, "breedVisited");
           if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
@@ -2544,6 +2672,7 @@ render();
 ensureFlashHost();
 ensureSpotlight();
 if (flash) setFlash(flash, flashTone);
+else if (bootUnlockMsgs.length) enqueueUnlocks(bootUnlockMsgs);
 const lateBoot = maybeStartLateTutorial(state);
 if (lateBoot.started) {
   saveState(state);
@@ -2565,12 +2694,26 @@ window.addEventListener("beforeinstallprompt", (e) => {
 setInterval(() => {
   if (playback && !playback.done) return;
   const eggReadyNow = patchLive();
-  const adv = advanceTutorialIfReady(state);
-  const snap = tutorialLiveSnapshot(state);
-  if (eggReadyNow || adv.advanced || snap !== tutorialSnapCache) {
-    tutorialSnapCache = snap;
+  const unlockMsgs = pollProgressionUnlocks(state);
+  const eggMsgs = pollEggReadyNotices(state);
+  if (eggMsgs.length) enqueueUnlocks(eggMsgs);
+  if (unlockMsgs.length) enqueueUnlocks(unlockMsgs);
+  let adv = { advanced: false, unlockMsg: null };
+  let snap = "";
+  if (tutorialActive(state)) {
+    adv = advanceTutorialIfReady(state);
+    snap = tutorialLiveSnapshot(state);
+  }
+  const needRender =
+    eggReadyNow ||
+    adv.advanced ||
+    snap !== tutorialSnapCache ||
+    unlockMsgs.length ||
+    eggMsgs.length;
+  if (needRender) {
+    if (snap !== tutorialSnapCache) tutorialSnapCache = snap;
     saveState(state);
-    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+    if (adv.advanced && adv.unlockMsg) enqueueUnlocks([adv.unlockMsg]);
     render();
     return;
   }

@@ -1,10 +1,12 @@
-const CACHE = "void-tide-pets-v45";
+const CACHE = "void-tide-pets-v47";
 const ASSETS = [
   "./",
   "./index.html",
   "./css/style.css",
   "./js/data.js",
   "./js/tutorial.js",
+  "./js/progression.js",
+  "./js/tutorial-v2.js",
   "./js/engine.js",
   "./js/ui.js",
   "./manifest.webmanifest",

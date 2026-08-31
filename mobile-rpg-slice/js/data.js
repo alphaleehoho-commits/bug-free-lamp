@@ -2835,10 +2835,10 @@ export const EGG_TIERS = {
   C: {
     id: "C",
     name: "潮霧蛋",
-    hatchMs: 120_000,
+    hatchMs: 90_000,
     shopCost: 40,
     label: "常見",
-    desc: "約 2 分鐘孵化 · 野生種",
+    desc: "約 1.5 分鐘孵化 · 野生種",
   },
   B: {
     id: "B",
@@ -3192,7 +3192,7 @@ export const DISPATCH_MISSIONS = [
     needPets: 1,
     needSite: null,
     reward: { feed: 10, stones: 12, materials: { tide_dew: 2 } },
-    eggChance: { tier: "C", rate: 0.12 },
+    eggChance: { tier: "C", rate: 0.15 },
     desc: "1 寵 · 約 1.5 分 → 飼料／潮露 · 低機率潮霧蛋",
   },
   {
@@ -3202,7 +3202,7 @@ export const DISPATCH_MISSIONS = [
     needPets: 1,
     needSite: null,
     reward: { stones: 8, feed: 4, materials: { tide_dew: 1 } },
-    eggChance: { tier: "C", rate: 0.55 },
+    eggChance: { tier: "C", rate: 0.6 },
     desc: "1 寵 · 約 3 分 → 高機率潮霧蛋",
   },
   {
@@ -3222,7 +3222,7 @@ export const DISPATCH_MISSIONS = [
     needPets: 1,
     needSite: "ruins",
     reward: { stones: 14, dust: 4, materials: { coral_shard: 2 } },
-    eggChance: { tier: "B", rate: 0.35 },
+    eggChance: { tier: "B", rate: 0.4 },
     desc: "1 寵 · 需廢墟影堂 · 機率暗潮蛋",
   },
   {
@@ -3242,7 +3242,7 @@ export const DISPATCH_MISSIONS = [
     needPets: 2,
     needSite: "deep",
     reward: { stones: 20, materials: { mist_silk: 1 } },
-    eggChance: { tier: "B", rate: 0.45 },
+    eggChance: { tier: "B", rate: 0.5 },
     desc: "2 寵 · 需深層祭壇 · 高機率暗潮蛋",
   },
   {
@@ -3637,7 +3637,7 @@ export const TRAIN_SITES = [
     primaryMat: "tide_dew",
     desc: "專精升級 · 潮露／飼料",
     drops: [
-      { mat: "tide_dew", perSec: 0.042 },
+      { mat: "tide_dew", perSec: 0.048 },
       { feed: 0.045 },
       { dust: 0.01 },
     ],

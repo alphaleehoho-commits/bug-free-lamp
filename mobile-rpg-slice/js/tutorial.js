@@ -1,8 +1,13 @@
 /**
  * P13：新手引導 — 寵物蛋 → 練功 Lv3 → 秘境 → 商肆蛋
  * 目標節奏約 10–15 分鐘；不在 render 自動連跳
+ *
+ * TUTORIAL_ENABLED=false：暫停教學 UI，改由 progression.js 解鎖功能
  */
 import { nextStageAt, upgradeMatCost, upgradeStoneCost } from "./data.js";
+
+/** 全局開關：false = 唔顯示教學／唔鎖 tab（v2 重做前） */
+export const TUTORIAL_ENABLED = false;
 
 export const TUTORIAL_STEPS = [
   {
@@ -112,6 +117,9 @@ function isLateStep(stepId) {
 }
 
 export function defaultTutorial() {
+  if (!TUTORIAL_ENABLED) {
+    return { done: true, step: "complete", flags: {} };
+  }
   return { done: false, step: "hatch_starter", flags: {} };
 }
 
@@ -170,6 +178,13 @@ export function tutorialNeedsRanchSub(step) {
 
 /** 載入／舊存檔正規化 */
 export function normalizeTutorial(state) {
+  if (!TUTORIAL_ENABLED) {
+    if (!state.tutorial) state.tutorial = defaultTutorial();
+    state.tutorial.done = true;
+    state.tutorial.step = "complete";
+    if (!state.tutorial.flags) state.tutorial.flags = {};
+    return state.tutorial;
+  }
   if (!state.tutorial) {
     state.tutorial = isVeteranPlayer(state)
       ? { done: true, step: "complete", flags: {} }
@@ -194,6 +209,7 @@ export function normalizeTutorial(state) {
 }
 
 export function tutorialActive(state) {
+  if (!TUTORIAL_ENABLED) return false;
   const t = normalizeTutorial(state);
   return !t.done && t.step !== "complete";
 }
@@ -457,6 +473,7 @@ function resolveNextStepId(state, cur) {
 }
 
 export function maybeStartLateTutorial(state) {
+  if (!TUTORIAL_ENABLED) return { started: false };
   normalizeTutorial(state);
   if ((state.realm | 0) < LATE_TUTORIAL_MIN_REALM) return { started: false };
   if (state.tutorial.lateCompleted) return { started: false };

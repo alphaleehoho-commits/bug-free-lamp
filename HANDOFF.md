@@ -5,32 +5,47 @@
 - Path: `mobile-rpg-slice/`
 - Stack: vanilla HTML/CSS/JS PWA (portrait mobile)
 - Live: `https://alphaleehoho-commits.github.io/bug-free-lamp/`
-- SW cache: `void-tide-pets-v45` (PR pending)
+- SW cache: `void-tide-pets-v47`
 
-## In PR #14 (`cursor/fix-train-pet-tutorial-d7bb`)
+## 最新：暫停教學 · 進度解鎖 + 玩家 UX（`cursor/pause-tutorial-progression-d7bb`）
 
-### 教學穩定化（合併前補完）
-- **train_pet soft-lock**：唔再每 render 強鎖修行；可自由切 修行 ↔ 靈寵 升級
-- **syncTutorialNavigation 統一**：只喺離開允許 tab 時拉回；已喺正確 tab 唔強改 sub
-- **開局蛋**：20s 倒數 live update + 等蛋期可練功
-- **第二枚蛋**：商肆教學蛋 `tutorial_shop`、孵化 20s；`hatch_second` 等蛋期可練功
-- **練功步**：開局潮露×3、掛機出料確定性累積、材料 chip live update
-- **靈契步**：掛機門檻 90s → **45s**，banner 顯示剩餘秒數
-- **heal**：卡住存檔補潮露／縮短教學蛋
+### Phase 0 — 教學軟關閉
+- `TUTORIAL_ENABLED = false`：無 banner／spotlight／tab 教學鎖
+- `normalizeTutorial()` 將所有存檔標記 `done: true`
+- `tutorial.js` 全檔保留；`tutorial-v2.js` 預留 read→nav→act 狀態機（`TUTORIAL_V2_ENABLED=false`）
 
-### 新手 12 步（核心）
-1. 孵化首寵 → 2. 認寵 → 3. 練功 Lv3 → 4. 出戰 → 5–6. 秘境 → 7. 商肆購蛋 → 8. 孵化擴隊 → 9. 靈契（≥45s 掛機）→ 10. 突破 → 11. 繁殖 → 12. 圖鑑
+### Phase 1 — `progression.js` 里程碑解鎖
+| 里程碑 | 解鎖 |
+|--------|------|
+| 開局 | 修行·練功、靈寵·牧場 |
+| 領取首寵 | 靈寵·出戰 |
+| 首寵 Lv≥3 或已派出 | 秘境 |
+| 通關 tide_1 | 商肆、廢墟練功地 |
+| 擁有 2 寵 | 繁殖 |
+| realm ≥ 1 | 修行·進階 |
+| tide_2 或 realm ≥ 2 | 派遣 |
+| realm ≥ 2 | 圖鑑、秘境·戰術 |
 
-### 寵物蛋（常駐）
-- Tiers C/B/A：潮霧蛋 2 分／暗潮蛋 8 分／心核蛋 30 分（教學蛋 20s）
-- 商肆每日蛋；派遣 `eggChance`
+### 玩家 UX（同 PR）
+- **P0** 進階分頁：靈契 ≥ 下一階 need 即解鎖（修突破 soft-lock）；練功頁 CTA 用 `progressionQiBreakReady`
+- **P1** 新存檔預設靈寵→牧場；welcome banner；蛋 ready toast；秘境只認 Lv≥3
+- **P1–P2** 牧場「可升級→」；`nextGoalHint` 主線 HUD；🔒 tab/sub 點擊顯示原因；解鎖 toast queue
 
-## On main (pre-#14)
+- `pollProgressionUnlocks` + unlock toast；鎖定 tab 顯示 🔒 + tooltip
+- `healProgressionAnnouncements` 避免舊存檔連彈提示
 
-- PR #13: starter egg timer fix (v42)
-- PR #12: eggs + tutorial rewrite + shop/dispatch eggs (v41)
+### Phase 2–3 — 平衡與內容
+- C 蛋 90s；潮岸潮露略升
+- 商肆隨機素材（`kind: mat`）+ 產地 hint
+- 派遣蛋線機率微調
+
+詳見 `mobile-rpg-slice/balance-notes.md`
+
+## 先前已合併
+
+- PR #13–#15：開局蛋 20s、教學穩定化、牧場預設 sub 等
 
 ## Deferred
 
-- 商肆隨機素材／交換道具
-- 大改教學步數結構
+- Phase 4：接回 `tutorial-v2.js` UI（自動轉 tab + 單一 spotlight）
+- 大改教學步數結構（舊 12 步僅作參考）
