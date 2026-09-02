@@ -142,6 +142,18 @@ function fmtMult(n) {
   return (Number(n) || 1).toFixed(2);
 }
 
+/** 材料／離線收益顯示（四捨五入到個位） */
+function fmtMatQty(n) {
+  return String(Math.round(Number(n) || 0));
+}
+
+function formatMatBits(mats) {
+  if (!mats || !Object.keys(mats).length) return "";
+  return Object.entries(mats)
+    .map(([id, n]) => `${MATERIALS[id]?.name || id}×${fmtMatQty(n)}`)
+    .join("／");
+}
+
 let state = loadState();
 state = tickCultivation(state);
 saveState(state);
@@ -661,7 +673,7 @@ function rewardBitsHtml(reward) {
   if (reward.scrap) bits.push(`${reward.scrap}碎片`);
   if (reward.materials) {
     for (const [id, n] of Object.entries(reward.materials)) {
-      if (n) bits.push(`${MATERIALS[id]?.name || id}×${n}`);
+      if (n) bits.push(`${MATERIALS[id]?.name || id}×${fmtMatQty(n)}`);
     }
   }
   return bits.join("／");
@@ -1073,11 +1085,11 @@ function updatePlaybackDom(latestEvent = null) {
         li.appendChild(badge);
       }
       li.append(document.createTextNode(last));
-      list.prepend(li);
+      list.appendChild(li);
       list.dataset.lastLine = last;
-      while (list.children.length > 40) list.removeChild(list.lastChild);
+      while (list.children.length > 40) list.removeChild(list.firstChild);
       const scroller = document.querySelector("[data-live=combat-scroll]");
-      if (scroller) scroller.scrollTop = 0;
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
     }
   }
 }
@@ -1416,7 +1428,7 @@ function dailyHubHtml() {
     .map((d) => `<li>派遣 · ${escapeHtml(d.name)} · ${d.secLeft}s</li>`)
     .join("");
   const offlineLine = hub.offline
-    ? `<p class="hub-offline">離線 ${Math.round(hub.offline.sec / 60)} 分 · 靈契 +${Math.floor(hub.offline.qi)} · 飼料 +${hub.offline.feed.toFixed(0)}</p>`
+    ? `<p class="hub-offline">離線 ${Math.round(hub.offline.sec / 60)} 分 · 靈契 +${fmtInt(hub.offline.qi)} · 飼料 +${fmtMatQty(hub.offline.feed)}${hub.offline.materials ? ` · ${escapeHtml(formatMatBits(hub.offline.materials))}` : ""}${hub.offline.dust ? ` · 靈塵 +${fmtMatQty(hub.offline.dust)}` : ""}</p>`
     : "";
   const goalLine = hub.nextGoal
     ? `<p class="hub-goal">下一目標：<strong>${escapeHtml(hub.nextGoal.label)}</strong>（${escapeHtml(hub.nextGoal.progress)}）</p>`
@@ -1476,13 +1488,8 @@ function offlineBanner() {
   const h = state.offlineHint;
   if (!h) return "";
   const min = Math.max(1, Math.round(h.sec / 60));
-  const matLine =
-    h.materials && Object.keys(h.materials).length
-      ? Object.entries(h.materials)
-          .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
-          .join("／")
-      : "";
-  const detail = `靈契 +${fmtInt(h.qi)} · 飼料 +${fmtInt(h.feed)} · 靈塵 +${fmtInt(h.dust)}${
+  const matLine = formatMatBits(h.materials);
+  const detail = `靈契 +${fmtInt(h.qi)} · 飼料 +${fmtMatQty(h.feed)} · 靈塵 +${fmtMatQty(h.dust)}${
     matLine ? ` · ${matLine}` : ""
   }${h.siteName ? `（${h.siteName}）` : ""}`;
   return `
@@ -1688,7 +1695,7 @@ function dispatchModalHtml() {
       .join("") || `<li class="empty">牧場無可派遣靈寵（需撤回出戰或等派遣歸來）。</li>`;
   return `
     <div class="sheet-overlay" role="presentation" data-live="dispatch-modal">
-      <div class="sheet-card" role="dialog" aria-label="選擇派遣靈寵">
+      <div class="sheet-card" role="dialog" aria-label="選擇派遣靈寵" data-sheet-card>
         <div class="sheet-handle" aria-hidden="true"></div>
         <h3>${escapeHtml(mission.name)}</h3>
         <p class="meta">${escapeHtml(mission.desc)} · 需 ${need} 隻 · 已選 ${pick.size}/${need}</p>
@@ -1707,7 +1714,7 @@ function attackPreviewModalHtml() {
   if (!prev?.ok) {
     return `
     <div class="sheet-overlay" role="presentation">
-      <div class="sheet-card" role="dialog" aria-label="出戰預覽">
+      <div class="sheet-card" role="dialog" aria-label="出戰預覽" data-sheet-card>
         <p class="meta">${escapeHtml(prev?.msg || "無法預覽。")}</p>
         <button type="button" class="secondary" data-act="close-attack-preview">關閉</button>
       </div>
@@ -1729,7 +1736,7 @@ function attackPreviewModalHtml() {
   const modeLabel = attackPreview.mode === "sweep" ? `掃蕩 ×${dungeonGateView(state, attackPreview.dungeonId).batch || summonCount}` : "單次挑戰";
   return `
     <div class="sheet-overlay" role="presentation" data-live="attack-preview">
-      <div class="sheet-card" role="dialog" aria-label="出戰預覽">
+      <div class="sheet-card" role="dialog" aria-label="出戰預覽" data-sheet-card>
         <div class="sheet-handle" aria-hidden="true"></div>
         <h3>出戰預覽 · ${escapeHtml(prev.dungeonName)}</h3>
         <p class="meta">${modeLabel} · ${prev.waveCount} 波（普${prev.roles.normal}/精${prev.roles.elite}/王${prev.roles.boss}） · 戰術【${escapeHtml(prev.tacticsName)}】· 陣型【${escapeHtml(prev.formationName)}】</p>
@@ -2409,11 +2416,8 @@ function combatModalHtml() {
     Math.round((playback.index / Math.max(1, playback.events.length)) * 100)
   );
   const lines = playback.shown
-    .slice()
-    .reverse()
     .map((t, i) => {
-      const revIdx = playback.shown.length - 1 - i;
-      const ev = playback.events[revIdx];
+      const ev = playback.events[i];
       return combatLogLineHtml(t, ev);
     })
     .join("");
@@ -2431,7 +2435,7 @@ function combatModalHtml() {
     : "";
   const logBlock = playback.done
     ? ""
-    : `<div class="combat-scroll" data-live="combat-scroll">
+    : `<div class="combat-scroll combat-log-fixed" data-live="combat-scroll">
         <ul class="combat" data-live="combat-log">${lines}</ul>
       </div>`;
   const tacticsStep = tutorialActive(state) && state.tutorial.step === "tactics";
@@ -2439,15 +2443,15 @@ function combatModalHtml() {
   const clearAct = tacticsStep ? "clear-combat-setup" : "clear-combat";
   return `
     <div class="combat-modal-overlay" data-live="combat-modal" role="dialog" aria-label="${playback.done ? "結算" : "戰報"}">
-      <div class="combat-modal-card">
+      <div class="combat-modal-card combat-report-card">
         <div class="combat-modal-scroll">
           <h2>${playback.done ? "結算" : "戰報"}${playback.isFarm && combatPrefs.fastMode ? `<span class="combat-fast-badge">快速</span>` : ""}</h2>
           ${playback.waveLabel && !playback.done ? `<p class="combat-wave-banner" data-live="combat-wave">${escapeHtml(playback.waveLabel)}</p>` : `<p class="combat-wave-banner" data-live="combat-wave" hidden></p>`}
-          ${renderCombatRoster(playback)}
-          <p class="lead" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
-          <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
-          ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
           ${logBlock}
+          <p class="lead combat-round-meta" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
+          <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
+          ${renderCombatRoster(playback)}
+          ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
           ${settleHead}
         </div>
         <div class="combat-modal-actions row">
@@ -2630,9 +2634,15 @@ function dungeonPanel() {
 
           // 凝聚中
           if (gate.summoning) {
+            const batch = gate.batch || 1;
+            const totalMs = Math.max(1, baseCdMs * batch);
+            const summonPct = Math.min(100, Math.round(((totalMs - (gate.summonLeftMs || 0)) / totalMs) * 100));
             return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">${pager}</div>
-          <p class="sweep-label muted">潮霧凝聚中… ${summonSec}s${gate.batch > 1 ? ` · ×${gate.batch}` : ""} · 完成後可挑戰</p>
+          <div class="summon-progress-wrap">
+            <p class="sweep-label">潮霧凝聚中 · ${summonSec}s${batch > 1 ? ` · ×${batch}` : ""}</p>
+            <div class="bar summon-bar"><i data-live="summon-bar" style="width:${summonPct}%"></i></div>
+          </div>
         </div>`;
           }
 
@@ -2920,11 +2930,17 @@ function bind() {
         render();
       } else if (act === "confirm-dispatch") {
         if (!dispatchModal) return;
+        const mission = dispatchView(state).missions.find((m) => m.id === dispatchModal.missionId);
+        const need = mission?.needPets || 0;
+        if ((dispatchModal.pick || []).length !== need) {
+          setFlash(`請選擇 ${need} 隻靈寵。`);
+          return;
+        }
         const r = startDispatch(state, dispatchModal.missionId, dispatchModal.pick || []);
-        if (r.ok) dispatchModal = null;
+        dispatchModal = null;
         saveState(state);
         render();
-        setFlash(r.msg);
+        setFlash(r.msg, r.ok ? "unlock" : "");
       } else if (act === "close-attack-preview") {
         attackPreview = null;
         render();
@@ -2976,7 +2992,8 @@ function bind() {
     el.addEventListener("click", (e) => e.stopPropagation());
   });
   app.querySelectorAll(".sheet-overlay").forEach((el) => {
-    el.addEventListener("click", () => {
+    el.addEventListener("click", (e) => {
+      if (e.target !== el) return;
       condSheetOpen = false;
       statsSheetOpen = false;
       dispatchModal = null;
@@ -3433,7 +3450,7 @@ function maybeNotifyOffline(hint) {
   maybeNotifyOffline._sent = hint.at;
   try {
     new Notification("暗潮 · 離線結算", {
-      body: `約 ${Math.round(hint.sec / 60)} 分鐘：靈契 +${Math.floor(hint.qi)}，飼料 +${hint.feed.toFixed(1)}，靈塵 +${hint.dust.toFixed(1)}`,
+      body: `約 ${Math.round(hint.sec / 60)} 分鐘：靈契 +${fmtInt(hint.qi)}，飼料 +${fmtMatQty(hint.feed)}，靈塵 +${fmtMatQty(hint.dust)}${formatMatBits(hint.materials) ? `，${formatMatBits(hint.materials)}` : ""}`,
       icon: "./icons/icon.svg",
     });
   } catch {
