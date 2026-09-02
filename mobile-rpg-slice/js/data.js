@@ -4178,8 +4178,17 @@ export const DAILY_ALL_CLEAR_BONUS = {
   materials: { mist_token: 5, breed_ticket: 1 },
 };
 
-/** 已通關秘境掃蕩可選次數（單次請用「進攻」） */
-export const DUNGEON_SWEEP_COUNTS = [5, 10, 20];
+/** 已通關秘境召喚／掃蕩場數範圍 */
+export const DUNGEON_SUMMON_MIN = 1;
+export const DUNGEON_SUMMON_MAX = 10;
+
+/** 舊固定按鈕列表（測試／相容） */
+export const DUNGEON_SWEEP_COUNTS = [1, 5, 10];
+
+export function clampDungeonSummonCount(count) {
+  const n = Math.floor(Number(count) || DUNGEON_SUMMON_MIN);
+  return Math.max(DUNGEON_SUMMON_MIN, Math.min(DUNGEON_SUMMON_MAX, n));
+}
 
 /** 入場令 id（秘境永不掉落） */
 export const DUNGEON_ENTRY_MAT_ID = "mist_token";
