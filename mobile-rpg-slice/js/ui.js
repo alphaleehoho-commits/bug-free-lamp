@@ -27,6 +27,7 @@ import {
   breedPreview,
   petLineage,
   dungeonStatus,
+  dungeonTeamPreview,
   resetSave,
   realmInfo,
   nextRealm,
@@ -102,7 +103,7 @@ import {
   loginStreakView,
   claimLoginStreak,
 } from "./engine.js";
-import { DUNGEON_SWEEP_COUNTS } from "./data.js";
+import { DUNGEON_SUMMON_MIN, DUNGEON_SUMMON_MAX, clampDungeonSummonCount } from "./data.js";
 import { petIconHtml, petIconFromPet } from "./pet-icons.js";
 import {
   tutorialActive,
@@ -132,6 +133,27 @@ import {
 
 const app = document.querySelector("#app");
 
+/** 顯示用整數（除非指定保留小數） */
+function fmtInt(n) {
+  return String(Math.floor(Number(n) || 0));
+}
+
+function fmtMult(n) {
+  return (Number(n) || 1).toFixed(2);
+}
+
+/** 材料／離線收益顯示（四捨五入到個位） */
+function fmtMatQty(n) {
+  return String(Math.round(Number(n) || 0));
+}
+
+function formatMatBits(mats) {
+  if (!mats || !Object.keys(mats).length) return "";
+  return Object.entries(mats)
+    .map(([id, n]) => `${MATERIALS[id]?.name || id}×${fmtMatQty(n)}`)
+    .join("／");
+}
+
 let state = loadState();
 state = tickCultivation(state);
 saveState(state);
@@ -144,11 +166,13 @@ let tab = "cultivate";
 /** @type {{ cultivate: string, party: string, dungeon: string, codex: string }} */
 let panelSub = { cultivate: "train", party: "fight", dungeon: "field", codex: "dex" };
 let dungeonIdx = 0;
-let sweepCount = 10;
+let summonCount = 1;
 let sweepResult = null;
 let shellReady = false;
-/** @type {string[]} 牧場派遣選中 uid */
-let dispatchPick = [];
+/** @type {{ missionId: string, pick: string[] } | null} */
+let dispatchModal = null;
+/** @type {{ dungeonId: string, mode: 'single' | 'sweep' } | null} */
+let attackPreview = null;
 let pwaInstallEvt = null;
 let pwaDismissed = localStorage.getItem("void-tide-pwa-dismiss") === "1";
 let tutorialSnapCache = "";
@@ -649,7 +673,7 @@ function rewardBitsHtml(reward) {
   if (reward.scrap) bits.push(`${reward.scrap}碎片`);
   if (reward.materials) {
     for (const [id, n] of Object.entries(reward.materials)) {
-      if (n) bits.push(`${MATERIALS[id]?.name || id}×${n}`);
+      if (n) bits.push(`${MATERIALS[id]?.name || id}×${fmtMatQty(n)}`);
     }
   }
   return bits.join("／");
@@ -825,11 +849,12 @@ function panelSubNav(group, items) {
         : group === "dungeon"
           ? isDungeonSubLocked
           : () => false;
-  return `<nav class="panel-subnav" aria-label="子分頁">${items
+  const visible = items.filter(({ id }) => !lockFn(state, id));
+  if (!visible.length) return "";
+  return `<nav class="panel-subnav" aria-label="子分頁">${visible
     .map(({ id, label }) => {
-      const locked = lockFn(state, id);
       const glow = tutGlow({ type: "panel-sub", group, id });
-      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${locked ? " is-locked" : ""}${glow}" data-panel-sub="${group}:${id}" ${locked ? "disabled" : ""}>${label}${locked ? "🔒" : ""}</button>`;
+      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${glow}" data-panel-sub="${group}:${id}">${label}</button>`;
     })
     .join("")}</nav>`;
 }
@@ -854,9 +879,21 @@ function matAffordHtml(cost) {
   return a.items
     .map(
       (i) =>
-        `<span class="mat-need ${i.ok ? "is-ok" : "is-short"}" title="${escapeHtml(i.source)}">${escapeHtml(i.name)}×${i.need}（${i.have}）</span>`
+        `<span class="mat-need ${i.ok ? "is-ok" : "is-short"}" title="${escapeHtml(i.source)}">${escapeHtml(i.name)}×${fmtMatQty(i.need)}（${fmtMatQty(i.have)}）</span>`
     )
     .join("／");
+}
+
+function upgradeMatSummaryHtml(level) {
+  const matUp = upgradeMatCost(level);
+  const html = matAffordHtml(matUp);
+  if (html) return html;
+  const dew = matUp.tide_dew || 1;
+  return `${MATERIALS.tide_dew?.name || "潮露"}×${fmtMatQty(dew)}`;
+}
+
+function upgradeCostLine(stoneCost, feedCost, level) {
+  return `${fmtMatQty(stoneCost)}靈石／${fmtMatQty(feedCost)}飼料＋${upgradeMatSummaryHtml(level)}`;
 }
 
 function matChipsHtml() {
@@ -1060,11 +1097,11 @@ function updatePlaybackDom(latestEvent = null) {
         li.appendChild(badge);
       }
       li.append(document.createTextNode(last));
-      list.prepend(li);
+      list.appendChild(li);
       list.dataset.lastLine = last;
-      while (list.children.length > 40) list.removeChild(list.lastChild);
+      while (list.children.length > 40) list.removeChild(list.firstChild);
       const scroller = document.querySelector("[data-live=combat-scroll]");
-      if (scroller) scroller.scrollTop = 0;
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
     }
   }
 }
@@ -1271,6 +1308,8 @@ function render() {
     </nav>
     ${playback ? combatModalHtml() : ""}
     ${sweepResult ? sweepModalHtml() : ""}
+    ${dispatchModal ? dispatchModalHtml() : ""}
+    ${attackPreview ? attackPreviewModalHtml() : ""}
     ${condSheetOpen ? dungeonCondSheetHtml() : ""}
     ${statsSheetOpen ? statsSheetHtml() : ""}
     ${dailyHubHtml()}
@@ -1289,7 +1328,13 @@ function render() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => positionTutorialSpotlight(false));
   });
-  if (playback) updatePlaybackDom();
+  if (playback) {
+    updatePlaybackDom();
+    requestAnimationFrame(() => {
+      const scroller = document.querySelector("[data-live=combat-scroll]");
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    });
+  }
 }
 
 function dispatchMatBits(mission) {
@@ -1298,7 +1343,7 @@ function dispatchMatBits(mission) {
   return Object.entries(mats)
     .map(([id, n]) => {
       const name = MATERIALS[id]?.name || id;
-      return `<span class="mat-need" title="${escapeHtml(hintMap[id] || "")}">${escapeHtml(name)}×${n}</span>`;
+      return `<span class="mat-need" title="${escapeHtml(hintMap[id] || "")}">${escapeHtml(name)}×${fmtMatQty(n)}</span>`;
     })
     .join(" ");
 }
@@ -1401,7 +1446,7 @@ function dailyHubHtml() {
     .map((d) => `<li>派遣 · ${escapeHtml(d.name)} · ${d.secLeft}s</li>`)
     .join("");
   const offlineLine = hub.offline
-    ? `<p class="hub-offline">離線 ${Math.round(hub.offline.sec / 60)} 分 · 靈契 +${Math.floor(hub.offline.qi)} · 飼料 +${hub.offline.feed.toFixed(0)}</p>`
+    ? `<p class="hub-offline">離線 ${Math.round(hub.offline.sec / 60)} 分 · 靈契 +${fmtInt(hub.offline.qi)} · 飼料 +${fmtMatQty(hub.offline.feed)}${hub.offline.materials ? ` · ${escapeHtml(formatMatBits(hub.offline.materials))}` : ""}${hub.offline.dust ? ` · 靈塵 +${fmtMatQty(hub.offline.dust)}` : ""}</p>`
     : "";
   const goalLine = hub.nextGoal
     ? `<p class="hub-goal">下一目標：<strong>${escapeHtml(hub.nextGoal.label)}</strong>（${escapeHtml(hub.nextGoal.progress)}）</p>`
@@ -1461,13 +1506,8 @@ function offlineBanner() {
   const h = state.offlineHint;
   if (!h) return "";
   const min = Math.max(1, Math.round(h.sec / 60));
-  const matLine =
-    h.materials && Object.keys(h.materials).length
-      ? Object.entries(h.materials)
-          .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
-          .join("／")
-      : "";
-  const detail = `靈契 +${Math.floor(h.qi)} · 飼料 +${h.feed.toFixed(1)} · 靈塵 +${h.dust.toFixed(1)}${
+  const matLine = formatMatBits(h.materials);
+  const detail = `靈契 +${fmtInt(h.qi)} · 飼料 +${fmtMatQty(h.feed)} · 靈塵 +${fmtMatQty(h.dust)}${
     matLine ? ` · ${matLine}` : ""
   }${h.siteName ? `（${h.siteName}）` : ""}`;
   return `
@@ -1481,9 +1521,10 @@ function offlineBanner() {
 }
 
 function tabBtn(id, label, busy) {
-  const locked = isTabLocked(state, id);
+  if (isTabLocked(state, id)) return "";
   const glow = tutGlow({ type: "tab", id });
-  return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${locked ? " locked" : ""}${glow}" data-tab="${id}" ${busy && id !== "dungeon" ? "disabled" : ""} ${locked ? "disabled" : ""}>${label}${locked ? "🔒" : ""}</button>`;
+  const disabled = busy && id !== "dungeon" ? "disabled" : "";
+  return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${glow}" data-tab="${id}" ${disabled}>${label}</button>`;
 }
 
 function cultivatePanel(qiPct, next, m) {
@@ -1491,13 +1532,11 @@ function cultivatePanel(qiPct, next, m) {
   const seal = tideSealView(state);
   const sites = trainSitesView(state);
   const siteBtns = sites
+    .filter((s) => s.unlocked && !areTrainSitesLocked(state))
     .map((s) => {
-      const locked = !s.unlocked || areTrainSitesLocked(state);
       const focus = s.focus ? ` ·${s.focus}` : "";
       const spot = s.isDailySpot ? " ☀" : "";
-      return `<button type="button" class="${s.selected ? "primary" : ""} train-site-btn${locked ? " is-locked" : ""}${s.isDailySpot ? " is-daily-spot" : ""}" data-set-train="${s.id}" ${
-        locked ? `disabled title="${escapeHtml(s.unlockHint || "未解鎖")}"` : `title="${escapeHtml(s.desc || "")}"`
-      }>${escapeHtml(s.name)}${escapeHtml(focus)}${spot}${locked ? "🔒" : ""}</button>`;
+      return `<button type="button" class="${s.selected ? "primary" : "secondary"} train-site-btn${s.isDailySpot ? " is-daily-spot" : ""}" data-set-train="${s.id}" title="${escapeHtml(s.desc || "")}">${escapeHtml(s.name)}${escapeHtml(focus)}${spot}</button>`;
     })
     .join("");
   const siteCur = sites.find((s) => s.selected);
@@ -1522,10 +1561,13 @@ function cultivatePanel(qiPct, next, m) {
   const eggFull = (state.eggs?.length || 0) >= 6;
   const shopRows =
     shopOffers
-      .map((o) => {
-        const sold = o.bought;
+      .filter((o) => {
+        if (o.bought) return false;
         const isEgg = o.kind === "egg";
-        const block = isEgg ? eggFull : ranchFull;
+        return !(isEgg ? eggFull : ranchFull);
+      })
+      .map((o) => {
+        const isEgg = o.kind === "egg";
         const sub = isEgg
           ? `${escapeHtml(o.label || "蛋")} · ${escapeHtml(o.desc || "")}`
           : `${escapeHtml(o.petKind || o.kind || "?")}·${escapeHtml(o.elementName || "")}`;
@@ -1533,16 +1575,12 @@ function cultivatePanel(qiPct, next, m) {
         <li class="card-row">
           <div>
             <strong>${escapeHtml(o.speciesName || o.name)}${isEgg ? " ·蛋" : ""}</strong>
-            <span class="muted">${sub} · ${
-              sold ? "已售" : o.tutorialDeal ? `教學 ${o.cost} 靈石` : `${o.cost} 靈石`
-            }</span>
+            <span class="muted">${sub} · ${o.tutorialDeal ? `教學 ${o.cost} 靈石` : `${o.cost} 靈石`}</span>
           </div>
-          <button type="button" class="primary${tutGlow({ type: "shop-buy" })}" data-shop-buy="${escapeHtml(o.offerId)}" ${
-            sold || block ? "disabled" : ""
-          }>${sold ? "已售" : block ? (isEgg ? "蛋欄滿" : "牧場滿") : "購入"}</button>
+          <button type="button" class="primary${tutGlow({ type: "shop-buy" })}" data-shop-buy="${escapeHtml(o.offerId)}">購入</button>
         </li>`;
       })
-      .join("") || `<li class="empty">今日商肆無貨。</li>`;
+      .join("") || `<li class="empty">今日商肆無可購貨。</li>`;
 
   const ranchN = state.ranch?.length || 0;
   const breakLabel = br.ready
@@ -1603,7 +1641,7 @@ function cultivatePanel(qiPct, next, m) {
         ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
         : ""
     }
-    <h3>練功地點 ×${(siteCur?.qiMult || 1).toFixed(2)}${siteCur?.focus ? ` · 專精${escapeHtml(siteCur.focus)}` : ""}${siteCur?.isDailySpot ? " · 今日強化" : ""}</h3>
+    <h3>練功地點 ×${fmtMult(siteCur?.qiMult || 1)}${siteCur?.focus ? ` · 專精${escapeHtml(siteCur.focus)}` : ""}${siteCur?.isDailySpot ? " · 今日強化" : ""}</h3>
     ${spotNote}
     <div class="row tactics-row">${siteBtns}</div>
     ${trainLockNote}
@@ -1612,13 +1650,21 @@ function cultivatePanel(qiPct, next, m) {
     <p class="meta muted">練功打 bulk；洗劑／催化／催生符僅秘境</p>
     ${materialsBlockHtml()}`,
     `<div class="row">
-      <button type="button" data-act="use-breed-ticket" ${(state.materials?.breed_ticket || 0) < 1 ? "disabled" : ""}>催生符</button>
-      <button type="button" data-act="use-blood-catalyst" ${(state.materials?.blood_catalyst || 0) < 1 ? "disabled" : ""}>血統催化</button>
+      ${(state.materials?.breed_ticket || 0) >= 1 ? `<button type="button" class="secondary" data-act="use-breed-ticket">催生符</button>` : ""}
+      ${(state.materials?.blood_catalyst || 0) >= 1 ? `<button type="button" class="secondary" data-act="use-blood-catalyst">血統催化</button>` : ""}
     </div>`
   );
 }
 
-function petRow(p, extraBtn = "") {
+function petStatusTag(kind) {
+  const map = {
+    fight: `<span class="pet-tag pet-tag-fight">出戰</span>`,
+    dispatch: `<span class="pet-tag pet-tag-dispatch">派遣中</span>`,
+  };
+  return map[kind] || "";
+}
+
+function petRow(p, extraBtn = "", tagHtml = "") {
   const uid = escapeHtml(p.uid || p.templateId);
   const lv = p.level ?? 1;
   const fus = p.fusionLevel ?? 0;
@@ -1630,14 +1676,99 @@ function petRow(p, extraBtn = "") {
       ${petIconFromPet(p, { size: 34 })}
       <div>
         <button type="button" class="linkish${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
+        ${tagHtml}
         <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
-        <span class="muted">攻${p.atk} 血${p.hp} 速${p.spd} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
+        <span class="muted">攻${fmtInt(p.atk)} 血${fmtInt(p.hp)} 速${fmtInt(p.spd)} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
-        <button type="button" class="${tutGlow({ type: "pet-detail" }).trim() || "ghost"}" data-pet-detail="${uid}">詳情</button>
+        <button type="button" class="info${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}">詳情</button>
         ${extraBtn}
       </div>
     </li>`;
+}
+
+function dispatchModalHtml() {
+  if (!dispatchModal) return "";
+  const dv = dispatchView(state);
+  const mission = dv.missions.find((m) => m.id === dispatchModal.missionId);
+  if (!mission || mission.locked) return "";
+  const need = mission.needPets;
+  const pick = new Set(dispatchModal.pick || []);
+  const busy = new Set(dv.busyUids || []);
+  const ranch = state.ranch || [];
+  const rows =
+    ranch
+      .filter((p) => !busy.has(p.uid))
+      .map((p) => {
+        const selected = pick.has(p.uid);
+        return `
+        <li class="card-row">
+          <div>
+            <strong>${escapeHtml(displayPetName(p))}</strong>
+            <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · 攻${fmtInt(p.atk)} 血${fmtInt(p.hp)}</span>
+          </div>
+          <button type="button" class="${selected ? "primary" : "secondary"}" data-dispatch-pick="${escapeHtml(p.uid)}">${selected ? "已選" : "選擇"}</button>
+        </li>`;
+      })
+      .join("") || `<li class="empty">牧場無可派遣靈寵（需撤回出戰或等派遣歸來）。</li>`;
+  return `
+    <div class="sheet-overlay" role="presentation" data-live="dispatch-modal">
+      <div class="sheet-card" role="dialog" aria-label="選擇派遣靈寵" data-sheet-card>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <h3>${escapeHtml(mission.name)}</h3>
+        <p class="meta">${escapeHtml(mission.desc)} · 需 ${need} 隻 · 已選 ${pick.size}/${need}</p>
+        <ul class="list">${rows}</ul>
+        <div class="row">
+          <button type="button" class="secondary" data-act="close-dispatch-modal">取消</button>
+          <button type="button" class="primary" data-act="confirm-dispatch" ${pick.size === need ? "" : "disabled"}>派出</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function attackPreviewModalHtml() {
+  if (!attackPreview) return "";
+  const prev = dungeonTeamPreview(state, attackPreview.dungeonId);
+  if (!prev?.ok) {
+    return `
+    <div class="sheet-overlay" role="presentation">
+      <div class="sheet-card" role="dialog" aria-label="出戰預覽" data-sheet-card>
+        <p class="meta">${escapeHtml(prev?.msg || "無法預覽。")}</p>
+        <button type="button" class="secondary" data-act="close-attack-preview">關閉</button>
+      </div>
+    </div>`;
+  }
+  const allyRows = prev.allies
+    .map(
+      (a) =>
+        `<li class="preview-unit ally"><strong>${escapeHtml(a.name)}</strong><span class="muted">${escapeHtml(a.elementName || "")} · 攻${fmtInt(a.atk)} 血${fmtInt(a.hp)} 速${fmtInt(a.spd)} · 【${escapeHtml(a.skillName)}】</span></li>`
+    )
+    .join("");
+  const foeRows = prev.foes
+    .map(
+      (f) =>
+        `<li class="preview-unit foe"><strong>${escapeHtml(f.name)}</strong><span class="muted">${f.role === "boss" ? "BOSS" : f.role === "elite" ? "精英" : "普通"} · 攻${fmtInt(f.atk)} 血${fmtInt(f.hp)} 速${fmtInt(f.spd)}</span></li>`
+    )
+    .join("");
+  const synLine = prev.synergyLabels?.length ? prev.synergyLabels.join("、") : "無";
+  const modeLabel = attackPreview.mode === "sweep" ? `掃蕩 ×${dungeonGateView(state, attackPreview.dungeonId).batch || summonCount}` : "單次挑戰";
+  return `
+    <div class="sheet-overlay" role="presentation" data-live="attack-preview">
+      <div class="sheet-card" role="dialog" aria-label="出戰預覽" data-sheet-card>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <h3>出戰預覽 · ${escapeHtml(prev.dungeonName)}</h3>
+        <p class="meta">${modeLabel} · ${prev.waveCount} 波（普${prev.roles.normal}/精${prev.roles.elite}/王${prev.roles.boss}） · 戰術【${escapeHtml(prev.tacticsName)}】· 陣型【${escapeHtml(prev.formationName)}】</p>
+        <p class="meta">羈絆：${escapeHtml(synLine)} · 條件 ${prev.conditionsMet}/${prev.conditionsTotal}${prev.challengeMet ? "" : " · 挑戰未達"}</p>
+        <h4>我方</h4>
+        <ul class="preview-roster">${allyRows}</ul>
+        <h4>第 1 波敵方</h4>
+        <ul class="preview-roster">${foeRows}</ul>
+        <div class="row">
+          <button type="button" class="secondary" data-act="close-attack-preview">取消</button>
+          <button type="button" class="primary" data-act="confirm-attack">${attackPreview.mode === "sweep" ? "開始掃蕩" : "開始挑戰"}</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 function petsListView() {
@@ -1645,32 +1776,37 @@ function petsListView() {
   const ranch = state.ranch || [];
   const dv = dispatchView(state);
   const busy = new Set(dv.busyUids || []);
-  const pick = new Set(dispatchPick);
 
   const roster =
     state.pets
       .map((p) =>
         petRow(
           p,
-          `<button type="button" data-undeploy="${escapeHtml(p.uid)}">撤回</button>`
+          `<button type="button" class="secondary" data-undeploy="${escapeHtml(p.uid)}">撤回</button>`,
+          petStatusTag("fight")
         )
       )
       .join("") ||
     `<li class="empty">出戰欄空。從牧場派出靈寵（最多 ${ACTIVE_PET_MAX}）。</li>`;
 
+  const deployedIds = new Set((state.pets || []).map((p) => p.uid));
+  const ranchIdle = (ranch || []).filter((p) => !deployedIds.has(p.uid));
+  const ranchEntries = [
+    ...ranchIdle.filter((p) => busy.has(p.uid)).map((p) => ({ pet: p, kind: "dispatch" })),
+    ...(state.pets || []).map((p) => ({ pet: p, kind: "fight" })),
+    ...ranchIdle.filter((p) => !busy.has(p.uid)).map((p) => ({ pet: p, kind: "idle" })),
+  ];
   const ranchList =
-    ranch
-      .slice(0, 4)
-      .map((p) => {
-        const onDisp = busy.has(p.uid);
-        const selected = pick.has(p.uid);
-        const extra = onDisp
-          ? `<span class="muted">派遣中</span>`
-          : `<button type="button" class="primary${tutGlow({ type: "deploy" })}" data-deploy="${escapeHtml(p.uid)}">出戰</button>
-             <button type="button" class="${selected ? "primary" : ""}" data-dispatch-toggle="${escapeHtml(
-               p.uid
-             )}">${selected ? "已選派" : "選派"}</button>`;
-        return petRow(p, extra);
+    ranchEntries
+      .map(({ pet: p, kind }) => {
+        const tag = kind === "fight" ? petStatusTag("fight") : kind === "dispatch" ? petStatusTag("dispatch") : "";
+        const extra =
+          kind === "fight"
+            ? `<button type="button" class="secondary" data-undeploy="${escapeHtml(p.uid)}">撤回</button>`
+            : kind === "dispatch"
+              ? ""
+              : `<button type="button" class="primary${tutGlow({ type: "deploy" })}" data-deploy="${escapeHtml(p.uid)}">出戰</button>`;
+        return petRow(p, extra, tag);
       })
       .join("") ||
     `<li class="empty">牧場空。孵化／契約成功的靈寵會進入牧場（容量 ${cap}）。</li>`;
@@ -1716,24 +1852,32 @@ function petsListView() {
   const activeDisp =
     dv.active
       .map((d) => {
-        const left = Math.ceil((d.leftMs || 0) / 1000);
+        if (!d.ready) {
+          const left = Math.ceil((d.leftMs || 0) / 1000);
+          return `
+        <li class="card-row">
+          <div>
+            <strong>${escapeHtml(d.missionName)}</strong>
+            <span class="muted">${escapeHtml(d.petNames)} · 剩餘 ${left}s</span>
+          </div>
+        </li>`;
+        }
         return `
         <li class="card-row">
           <div>
             <strong>${escapeHtml(d.missionName)}</strong>
-            <span class="muted">${escapeHtml(d.petNames)} · ${d.ready ? "已歸來" : `剩餘 ${left}s`}</span>
+            <span class="muted">${escapeHtml(d.petNames)} · 已歸來</span>
           </div>
-          <button type="button" class="primary" data-claim-dispatch="${escapeHtml(d.dispatchId)}" ${
-            d.ready ? "" : "disabled"
-          }>領獎</button>
+          <button type="button" class="success" data-claim-dispatch="${escapeHtml(d.dispatchId)}">領獎</button>
         </li>`;
       })
       .join("") || `<li class="empty">尚無進行中派遣。</li>`;
 
   const missionRows = dv.missions
-    .slice(0, 3)
+    .filter((m) => !m.locked)
+    .slice(0, 6)
     .map((m) => {
-      const can = !m.locked && dispatchPick.length === m.needPets && dv.slotsUsed < dv.slotsMax;
+      const slotsOk = dv.slotsUsed < dv.slotsMax;
       const matBits = dispatchMatBits(m);
       const eggNote = m.eggChance
         ? ` · 蛋${Math.round((m.eggChance.rate || 0) * 100)}%`
@@ -1742,13 +1886,11 @@ function petsListView() {
       <li class="card-row">
         <div>
           <strong>${escapeHtml(m.name)}</strong>
-          <span class="muted">${escapeHtml(m.desc)} · ${escapeHtml(rewardBitsHtml(m.reward))}${
+          <span class="muted">${escapeHtml(m.desc)} · 需 ${m.needPets} 隻 · ${escapeHtml(rewardBitsHtml(m.reward))}${
             matBits ? ` · ${matBits}` : ""
-          }${eggNote}${m.locked ? ` · 需${escapeHtml(m.lockLabel)}` : ""}</span>
+          }${eggNote}</span>
         </div>
-        <button type="button" class="primary" data-start-dispatch="${m.id}" ${can ? "" : "disabled"}>${
-          m.locked ? "未解鎖" : "派出"
-        }</button>
+        <button type="button" class="primary" data-open-dispatch="${m.id}" ${slotsOk ? "" : "disabled"}>派出</button>
       </li>`;
     })
     .join("");
@@ -1779,8 +1921,8 @@ function petsListView() {
     return wrapStage(
       nav,
       `<h2>靈寵 · 派遣</h2>
-      <p class="lead">槽位 ${dv.slotsUsed}/${dv.slotsMax} · 已選 ${dispatchPick.length} 隻</p>
-      <ul class="list">${missionRows}</ul>
+      <p class="lead">槽位 ${dv.slotsUsed}/${dv.slotsMax} · 撳「派出」選擇靈寵</p>
+      <ul class="list">${missionRows || `<li class="empty muted">尚無可接派遣（解鎖更多練功地後開放）。</li>`}</ul>
       <ul class="list">${activeDisp}</ul>`
     );
   }
@@ -1959,10 +2101,12 @@ function petsDetailView() {
   const fus = pet.fusionLevel ?? 0;
   const r = rarityInfo(pet.rarity ?? 0);
   const g = petGeneration(pet);
-  const loc = deployed ? "出戰中" : "牧場待命";
+  const busySet = new Set(dispatchView(state).busyUids || []);
+  const onDispatch = !deployed && busySet.has(pet.uid);
+  const loc = deployed ? "出戰中" : onDispatch ? "派遣中" : "牧場待命";
   const fuseHint = fuseMaxed
     ? `已達融階上限（${FUSION_MAX_STAGE}）`
-    : `下一融階 ${nextFusionStage}：主體≥Lv.${fuseNeedLevel}、共 ${fuseTotalPets} 隻（${fuseMatNeed} 素材）· ${fuseCostHint} 石${
+    : `下一融階 ${nextFusionStage}：主體≥Lv.${fuseNeedLevel}、共 ${fuseTotalPets} 隻（${fuseMatNeed} 素材）· ${fuseCostHint} 靈石${
         fuseMatsNeed && Object.keys(fuseMatsNeed).length
           ? `＋${matAffordHtml(fuseMatsNeed) || "融砂"}`
           : ""
@@ -1992,7 +2136,7 @@ function petsDetailView() {
             ? ` · 升需靈塵${dustCost}${skillMatHtml ? `＋${skillMatHtml}` : ""}`
             : ""
       }</li>
-      <li><strong>升級</strong> — ${upgradeCost}石／${feedCost}料＋${matUpHtml || "潮露×1"}</li>
+      <li><strong>升級</strong> — ${upgradeCostLine(upgradeCost, feedCost, lv)}</li>
     </ul>
     ${lineageHtml(lineage)}
     <div class="row gear-row">
@@ -2294,11 +2438,8 @@ function combatModalHtml() {
     Math.round((playback.index / Math.max(1, playback.events.length)) * 100)
   );
   const lines = playback.shown
-    .slice()
-    .reverse()
     .map((t, i) => {
-      const revIdx = playback.shown.length - 1 - i;
-      const ev = playback.events[revIdx];
+      const ev = playback.events[i];
       return combatLogLineHtml(t, ev);
     })
     .join("");
@@ -2316,7 +2457,7 @@ function combatModalHtml() {
     : "";
   const logBlock = playback.done
     ? ""
-    : `<div class="combat-scroll" data-live="combat-scroll">
+    : `<div class="combat-scroll combat-log-fixed" data-live="combat-scroll">
         <ul class="combat" data-live="combat-log">${lines}</ul>
       </div>`;
   const tacticsStep = tutorialActive(state) && state.tutorial.step === "tactics";
@@ -2324,15 +2465,15 @@ function combatModalHtml() {
   const clearAct = tacticsStep ? "clear-combat-setup" : "clear-combat";
   return `
     <div class="combat-modal-overlay" data-live="combat-modal" role="dialog" aria-label="${playback.done ? "結算" : "戰報"}">
-      <div class="combat-modal-card">
+      <div class="combat-modal-card combat-report-card">
         <div class="combat-modal-scroll">
           <h2>${playback.done ? "結算" : "戰報"}${playback.isFarm && combatPrefs.fastMode ? `<span class="combat-fast-badge">快速</span>` : ""}</h2>
           ${playback.waveLabel && !playback.done ? `<p class="combat-wave-banner" data-live="combat-wave">${escapeHtml(playback.waveLabel)}</p>` : `<p class="combat-wave-banner" data-live="combat-wave" hidden></p>`}
-          ${renderCombatRoster(playback)}
-          <p class="lead" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
-          <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
-          ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
           ${logBlock}
+          <p class="lead combat-round-meta" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
+          <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
+          ${renderCombatRoster(playback)}
+          ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
           ${settleHead}
         </div>
         <div class="combat-modal-actions row">
@@ -2506,7 +2647,7 @@ function dungeonPanel() {
             return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">
             ${pager}
-            <button type="button" class="primary dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}" ${
+            <button type="button" class="primary dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-attack-preview="${escapeHtml(dCur.id)}" data-attack-mode="single" data-dungeon="${escapeHtml(dCur.id)}" ${
               locked ? "disabled" : ""
             }>進攻 · ${escapeHtml(dCur.name)}</button>
           </div>
@@ -2515,14 +2656,15 @@ function dungeonPanel() {
 
           // 凝聚中
           if (gate.summoning) {
+            const batch = gate.batch || 1;
+            const totalMs = Math.max(1, baseCdMs * batch);
+            const summonPct = Math.min(100, Math.round(((totalMs - (gate.summonLeftMs || 0)) / totalMs) * 100));
             return `<div class="dungeon-dock-stack">
-          <div class="row dungeon-dock-row">
-            ${pager}
-            <button type="button" class="dungeon-attack-btn" disabled>潮霧凝聚中… ${summonSec}s${
-              gate.batch > 1 ? ` · ×${gate.batch}` : ""
-            }</button>
+          <div class="row dungeon-dock-row">${pager}</div>
+          <div class="summon-progress-wrap">
+            <p class="sweep-label">潮霧凝聚中 · ${summonSec}s${batch > 1 ? ` · ×${batch}` : ""}</p>
+            <div class="bar summon-bar"><i data-live="summon-bar" style="width:${summonPct}%"></i></div>
           </div>
-          <p class="sweep-label muted">凝聚完成後即可開始挑戰</p>
         </div>`;
           }
 
@@ -2531,8 +2673,8 @@ function dungeonPanel() {
             const batch = gate.batch || 1;
             const challengeBtn =
               batch > 1
-                ? `<button type="button" class="primary dungeon-attack-btn sweep-run-btn" data-sweep="${escapeHtml(dCur.id)}" data-sweep-ready="1">開始掃蕩 ×${batch}</button>`
-                : `<button type="button" class="primary dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-dungeon="${dCur.id}">開始挑戰 · ${escapeHtml(dCur.name)}</button>`;
+                ? `<button type="button" class="primary dungeon-attack-btn sweep-run-btn" data-attack-preview="${escapeHtml(dCur.id)}" data-attack-mode="sweep" data-dungeon="${escapeHtml(dCur.id)}">開始掃蕩 ×${batch}</button>`
+                : `<button type="button" class="primary dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-attack-preview="${escapeHtml(dCur.id)}" data-attack-mode="single" data-dungeon="${escapeHtml(dCur.id)}">開始挑戰 · ${escapeHtml(dCur.name)}</button>`;
             return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">
             ${pager}
@@ -2542,29 +2684,22 @@ function dungeonPanel() {
         </div>`;
           }
 
-          // 待召喚：選場數 + 召喚
-          const costInfo = dungeonSweepCost(state, dCur.id, sweepCount);
+          // 待召喚：slider + 召喚
+          const costInfo = dungeonSweepCost(state, dCur.id, summonCount);
           const affordOk = !!costInfo?.canAfford;
-          const summonSecEst = Math.ceil((baseCdMs * sweepCount) / 1000);
-          const sweepBtns = DUNGEON_SWEEP_COUNTS.map((n) => {
-            const c = dungeonSweepCost(state, dCur.id, n);
-            const est = Math.ceil((baseCdMs * n) / 1000);
-            return `<button type="button" class="sweep-count-btn ${sweepCount === n ? "primary" : ""}" data-sweep-count="${n}" title="${c.label} · 凝聚${est}s">${n}</button>`;
-          }).join("");
-          const singleCost = dungeonSweepCost(state, dCur.id, 1);
+          const summonSecEst = Math.ceil((baseCdMs * summonCount) / 1000);
           return `<div class="dungeon-dock-stack">
-          <div class="row dungeon-dock-row">
-            ${pager}
-            <button type="button" class="primary dungeon-attack-btn" data-summon="${escapeHtml(dCur.id)}" data-summon-count="1" ${
-              locked || !singleCost.canAfford ? "disabled" : ""
-            }>召喚秘境（${singleCost.label} · ${Math.ceil(baseCdMs / 1000)}s）</button>
-          </div>
-          <div class="sweep-controls">
-            <span class="sweep-label">連召掃蕩 · 潮霧令 ${tokenHave}（秘境不掉令）</span>
-            <div class="row sweep-count-row">${sweepBtns}</div>
-            <button type="button" class="primary sweep-run-btn" data-summon="${escapeHtml(dCur.id)}" data-summon-count="${sweepCount}" ${
+          <div class="row dungeon-dock-row">${pager}</div>
+          <div class="summon-controls">
+            <div class="summon-slider-row">
+              <span class="sweep-label">召喚場數 <strong>${summonCount}</strong></span>
+              <input type="range" class="summon-slider" min="${DUNGEON_SUMMON_MIN}" max="${DUNGEON_SUMMON_MAX}" value="${summonCount}" data-summon-slider aria-label="召喚場數" />
+              <span class="muted">${DUNGEON_SUMMON_MIN}–${DUNGEON_SUMMON_MAX}</span>
+            </div>
+            <p class="sweep-label">潮霧令 ${fmtInt(tokenHave)}（秘境不掉令）· ${costInfo.label} · 約 ${summonSecEst}s</p>
+            <button type="button" class="primary sweep-run-btn" data-summon="${escapeHtml(dCur.id)}" data-summon-count="${summonCount}" ${
               locked || !affordOk ? "disabled" : ""
-            }>召喚 ×${sweepCount} · ${costInfo.label} · ${summonSecEst}s</button>
+            }>召喚 ×${summonCount}</button>
           </div>
         </div>`;
         })()
@@ -2605,6 +2740,44 @@ function dungeonPanel() {
     <ul class="list dungeon-list">${dungeonCard}</ul>`,
     fieldDock
   );
+}
+
+function executeDungeonAttack(dungeonId, mode) {
+  attackPreview = null;
+  if (playback && !playback.done) return;
+  tutMisclickCount = 0;
+  const wasFight = tutorialActive(state) && state.tutorial.step === "dungeon_fight";
+  if (wasFight) {
+    if (!state.tutorial.flags) state.tutorial.flags = {};
+    state.tutorial.flags.dungeonStarted = true;
+  }
+  if (mode === "sweep") {
+    const gate = dungeonGateView(state, dungeonId);
+    const n = gate.batch > 1 ? gate.batch : summonCount;
+    const r = runDungeonSweep(state, dungeonId, n);
+    saveState(state);
+    if (!r.ok) {
+      setFlash(r.msg);
+      render();
+      return;
+    }
+    sweepResult = r;
+    render();
+    return;
+  }
+  const r = runDungeon(state, dungeonId);
+  saveState(state);
+  if (!r.ok) {
+    setFlash(r.msg);
+    render();
+    return;
+  }
+  let adv = { advanced: false, unlockMsg: null };
+  if (wasFight) {
+    adv = advanceTutorialIfReady(state);
+  }
+  if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+  startPlayback(r);
 }
 
 function logPanel() {
@@ -2774,6 +2947,29 @@ function bind() {
         saveState(state);
         render();
         setFlash(r.msg, r.ok ? "celebrate" : "");
+      } else if (act === "close-dispatch-modal") {
+        dispatchModal = null;
+        render();
+      } else if (act === "confirm-dispatch") {
+        if (!dispatchModal) return;
+        const mission = dispatchView(state).missions.find((m) => m.id === dispatchModal.missionId);
+        const need = mission?.needPets || 0;
+        if ((dispatchModal.pick || []).length !== need) {
+          setFlash(`請選擇 ${need} 隻靈寵。`);
+          return;
+        }
+        const r = startDispatch(state, dispatchModal.missionId, dispatchModal.pick || []);
+        dispatchModal = null;
+        if (r.ok) panelSub = { ...panelSub, party: "ranch" };
+        saveState(state);
+        render();
+        setFlash(r.msg, r.ok ? "unlock" : "");
+      } else if (act === "close-attack-preview") {
+        attackPreview = null;
+        render();
+      } else if (act === "confirm-attack") {
+        if (!attackPreview) return;
+        executeDungeonAttack(attackPreview.dungeonId, attackPreview.mode);
       } else if (act === "close-sweep-modal") {
         sweepResult = null;
         render();
@@ -2819,9 +3015,12 @@ function bind() {
     el.addEventListener("click", (e) => e.stopPropagation());
   });
   app.querySelectorAll(".sheet-overlay").forEach((el) => {
-    el.addEventListener("click", () => {
+    el.addEventListener("click", (e) => {
+      if (e.target !== el) return;
       condSheetOpen = false;
       statsSheetOpen = false;
+      dispatchModal = null;
+      attackPreview = null;
       render();
     });
   });
@@ -2996,24 +3195,32 @@ function bind() {
       setFlash(r.msg);
     });
   });
-  app.querySelectorAll("[data-dispatch-toggle]").forEach((btn) => {
+  app.querySelectorAll("[data-open-dispatch]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const uid = btn.dataset.dispatchToggle;
-      const set = new Set(dispatchPick);
-      if (set.has(uid)) set.delete(uid);
-      else set.add(uid);
-      dispatchPick = [...set].slice(0, 3);
+      if (btn.disabled) {
+        const dv = dispatchView(state);
+        if (dv.slotsUsed >= dv.slotsMax) setFlash("派遣槽位已滿。");
+        return;
+      }
+      dispatchModal = { missionId: btn.dataset.openDispatch, pick: [] };
       render();
     });
   });
-  app.querySelectorAll("[data-start-dispatch]").forEach((btn) => {
+  app.querySelectorAll("[data-dispatch-pick]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (btn.disabled) return;
-      const r = startDispatch(state, btn.dataset.startDispatch, dispatchPick);
-      if (r.ok) dispatchPick = [];
-      saveState(state);
+      if (!dispatchModal) return;
+      const mission = dispatchView(state).missions.find((m) => m.id === dispatchModal.missionId);
+      if (!mission) return;
+      const need = mission.needPets;
+      const uid = btn.dataset.dispatchPick;
+      const set = new Set(dispatchModal.pick || []);
+      if (set.has(uid)) set.delete(uid);
+      else {
+        if (set.size >= need) setFlash(`此任務只需 ${need} 隻靈寵。`);
+        else set.add(uid);
+      }
+      dispatchModal = { ...dispatchModal, pick: [...set] };
       render();
-      setFlash(r.msg);
     });
   });
   app.querySelectorAll("[data-claim-dispatch]").forEach((btn) => {
@@ -3158,60 +3365,34 @@ function bind() {
       render();
     });
   });
-  app.querySelectorAll("[data-sweep-count]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (btn.disabled) return;
-      sweepCount = Number(btn.dataset.sweepCount) || 10;
+  app.querySelectorAll("[data-summon-slider]").forEach((input) => {
+    input.addEventListener("input", () => {
+      summonCount = clampDungeonSummonCount(input.value);
       render();
     });
   });
   app.querySelectorAll("[data-summon]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (btn.disabled) return;
-      const n = Number(btn.dataset.summonCount) || 1;
+      if (btn.disabled) {
+        setFlash("潮霧令不足或尚未解鎖。");
+        return;
+      }
+      const n = clampDungeonSummonCount(btn.dataset.summonCount || summonCount);
       const r = startDungeonSummon(state, btn.dataset.summon, n);
       saveState(state);
       render();
       setFlash(r.msg, r.ok ? "unlock" : "");
     });
   });
-  app.querySelectorAll("[data-sweep]").forEach((btn) => {
+  app.querySelectorAll("[data-attack-preview]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       if (playback && !playback.done) return;
-      const gate = dungeonGateView(state, btn.dataset.sweep);
-      const n = gate.batch > 1 ? gate.batch : sweepCount;
-      const r = runDungeonSweep(state, btn.dataset.sweep, n);
-      saveState(state);
-      if (!r.ok) {
-        setFlash(r.msg);
-        return;
-      }
-      sweepResult = r;
+      attackPreview = {
+        dungeonId: btn.dataset.attackPreview,
+        mode: btn.dataset.attackMode === "sweep" ? "sweep" : "single",
+      };
       render();
-    });
-  });
-  app.querySelectorAll("[data-dungeon]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (playback && !playback.done) return;
-      tutMisclickCount = 0;
-      const wasFight = tutorialActive(state) && state.tutorial.step === "dungeon_fight";
-      if (wasFight) {
-        if (!state.tutorial.flags) state.tutorial.flags = {};
-        state.tutorial.flags.dungeonStarted = true;
-      }
-      const r = runDungeon(state, btn.dataset.dungeon);
-      saveState(state);
-      if (!r.ok) {
-        setFlash(r.msg);
-        return;
-      }
-      let adv = { advanced: false, unlockMsg: null };
-      if (wasFight) {
-        adv = advanceTutorialIfReady(state);
-      }
-      if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
-      startPlayback(r);
     });
   });
 }
@@ -3292,7 +3473,7 @@ function maybeNotifyOffline(hint) {
   maybeNotifyOffline._sent = hint.at;
   try {
     new Notification("暗潮 · 離線結算", {
-      body: `約 ${Math.round(hint.sec / 60)} 分鐘：靈契 +${Math.floor(hint.qi)}，飼料 +${hint.feed.toFixed(1)}，靈塵 +${hint.dust.toFixed(1)}`,
+      body: `約 ${Math.round(hint.sec / 60)} 分鐘：靈契 +${fmtInt(hint.qi)}，飼料 +${fmtMatQty(hint.feed)}，靈塵 +${fmtMatQty(hint.dust)}${formatMatBits(hint.materials) ? `，${formatMatBits(hint.materials)}` : ""}`,
       icon: "./icons/icon.svg",
     });
   } catch {
