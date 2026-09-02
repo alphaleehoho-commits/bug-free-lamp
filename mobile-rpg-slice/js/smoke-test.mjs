@@ -143,6 +143,10 @@ import {
   tickCultivation,
   tickRanchIdle,
   claimDispatch,
+  upgradePet,
+  isFusionUnlocked,
+  dungeonAttackBlockReason,
+  fusePets,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -884,7 +888,8 @@ const qiBannerSt = {
 assert(tutorialBannerHint(qiBannerSt).includes("35s"), "qi banner shows idle countdown");
 
 assert(tutorialNeedsRanchSub("train_pet"), "train_pet needs ranch");
-assert(tutorialTargetSelector({ type: "upgrade" }) === "[data-upgrade]:not([disabled])", "upgrade selector");
+assert(tutorialTargetSelector({ type: "upgrade" }).includes("data-upgrade-feed"), "upgrade selector");
+assert(tutorialTargetSelector({ type: "start-fuse" }) === "[data-start-fuse]:not([disabled])", "fuse selector");
 
 const eggReadySt = {
   eggs: [{ uid: "e1", startedAt: Date.now() - 30_000, readyAt: Date.now() - 1000, tier: "C", name: "潮霧蛋" }],
@@ -1260,6 +1265,9 @@ assert(uiSrc.includes("data-open-dispatch"), "ui dispatch picker modal");
 assert(uiSrc.includes("data-summon-slider"), "ui summon slider");
 assert(uiSrc.includes("data-ranch-sort"), "ui ranch sort");
 assert(uiSrc.includes("pet-grid"), "ui ranch 2-col grid");
+assert(uiSrc.includes('id: "breed"'), "ui breed party sub-tab");
+assert(uiSrc.includes("breed-cd-bar"), "ui breed cd bar");
+assert(uiSrc.includes("data-dungeon-blocked"), "ui dungeon blocked reason");
 assert(uiSrc.includes("panel-subnav-dock"), "ui subnav near bottom tabs");
 assert(uiSrc.includes("function wrapStage"), "ui has wrapStage layout helper");
 assert(uiSrc.includes("tabs-bottom"), "ui has bottom tab bar");
@@ -1351,6 +1359,43 @@ assert(claimR.ok, "claim dispatch ok");
 if (beforeStones) {
   assert(dispSt.stones >= Math.round(beforeStones * 1.25), "gen3 dispatch reward mult");
 }
+
+/* Feed upgrade deducts; fusion gated; dungeon realm block msg */
+const feedUpSt = {
+  feed: 100,
+  stones: 100,
+  materials: { tide_dew: 10 },
+  ranch: [
+    {
+      ...buildPetStats({
+        id: "up1",
+        species: "reefox",
+        element: "tide",
+        personality: "gentle",
+        cost: 0,
+      }),
+      uid: "up-pet",
+      level: 1,
+    },
+  ],
+  pets: [],
+  log: [],
+};
+const feedBefore = feedUpSt.feed;
+const upR = upgradePet(feedUpSt, "up-pet", "feed");
+assert(upR.ok && feedUpSt.feed < feedBefore, "feed upgrade deducts feed");
+assert(feedUpSt.ranch[0].level === 2, "feed upgrade levels pet");
+
+assert(!isFusionUnlocked({ clearedDungeons: {} }), "fusion locked pre t3");
+assert(isFusionUnlocked({ clearedDungeons: { tide_3: true } }), "fusion unlock t3");
+const fuseLock = fusePets({ clearedDungeons: {}, pets: [], ranch: [], stones: 999, materials: {} }, "x", ["y"]);
+assert(!fuseLock.ok && fuseLock.msg.includes("心核"), "fuse blocked msg");
+
+const blockRealm = dungeonAttackBlockReason(
+  { realm: 2, pets: [{ uid: "a" }], clearedDungeons: {} },
+  "tide_3"
+);
+assert(blockRealm && blockRealm.includes("御靈"), "tide3 needs 御靈");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

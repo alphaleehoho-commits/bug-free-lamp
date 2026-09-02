@@ -58,7 +58,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "breed_intro",
     title: "血脈催生",
-    hint: "打開「靈寵 → 出戰／牧場」的繁殖入口，了解雜交與血脈。",
+    hint: "打開「靈寵 → 繁殖」分頁，了解雜交與血脈。",
   },
   {
     id: "codex",
@@ -74,6 +74,11 @@ export const TUTORIAL_STEPS = [
     id: "tactics",
     title: "戰術陣型",
     hint: "「秘境 → 戰術」可調整自動戰鬥策略與陣型。",
+  },
+  {
+    id: "fuse_intro",
+    title: "融合覺醒",
+    hint: "通關秘境三後解鎖融合。打開靈寵詳情，用同種素材完成一次融合。",
   },
   {
     id: "complete",
@@ -99,7 +104,7 @@ export const CORE_TUTORIAL_STEPS = [
   "codex",
 ];
 
-export const LATE_TUTORIAL_STEPS = ["dispatch", "tactics"];
+export const LATE_TUTORIAL_STEPS = ["dispatch", "tactics", "fuse_intro"];
 export const LATE_TUTORIAL_MIN_REALM = 2;
 
 /** 教學：首寵升級門檻 */
@@ -225,7 +230,7 @@ export function tutorialStepInfo(state) {
 
 function locksForStep(stepId) {
   const allCult = { advance: true, shop: true };
-  const allParty = { fight: true, ranch: true, dispatch: true, bond: true };
+  const allParty = { fight: true, ranch: true, breed: true, dispatch: true, bond: true };
   const allDung = { setup: true };
 
   switch (stepId) {
@@ -233,7 +238,7 @@ function locksForStep(stepId) {
       return {
         tabs: { dungeon: true, codex: true, log: true },
         cultivateSub: { advance: true, shop: true },
-        partySub: { fight: true, dispatch: true, bond: true },
+        partySub: { fight: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -241,7 +246,7 @@ function locksForStep(stepId) {
       return {
         tabs: { cultivate: true, dungeon: true, codex: true, log: true },
         cultivateSub: { ...allCult },
-        partySub: { fight: true, dispatch: true, bond: true },
+        partySub: { fight: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: true,
       };
@@ -249,7 +254,7 @@ function locksForStep(stepId) {
       return {
         tabs: { dungeon: true, codex: true, log: true },
         cultivateSub: { advance: true, shop: true },
-        partySub: { fight: true, dispatch: true, bond: true },
+        partySub: { fight: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -257,7 +262,7 @@ function locksForStep(stepId) {
       return {
         tabs: { cultivate: true, dungeon: true, codex: true, log: true },
         cultivateSub: { ...allCult },
-        partySub: { fight: true, dispatch: true, bond: true },
+        partySub: { fight: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: true,
       };
@@ -282,7 +287,7 @@ function locksForStep(stepId) {
       return {
         tabs: { dungeon: true, codex: true, log: true },
         cultivateSub: { advance: true, shop: true },
-        partySub: { fight: true, dispatch: true, bond: true },
+        partySub: { fight: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -290,7 +295,7 @@ function locksForStep(stepId) {
       return {
         tabs: { party: true, dungeon: true, codex: true, log: true },
         cultivateSub: { ...allCult, advance: true },
-        partySub: { dispatch: true, bond: true },
+        partySub: { breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -298,7 +303,7 @@ function locksForStep(stepId) {
       return {
         tabs: { party: true, dungeon: true, codex: true, log: true },
         cultivateSub: { shop: true, advance: false },
-        partySub: { dispatch: true, bond: true },
+        partySub: { breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -306,7 +311,7 @@ function locksForStep(stepId) {
       return {
         tabs: { cultivate: true, dungeon: true, codex: true, log: true },
         cultivateSub: { ...allCult },
-        partySub: { dispatch: true, bond: true },
+        partySub: { fight: true, ranch: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -314,7 +319,7 @@ function locksForStep(stepId) {
       return {
         tabs: { log: true },
         cultivateSub: { ...allCult },
-        partySub: { dispatch: true },
+        partySub: { breed: true, dispatch: true },
         dungeonSub: { setup: true },
         trainSites: false,
       };
@@ -322,7 +327,7 @@ function locksForStep(stepId) {
       return {
         tabs: { log: true },
         cultivateSub: { ...allCult },
-        partySub: { fight: false, ranch: false, bond: false, dispatch: false },
+        partySub: { fight: false, ranch: false, breed: false, bond: false, dispatch: false },
         dungeonSub: { setup: true },
         trainSites: false,
       };
@@ -332,6 +337,14 @@ function locksForStep(stepId) {
         cultivateSub: { advance: true },
         partySub: {},
         dungeonSub: { field: true, setup: false },
+        trainSites: false,
+      };
+    case "fuse_intro":
+      return {
+        tabs: { cultivate: true, dungeon: true, codex: true, log: true },
+        cultivateSub: { ...allCult },
+        partySub: { dispatch: true, bond: true },
+        dungeonSub: { ...allDung },
         trainSites: false,
       };
     default:
@@ -435,6 +448,8 @@ function meetsAdvance(state, stepId) {
       return !!flags.dispatchVisited;
     case "tactics":
       return !!flags.tacticsVisited;
+    case "fuse_intro":
+      return !!flags.fuseDone || (state.stats?.fusions || 0) >= 1;
     case "complete":
       return true;
     default:
@@ -453,17 +468,46 @@ function resolveNextStepId(state, cur) {
   if (isLateStep(nextId) && (state.realm | 0) < LATE_TUTORIAL_MIN_REALM) {
     return "complete";
   }
+  if (nextId === "fuse_intro" && !(state.clearedDungeons || {}).tide_3) {
+    return "complete";
+  }
   return nextId;
 }
 
 export function maybeStartLateTutorial(state) {
   normalizeTutorial(state);
+  const flags = state.tutorial.flags || {};
+  const fusePending =
+    !!(state.clearedDungeons || {}).tide_3 &&
+    !flags.fuseDone &&
+    (state.stats?.fusions || 0) < 1;
+
+  // 通關心核後：即使其他進階教學已完，仍可拉起融合引導
+  if (fusePending) {
+    if (tutorialActive(state) && state.tutorial.step === "fuse_intro") {
+      return { started: false };
+    }
+    if (!tutorialActive(state) || state.tutorial.done || state.tutorial.lateCompleted) {
+      state.tutorial.done = false;
+      state.tutorial.lateCompleted = false;
+      state.tutorial.step = "fuse_intro";
+      state.tutorial.latePending = true;
+      if (!state.materials) state.materials = {};
+      if ((state.materials.fuse_sand || 0) < 1) state.materials.fuse_sand = 1;
+      return {
+        started: true,
+        msg: "進階教學：融合覺醒（通關心核解鎖）",
+        stepId: "fuse_intro",
+      };
+    }
+  }
+
   if ((state.realm | 0) < LATE_TUTORIAL_MIN_REALM) return { started: false };
   if (state.tutorial.lateCompleted) return { started: false };
-  const flags = state.tutorial.flags || {};
   const pending = LATE_TUTORIAL_STEPS.filter((id) => {
     if (id === "dispatch") return !flags.dispatchVisited;
     if (id === "tactics") return !flags.tacticsVisited;
+    if (id === "fuse_intro") return fusePending;
     return false;
   });
   if (!pending.length) {
@@ -726,7 +770,8 @@ export function tutorialHighlights(state, nav = {}) {
       }
       return [{ type: "panel-sub", group: "cultivate", id: "advance" }];
     case "breed_intro":
-      if (tab === "party") return [{ type: "act", act: "open-breed" }];
+      if (tab === "party" && ps.party === "breed") return [];
+      if (tab === "party") return [{ type: "panel-sub", group: "party", id: "breed" }];
       return [{ type: "tab", id: "party" }];
     case "codex":
       return [{ type: "tab", id: "codex" }];
@@ -738,6 +783,10 @@ export function tutorialHighlights(state, nav = {}) {
       if (tab === "dungeon" && ps.dungeon === "setup") return [];
       if (tab === "dungeon") return [{ type: "panel-sub", group: "dungeon", id: "setup" }];
       return [{ type: "tab", id: "dungeon" }];
+    case "fuse_intro":
+      if (tab === "party" && ps.party === "ranch") return [{ type: "pet-detail" }, { type: "start-fuse" }];
+      if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
+      return [{ type: "tab", id: "party" }];
     default:
       return [];
   }
@@ -758,6 +807,7 @@ function highlightMatches(h, spec) {
     case "upgrade":
     case "start-hatch":
     case "claim-hatch":
+    case "start-fuse":
       return true;
     case "dungeon":
       return !spec.dungeonId || h.dungeonId === spec.dungeonId;
@@ -786,15 +836,17 @@ export function tutorialTargetSelector(spec) {
     case "pet-detail":
       return "[data-pet-detail]";
     case "upgrade":
-      return "[data-upgrade]:not([disabled])";
+      return "[data-upgrade-feed]:not([disabled]), [data-upgrade]:not([disabled])";
+    case "start-fuse":
+      return "[data-start-fuse]:not([disabled])";
     case "start-hatch":
       return "[data-start-hatch]:not([disabled])";
     case "claim-hatch":
       return "[data-claim-hatch]:not([disabled])";
     case "dungeon":
       return spec.dungeonId
-        ? `[data-dungeon="${spec.dungeonId}"]:not([disabled])`
-        : "[data-dungeon]:not([disabled])";
+        ? `[data-dungeon="${spec.dungeonId}"]:not([disabled]), [data-attack-preview="${spec.dungeonId}"]`
+        : "[data-dungeon]:not([disabled]), [data-attack-preview]";
     default:
       return null;
   }

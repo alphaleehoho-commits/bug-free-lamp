@@ -2022,6 +2022,72 @@ button.linkish strong { color: var(--jade); }
   transition: width 0.35s linear;
 }
 
+.dungeon-lock-reason {
+  margin: 0.35rem 0 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid rgba(196, 92, 62, 0.45);
+  background: rgba(120, 40, 30, 0.28);
+  color: #f0c4b0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.breed-slots {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin: 0.35rem 0 0.5rem;
+}
+.breed-slot {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.22);
+  min-width: 0;
+}
+.breed-slot.is-empty {
+  justify-content: center;
+  min-height: 3.2rem;
+  border-style: dashed;
+  opacity: 0.85;
+}
+.breed-slot.is-cooling {
+  justify-content: center;
+  border-color: rgba(224, 170, 80, 0.45);
+  background: rgba(120, 80, 30, 0.2);
+}
+.breed-slot strong {
+  font-size: 0.72rem;
+}
+.breed-mating-label {
+  margin: 0.2rem 0 0;
+  font-size: 0.7rem;
+  color: #f0d4a0;
+}
+.breed-cd-wrap {
+  margin: 0.25rem 0 0.55rem;
+}
+.breed-cd-label {
+  margin: 0 0 0.25rem;
+  font-size: 0.72rem;
+}
+.breed-cd-bar {
+  height: 0.55rem;
+}
+.breed-cd-bar i {
+  background: linear-gradient(90deg, #c48c3c, #e8b86d);
+  transition: width 0.35s linear;
+}
+.breed-cd-ready {
+  margin: 0.2rem 0 0.45rem;
+  font-size: 0.7rem;
+  color: var(--jade-bright);
+}
+
 .pet-tag {
   display: inline-block;
   margin-left: 0.25rem;

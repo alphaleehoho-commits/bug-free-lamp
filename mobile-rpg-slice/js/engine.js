@@ -1628,6 +1628,47 @@ export function claimDispatch(state, dispatchId) {
 }
 
 /**
+ * 融合解鎖：通關秘境三（心核）後才有融砂練功地／融合入口
+ */
+export function isFusionUnlocked(state) {
+  return !!(state.clearedDungeons || {}).tide_3;
+}
+
+/**
+ * 秘境進攻阻擋原因（階段／出戰／召喚／今日硬限制）；null = 可進預覽
+ */
+export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
+  const d = resolveDungeon(state, dungeonId);
+  if (!d) return "秘境不存在。";
+  if ((state.realm | 0) < (d.needRealm | 0)) {
+    return `需要階段【${stageAt(d.needRealm).name}】才能進攻（現【${stageAt(state.realm).name}】）。敵情條件達標仍要先突破。`;
+  }
+  if (!state.pets?.length) return "請先派出至少一隻靈寵再進秘境。";
+  const gate = dungeonGateView(state, dungeonId, now);
+  if (gate.needsSummon && gate.phase !== "ready") {
+    if (gate.phase === "summoning") {
+      return `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……就緒後才可挑戰。`;
+    }
+    return "已通關層需先「召喚」凝聚秘境，再開始挑戰。";
+  }
+  const tutWaiveChallenge = tutorialWaivesDungeonChallenge(state, dungeonId);
+  const challenge = tutWaiveChallenge ? null : d.challenge || null;
+  if (!tutWaiveChallenge && challenge?.maxPets != null && state.pets.length > challenge.maxPets) {
+    return `今日挑戰要求出戰≤${challenge.maxPets}寵（現 ${state.pets.length}）。`;
+  }
+  if (!tutWaiveChallenge && challenge?.banElement) {
+    const banned = state.pets.filter((p) => p.elementId === challenge.banElement);
+    if (banned.length) {
+      const elName = { flame: "焰", gloom: "幽", tide: "潮", stone: "岩", gale: "嵐" }[
+        challenge.banElement
+      ];
+      return `今日挑戰禁${elName || challenge.banElement}屬出戰。`;
+    }
+  }
+  return null;
+}
+
+/**
  * Soft prestige：潮主後鑄潮印，重置階段／靈契，保留寵／裝／圖鑑／通關
  */
 export function tryTideSeal(state) {
@@ -1965,7 +2006,7 @@ export function upgradePet(state, uid, payWith = "stones") {
       addMaterials(state, matCost); // refund mats
       return { ok: false, msg: `飼料不足（需 ${cost}）。` };
     }
-    state.feed -= cost;
+    state.feed = Math.max(0, (state.feed || 0) - cost);
     pet.atk += 2;
     pet.hp += 6;
     pet.spd += 1;
@@ -1973,10 +2014,10 @@ export function upgradePet(state, uid, payWith = "stones") {
     const matNote = formatMats(matCost);
     pushLog(
       state,
-      `${pet.name} 以飼料升級至 Lv.${pet.level}（攻+2 血+6 速+1）${matNote ? `｜耗 ${matNote}` : ""}。`
+      `${pet.name} 以飼料×${cost} 升級至 Lv.${pet.level}（攻+2 血+6 速+1）${matNote ? `｜耗 ${matNote}` : ""}。`
     );
     maybeAnnounceSecondSkill(state, pet, level);
-    return { ok: true, msg: `${pet.name} → Lv.${pet.level}（飼料）` };
+    return { ok: true, msg: `${pet.name} → Lv.${pet.level}（耗飼料×${cost}）` };
   }
   const cost = upgradeStoneCost(level);
   if (state.stones < cost) {
@@ -2080,6 +2121,9 @@ export function inventoryView(state) {
  * @param {string[]} matUids
  */
 export function fusePets(state, baseUid, matUids) {
+  if (!isFusionUnlocked(state)) {
+    return { ok: false, msg: "通關秘境三【潮汐廢墟 · 心核】後解鎖融合。" };
+  }
   const mats = Array.isArray(matUids) ? [...new Set(matUids)] : [matUids].filter(Boolean);
   if (mats.includes(baseUid)) return { ok: false, msg: "素材不能包含主體。" };
 
@@ -2166,6 +2210,8 @@ export function fusePets(state, baseUid, matUids) {
   if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
   state.stats.fusions += 1;
   bumpDaily(state, "fuse", 1);
+  if (state.tutorial && !state.tutorial.flags) state.tutorial.flags = {};
+  if (state.tutorial?.flags) state.tutorial.flags.fuseDone = true;
   if (targetStage === SECOND_SKILL_UNLOCK.fusionLevel) {
     const secondId = KIND_SECOND_SKILLS[base.kind];
     const sn = SKILLS[secondId]?.name;
@@ -2933,6 +2979,13 @@ export function runDungeon(state, dungeonId, opts = {}) {
         note(
           `攻克【${d.name}】，獲靈石 ${d.reward.stones}、碎片 ${d.reward.scrap}。首通額外 +${bonusStones} 石／+${bonusScrap} 碎片！`
         );
+        if (dungeonId === "tide_3") {
+          if (!state.materials) state.materials = emptyMaterials();
+          state.materials.fuse_sand = (state.materials.fuse_sand || 0) + 2;
+          pushLog(state, "心核已破——融合解鎖；融砂＋2。");
+          const lateFuse = maybeStartLateTutorial(state);
+          if (lateFuse.started) pushLog(state, lateFuse.msg);
+        }
       } else {
         const streakNote = streakBonus > 0 ? ` · 連勝 +${streakBonus} 石` : "";
         note(
@@ -3430,6 +3483,7 @@ export function useBreedTicket(state) {
   }
   state.materials.breed_ticket -= 1;
   state.breedReadyAt = 0;
+  state.breedPair = null;
   pushLog(state, "使用催生符，繁殖冷卻已重置。");
   return { ok: true, msg: "繁殖冷卻已重置" };
 }
@@ -3744,6 +3798,11 @@ export function tryBreed(state, uidA, uidB) {
   const genes = rollBreedGenes(a, b);
   state.stones -= BREED_STONE_COST;
   state.breedReadyAt = now + BREED_COOLDOWN_MS;
+  state.breedPair = {
+    uids: [a.uid, b.uid],
+    names: [displayPetName(a), displayPetName(b)],
+    readyAt: state.breedReadyAt,
+  };
 
   const child = normalizePet(
     buildPetStats({
@@ -4021,10 +4080,20 @@ export function breedPairHint(petA, petB) {
 export function breedStatus(state) {
   const now = Date.now();
   const readyAt = state.breedReadyAt || 0;
+  const left = Math.max(0, readyAt - now);
+  const ready = left <= 0;
+  if (ready && state.breedPair) state.breedPair = null;
+  const pair = state.breedPair || null;
+  const totalMs = BREED_COOLDOWN_MS;
+  const elapsed = ready ? totalMs : Math.max(0, totalMs - left);
+  const pct = Math.min(100, Math.round((elapsed / Math.max(1, totalMs)) * 100));
   return {
     cost: BREED_STONE_COST,
-    cooldownLeftMs: Math.max(0, readyAt - now),
-    ready: readyAt <= now,
+    cooldownLeftMs: left,
+    cooldownTotalMs: totalMs,
+    cooldownPct: pct,
+    ready,
+    pair: ready ? null : pair,
   };
 }
 
