@@ -879,9 +879,21 @@ function matAffordHtml(cost) {
   return a.items
     .map(
       (i) =>
-        `<span class="mat-need ${i.ok ? "is-ok" : "is-short"}" title="${escapeHtml(i.source)}">${escapeHtml(i.name)}×${i.need}（${i.have}）</span>`
+        `<span class="mat-need ${i.ok ? "is-ok" : "is-short"}" title="${escapeHtml(i.source)}">${escapeHtml(i.name)}×${fmtMatQty(i.need)}（${fmtMatQty(i.have)}）</span>`
     )
     .join("／");
+}
+
+function upgradeMatSummaryHtml(level) {
+  const matUp = upgradeMatCost(level);
+  const html = matAffordHtml(matUp);
+  if (html) return html;
+  const dew = matUp.tide_dew || 1;
+  return `${MATERIALS.tide_dew?.name || "潮露"}×${fmtMatQty(dew)}`;
+}
+
+function upgradeCostLine(stoneCost, feedCost, level) {
+  return `${fmtMatQty(stoneCost)}靈石／${fmtMatQty(feedCost)}飼料＋${upgradeMatSummaryHtml(level)}`;
 }
 
 function matChipsHtml() {
@@ -1316,7 +1328,13 @@ function render() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => positionTutorialSpotlight(false));
   });
-  if (playback) updatePlaybackDom();
+  if (playback) {
+    updatePlaybackDom();
+    requestAnimationFrame(() => {
+      const scroller = document.querySelector("[data-live=combat-scroll]");
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    });
+  }
 }
 
 function dispatchMatBits(mission) {
@@ -1325,7 +1343,7 @@ function dispatchMatBits(mission) {
   return Object.entries(mats)
     .map(([id, n]) => {
       const name = MATERIALS[id]?.name || id;
-      return `<span class="mat-need" title="${escapeHtml(hintMap[id] || "")}">${escapeHtml(name)}×${n}</span>`;
+      return `<span class="mat-need" title="${escapeHtml(hintMap[id] || "")}">${escapeHtml(name)}×${fmtMatQty(n)}</span>`;
     })
     .join(" ");
 }
@@ -1772,9 +1790,11 @@ function petsListView() {
     `<li class="empty">出戰欄空。從牧場派出靈寵（最多 ${ACTIVE_PET_MAX}）。</li>`;
 
   const deployedIds = new Set((state.pets || []).map((p) => p.uid));
+  const ranchIdle = (ranch || []).filter((p) => !deployedIds.has(p.uid));
   const ranchEntries = [
+    ...ranchIdle.filter((p) => busy.has(p.uid)).map((p) => ({ pet: p, kind: "dispatch" })),
     ...(state.pets || []).map((p) => ({ pet: p, kind: "fight" })),
-    ...(ranch || []).filter((p) => !deployedIds.has(p.uid)).map((p) => ({ pet: p, kind: busy.has(p.uid) ? "dispatch" : "idle" })),
+    ...ranchIdle.filter((p) => !busy.has(p.uid)).map((p) => ({ pet: p, kind: "idle" })),
   ];
   const ranchList =
     ranchEntries
@@ -1784,7 +1804,7 @@ function petsListView() {
           kind === "fight"
             ? `<button type="button" class="secondary" data-undeploy="${escapeHtml(p.uid)}">撤回</button>`
             : kind === "dispatch"
-              ? `<span class="muted">進行中</span>`
+              ? ""
               : `<button type="button" class="primary${tutGlow({ type: "deploy" })}" data-deploy="${escapeHtml(p.uid)}">出戰</button>`;
         return petRow(p, extra, tag);
       })
@@ -2081,10 +2101,12 @@ function petsDetailView() {
   const fus = pet.fusionLevel ?? 0;
   const r = rarityInfo(pet.rarity ?? 0);
   const g = petGeneration(pet);
-  const loc = deployed ? "出戰中" : "牧場待命";
+  const busySet = new Set(dispatchView(state).busyUids || []);
+  const onDispatch = !deployed && busySet.has(pet.uid);
+  const loc = deployed ? "出戰中" : onDispatch ? "派遣中" : "牧場待命";
   const fuseHint = fuseMaxed
     ? `已達融階上限（${FUSION_MAX_STAGE}）`
-    : `下一融階 ${nextFusionStage}：主體≥Lv.${fuseNeedLevel}、共 ${fuseTotalPets} 隻（${fuseMatNeed} 素材）· ${fuseCostHint} 石${
+    : `下一融階 ${nextFusionStage}：主體≥Lv.${fuseNeedLevel}、共 ${fuseTotalPets} 隻（${fuseMatNeed} 素材）· ${fuseCostHint} 靈石${
         fuseMatsNeed && Object.keys(fuseMatsNeed).length
           ? `＋${matAffordHtml(fuseMatsNeed) || "融砂"}`
           : ""
@@ -2114,7 +2136,7 @@ function petsDetailView() {
             ? ` · 升需靈塵${dustCost}${skillMatHtml ? `＋${skillMatHtml}` : ""}`
             : ""
       }</li>
-      <li><strong>升級</strong> — ${upgradeCost}石／${feedCost}料＋${matUpHtml || "潮露×1"}</li>
+      <li><strong>升級</strong> — ${upgradeCostLine(upgradeCost, feedCost, lv)}</li>
     </ul>
     ${lineageHtml(lineage)}
     <div class="row gear-row">
@@ -2938,6 +2960,7 @@ function bind() {
         }
         const r = startDispatch(state, dispatchModal.missionId, dispatchModal.pick || []);
         dispatchModal = null;
+        if (r.ok) panelSub = { ...panelSub, party: "ranch" };
         saveState(state);
         render();
         setFlash(r.msg, r.ok ? "unlock" : "");
