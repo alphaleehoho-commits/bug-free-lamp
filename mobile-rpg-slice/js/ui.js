@@ -185,6 +185,8 @@ let tutorialCollapsed = false;
 let matSectionOpen = false;
 let trainRatesOpen = false;
 let statsSheetOpen = false;
+/** @type {"power" | "gen" | "rarity" | "element" | "status"} */
+let ranchSort = "status";
 
 const UI_PREFS_KEY = "void-tide-ui-prefs";
 
@@ -201,13 +203,16 @@ function loadUiPrefs() {
 function saveUiPrefs() {
   sessionStorage.setItem(
     UI_PREFS_KEY,
-    JSON.stringify({ matSectionOpen, trainRatesOpen })
+    JSON.stringify({ matSectionOpen, trainRatesOpen, ranchSort })
   );
 }
 
 const uiPrefsBoot = loadUiPrefs();
 matSectionOpen = !!uiPrefsBoot.matSectionOpen;
 trainRatesOpen = !!uiPrefsBoot.trainRatesOpen;
+if (["power", "gen", "rarity", "element", "status"].includes(uiPrefsBoot.ranchSort)) {
+  ranchSort = uiPrefsBoot.ranchSort;
+}
 
 const COMBAT_PREFS_KEY = "void-tide-combat-prefs";
 
@@ -1660,8 +1665,66 @@ function petStatusTag(kind) {
   const map = {
     fight: `<span class="pet-tag pet-tag-fight">出戰</span>`,
     dispatch: `<span class="pet-tag pet-tag-dispatch">派遣中</span>`,
+    idle: `<span class="pet-tag pet-tag-idle">待命</span>`,
   };
   return map[kind] || "";
+}
+
+function petPowerScore(p) {
+  return (p.atk || 0) * 2 + (p.hp || 0) + (p.spd || 0) + (p.level || 1) * 8 + (p.fusionLevel || 0) * 20;
+}
+
+function sortRanchEntries(entries, sortKey) {
+  const statusRank = { fight: 0, dispatch: 1, idle: 2 };
+  const elOrder = { tide: 0, flame: 1, gale: 2, stone: 3, gloom: 4 };
+  const list = [...entries];
+  list.sort((a, b) => {
+    const pa = a.pet;
+    const pb = b.pet;
+    if (sortKey === "gen") {
+      const d = petGeneration(pb) - petGeneration(pa);
+      if (d) return d;
+    } else if (sortKey === "rarity") {
+      const d = (pb.rarity || 0) - (pa.rarity || 0);
+      if (d) return d;
+    } else if (sortKey === "element") {
+      const d = (elOrder[pa.elementId] ?? 9) - (elOrder[pb.elementId] ?? 9);
+      if (d) return d;
+    } else if (sortKey === "power") {
+      const d = petPowerScore(pb) - petPowerScore(pa);
+      if (d) return d;
+    } else {
+      const d = (statusRank[a.kind] ?? 9) - (statusRank[b.kind] ?? 9);
+      if (d) return d;
+    }
+    return petPowerScore(pb) - petPowerScore(pa);
+  });
+  return list;
+}
+
+function petGridCard(p, extraBtn = "", tagHtml = "") {
+  const uid = escapeHtml(p.uid || p.templateId);
+  const lv = p.level ?? 1;
+  const fus = p.fusionLevel ?? 0;
+  const title = displayPetName(p);
+  const r = rarityInfo(p.rarity ?? 0);
+  const g = petGeneration(p);
+  return `
+    <li class="pet-card">
+      <div class="pet-card-top">
+        ${petIconFromPet(p, { size: 28 })}
+        <div class="pet-card-title">
+          <button type="button" class="linkish${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
+          ${tagHtml}
+        </div>
+      </div>
+      <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""}</span>
+      <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)} · 攻${fmtInt(p.atk)}</span>
+      <div class="row-actions pet-card-actions">
+        <button type="button" class="info${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}">詳情</button>
+        ${extraBtn}
+      </div>
+    </li>`;
 }
 
 function petRow(p, extraBtn = "", tagHtml = "") {
@@ -1791,25 +1854,46 @@ function petsListView() {
 
   const deployedIds = new Set((state.pets || []).map((p) => p.uid));
   const ranchIdle = (ranch || []).filter((p) => !deployedIds.has(p.uid));
-  const ranchEntries = [
-    ...ranchIdle.filter((p) => busy.has(p.uid)).map((p) => ({ pet: p, kind: "dispatch" })),
-    ...(state.pets || []).map((p) => ({ pet: p, kind: "fight" })),
-    ...ranchIdle.filter((p) => !busy.has(p.uid)).map((p) => ({ pet: p, kind: "idle" })),
-  ];
+  const ranchEntries = sortRanchEntries(
+    [
+      ...ranchIdle.filter((p) => busy.has(p.uid)).map((p) => ({ pet: p, kind: "dispatch" })),
+      ...(state.pets || []).map((p) => ({ pet: p, kind: "fight" })),
+      ...ranchIdle.filter((p) => !busy.has(p.uid)).map((p) => ({ pet: p, kind: "idle" })),
+    ],
+    ranchSort
+  );
   const ranchList =
     ranchEntries
       .map(({ pet: p, kind }) => {
-        const tag = kind === "fight" ? petStatusTag("fight") : kind === "dispatch" ? petStatusTag("dispatch") : "";
+        const tag =
+          kind === "fight"
+            ? petStatusTag("fight")
+            : kind === "dispatch"
+              ? petStatusTag("dispatch")
+              : petStatusTag("idle");
         const extra =
           kind === "fight"
             ? `<button type="button" class="secondary" data-undeploy="${escapeHtml(p.uid)}">撤回</button>`
             : kind === "dispatch"
               ? ""
               : `<button type="button" class="primary${tutGlow({ type: "deploy" })}" data-deploy="${escapeHtml(p.uid)}">出戰</button>`;
-        return petRow(p, extra, tag);
+        return petGridCard(p, extra, tag);
       })
       .join("") ||
-    `<li class="empty">牧場空。孵化／契約成功的靈寵會進入牧場（容量 ${cap}）。</li>`;
+    `<li class="empty pet-grid-empty">牧場空。孵化／契約成功的靈寵會進入牧場（容量 ${cap}）。</li>`;
+
+  const sortOpts = [
+    ["status", "狀態"],
+    ["power", "戰力"],
+    ["gen", "代數"],
+    ["rarity", "稀有"],
+    ["element", "屬性"],
+  ]
+    .map(
+      ([id, label]) =>
+        `<button type="button" class="sort-chip${ranchSort === id ? " on" : ""}" data-ranch-sort="${id}">${label}</button>`
+    )
+    .join("");
 
   const eggRows =
     eggsView(state)
@@ -1910,11 +1994,12 @@ function petsListView() {
     return wrapStage(
       nav,
       `<h2>靈寵 · 牧場</h2>
-      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 蛋 ${(state.eggs || []).length}/6</p>
+      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 蛋 ${(state.eggs || []).length}/6 · 待命微產飼料／靈塵／潮霧令</p>
       <h3>寵物蛋</h3>
       <ul class="list">${eggRows}</ul>
       <div class="row"><button type="button" class="primary${tutGlow({ type: "act", act: "open-breed" })}" data-act="open-breed">繁殖</button></div>
-      <ul class="list">${ranchList}</ul>`
+      <div class="ranch-sort" role="group" aria-label="牧場排序">${sortOpts}</div>
+      <ul class="pet-grid">${ranchList}</ul>`
     );
   }
   if (sub === "dispatch") {
@@ -2292,7 +2377,7 @@ function codexPanel() {
     ]),
     panelSub.codex === "dex"
       ? `<h2>靈寵圖鑑</h2>
-    <p class="lead">已錄 ${dex.discovered}/${dex.total}${dex.label ? ` · ${escapeHtml(dex.label)}` : ""} · 種×屬×性格×血脈</p>
+    <p class="lead">已錄 ${dex.discovered}/${dex.total}${dex.label ? ` · ${escapeHtml(dex.label)}` : ""} · 種×屬×血脈（${dex.total}）</p>
     <ul class="list">${speciesRows || '<li class="empty">尚未登錄</li>'}</ul>`
       : panelSub.codex === "path"
         ? `<h2>求道</h2>
@@ -2809,6 +2894,16 @@ function bind() {
       panelSub = { ...panelSub, [group]: id };
       if (group === "dungeon") condSheetOpen = false;
       markTutorialSubVisit(group, id);
+      render();
+    });
+  });
+  app.querySelectorAll("[data-ranch-sort]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.ranchSort;
+      if (!["power", "gen", "rarity", "element", "status"].includes(id)) return;
+      if (ranchSort === id) return;
+      ranchSort = id;
+      saveUiPrefs();
       render();
     });
   });

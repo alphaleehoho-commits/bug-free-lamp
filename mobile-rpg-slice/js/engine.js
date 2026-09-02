@@ -31,6 +31,9 @@ import {
   BOND_COST_MAX,
   IDLE_BY_PERSONALITY,
   IDLE_BY_ELEMENT,
+  RANCH_IDLE_GLOBAL_MULT,
+  DISPATCH_GEN_REWARD_MULT,
+  migrateBestiaryMap,
   BOND_FEED_COST,
   BOND_FEED_BONUS,
   skillDustCost,
@@ -442,8 +445,8 @@ export function loadState() {
     master.equip = { weapon: null, armor: null, accessory: null };
     master.skillIds = [];
 
-    // 以現有靈寵回填圖鑑（含性格／血脈）
-    const bestiary = { ...(parsed.bestiary || {}) };
+    // 圖鑑鍵遷移（舊 sp:el:pe:blood → sp:el:blood）後以現有靈寵回填
+    const bestiary = migrateBestiaryMap(parsed.bestiary || {});
     for (const p of [...pets, ...ranch]) {
       const key = bestiaryKeyFromPet(p);
       if (key) bestiary[key] = true;
@@ -531,8 +534,35 @@ export function resolveDungeon(state, dungeonId) {
   return generateDailyDungeon(dungeonId, key) || buildDungeonForTier(parseDungeonTier(dungeonId));
 }
 
-/** 牧場待命：已停用慢產，改走派遣 */
-export function tickRanchIdle(state, _elapsedSec) {
+/** 牧場待命：性格×屬性慢產（全局再 × RANCH_IDLE_GLOBAL_MULT） */
+export function tickRanchIdle(state, elapsedSec) {
+  const sec = Math.max(0, Number(elapsedSec) || 0);
+  if (sec <= 0) return state;
+  const busy = dispatchBusyUids(state);
+  const ranch = state.ranch || [];
+  if (!ranch.length) return state;
+  let feed = 0;
+  let dust = 0;
+  let token = 0;
+  const g = RANCH_IDLE_GLOBAL_MULT;
+  for (const p of ranch) {
+    if (!p || busy.has(p.uid)) continue;
+    const pe = IDLE_BY_PERSONALITY[p.personalityId] || { feed: 0.06, dust: 0.025, token: 0.004 };
+    const pe2 = p.personality2Id ? IDLE_BY_PERSONALITY[p.personality2Id] : null;
+    const el = IDLE_BY_ELEMENT[p.elementId] || { feed: 1, dust: 1 };
+    const feedRate = pe2 ? pe.feed * 0.7 + pe2.feed * 0.3 : pe.feed;
+    const dustRate = pe2 ? pe.dust * 0.7 + pe2.dust * 0.3 : pe.dust;
+    const tokenRate = pe2 ? pe.token * 0.7 + (pe2.token || 0) * 0.3 : pe.token || 0;
+    feed += feedRate * (el.feed || 1) * g * sec;
+    dust += dustRate * (el.dust || 1) * g * sec;
+    token += tokenRate * g * sec;
+  }
+  if (feed > 0) state.feed = (state.feed || 0) + feed;
+  if (dust > 0) state.dust = (state.dust || 0) + dust;
+  if (token > 0) {
+    if (!state.materials) state.materials = emptyMaterials();
+    state.materials.mist_token = (state.materials.mist_token || 0) + token;
+  }
   return state;
 }
 
@@ -808,6 +838,22 @@ function applyReward(state, reward) {
   if (reward.materials) addMaterials(state, reward.materials);
 }
 
+/** 按倍率縮放獎勵（派遣高代加成等）；整數向上取整保底 */
+function scaleReward(reward, mult) {
+  if (!reward || !mult || mult === 1) return reward;
+  const out = { ...reward };
+  for (const k of ["stones", "scrap", "feed", "dust"]) {
+    if (out[k]) out[k] = Math.max(1, Math.round(out[k] * mult));
+  }
+  if (out.materials) {
+    out.materials = { ...out.materials };
+    for (const [id, n] of Object.entries(out.materials)) {
+      if (n) out.materials[id] = Math.max(1, Math.round(n * mult));
+    }
+  }
+  return out;
+}
+
 export function claimDaily(state, questId) {
   ensureDaily(state);
   const q = DAILY_QUESTS.find((x) => x.id === questId);
@@ -891,7 +937,7 @@ export function registerBestiary(state, pet) {
   const blood = pet.bloodlineName && pet.bloodlineName !== "無紋" ? `·${pet.bloodlineName}` : "";
   pushLog(
     state,
-    `圖鑑登錄：${pet.elementName || ""}${pet.speciesName || pet.name}·${pet.personalityName || ""}${blood}。`
+    `圖鑑登錄：${pet.elementName || ""}${pet.speciesName || pet.name}${blood}。`
   );
   checkAchievements(state);
   return true;
@@ -1493,11 +1539,26 @@ export function startDispatch(state, missionId, petUids) {
     if (!hit || hit.list !== "ranch") return { ok: false, msg: "只能派遣牧場待命靈寵。" };
   }
   const now = Date.now();
+  let durationMs = mission.durationMs;
+  const timeMults = uids.map((uid) => {
+    const hit = findOwnedPet(state, uid);
+    const pe = PERSONALITIES[hit?.pet?.personalityId];
+    const pe2 = PERSONALITIES[hit?.pet?.personality2Id];
+    if (!pe && !pe2) return 1;
+    if (!pe2) return pe.dispatchTime ?? 1;
+    if (!pe) return pe2.dispatchTime ?? 1;
+    return ((pe.dispatchTime ?? 1) * 0.7 + (pe2.dispatchTime ?? 1) * 0.3);
+  });
+  if (timeMults.length) {
+    durationMs = Math.round(
+      durationMs * (timeMults.reduce((a, b) => a + b, 0) / timeMults.length)
+    );
+  }
   state.dispatches.push({
     dispatchId: `disp-${now}-${Math.floor(Math.random() * 999)}`,
     missionId: mission.id,
     petUids: uids,
-    readyAt: now + mission.durationMs,
+    readyAt: now + Math.max(5000, durationMs),
     claimed: false,
   });
   const names = uids
@@ -1518,7 +1579,19 @@ export function claimDispatch(state, dispatchId) {
   }
   const mission = DISPATCH_MISSIONS.find((m) => m.id === d.missionId);
   d.claimed = true;
-  applyReward(state, mission?.reward);
+  let maxGen = 0;
+  for (const uid of d.petUids || []) {
+    const hit = findOwnedPet(state, uid);
+    if (hit?.pet) maxGen = Math.max(maxGen, petGeneration(hit.pet));
+  }
+  const genMult =
+    maxGen >= 3
+      ? DISPATCH_GEN_REWARD_MULT[3] || 1.25
+      : maxGen >= 2
+        ? DISPATCH_GEN_REWARD_MULT[2] || 1.1
+        : 1;
+  const scaled = scaleReward(mission?.reward, genMult);
+  applyReward(state, scaled);
   let eggGot = null;
   const chance = mission?.eggChance;
   if (chance?.tier && Math.random() < (chance.rate || 0)) {
@@ -1533,12 +1606,18 @@ export function claimDispatch(state, dispatchId) {
   // 清走已領，避免列表膨脹
   state.dispatches = state.dispatches.filter((x) => !x.claimed);
   const bits = [];
-  if (mission?.reward?.stones) bits.push(`${mission.reward.stones}石`);
-  if (mission?.reward?.feed) bits.push(`${mission.reward.feed}飼料`);
-  if (mission?.reward?.dust) bits.push(`${mission.reward.dust}靈塵`);
-  if (mission?.reward?.scrap) bits.push(`${mission.reward.scrap}碎片`);
+  if (scaled?.stones) bits.push(`${scaled.stones}石`);
+  if (scaled?.feed) bits.push(`${scaled.feed}飼料`);
+  if (scaled?.dust) bits.push(`${scaled.dust}靈塵`);
+  if (scaled?.scrap) bits.push(`${scaled.scrap}碎片`);
+  if (scaled?.materials) {
+    for (const [id, n] of Object.entries(scaled.materials)) {
+      if (n) bits.push(`${MATERIALS[id]?.name || id}×${n}`);
+    }
+  }
   if (eggGot) bits.push(eggGot.name);
-  pushLog(state, `派遣【${mission?.name || d.missionId}】歸來：${bits.join("／") || "無"}。`);
+  const genNote = genMult > 1 ? `（${maxGen}代×${genMult}）` : "";
+  pushLog(state, `派遣【${mission?.name || d.missionId}】歸來${genNote}：${bits.join("／") || "無"}。`);
   bumpDaily(state, "dispatch", 1);
   checkAchievements(state);
   return {

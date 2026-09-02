@@ -614,13 +614,303 @@ export function shopSpeciesIds(realm = 0) {
   return wildSpeciesIds(Math.max(0, realm | 0));
 }
 
+/**
+ * 性格（20）：多數打／工取捨；少數祥瑞系只加不減。
+ * role: fight | work | balanced | blessed
+ * atk/hp/spd = 基礎面板倍率；work* = 牧場待命／派遣場外
+ */
 export const PERSONALITIES = {
-  fierce: { id: "fierce", name: "烈性", atk: 1.15, hp: 0.92, spd: 1.05 },
-  steady: { id: "steady", name: "沉穩", atk: 0.95, hp: 1.18, spd: 0.9 },
-  sly: { id: "sly", name: "狡黠", atk: 1.08, hp: 0.95, spd: 1.12 },
-  gentle: { id: "gentle", name: "溫馴", atk: 0.9, hp: 1.1, spd: 1.0 },
-  wild: { id: "wild", name: "狂放", atk: 1.2, hp: 0.88, spd: 1.08 },
+  // —— 原有五種 ——
+  fierce: {
+    id: "fierce",
+    name: "烈性",
+    role: "fight",
+    atk: 1.15,
+    hp: 0.92,
+    spd: 1.05,
+    workFeed: 0.55,
+    workDust: 0.7,
+    workToken: 0.5,
+    dispatchTime: 1.08,
+    breedMutate: 1.0,
+    bond: 0.48,
+  },
+  steady: {
+    id: "steady",
+    name: "沉穩",
+    role: "balanced",
+    atk: 0.95,
+    hp: 1.18,
+    spd: 0.9,
+    workFeed: 1.15,
+    workDust: 1.1,
+    workToken: 1.05,
+    dispatchTime: 0.9,
+    breedMutate: 1.0,
+    bond: 0.68,
+  },
+  sly: {
+    id: "sly",
+    name: "狡黠",
+    role: "balanced",
+    atk: 1.08,
+    hp: 0.95,
+    spd: 1.12,
+    workFeed: 0.85,
+    workDust: 1.2,
+    workToken: 1.25,
+    dispatchTime: 0.95,
+    breedMutate: 1.05,
+    bond: 0.55,
+  },
+  gentle: {
+    id: "gentle",
+    name: "溫馴",
+    role: "work",
+    atk: 0.9,
+    hp: 1.1,
+    spd: 1.0,
+    workFeed: 1.45,
+    workDust: 1.15,
+    workToken: 1.1,
+    dispatchTime: 0.92,
+    breedMutate: 0.95,
+    bond: 0.78,
+  },
+  wild: {
+    id: "wild",
+    name: "狂放",
+    role: "fight",
+    atk: 1.2,
+    hp: 0.88,
+    spd: 1.08,
+    workFeed: 0.4,
+    workDust: 0.55,
+    workToken: 0.45,
+    dispatchTime: 1.12,
+    breedMutate: 1.2,
+    bond: 0.38,
+  },
+  // —— 戰鬥向（加打減工）——
+  brutal: {
+    id: "brutal",
+    name: "殘暴",
+    role: "fight",
+    atk: 1.22,
+    hp: 0.9,
+    spd: 1.0,
+    workFeed: 0.45,
+    workDust: 0.5,
+    workToken: 0.4,
+    dispatchTime: 1.15,
+    breedMutate: 1.0,
+    bond: 0.4,
+  },
+  bloodthirst: {
+    id: "bloodthirst",
+    name: "嗜血",
+    role: "fight",
+    atk: 1.18,
+    hp: 0.85,
+    spd: 1.1,
+    workFeed: 0.35,
+    workDust: 0.6,
+    workToken: 0.4,
+    dispatchTime: 1.1,
+    breedMutate: 1.05,
+    bond: 0.42,
+  },
+  arrogant: {
+    id: "arrogant",
+    name: "傲慢",
+    role: "fight",
+    atk: 1.12,
+    hp: 1.0,
+    spd: 0.95,
+    workFeed: 0.7,
+    workDust: 0.65,
+    workToken: 0.6,
+    dispatchTime: 1.05,
+    breedMutate: 0.9,
+    bond: 0.45,
+  },
+  restless: {
+    id: "restless",
+    name: "躁動",
+    role: "fight",
+    atk: 1.05,
+    hp: 0.92,
+    spd: 1.2,
+    workFeed: 0.6,
+    workDust: 0.75,
+    workToken: 0.55,
+    dispatchTime: 1.18,
+    breedMutate: 1.1,
+    bond: 0.5,
+  },
+  vengeful: {
+    id: "vengeful",
+    name: "執念",
+    role: "fight",
+    atk: 1.14,
+    hp: 0.96,
+    spd: 1.02,
+    workFeed: 0.65,
+    workDust: 0.7,
+    workToken: 0.55,
+    dispatchTime: 1.06,
+    breedMutate: 1.0,
+    bond: 0.46,
+  },
+  cunning: {
+    id: "cunning",
+    name: "陰鷙",
+    role: "fight",
+    atk: 1.1,
+    hp: 0.93,
+    spd: 1.15,
+    workFeed: 0.7,
+    workDust: 0.85,
+    workToken: 0.75,
+    dispatchTime: 1.0,
+    breedMutate: 1.08,
+    bond: 0.5,
+  },
+  // —— 工作向（加工減打）——
+  diligent: {
+    id: "diligent",
+    name: "勤懇",
+    role: "work",
+    atk: 0.88,
+    hp: 1.05,
+    spd: 0.95,
+    workFeed: 1.5,
+    workDust: 1.35,
+    workToken: 1.3,
+    dispatchTime: 0.85,
+    breedMutate: 1.0,
+    bond: 0.72,
+  },
+  nurturing: {
+    id: "nurturing",
+    name: "慈育",
+    role: "work",
+    atk: 0.85,
+    hp: 1.12,
+    spd: 0.92,
+    workFeed: 1.65,
+    workDust: 1.05,
+    workToken: 1.0,
+    dispatchTime: 0.88,
+    breedMutate: 1.15,
+    bond: 0.8,
+  },
+  patient: {
+    id: "patient",
+    name: "忍耐",
+    role: "work",
+    atk: 0.92,
+    hp: 1.15,
+    spd: 0.88,
+    workFeed: 1.25,
+    workDust: 1.2,
+    workToken: 1.15,
+    dispatchTime: 0.78,
+    breedMutate: 0.95,
+    bond: 0.7,
+  },
+  curious: {
+    id: "curious",
+    name: "好奇",
+    role: "work",
+    atk: 0.95,
+    hp: 0.98,
+    spd: 1.05,
+    workFeed: 1.05,
+    workDust: 1.45,
+    workToken: 1.4,
+    dispatchTime: 0.9,
+    breedMutate: 1.2,
+    bond: 0.62,
+  },
+  loyal: {
+    id: "loyal",
+    name: "忠勤",
+    role: "work",
+    atk: 0.94,
+    hp: 1.08,
+    spd: 0.98,
+    workFeed: 1.3,
+    workDust: 1.15,
+    workToken: 1.2,
+    dispatchTime: 0.86,
+    breedMutate: 1.0,
+    bond: 0.74,
+  },
+  // —— 祥瑞系（只加不減）——
+  blessed: {
+    id: "blessed",
+    name: "祥瑞",
+    role: "blessed",
+    atk: 1.04,
+    hp: 1.04,
+    spd: 1.02,
+    workFeed: 1.12,
+    workDust: 1.12,
+    workToken: 1.1,
+    dispatchTime: 0.95,
+    breedMutate: 1.08,
+    bond: 0.72,
+  },
+  clever: {
+    id: "clever",
+    name: "機靈",
+    role: "blessed",
+    atk: 1.03,
+    hp: 1.0,
+    spd: 1.08,
+    workFeed: 1.08,
+    workDust: 1.15,
+    workToken: 1.18,
+    dispatchTime: 0.92,
+    breedMutate: 1.1,
+    bond: 0.65,
+  },
+  noble: {
+    id: "noble",
+    name: "高潔",
+    role: "blessed",
+    atk: 1.05,
+    hp: 1.05,
+    spd: 1.03,
+    workFeed: 1.1,
+    workDust: 1.1,
+    workToken: 1.08,
+    dispatchTime: 0.94,
+    breedMutate: 1.05,
+    bond: 0.7,
+  },
+  serene: {
+    id: "serene",
+    name: "澄明",
+    role: "blessed",
+    atk: 1.0,
+    hp: 1.08,
+    spd: 1.02,
+    workFeed: 1.15,
+    workDust: 1.18,
+    workToken: 1.12,
+    dispatchTime: 0.9,
+    breedMutate: 1.05,
+    bond: 0.75,
+  },
 };
+
+/** 牧場待命全局倍率（避免疊練功地爆倉） */
+export const RANCH_IDLE_GLOBAL_MULT = 0.35;
+
+/** 派遣高代獎勵倍率 */
+export const DISPATCH_GEN_REWARD_MULT = { 2: 1.1, 3: 1.25 };
 
 /** 血脈紋（每寵 0–2）：圖鑑組合軸之一 */
 export const BLOODLINE_MARKS = {
@@ -1011,10 +1301,10 @@ export const ACTIVE_PET_MAX = 3;
 
 /**
  * 牧場待命上限：隨人物階段提升
- * 初契 3 → 通靈初 5 → … → 潮主 13
+ * 初契 6 → 通靈初 9 → … → 潮主 21
  */
 export function ranchCapForStage(stageId) {
-  return 3 + Math.max(0, stageId) * 2;
+  return 6 + Math.max(0, stageId) * 3;
 }
 
 /** 升級耗靈石（獨立於融合，只跟寵物自身等級） */
@@ -1059,14 +1349,10 @@ export function fusionStoneCost(targetStage) {
   return 8 * n * (n + 1) * rule.totalPets;
 }
 
-/** 性格 → 契約成功率 */
-export const BOND_RATE_BY_PERSONALITY = {
-  gentle: 0.78,
-  steady: 0.68,
-  sly: 0.55,
-  fierce: 0.48,
-  wild: 0.38,
-};
+/** 性格 → 契約成功率（由 PERSONALITIES.bond 匯出） */
+export const BOND_RATE_BY_PERSONALITY = Object.fromEntries(
+  Object.values(PERSONALITIES).map((p) => [p.id, p.bond ?? 0.5])
+);
 
 /** 契約靈石上限（秘境遇寵） */
 export const BOND_COST_MAX = 42;
@@ -1467,7 +1753,11 @@ export function rollBreedGenes(parentA, parentB) {
     const other = markPool.find((m) => m !== bloodmarks[0]);
     if (other) bloodmarks.push(other);
   }
-  if (Math.random() < 0.28 * genMult) {
+  const peBreedMut =
+    ((PERSONALITIES[ga.personality]?.breedMutate || 1) +
+      (PERSONALITIES[gb.personality]?.breedMutate || 1)) /
+    2;
+  if (Math.random() < 0.28 * genMult * peBreedMut) {
     const candidates = BLOODLINE_MARK_IDS.filter((id) => !bloodmarks.includes(id));
     if (candidates.length) {
       bloodmarks.push(pick(candidates));
@@ -2941,14 +3231,17 @@ export function petLabel(pet) {
 
 /* ─── P1：牧場掛機產物 ─── */
 
-/** 性格 → 每秒飼料／靈塵產量（牧場待命） */
-export const IDLE_BY_PERSONALITY = {
-  gentle: { feed: 0.09, dust: 0.02 },
-  steady: { feed: 0.07, dust: 0.035 },
-  sly: { feed: 0.045, dust: 0.055 },
-  fierce: { feed: 0.03, dust: 0.07 },
-  wild: { feed: 0.02, dust: 0.08 },
-};
+/** 性格 → 每秒飼料／靈塵／潮霧令產量（牧場待命；再乘 RANCH_IDLE_GLOBAL_MULT） */
+export const IDLE_BY_PERSONALITY = Object.fromEntries(
+  Object.values(PERSONALITIES).map((p) => [
+    p.id,
+    {
+      feed: 0.06 * (p.workFeed ?? 1),
+      dust: 0.025 * (p.workDust ?? 1),
+      token: 0.004 * (p.workToken ?? 1),
+    },
+  ])
+);
 
 /** 元素對掛機倍率 */
 export const IDLE_BY_ELEMENT = {
@@ -3521,13 +3814,75 @@ export function fusionAbsorbRate(targetStage) {
 
 /**
  * 性格戰鬥被動（每寵獨立套用；唔改白板成長公式）
+ * 戰鬥向加打減續航；工作向加工減打；祥瑞只加不減
  */
 export const PERSONALITY_COMBAT = {
   fierce: { id: "fierce", label: "烈性：攻擊 +10%，血量 −4%", atkMult: 1.1, hpMult: 0.96, spdMult: 1 },
   steady: { id: "steady", label: "沉穩：血量 +12%，速度 −5%", atkMult: 1, hpMult: 1.12, spdMult: 0.95 },
   sly: { id: "sly", label: "狡黠：速度 +10%，攻擊 +4%", atkMult: 1.04, hpMult: 1, spdMult: 1.1 },
-  gentle: { id: "gentle", label: "溫馴：血量 +6%，受治療／減傷技優先感（續航親和）", atkMult: 0.97, hpMult: 1.06, spdMult: 1, sustainBias: true },
+  gentle: {
+    id: "gentle",
+    label: "溫馴：血量 +6%，受治療／減傷技優先感（續航親和）",
+    atkMult: 0.97,
+    hpMult: 1.06,
+    spdMult: 1,
+    sustainBias: true,
+  },
   wild: { id: "wild", label: "狂放：攻擊 +12%，血量 −8%", atkMult: 1.12, hpMult: 0.92, spdMult: 1.04 },
+  brutal: { id: "brutal", label: "殘暴：攻擊 +14%，血量 −6%", atkMult: 1.14, hpMult: 0.94, spdMult: 1 },
+  bloodthirst: {
+    id: "bloodthirst",
+    label: "嗜血：攻擊 +12%，血量 −10%，速度 +6%",
+    atkMult: 1.12,
+    hpMult: 0.9,
+    spdMult: 1.06,
+  },
+  arrogant: { id: "arrogant", label: "傲慢：攻擊 +8%，速度 −4%", atkMult: 1.08, hpMult: 1, spdMult: 0.96 },
+  restless: {
+    id: "restless",
+    label: "躁動：速度 +14%，血量 −5%",
+    atkMult: 1.03,
+    hpMult: 0.95,
+    spdMult: 1.14,
+  },
+  vengeful: { id: "vengeful", label: "執念：攻擊 +9%，血量 −3%", atkMult: 1.09, hpMult: 0.97, spdMult: 1.01 },
+  cunning: {
+    id: "cunning",
+    label: "陰鷙：攻擊 +7%，速度 +10%，血量 −5%",
+    atkMult: 1.07,
+    hpMult: 0.95,
+    spdMult: 1.1,
+  },
+  diligent: { id: "diligent", label: "勤懇：攻擊 −6%，血量 +4%", atkMult: 0.94, hpMult: 1.04, spdMult: 0.98 },
+  nurturing: {
+    id: "nurturing",
+    label: "慈育：攻擊 −8%，血量 +8%（續航親和）",
+    atkMult: 0.92,
+    hpMult: 1.08,
+    spdMult: 0.96,
+    sustainBias: true,
+  },
+  patient: {
+    id: "patient",
+    label: "忍耐：血量 +10%，速度 −8%（續航親和）",
+    atkMult: 0.96,
+    hpMult: 1.1,
+    spdMult: 0.92,
+    sustainBias: true,
+  },
+  curious: { id: "curious", label: "好奇：速度 +4%，攻擊 −3%", atkMult: 0.97, hpMult: 0.99, spdMult: 1.04 },
+  loyal: { id: "loyal", label: "忠勤：攻擊 −4%，血量 +6%", atkMult: 0.96, hpMult: 1.06, spdMult: 0.99 },
+  blessed: { id: "blessed", label: "祥瑞：攻血速微升", atkMult: 1.03, hpMult: 1.03, spdMult: 1.02 },
+  clever: { id: "clever", label: "機靈：速度 +6%，攻擊 +2%", atkMult: 1.02, hpMult: 1, spdMult: 1.06 },
+  noble: { id: "noble", label: "高潔：攻血速微升", atkMult: 1.03, hpMult: 1.03, spdMult: 1.02 },
+  serene: {
+    id: "serene",
+    label: "澄明：血量 +5%，速度 +2%（續航親和）",
+    atkMult: 1,
+    hpMult: 1.05,
+    spdMult: 1.02,
+    sustainBias: true,
+  },
 };
 
 export function personalityCombatFor(personalityId) {
@@ -4021,10 +4376,10 @@ export function partySynergy(pets) {
 
 /* ─── P2：圖鑑／放生／每日／成就 ─── */
 
-export function bestiaryKey(speciesId, elementId, personalityId = "sly", bloodKey = "none") {
-  const pe = PERSONALITIES[personalityId] ? personalityId : "sly";
+/** 圖鑑鍵：物種 × 屬性 × 血統（性格唔再佔格） */
+export function bestiaryKey(speciesId, elementId, bloodKey = "none") {
   const bk = bloodKey && bloodKey !== "none" ? bloodKey : "none";
-  return `${speciesId}:${elementId}:${pe}:${bk}`;
+  return `${speciesId}:${elementId}:${bk}`;
 }
 
 /** 舊版種×屬鍵（遷移相容） */
@@ -4034,19 +4389,35 @@ export function bestiaryKeyLegacy(speciesId, elementId) {
 
 export function bestiaryKeyFromPet(pet) {
   if (!pet?.speciesId || !pet?.elementId) return null;
-  return bestiaryKey(
-    pet.speciesId,
-    pet.elementId,
-    pet.personalityId || "sly",
-    bloodlineKey(pet.bloodmarks)
-  );
+  return bestiaryKey(pet.speciesId, pet.elementId, bloodlineKey(pet.bloodmarks));
+}
+
+/** 舊存檔圖鑑鍵遷移 → 物種:屬性:血統 */
+export function migrateBestiaryMap(raw) {
+  const out = {};
+  for (const [key, val] of Object.entries(raw || {})) {
+    if (!val) continue;
+    const parts = String(key).split(":");
+    let next = null;
+    if (parts.length >= 4) {
+      // sp:el:personality:blood...
+      next = bestiaryKey(parts[0], parts[1], parts.slice(3).join("+") || "none");
+    } else if (parts.length === 3) {
+      // 新格式 sp:el:blood，或舊誤用 sp:el:personality
+      if (PERSONALITIES[parts[2]]) next = bestiaryKey(parts[0], parts[1], "none");
+      else next = bestiaryKey(parts[0], parts[1], parts[2]);
+    } else if (parts.length === 2) {
+      next = bestiaryKey(parts[0], parts[1], "none");
+    }
+    if (next) out[next] = true;
+  }
+  return out;
 }
 
 export function bestiaryTotal() {
   return (
     Object.keys(SPECIES).length *
     Object.keys(ELEMENTS).length *
-    Object.keys(PERSONALITIES).length *
     allBloodlineKeys().length
   );
 }
@@ -4055,8 +4426,7 @@ export function bestiaryTotal() {
 export function bestiarySpeciesSummary(state) {
   const known = state?.bestiary || {};
   const bloodKeys = allBloodlineKeys();
-  const perSpecies =
-    Object.keys(ELEMENTS).length * Object.keys(PERSONALITIES).length * bloodKeys.length;
+  const perSpecies = Object.keys(ELEMENTS).length * bloodKeys.length;
   return Object.values(SPECIES).map((sp) => {
     let found = 0;
     const prefix = `${sp.id}:`;
@@ -4854,7 +5224,8 @@ export function countHybridBestiary(bestiary) {
   for (const sp of Object.values(SPECIES)) {
     if (!sp.breedOnly) continue;
     for (const el of Object.keys(ELEMENTS)) {
-      if (known[bestiaryKey(sp.id, el)]) n += 1;
+      const prefix = `${sp.id}:${el}:`;
+      if (Object.keys(known).some((k) => k.startsWith(prefix))) n += 1;
     }
   }
   return n;
