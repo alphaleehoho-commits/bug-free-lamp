@@ -105,6 +105,9 @@ import {
   eggTierInfo,
   DAILY_ALL_CLEAR_BONUS,
   DUNGEON_SWEEP_COUNTS,
+  DUNGEON_SUMMON_MIN,
+  DUNGEON_SUMMON_MAX,
+  clampDungeonSummonCount,
   DUNGEON_ENTRY_MAT_ID,
   dungeonEntryMatCost,
   todayKey,
@@ -116,6 +119,7 @@ import {
   canDungeonSweep,
   dungeonSweepCost,
   startDungeonSummon,
+  dungeonTeamPreview,
   dungeonGateView,
   claimAllDailies,
   claimDailyAllClear,
@@ -1074,8 +1078,9 @@ const tacticsNav = syncTutorialNavigation(tacticsSt, {
 assert(tacticsNav.panelSub.dungeon === "setup", "tactics sync forces setup sub");
 
 /* Week A: dungeon sweep + daily all-clear */
-assert(DUNGEON_SWEEP_COUNTS.includes(10), "sweep counts include 10");
-assert(!DUNGEON_SWEEP_COUNTS.includes(1), "sweep drops single-run (use 進攻)");
+assert(DUNGEON_SUMMON_MIN === 1 && DUNGEON_SUMMON_MAX === 10, "summon range 1-10");
+assert(clampDungeonSummonCount(0) === 1 && clampDungeonSummonCount(99) === 10, "clamp summon count");
+assert(DUNGEON_SWEEP_COUNTS.includes(5), "legacy sweep counts");
 assert(DUNGEON_ENTRY_MAT_ID === "mist_token", "entry mat is mist_token");
 assert(DAILY_ALL_CLEAR_BONUS.stones >= 1, "all clear bonus defined");
 assert(!canDungeonSweep(combatSt, "tide_1").ok, "no sweep before clear");
@@ -1118,8 +1123,11 @@ assert(sweepRes.ok && sweepRes.sweep && sweepRes.count === 5, "sweep 5 runs");
 assert(sweepRes.wins >= 1 && sweepRes.totalStones > 0, "sweep aggregate stones");
 assert(dungeonGateView(sweepSt, "tide_1").phase === "idle", "gate idle after sweep");
 const cost5 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 5);
-const cost20 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 20);
-assert(cost20.total > cost5.total, "20-sweep costs more than 5");
+const cost10 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 10);
+assert(cost10.total > cost5.total, "10-sweep costs more than 5");
+assert(clampDungeonSummonCount(7) === 7, "summon count 7 ok");
+const teamPrev = dungeonTeamPreview(sweepSt, "tide_1");
+assert(teamPrev?.ok && teamPrev.allies?.length >= 1 && teamPrev.foes?.length >= 1, "team preview");
 assert(dungeonEntryMatCost("tide_1", 1).mist_token >= 1, "entry cost defined");
 assert(!Object.values(DUNGEON_MAT_DROPS).some((t) => t.weights?.mist_token), "token absent from all dungeon tables");
 
@@ -1214,8 +1222,10 @@ assert(allRes.ok && allRes.claimed === DAILY_QUESTS.length, "claim all dailies")
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const uiSrc = readFileSync(join(__dir, "ui.js"), "utf8");
-assert(uiSrc.includes("data-sweep"), "ui sweep bind");
 assert(uiSrc.includes("data-summon"), "ui summon bind");
+assert(uiSrc.includes("data-attack-preview"), "ui attack preview");
+assert(uiSrc.includes("data-open-dispatch"), "ui dispatch picker modal");
+assert(uiSrc.includes("data-summon-slider"), "ui summon slider");
 assert(uiSrc.includes("panel-subnav-dock"), "ui subnav near bottom tabs");
 assert(uiSrc.includes("function wrapStage"), "ui has wrapStage layout helper");
 assert(uiSrc.includes("tabs-bottom"), "ui has bottom tab bar");

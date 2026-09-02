@@ -154,6 +154,9 @@ import {
   pickDailyTrainSpotlight,
   DAILY_ALL_CLEAR_BONUS,
   DUNGEON_SWEEP_COUNTS,
+  DUNGEON_SUMMON_MIN,
+  DUNGEON_SUMMON_MAX,
+  clampDungeonSummonCount,
   DUNGEON_ENTRY_MAT_ID,
   dungeonEntryMatCost,
   dungeonEntryTokenPerRun,
@@ -2391,6 +2394,101 @@ function spawnWaveFoes(wave, dailyMod = null, challenge = null) {
   return (wave?.enemies || []).map((e) => spawnCombatFoe(e, dailyMod, challenge));
 }
 
+/** 組出戰方戰鬥單位（runDungeon / 預覽共用） */
+function buildDungeonAllyUnits(state, d, { dailyMod = null, challenge = null } = {}) {
+  const tactics = TACTIC_IDS.includes(state.tactics) ? state.tactics : "balanced";
+  const formationId = FORMATION_IDS.includes(state.formation) ? state.formation : "balanced";
+  const formation = FORMATIONS[formationId] || FORMATIONS.balanced;
+  const stageBonus = state.realm * 2;
+  const synergy = partySynergy(state.pets);
+  const dex = bestiaryStatus(state);
+  const sealMult = tideSealCombatMult(state.tideSeals || 0);
+  const atkMult = synergy.atkMult * dex.atkMult * sealMult;
+  const hpMult = synergy.hpMult * dex.hpMult * sealMult;
+  const condEval = evaluateDungeonConditions(state.pets, d);
+  const passives = condEval.filter((c) => c.passive);
+  const combatPassives = [...passives];
+  if (dailyMod?.allyElemAtk) {
+    combatPassives.push({
+      type: "elem_atk",
+      element: dailyMod.allyElemAtk.element,
+      mult: dailyMod.allyElemAtk.mult,
+      passive: true,
+      label: dailyMod.label,
+    });
+  }
+  const allies = [];
+  for (const p of state.pets) {
+    const skills = petSkillIds(p);
+    const elemMult = dungeonElemAtkMult(combatPassives, p.elementId);
+    const gen = petGeneration(p);
+    const gMult = genCombatMult(gen);
+    const fAtk = formation.petAtkMult || 1;
+    const fHp = formation.petHpMult || 1;
+    const fSpd = formation.petSpdMult || 1;
+    const pe = personalityCombatForPet(p);
+    const pAtk = pe?.atkMult || 1;
+    const pHp = pe?.hpMult || 1;
+    const pSpd = pe?.spdMult || 1;
+    const bm = bloodmarkCombatMult(p.bloodmarks);
+    allies.push({
+      side: "ally",
+      name: displayPetName(p),
+      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp),
+      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp),
+      atk: Math.round((p.atk + stageBonus) * atkMult * elemMult * gMult * fAtk * pAtk * bm.atk),
+      spd: Math.round(p.spd * synergy.spdMult * fSpd * pSpd * bm.spd),
+      elementId: p.elementId,
+      elementName: p.elementName,
+      skillName: p.skillName || SKILLS[p.skillId]?.name || "—",
+    });
+  }
+  return {
+    allies,
+    synergy,
+    formation,
+    tactics,
+    tacticsName: TACTICS[tactics]?.name || tactics,
+  };
+}
+
+/** 進攻前隊伍 vs 敵方預覽 */
+export function dungeonTeamPreview(state, dungeonId) {
+  const d = resolveDungeon(state, dungeonId);
+  if (!d) return null;
+  if (!state.pets?.length) return { ok: false, msg: "請先派出靈寵。" };
+  const dailyPack = ensureDungeonDaily(state);
+  const dailyMod = dailyPack?.mod || null;
+  const tutWaiveChallenge = tutorialWaivesDungeonChallenge(state, dungeonId);
+  const challenge = tutWaiveChallenge ? null : d.challenge || null;
+  const waves = dungeonWaves(d);
+  if (!waves.length) return null;
+  const ctx = buildDungeonAllyUnits(state, d, { dailyMod, challenge });
+  const foes = spawnWaveFoes(waves[0], dailyMod, challenge);
+  const roles = countDungeonRoles(waves);
+  const st = dungeonStatus(state, dungeonId);
+  return {
+    ok: true,
+    dungeonName: d.name,
+    allies: ctx.allies,
+    foes: foes.map((f) => ({
+      name: f.name,
+      atk: f.atk,
+      hp: f.hp,
+      spd: f.spd,
+      role: f.role || "normal",
+    })),
+    waveCount: waves.length,
+    roles,
+    synergyLabels: ctx.synergy.labels,
+    tacticsName: ctx.tacticsName,
+    formationName: ctx.formation.name,
+    conditionsMet: (st?.conditions || []).filter((c) => !c.passive && c.ok).length,
+    conditionsTotal: (st?.conditions || []).filter((c) => !c.passive).length,
+    challengeMet: st?.challengeMet ?? true,
+  };
+}
+
 /**
  * 戰鬥結算（同步計算）；UI 負責逐條播放戰報。
  * 波次：雜兵 → 精英 → BOSS；敵人可施技能；BOSS 可雙動。
@@ -3066,8 +3164,7 @@ export function startDungeonSummon(state, dungeonId, count = 1) {
   if (gate.phase === "ready") {
     return { ok: false, msg: "秘境已就緒，請開始挑戰。" };
   }
-  const allowed = DUNGEON_SWEEP_COUNTS;
-  const n = count === 1 || allowed.includes(count) ? count : 1;
+  const n = clampDungeonSummonCount(count);
   const cost = dungeonSweepCost(state, dungeonId, n);
   if (!cost.canAfford) {
     return {
@@ -3151,8 +3248,7 @@ function aggregateSweepRewards(results) {
  * 已通關層連刷：須先召喚就緒（batch=N）；開戰時唔再扣令。
  */
 export function runDungeonSweep(state, dungeonId, count) {
-  const allowed = DUNGEON_SWEEP_COUNTS;
-  const n = allowed.includes(count) ? count : allowed[allowed.length - 1];
+  const n = clampDungeonSummonCount(count);
   const gate = dungeonGateView(state, dungeonId);
   if (gate.phase !== "ready" || gate.batch !== n) {
     return { ok: false, msg: "請先召喚對應場數並等待潮霧凝聚完成。" };
