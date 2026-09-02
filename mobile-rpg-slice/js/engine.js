@@ -729,13 +729,14 @@ export function tickCultivation(state, now = Date.now()) {
     const matBits = {};
     for (const id of MATERIAL_IDS) {
       const d = (state.materials?.[id] || 0) - (matsBefore[id] || 0);
-      if (d > 0) matBits[id] = d;
+      const n = Math.round(d);
+      if (n > 0) matBits[id] = n;
     }
     state.offlineHint = {
       sec: Math.floor(elapsed),
-      qi: qiGain,
-      feed: feedGain,
-      dust: dustGain,
+      qi: Math.round(qiGain),
+      feed: Math.round(feedGain),
+      dust: Math.round(dustGain),
       materials: matBits,
       siteName: trainGain.site?.name || site.name,
       at: now,

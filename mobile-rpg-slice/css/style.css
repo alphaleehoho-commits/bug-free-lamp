@@ -1405,6 +1405,23 @@ button.flash-act {
   margin: 0.2rem 0 0;
 }
 .combat-scroll .combat { margin: 0; }
+.combat-log-fixed {
+  flex: none;
+  height: calc(1.35rem * 6);
+  max-height: calc(1.35rem * 6);
+  min-height: calc(1.35rem * 6);
+}
+.combat-log-fixed .combat li {
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+.combat-report-card .combat-round-meta {
+  margin: 0.35rem 0 0.15rem;
+  font-size: 0.72rem;
+}
+.combat-report-card .combat-roster {
+  margin-top: 0.35rem;
+}
 
 .tactics-row {
   display: flex;
@@ -1990,6 +2007,19 @@ button.linkish strong { color: var(--jade); }
   flex: 1;
   min-width: 120px;
   accent-color: var(--jade);
+}
+.summon-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.2rem 0.1rem;
+}
+.summon-bar {
+  margin: 0;
+}
+.summon-bar i {
+  background: linear-gradient(90deg, #3d7a55, #6aab82);
+  transition: width 0.35s linear;
 }
 
 .pet-tag {
