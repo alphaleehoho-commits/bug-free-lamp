@@ -402,6 +402,13 @@ assert(flatCompat.length === 1 && flatCompat[0].enemies.length === 1, "legacy en
 /* P5: breakthrough gates */
 assert(BREAKTHROUGH_GATES[1] && BREAKTHROUGH_GATES[5], "gates");
 assert(STAGES.length === 6, "stages");
+assert(STAGES[0].rate === 1.05 && STAGES[5].rate === 3.5, "qi rates mid-nerf");
+assert(stageAt(6).rate < 4.0, "post-tide qi growth softened");
+const shoreSite = TRAIN_SITES.find((s) => s.id === "shore");
+assert(shoreSite.drops.find((d) => d.mat === "mist_token")?.perSec === 0.0035, "token AFK nerfed");
+assert(shoreSite.drops.find((d) => d.mat === "tide_dew")?.perSec === 0.034, "dew AFK light nerf");
+assert(TRAIN_SITES.find((s) => s.id === "abyss")?.qiMult === 1.06, "abyss qiMult compressed");
+assert(TRAIN_SITES.find((s) => s.id === "mistveil")?.drops.find((d) => d.mat === "echo_resin")?.perSec === 0.017, "resin AFK nerfed");
 const fakeState = {
   realm: 0,
   qi: 10,
@@ -614,7 +621,7 @@ assert(there?.alreadyThere, "already at ruins");
 const spot = pickDailyTrainSpotlight("2026-08-30");
 assert(spot?.id && pickDailyTrainSpotlight("2026-08-30").id === spot.id, "train spot stable");
 const ruinsSite = trainSiteById("ruins");
-const dewMult = trainDropMult(ruinsSite, { mat: "coral_shard", perSec: 0.038 }, "2026-08-30");
+const dewMult = trainDropMult(ruinsSite, { mat: "coral_shard", perSec: 0.031 }, "2026-08-30");
 assert(dewMult >= TRAIN_FOCUS_BONUS, "focus mult on primary mat");
 const rates = trainSiteRatesView(ruinsSite, "2026-08-30");
 assert(rates.lines.some((l) => l.name === "珊瑚屑"), "rates include primary");
