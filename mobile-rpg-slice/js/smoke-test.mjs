@@ -27,6 +27,12 @@ import {
   countHybridBestiary,
   bestiaryKey,
   bestiaryTotal,
+  migrateBestiaryMap,
+  PERSONALITIES,
+  ranchCapForStage,
+  RANCH_IDLE_GLOBAL_MULT,
+  DISPATCH_GEN_REWARD_MULT,
+  IDLE_BY_PERSONALITY,
   allBloodlineKeys,
   BLOODLINE_MARK_IDS,
   PATH_QUESTS,
@@ -105,6 +111,9 @@ import {
   eggTierInfo,
   DAILY_ALL_CLEAR_BONUS,
   DUNGEON_SWEEP_COUNTS,
+  DUNGEON_SUMMON_MIN,
+  DUNGEON_SUMMON_MAX,
+  clampDungeonSummonCount,
   DUNGEON_ENTRY_MAT_ID,
   dungeonEntryMatCost,
   todayKey,
@@ -116,6 +125,7 @@ import {
   canDungeonSweep,
   dungeonSweepCost,
   startDungeonSummon,
+  dungeonTeamPreview,
   dungeonGateView,
   claimAllDailies,
   claimDailyAllClear,
@@ -131,6 +141,8 @@ import {
   startHatch,
   eggsView,
   tickCultivation,
+  tickRanchIdle,
+  claimDispatch,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -183,7 +195,22 @@ assert(wildSpeciesIds(0).length < wildSpeciesIds(3).length, "realm wild pool");
 assert(SPECIES.glowfin.kind === "光", "glowfin light");
 assert(KIND_SKILLS["光"] === "glow_lance", "light skill");
 assert(Object.keys(SPECIES).length >= 40, "40+ species");
-assert(bestiaryTotal() >= 10000, "bestiary 10k+");
+assert(bestiaryTotal() === 2640, "bestiary 48×5×11");
+assert(Object.keys(PERSONALITIES).length === 20, "20 personalities");
+assert(ranchCapForStage(0) === 6 && ranchCapForStage(5) === 21, "ranch cap 6+stage*3");
+assert(RANCH_IDLE_GLOBAL_MULT === 0.35, "idle global mult");
+assert(DISPATCH_GEN_REWARD_MULT[3] === 1.25, "gen3 dispatch mult");
+assert(IDLE_BY_PERSONALITY.diligent?.feed > IDLE_BY_PERSONALITY.fierce?.feed, "work>fight feed");
+assert(PERSONALITIES.blessed.workFeed >= 1 && PERSONALITIES.blessed.atk >= 1, "blessed no penalty");
+assert(PERSONALITIES.brutal.atk > 1 && PERSONALITIES.brutal.workFeed < 1, "fight tradeoff");
+const mig = migrateBestiaryMap({
+  "reefox:tide:fierce:none": true,
+  "reefox:tide:gentle:none": true,
+  "reefox:tide:sly:tide_sigil": true,
+  "glowfin:flame:none": true,
+});
+assert(mig["reefox:tide:none"] && mig["reefox:tide:tide_sigil"] && mig["glowfin:flame:none"], "bestiary migrate");
+assert(Object.keys(mig).length === 3, "migrate merges personalities");
 assert(allBloodlineKeys().length === 11, "11 bloodline forms");
 assert(BLOODLINE_MARK_IDS.length === 4, "4 blood marks");
 assert(PATH_QUESTS.length >= 10, "path quests");
@@ -256,7 +283,7 @@ assert(TERTIARY_RECIPES.length >= 32, "tertiary recipes expanded");
 assert(tertiaryRecipesForParents("tideling", "mistcarp").length >= 1, "tideling×mistcarp tertiary");
 assert(tertiaryRecipesForParents("tidehowl", "voidcarp").length >= 1, "sub hybrid tertiary path");
 assert(PATH_QUESTS.some((q) => q.id === "nurture_tertiary"), "tertiary path quest");
-assert(bestiaryTotal() >= 13200, "bestiary 48×5×5×11");
+assert(bestiaryTotal() === 2640, "bestiary 48×5×11 no personality");
 
 const tidePet = {
   uid: "t1",
@@ -505,6 +532,8 @@ const synSp = partySynergy([
 assert(synSp.labels.some((l) => l.includes("同族血脈")), "same species");
 assert(personalityCombatFor("fierce")?.atkMult === 1.1, "fierce passive");
 assert(personalityCombatFor("gentle")?.sustainBias, "gentle sustain");
+assert(personalityCombatFor("diligent")?.atkMult < 1, "diligent combat soft");
+assert(personalityCombatFor("blessed")?.atkMult >= 1, "blessed combat buff");
 assert(GEAR_SETS.tide && gearSetBonus(["tide_blade", "moss_vest"]).atk === 3, "set2");
 assert(gearSetBonus(["core_fang", "abyss_plate", "gloom_sigil"]).labels.some((l) => l.includes("三件")), "set3");
 assert(DISPATCH_MISSIONS.length >= 3, "dispatch missions");
@@ -1081,8 +1110,9 @@ const tacticsNav = syncTutorialNavigation(tacticsSt, {
 assert(tacticsNav.panelSub.dungeon === "setup", "tactics sync forces setup sub");
 
 /* Week A: dungeon sweep + daily all-clear */
-assert(DUNGEON_SWEEP_COUNTS.includes(10), "sweep counts include 10");
-assert(!DUNGEON_SWEEP_COUNTS.includes(1), "sweep drops single-run (use 進攻)");
+assert(DUNGEON_SUMMON_MIN === 1 && DUNGEON_SUMMON_MAX === 10, "summon range 1-10");
+assert(clampDungeonSummonCount(0) === 1 && clampDungeonSummonCount(99) === 10, "clamp summon count");
+assert(DUNGEON_SWEEP_COUNTS.includes(5), "legacy sweep counts");
 assert(DUNGEON_ENTRY_MAT_ID === "mist_token", "entry mat is mist_token");
 assert(DAILY_ALL_CLEAR_BONUS.stones >= 1, "all clear bonus defined");
 assert(!canDungeonSweep(combatSt, "tide_1").ok, "no sweep before clear");
@@ -1125,8 +1155,11 @@ assert(sweepRes.ok && sweepRes.sweep && sweepRes.count === 5, "sweep 5 runs");
 assert(sweepRes.wins >= 1 && sweepRes.totalStones > 0, "sweep aggregate stones");
 assert(dungeonGateView(sweepSt, "tide_1").phase === "idle", "gate idle after sweep");
 const cost5 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 5);
-const cost20 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 20);
-assert(cost20.total > cost5.total, "20-sweep costs more than 5");
+const cost10 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 10);
+assert(cost10.total > cost5.total, "10-sweep costs more than 5");
+assert(clampDungeonSummonCount(7) === 7, "summon count 7 ok");
+const teamPrev = dungeonTeamPreview(sweepSt, "tide_1");
+assert(teamPrev?.ok && teamPrev.allies?.length >= 1 && teamPrev.foes?.length >= 1, "team preview");
 assert(dungeonEntryMatCost("tide_1", 1).mist_token >= 1, "entry cost defined");
 assert(!Object.values(DUNGEON_MAT_DROPS).some((t) => t.weights?.mist_token), "token absent from all dungeon tables");
 
@@ -1221,12 +1254,103 @@ assert(allRes.ok && allRes.claimed === DAILY_QUESTS.length, "claim all dailies")
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const uiSrc = readFileSync(join(__dir, "ui.js"), "utf8");
-assert(uiSrc.includes("data-sweep"), "ui sweep bind");
 assert(uiSrc.includes("data-summon"), "ui summon bind");
+assert(uiSrc.includes("data-attack-preview"), "ui attack preview");
+assert(uiSrc.includes("data-open-dispatch"), "ui dispatch picker modal");
+assert(uiSrc.includes("data-summon-slider"), "ui summon slider");
+assert(uiSrc.includes("data-ranch-sort"), "ui ranch sort");
+assert(uiSrc.includes("pet-grid"), "ui ranch 2-col grid");
 assert(uiSrc.includes("panel-subnav-dock"), "ui subnav near bottom tabs");
 assert(uiSrc.includes("function wrapStage"), "ui has wrapStage layout helper");
 assert(uiSrc.includes("tabs-bottom"), "ui has bottom tab bar");
 assert(uiSrc.includes("statsSheetHtml"), "ui has stats resource sheet");
+
+/* Ranch idle + dispatch gen mult */
+const idlePet = {
+  ...buildPetStats({
+    id: "idle1",
+    species: "reefox",
+    element: "tide",
+    personality: "diligent",
+    cost: 0,
+  }),
+  uid: "idle-ranch-1",
+};
+const idleSt = {
+  feed: 0,
+  dust: 0,
+  materials: { mist_token: 0 },
+  ranch: [idlePet],
+  pets: [],
+  dispatches: [],
+  log: [],
+};
+tickRanchIdle(idleSt, 100);
+assert(idleSt.feed > 0 && idleSt.dust > 0, "ranch idle produces feed/dust");
+assert((idleSt.materials.mist_token || 0) > 0, "ranch idle produces mist_token");
+
+const fightIdle = {
+  ...buildPetStats({
+    id: "idle2",
+    species: "reefox",
+    element: "tide",
+    personality: "fierce",
+    cost: 0,
+  }),
+  uid: "idle-ranch-2",
+};
+const idleFightSt = {
+  feed: 0,
+  dust: 0,
+  materials: { mist_token: 0 },
+  ranch: [fightIdle],
+  pets: [],
+  dispatches: [],
+  log: [],
+};
+tickRanchIdle(idleFightSt, 100);
+assert(idleSt.feed > idleFightSt.feed, "diligent idle > fierce idle");
+
+const mission = DISPATCH_MISSIONS.find((m) => !m.needSite) || DISPATCH_MISSIONS[0];
+const gen3Pet = {
+  ...buildPetStats({
+    id: "d3",
+    species: "reefox",
+    element: "tide",
+    personality: "patient",
+    cost: 0,
+  }),
+  uid: "disp-gen3",
+  generation: 3,
+};
+const dispSt = {
+  stones: 0,
+  scrap: 0,
+  feed: 0,
+  dust: 0,
+  materials: {},
+  ranch: [gen3Pet],
+  pets: [],
+  dispatches: [
+    {
+      dispatchId: "d-test",
+      missionId: mission.id,
+      petUids: ["disp-gen3"],
+      readyAt: Date.now() - 1000,
+      claimed: false,
+    },
+  ],
+  stats: {},
+  daily: { date: todayKey(), progress: {}, claimed: {}, idleSec: 0 },
+  log: [],
+  achievements: {},
+};
+const beforeStones = mission.reward?.stones || 0;
+const claimR = claimDispatch(dispSt, "d-test");
+assert(claimR.ok, "claim dispatch ok");
+if (beforeStones) {
+  assert(dispSt.stones >= Math.round(beforeStones * 1.25), "gen3 dispatch reward mult");
+}
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
