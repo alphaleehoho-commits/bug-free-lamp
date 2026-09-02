@@ -142,7 +142,6 @@ import {
   eggsView,
   tickCultivation,
   tickRanchIdle,
-  startDispatch,
   claimDispatch,
 } from "./engine.js";
 import {
