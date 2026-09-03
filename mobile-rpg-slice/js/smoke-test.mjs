@@ -118,6 +118,10 @@ import {
   DUNGEON_ENTRY_MAT_ID,
   dungeonEntryMatCost,
   todayKey,
+  TRAIN_DEPTH_MULT,
+  TRAIN_TIER_COUNT,
+  TRAIN_ZONE_CHAIN,
+  rollTideKeyDrop,
 } from "./data.js";
 import {
   affordMaterials,
@@ -153,6 +157,12 @@ import {
   breedStatus,
   breedBusyUids,
   useBreedTicket,
+  advanceTrainTier,
+  challengeTrainWarden,
+  trainClearEfficiency,
+  trainDepthMultFor,
+  partyCombatPower,
+  trainIdleCombatView,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -603,13 +613,13 @@ const dual = buildPetStats({
 assert(dual.personality2Id === "gentle" && dual.personality2Name, "build dual pe");
 
 /* P11: material hints + unlock helpers */
-assert(MATERIAL_SOURCE_INDEX.tide_dew?.sites?.includes("潮岸練場"), "tide_dew shore");
-assert(MATERIAL_SOURCE_INDEX.coral_shard?.sites?.includes("廢墟影堂"), "coral ruins only");
-assert(!MATERIAL_SOURCE_INDEX.coral_shard?.sites?.includes("潮岸練場"), "coral not on shore");
+assert(MATERIAL_SOURCE_INDEX.tide_dew?.sites?.includes("潮岸域"), "tide_dew shore");
+assert(MATERIAL_SOURCE_INDEX.coral_shard?.sites?.includes("廢墟域"), "coral ruins only");
+assert(!MATERIAL_SOURCE_INDEX.coral_shard?.sites?.includes("潮岸域"), "coral not on shore");
 assert(MATERIAL_SOURCE_INDEX.seal_ember?.sites?.length === 1, "ember single site");
-assert(materialSourceLabel("seal_ember").includes("暗潮心壇"), "ember source");
+assert(materialSourceLabel("seal_ember").includes("暗潮域"), "ember source");
 assert(!materialSourceLabel("seal_ember").includes("霧絲"), "ember not mixed");
-assert(trainSiteUnlockHint(TRAIN_SITES.find((s) => s.id === "ruins"))?.includes("一層"), "ruins hint");
+assert(trainSiteUnlockHint(TRAIN_SITES.find((s) => s.id === "ruins"))?.includes("域主"), "ruins hint");
 assert(dungeonNameForClear("tide_1").includes("一層"), "dungeon name");
 const fakeMats = { materials: { tide_dew: 0, mist_silk: 2 } };
 const aff = affordMaterials(fakeMats, { tide_dew: 2, mist_silk: 1 });
@@ -923,7 +933,7 @@ const tickMatSt = {
   trainSite: "shore",
   pets: [],
   ranch: [],
-  lastTick: Date.now() - 25_000,
+  lastTick: Date.now() - 40_000,
   daily: { date: "x", idleSec: 0, progress: {}, claimed: {} },
   achievements: {},
   stats: {},
@@ -932,7 +942,7 @@ const tickMatSt = {
   log: [],
 };
 tickCultivation(tickMatSt);
-assert(Math.floor(tickMatSt.materials.tide_dew) >= 1, "deterministic train mats over 25s");
+assert(Math.floor(tickMatSt.materials.tide_dew) >= 1, "deterministic train mats over 40s");
 
 /* P13: egg-first tutorial flow */
 const tut = { done: false, step: "hatch_starter", flags: { starterHatched: true } };
@@ -1462,6 +1472,97 @@ assert(breedQSt.breedJobs.length === 1, "claimed job removed");
 breedQSt.materials.breed_ticket = 1;
 const ticket = useBreedTicket(breedQSt);
 assert(ticket.ok && breedStatus(breedQSt).claimable.length === 1, "breed ticket readies job");
+
+/* Tide zones: mist tiers, depth yield, warden keys */
+assert(TRAIN_ZONE_CHAIN.length === TRAIN_SITES.length, "zone chain matches sites");
+assert(TRAIN_DEPTH_MULT.length === TRAIN_TIER_COUNT + 1, "depth mult fog+warden");
+assert(MATERIALS.tide_key_1?.tier === "key" && MATERIALS.warden_echo?.tier === "key", "key mats");
+assert(
+  !TRAIN_SITES.some((s) => (s.drops || []).some((d) => MATERIALS[d.mat]?.tier === "key")),
+  "no keys on AFK drops"
+);
+const gKey = rollTideKeyDrop("tide_1", { guaranteed: true });
+assert(gKey?.matId === "tide_key_1", "guaranteed tide key");
+let keyHits = 0;
+for (let i = 0; i < 40; i++) {
+  if (rollTideKeyDrop("tide_1", { bossCleared: true })) keyHits += 1;
+}
+assert(keyHits >= 15 && keyHits < 40, "tide key high chance not always");
+
+const strongPet = {
+  ...buildPetStats({
+    id: "tz1",
+    species: "reefox",
+    element: "tide",
+    personality: "fierce",
+    cost: 0,
+  }),
+  uid: "tz-pet",
+  atk: 80,
+  hp: 400,
+  spd: 40,
+  generation: 2,
+};
+const tzSt = {
+  stones: 100,
+  materials: { tide_key_1: 3, tide_dew: 0, coral_shard: 0, warden_echo: 0 },
+  trainSite: "shore",
+  trainMap: { zones: { shore: { tiersCleared: 0 } }, wardenCleared: {} },
+  pets: [strongPet],
+  ranch: [],
+  clearedDungeons: {},
+  log: [],
+  daily: { date: todayKey(), progress: {}, claimed: {} },
+  stats: {},
+  achievements: {},
+};
+assert(trainDepthMultFor(tzSt, "shore") === 1, "depth mist1");
+const d0 = Math.floor(tzSt.materials.tide_dew);
+// bump depth by clearing tiers with forced win via high power
+for (let i = 0; i < 4; i++) {
+  const ar = advanceTrainTier(tzSt);
+  assert(ar.ok, `advance tier ${i + 1}`);
+}
+assert(tzSt.trainMap.zones.shore.tiersCleared === 4, "4 mist tiers cleared");
+assert(trainDepthMultFor(tzSt, "shore") === 1.35, "depth at mist4");
+assert(!unlockedTrainSiteIds(tzSt).includes("ruins"), "ruins locked until warden");
+const wFailKey = { ...tzSt, materials: { ...tzSt.materials, tide_key_1: 0 } };
+assert(!challengeTrainWarden(wFailKey).ok, "warden needs key");
+const w1 = challengeTrainWarden(tzSt);
+assert(w1.ok && w1.firstClear, "warden first clear");
+assert(tzSt.trainMap.wardenCleared.shore, "shore warden flagged");
+assert(trainDepthMultFor(tzSt, "shore") === 1.5, "depth after warden");
+assert(unlockedTrainSiteIds(tzSt).includes("ruins"), "ruins unlock via warden");
+assert(tzSt.materials.tide_key_1 === 2, "key spent on warden");
+// rematch rare
+tzSt.trainSite = "shore";
+const rem = challengeTrainWarden(tzSt);
+assert(rem.ok && rem.rematch, "warden rematch");
+assert((tzSt.materials.warden_echo || 0) >= 1, "rematch drops echo");
+assert(tzSt.materials.tide_key_1 === 1, "rematch spends key");
+const effStrong = trainClearEfficiency(
+  { ...tzSt, pets: [strongPet], trainSite: "shore", trainMap: tzSt.trainMap },
+  "shore"
+);
+const effWeak = trainClearEfficiency(
+  {
+    ...tzSt,
+    pets: [{ ...strongPet, atk: 2, hp: 20, spd: 2, uid: "weak" }],
+    trainSite: "shore",
+    trainMap: tzSt.trainMap,
+  },
+  "shore"
+);
+assert(effStrong > effWeak, "strong party higher AFK efficiency");
+const idle = trainIdleCombatView(tzSt);
+assert(idle.allies?.length >= 1 && idle.foes?.length >= 1, "idle combat strip data");
+assert(DAILY_QUESTS.some((q) => q.id === "train_tier"), "daily train_tier");
+assert(DAILY_QUESTS.some((q) => q.id === "train_warden"), "daily train_warden");
+
+const uiSrc2 = readFileSync(join(__dir, "ui.js"), "utf8");
+assert(uiSrc2.includes("data-advance-tier"), "ui advance mist tier");
+assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
+assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

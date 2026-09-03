@@ -81,6 +81,10 @@ import {
   tideSealView,
   setTrainSite,
   trainSitesView,
+  trainMapView,
+  trainIdleCombatView,
+  advanceTrainTier,
+  challengeTrainWarden,
   trainDailySpotlightView,
   materialHintsView,
   dungeonDailyView,
@@ -1540,16 +1544,45 @@ function tabBtn(id, label, busy) {
   return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${glow}" data-tab="${id}" ${disabled}>${label}</button>`;
 }
 
+function trainIdleStripHtml(idle) {
+  if (!idle) return "";
+  const allyBars = (idle.allies || [])
+    .map(
+      (u) => `<div class="combat-unit" data-element="${escapeHtml(u.elementId || "")}">
+      <span class="cu-name">${escapeHtml(u.name)}</span>
+      <div class="cu-bar"><i style="width:${u.hpPct || 0}%"></i></div>
+    </div>`
+    )
+    .join("") || `<div class="muted">無出戰靈寵</div>`;
+  const foeBars = (idle.foes || [])
+    .map(
+      (u) => `<div class="combat-unit" data-element="${escapeHtml(u.elementId || "")}">
+      <span class="cu-name">${escapeHtml(u.name)}</span>
+      <div class="cu-bar"><i style="width:${u.hpPct || 0}%"></i></div>
+    </div>`
+    )
+    .join("");
+  return `<div class="train-idle-strip" data-live="train-idle">
+    <p class="meta train-idle-log">${escapeHtml(idle.logLine || "")}</p>
+    <div class="combat-roster train-idle-roster">
+      <div class="combat-side allies">${allyBars}</div>
+      <div class="combat-side foes">${foeBars}</div>
+    </div>
+  </div>`;
+}
+
 function cultivatePanel(qiPct, next, m) {
   const br = breakthroughView(state);
   const seal = tideSealView(state);
-  const sites = trainSitesView(state);
+  const map = trainMapView(state);
+  const sites = map.sites || trainSitesView(state);
   const siteBtns = sites
     .filter((s) => s.unlocked && !areTrainSitesLocked(state))
     .map((s) => {
       const focus = s.focus ? ` ·${s.focus}` : "";
       const spot = s.isDailySpot ? " ☀" : "";
-      return `<button type="button" class="${s.selected ? "primary" : "secondary"} train-site-btn${s.isDailySpot ? " is-daily-spot" : ""}" data-set-train="${s.id}" title="${escapeHtml(s.desc || "")}">${escapeHtml(s.name)}${escapeHtml(focus)}${spot}</button>`;
+      const depth = s.wardenCleared ? " ·主" : ` ·${Math.min((s.tiersCleared || 0) + 1, s.tierCount || 4)}`;
+      return `<button type="button" class="${s.selected ? "primary" : "secondary"} train-site-btn${s.isDailySpot ? " is-daily-spot" : ""}" data-set-train="${s.id}" title="${escapeHtml(s.desc || "")}">${escapeHtml(s.name)}${escapeHtml(focus)}${depth}${spot}</button>`;
     })
     .join("");
   const siteCur = sites.find((s) => s.selected);
@@ -1563,10 +1596,14 @@ function cultivatePanel(qiPct, next, m) {
     : "";
   const rateLines = (siteCur?.rates?.lines || [])
     .slice(0, 4)
-    .map(
-      (r) =>
-        `<li class="train-rate ${r.tag ? "is-boosted" : ""}"><span>${escapeHtml(r.name)}</span><span class="muted">≈${r.perHr}/時${r.tag ? ` · ${escapeHtml(r.tag)}` : ""}</span></li>`
-    )
+    .map((r) => {
+      const dm = siteCur?.depthMult || 1;
+      const em = siteCur?.efficiency || 1;
+      const adj = (Number(r.perHr) * dm * em).toFixed(r.kind === "mat" ? 1 : 0);
+      return `<li class="train-rate ${r.tag ? "is-boosted" : ""}"><span>${escapeHtml(r.name)}</span><span class="muted">≈${adj}/時${
+        r.tag ? ` · ${escapeHtml(r.tag)}` : ""
+      } ·深×${fmtMult(dm)}·效×${fmtMult(em)}</span></li>`;
+    })
     .join("");
 
   const shopOffers = shopView(state);
@@ -1643,9 +1680,31 @@ function cultivatePanel(qiPct, next, m) {
     );
   }
 
+  const tierDock = siteCur
+    ? `<div class="row train-tier-actions">
+        ${
+          siteCur.canAdvance
+            ? `<button type="button" class="primary" data-advance-tier>推進霧階</button>`
+            : ""
+        }
+        ${
+          siteCur.canChallengeWarden
+            ? `<button type="button" class="primary" data-challenge-warden>挑戰域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`
+            : ""
+        }
+        ${
+          siteCur.canRematchWarden
+            ? `<button type="button" class="secondary" data-challenge-warden>複打域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`
+            : ""
+        }
+        ${(state.materials?.breed_ticket || 0) >= 1 ? `<button type="button" class="secondary" data-act="use-breed-ticket">催生符</button>` : ""}
+        ${(state.materials?.blood_catalyst || 0) >= 1 ? `<button type="button" class="secondary" data-act="use-blood-catalyst">血統催化</button>` : ""}
+      </div>`
+    : `<div class="row"></div>`;
+
   return wrapStage(
     nav,
-    `<h2>契壇修行</h2>
+    `<h2>契壇修行 · 潮域</h2>
     <p class="lead">御靈師【${escapeHtml(m.name)}】· 牧場 ${ranchN}／${ranchCap(state)} · 重心在靈寵</p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 【${escapeHtml(br.cur?.name || "")}】→【${escapeHtml(br.next.name)}】</p>
@@ -1654,18 +1713,17 @@ function cultivatePanel(qiPct, next, m) {
         ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
         : ""
     }
-    <h3>練功地點 ×${fmtMult(siteCur?.qiMult || 1)}${siteCur?.focus ? ` · 專精${escapeHtml(siteCur.focus)}` : ""}${siteCur?.isDailySpot ? " · 今日強化" : ""}</h3>
+    <h3>潮域 ×${fmtMult(siteCur?.qiMult || 1)}${siteCur?.focus ? ` · 專精${escapeHtml(siteCur.focus)}` : ""}${siteCur?.isDailySpot ? " · 今日強化" : ""}</h3>
     ${spotNote}
     <div class="row tactics-row">${siteBtns}</div>
     ${trainLockNote}
-    <p class="meta">${escapeHtml(siteCur?.desc || "")} · 專精主產物 +35% · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
+    <p class="meta">${escapeHtml(siteCur?.depthLabel || "")} · 深度 ×${fmtMult(siteCur?.depthMult || 1)} · 出戰效率 ×${fmtMult(siteCur?.efficiency || 1)} · ${escapeHtml(siteCur?.keyName || "潮鑰")} ${siteCur?.keyHave ?? 0}</p>
+    <p class="meta">${escapeHtml(siteCur?.desc || "")} · 產物種類跟潮域 · 產量隨霧階／戰力 · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
+    ${trainIdleStripHtml(map.idle)}
     ${trainRatesBlockHtml(rateLines)}
-    <p class="meta muted">練功打 bulk；洗劑／催化／催生符僅秘境</p>
+    <p class="meta muted">潮鑰由秘境高機率掉落 · 域主消耗潮鑰 · 複打掉稀有材</p>
     ${materialsBlockHtml()}`,
-    `<div class="row">
-      ${(state.materials?.breed_ticket || 0) >= 1 ? `<button type="button" class="secondary" data-act="use-breed-ticket">催生符</button>` : ""}
-      ${(state.materials?.blood_catalyst || 0) >= 1 ? `<button type="button" class="secondary" data-act="use-blood-catalyst">血統催化</button>` : ""}
-    </div>`
+    tierDock
   );
 }
 
@@ -3368,6 +3426,24 @@ function bind() {
       setFlash(r.msg);
     });
   });
+  app.querySelectorAll("[data-advance-tier]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = advanceTrainTier(state);
+      saveState(state);
+      panelSub = { ...panelSub, cultivate: "train" };
+      render();
+      setFlash(r.msg, r.ok ? "unlock" : "");
+    });
+  });
+  app.querySelectorAll("[data-challenge-warden]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = challengeTrainWarden(state);
+      saveState(state);
+      panelSub = { ...panelSub, cultivate: "train" };
+      render();
+      setFlash(r.msg, r.ok ? (r.firstClear ? "unlock" : "celebrate") : "");
+    });
+  });
   app.querySelectorAll("[data-open-dispatch]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) {
@@ -3671,6 +3747,20 @@ setInterval(() => {
       saveState(state);
       render();
       return;
+    }
+  }
+  if (tab === "cultivate" && panelSub.cultivate === "train") {
+    const strip = document.querySelector("[data-live=train-idle]");
+    if (strip) {
+      const idle = trainIdleCombatView(state);
+      // 輕量刷新血條／文案，唔成頁重繪
+      const log = strip.querySelector(".train-idle-log");
+      if (log) log.textContent = idle.logLine || "";
+      const bars = strip.querySelectorAll(".cu-bar i");
+      const units = [...(idle.allies || []), ...(idle.foes || [])];
+      bars.forEach((el, i) => {
+        if (units[i]) el.style.width = `${units[i].hpPct || 0}%`;
+      });
     }
   }
   if (eggReadyNow || adv.advanced || snap !== tutorialSnapCache) {

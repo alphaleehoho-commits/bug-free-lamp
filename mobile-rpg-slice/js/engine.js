@@ -164,6 +164,14 @@ import {
   DUNGEON_ENTRY_MAT_ID,
   dungeonEntryMatCost,
   dungeonEntryTokenPerRun,
+  TRAIN_TIER_COUNT,
+  TRAIN_DEPTH_MULT,
+  TRAIN_ZONE_CHAIN,
+  trainZoneMeta,
+  trainTierThreat,
+  trainWardenThreat,
+  rollTideKeyDrop,
+  DUNGEON_TIDE_KEY,
 } from "./data.js";
 import {
   normalizeTutorial,
@@ -197,7 +205,17 @@ function defaultMaster() {
 function emptyDaily(now = Date.now()) {
   return {
     date: todayKey(now),
-    progress: { idle: 0, dungeon: 0, bond: 0, breed: 0, win: 0, dispatch: 0, fuse: 0 },
+    progress: {
+      idle: 0,
+      dungeon: 0,
+      bond: 0,
+      breed: 0,
+      win: 0,
+      dispatch: 0,
+      fuse: 0,
+      train_tier: 0,
+      train_warden: 0,
+    },
     /** questId → true */
     claimed: {},
     /** 累積掛機秒數（當日） */
@@ -207,6 +225,90 @@ function emptyDaily(now = Date.now()) {
     /** 今日全清獎已領 */
     allClearClaimed: false,
   };
+}
+
+function emptyTrainMap() {
+  return { zones: {}, wardenCleared: {} };
+}
+
+/** 舊存檔：用秘境首通補域主標記，避免已解鎖潮域被鎖返 */
+function migrateTrainMap(parsed) {
+  const base = emptyTrainMap();
+  const from = parsed?.trainMap || {};
+  base.wardenCleared = { ...(from.wardenCleared || {}) };
+  base.zones = { ...(from.zones || {}) };
+  const clears = parsed?.clearedDungeons || {};
+  // 依鏈推：通關對應秘境 → 視為已打通「開該域所需」之前的域主
+  for (const z of TRAIN_ZONE_CHAIN) {
+    if (!z.prevZone) continue;
+    const site = trainSiteById(z.id);
+    if (site?.needClear && clears[site.needClear]) {
+      base.wardenCleared[z.prevZone] = true;
+    }
+  }
+  return base;
+}
+
+function ensureTrainMap(state) {
+  if (!state.trainMap || typeof state.trainMap !== "object") {
+    state.trainMap = migrateTrainMap(state);
+  }
+  if (!state.trainMap.zones) state.trainMap.zones = {};
+  if (!state.trainMap.wardenCleared) state.trainMap.wardenCleared = {};
+  return state.trainMap;
+}
+
+function ensureZoneProgress(state, zoneId) {
+  ensureTrainMap(state);
+  const id = zoneId || state.trainSite || "shore";
+  if (!state.trainMap.zones[id]) {
+    state.trainMap.zones[id] = { tiersCleared: 0 };
+  }
+  const z = state.trainMap.zones[id];
+  if (z.tiersCleared == null) z.tiersCleared = 0;
+  return z;
+}
+
+/** 出戰隊綜合戰力（掛機效率／霧階判定） */
+export function partyCombatPower(pets) {
+  const list = pets || [];
+  if (!list.length) return 0;
+  let sum = 0;
+  for (const p of list) {
+    const atk = p.atk || 0;
+    const hp = p.hp || 0;
+    const spd = p.spd || 0;
+    const gen = petGeneration(p) || 0;
+    const fus = p.fusionLevel || 0;
+    sum += atk + hp * 0.1 + spd * 0.55 + gen * 4 + fus * 6;
+  }
+  return Math.round(sum);
+}
+
+/** 深度倍率索引：0–3 霧階；4＝已通域主 */
+export function trainDepthIndex(state, zoneId) {
+  ensureTrainMap(state);
+  const id = zoneId || state.trainSite || "shore";
+  if (state.trainMap.wardenCleared?.[id]) return 4;
+  const z = ensureZoneProgress(state, id);
+  return Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0));
+}
+
+export function trainDepthMultFor(state, zoneId) {
+  const idx = trainDepthIndex(state, zoneId);
+  return TRAIN_DEPTH_MULT[idx] ?? 1;
+}
+
+/** 出戰 vs 當前霧階威脅 → 掛機效率（0.35–1.35；無出戰保底 0.7） */
+export function trainClearEfficiency(state, zoneId = null) {
+  const id = zoneId || state.trainSite || "shore";
+  const power = partyCombatPower(state.pets);
+  const depthIdx = trainDepthIndex(state, id);
+  const threat = trainTierThreat(id, depthIdx);
+  if (threat <= 0) return 1;
+  if (power <= 0) return 0.7;
+  const ratio = power / threat;
+  return Math.max(0.35, Math.min(1.35, Math.round(ratio * 100) / 100));
 }
 
 function emptyLoginStreak(now = Date.now()) {
@@ -231,6 +333,7 @@ function defaultState() {
     dust: 8,
     materials: mats,
     trainSite: "shore",
+    trainMap: emptyTrainMap(),
     inventory: [],
     master: defaultMaster(),
     pets: [],
@@ -471,6 +574,7 @@ export function loadState() {
       dust: parsed.dust ?? 0,
       materials: mergedMats,
       trainSite: TRAIN_SITES.some((s) => s.id === parsed.trainSite) ? parsed.trainSite : "shore",
+      trainMap: migrateTrainMap(parsed),
       inventory,
       pending: Array.isArray(parsed.pending) ? parsed.pending : [],
       clearedDungeons: parsed.clearedDungeons || {},
@@ -653,23 +757,25 @@ export function materialHintsView(state) {
   }));
 }
 
-/** 練功地點掛機產材料 */
+/** 練功潮域掛機產材料（產物表不變；產量 × 深度 × 出戰效率） */
 export function tickTrainSite(state, elapsedSec) {
   if (elapsedSec <= 0) return { mats: {}, feed: 0, dust: 0 };
+  ensureTrainMap(state);
   const site = trainSiteById(state.trainSite);
   if (!isTrainSiteUnlocked(state, site.id)) {
     state.trainSite = "shore";
   }
   const active = trainSiteById(state.trainSite);
   if (!state.materials) state.materials = emptyMaterials();
+  const depthMult = trainDepthMultFor(state, active.id);
+  const eff = trainClearEfficiency(state, active.id);
   const gained = {};
   let feed = 0;
   let dust = 0;
   for (const drop of active.drops || []) {
-    const mult = trainDropMult(active, drop, todayKey());
+    const mult = trainDropMult(active, drop, todayKey()) * depthMult * eff;
     if (drop.mat) {
       const expected = (drop.perSec || 0) * mult * elapsedSec;
-      // 用累積小數，避免每秒 tick 只有 ~5% 機率出料、新手空等
       const before = state.materials[drop.mat] || 0;
       const after = before + expected;
       state.materials[drop.mat] = after;
@@ -687,32 +793,355 @@ export function tickTrainSite(state, elapsedSec) {
       dust += d;
     }
   }
-  return { mats: gained, feed, dust, site: active };
+  return {
+    mats: gained,
+    feed,
+    dust,
+    site: active,
+    depthMult,
+    efficiency: eff,
+  };
 }
 
 export function setTrainSite(state, siteId) {
   if (!TRAIN_SITES.some((s) => s.id === siteId)) {
-    return { ok: false, msg: "未知練功地點。" };
+    return { ok: false, msg: "未知潮域。" };
   }
   if (!isTrainSiteUnlocked(state, siteId)) {
     const site = trainSiteById(siteId);
-    return { ok: false, msg: `尚未解鎖【${site.name}】（需通關對應秘境）。` };
+    return { ok: false, msg: `尚未解鎖【${site.name}】（${trainSiteUnlockHint(site) || "需打通上一域主"}）。` };
   }
   state.trainSite = siteId;
-  return { ok: true, msg: `練功地：${trainSiteById(siteId).name}` };
+  ensureZoneProgress(state, siteId);
+  return { ok: true, msg: `潮域：${trainSiteById(siteId).name}` };
 }
 
 export function trainSitesView(state) {
+  ensureTrainMap(state);
   const cur = state.trainSite || "shore";
   const spot = trainDailySpotlightView();
-  return TRAIN_SITES.map((s) => ({
-    ...s,
-    unlocked: isTrainSiteUnlocked(state, s.id),
-    selected: s.id === cur,
-    unlockHint: trainSiteUnlockHint(s),
-    isDailySpot: spot?.siteId === s.id,
-    rates: trainSiteRatesView(s),
+  return TRAIN_SITES.map((s) => {
+    const z = ensureZoneProgress(state, s.id);
+    const wardenDone = !!state.trainMap.wardenCleared?.[s.id];
+    const depthIdx = trainDepthIndex(state, s.id);
+    const depthMult = TRAIN_DEPTH_MULT[depthIdx] ?? 1;
+    const eff = s.id === cur ? trainClearEfficiency(state, s.id) : null;
+    const meta = trainZoneMeta(s.id);
+    return {
+      ...s,
+      unlocked: isTrainSiteUnlocked(state, s.id),
+      selected: s.id === cur,
+      unlockHint: trainSiteUnlockHint(s),
+      isDailySpot: spot?.siteId === s.id,
+      rates: trainSiteRatesView(s),
+      tiersCleared: z.tiersCleared | 0,
+      tierCount: TRAIN_TIER_COUNT,
+      wardenCleared: wardenDone,
+      depthMult,
+      depthLabel: wardenDone
+        ? "域主已通"
+        : `霧階 ${Math.min((z.tiersCleared | 0) + 1, TRAIN_TIER_COUNT)}/${TRAIN_TIER_COUNT}`,
+      efficiency: eff,
+      keyMatId: meta.keyMatId,
+      keyName: MATERIALS[meta.keyMatId]?.name || "潮鑰",
+      keyHave: Math.floor(state.materials?.[meta.keyMatId] || 0),
+      canAdvance: !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT,
+      canChallengeWarden: !wardenDone && (z.tiersCleared | 0) >= TRAIN_TIER_COUNT,
+      canRematchWarden: wardenDone,
+    };
+  });
+}
+
+/** 推進當前潮域下一霧階（出戰隊簡化判定） */
+export function advanceTrainTier(state) {
+  ensureTrainMap(state);
+  const zoneId = state.trainSite || "shore";
+  if (!isTrainSiteUnlocked(state, zoneId)) {
+    return { ok: false, msg: "潮域未解鎖。" };
+  }
+  const z = ensureZoneProgress(state, zoneId);
+  if (state.trainMap.wardenCleared?.[zoneId]) {
+    return { ok: false, msg: "域主已通——可複打域主刷稀有材，或切換其他潮域。" };
+  }
+  if ((z.tiersCleared | 0) >= TRAIN_TIER_COUNT) {
+    return { ok: false, msg: "霧階已清——請挑戰域主關。" };
+  }
+  if (!(state.pets || []).length) {
+    return { ok: false, msg: "請先派出至少一隻靈寵。" };
+  }
+  const tier = z.tiersCleared | 0;
+  const threat = trainTierThreat(zoneId, tier);
+  const power = partyCombatPower(state.pets);
+  const site = trainSiteById(zoneId);
+  const combat = simulateTrainSkirmish(state.pets, threat, `霧階${tier + 1}`);
+  if (!combat.won) {
+    pushLog(state, `【${site.name}】霧階${tier + 1}未破（戰力 ${power}／威脅 ${threat}）。`);
+    return {
+      ok: false,
+      msg: `霧階${tier + 1}未破 · 戰力 ${power}＜威脅 ${threat}`,
+      combat,
+      power,
+      threat,
+    };
+  }
+  z.tiersCleared = tier + 1;
+  bumpDaily(state, "train_tier", 1);
+  const primary = site.primaryMat;
+  const reward = {};
+  if (primary) {
+    if (!state.materials) state.materials = emptyMaterials();
+    state.materials[primary] = (state.materials[primary] || 0) + 1;
+    reward[primary] = 1;
+  }
+  state.stones = (state.stones || 0) + 5;
+  pushLog(
+    state,
+    `【${site.name}】攻破霧階${tier + 1}！產量上限升至 ×${trainDepthMultFor(state, zoneId).toFixed(2)}。`
+  );
+  return {
+    ok: true,
+    msg:
+      z.tiersCleared >= TRAIN_TIER_COUNT
+        ? `霧階全破 · 可挑戰域主（需${MATERIALS[trainZoneMeta(zoneId).keyMatId]?.name || "潮鑰"}）`
+        : `攻破霧階${tier + 1} · 深度 ×${trainDepthMultFor(state, zoneId).toFixed(2)}`,
+    combat,
+    tiersCleared: z.tiersCleared,
+    reward,
+  };
+}
+
+/** 挑戰／複打域主（扣潮鑰；首次開下一潮域；複打掉稀有材） */
+export function challengeTrainWarden(state) {
+  ensureTrainMap(state);
+  const zoneId = state.trainSite || "shore";
+  if (!isTrainSiteUnlocked(state, zoneId)) {
+    return { ok: false, msg: "潮域未解鎖。" };
+  }
+  const z = ensureZoneProgress(state, zoneId);
+  const meta = trainZoneMeta(zoneId);
+  const site = trainSiteById(zoneId);
+  const rematch = !!state.trainMap.wardenCleared?.[zoneId];
+  if (!rematch && (z.tiersCleared | 0) < TRAIN_TIER_COUNT) {
+    return { ok: false, msg: "請先攻破全部霧階。" };
+  }
+  if (!(state.pets || []).length) {
+    return { ok: false, msg: "請先派出至少一隻靈寵。" };
+  }
+  const keyId = meta.keyMatId;
+  if (!state.materials) state.materials = emptyMaterials();
+  if (Math.floor(state.materials[keyId] || 0) < 1) {
+    return {
+      ok: false,
+      msg: `潮鑰不足（需【${MATERIALS[keyId]?.name || keyId}】· 秘境高機率掉落）。`,
+    };
+  }
+  // 勝負都扣
+  state.materials[keyId] -= 1;
+  bumpDaily(state, "train_warden", 1);
+  const threat = trainWardenThreat(zoneId);
+  const power = partyCombatPower(state.pets);
+  const combat = simulateTrainSkirmish(state.pets, threat, `${site.name}域主`);
+  if (!combat.won) {
+    pushLog(state, `【${site.name}】域主未破，潮鑰已耗（戰力 ${power}／威脅 ${threat}）。`);
+    return {
+      ok: false,
+      msg: `域主未破 · 已扣潮鑰 · 戰力 ${power}／威脅 ${threat}`,
+      combat,
+      keySpent: true,
+      rematch,
+    };
+  }
+
+  if (!rematch) {
+    state.trainMap.wardenCleared[zoneId] = true;
+    const nextMeta = TRAIN_ZONE_CHAIN.find((x) => x.prevZone === zoneId);
+    let unlockMsg = "";
+    if (nextMeta) {
+      unlockMsg = ` · 解鎖【${trainSiteById(nextMeta.id).name}】`;
+      // 自動切入下一潮域
+      if (isTrainSiteUnlocked(state, nextMeta.id)) {
+        state.trainSite = nextMeta.id;
+        ensureZoneProgress(state, nextMeta.id);
+      }
+    }
+    pushLog(state, `打通【${site.name}】域主！本域掛機深度拉滿${unlockMsg}。`);
+    return {
+      ok: true,
+      msg: `域主已破 · 深度 ×${trainDepthMultFor(state, zoneId).toFixed(2)}${unlockMsg}`,
+      combat,
+      firstClear: true,
+      unlockedZoneId: nextMeta?.id || null,
+      keySpent: true,
+    };
+  }
+
+  // 複打獎勵
+  const rem = meta.rematch || {};
+  if (rem.stones) state.stones = (state.stones || 0) + rem.stones;
+  if (rem.materials) addMaterials(state, rem.materials);
+  const bits = [];
+  if (rem.stones) bits.push(`${rem.stones}石`);
+  for (const [id, n] of Object.entries(rem.materials || {})) {
+    bits.push(`${MATERIALS[id]?.name || id}×${n}`);
+  }
+  pushLog(state, `複打【${site.name}】域主成功，獲 ${bits.join("／")}。`);
+  return {
+    ok: true,
+    msg: `複打成功 · ${bits.join("／")}`,
+    combat,
+    rematch: true,
+    reward: rem,
+    keySpent: true,
+  };
+}
+
+/** 簡易潮域戰鬥（文字＋血條事件，供 UI／判定） */
+function simulateTrainSkirmish(pets, threat, label) {
+  const allies = (pets || []).map((p, i) => ({
+    uid: p.uid || `ally-${i}`,
+    name: displayPetName(p),
+    hp: Math.max(20, p.hp || 40),
+    maxHp: Math.max(20, p.hp || 40),
+    atk: Math.max(3, p.atk || 8),
+    elementId: p.elementId || "tide",
+    side: "ally",
   }));
+  const foeHp = Math.max(40, Math.round(threat * 1.8));
+  const foeAtk = Math.max(4, Math.round(threat * 0.22));
+  const foes = [
+    {
+      uid: "foe-0",
+      name: label || "霧影",
+      hp: foeHp,
+      maxHp: foeHp,
+      atk: foeAtk,
+      elementId: "gloom",
+      side: "foe",
+    },
+  ];
+  const events = [{ type: "wave", label: label || "潮域戰" }];
+  const power = partyCombatPower(pets);
+  // 戰力遠超威脅則穩勝；接近則機率；明顯不足則穩敗（測試／節奏可預期）
+  let won;
+  if (power >= threat * 1.15) won = true;
+  else if (power <= threat * 0.55) won = false;
+  else {
+    const chance = Math.max(0.12, Math.min(0.88, power / Math.max(1, threat) * 0.8));
+    won = Math.random() < chance;
+  }
+  let round = 0;
+  const a = allies.map((x) => ({ ...x }));
+  const f = foes.map((x) => ({ ...x }));
+  while (round < 12 && a.some((x) => x.hp > 0) && f.some((x) => x.hp > 0)) {
+    round += 1;
+    events.push({ type: "round", n: round });
+    const actor = a.find((x) => x.hp > 0);
+    const target = f.find((x) => x.hp > 0);
+    if (actor && target) {
+      const dmg = Math.max(1, Math.floor(actor.atk * (0.85 + Math.random() * 0.4)));
+      target.hp = Math.max(0, target.hp - dmg);
+      events.push({
+        type: "strike",
+        actorUid: actor.uid,
+        targetUid: target.uid,
+        dmg,
+        targetHp: target.hp,
+        text: `${actor.name} 擊中 ${target.name} −${dmg}`,
+      });
+      if (target.hp <= 0) events.push({ type: "ko", uid: target.uid, name: target.name });
+    }
+    if (!f.some((x) => x.hp > 0)) break;
+    const fa = f.find((x) => x.hp > 0);
+    const at = a.find((x) => x.hp > 0);
+    if (fa && at) {
+      let dmg = Math.max(1, Math.floor(fa.atk * (0.8 + Math.random() * 0.35)));
+      if (!won && round >= 3) dmg = Math.max(dmg, Math.ceil(at.hp / 2));
+      if (won && round >= 2) dmg = Math.min(dmg, Math.max(1, Math.floor(at.maxHp * 0.2)));
+      at.hp = Math.max(0, at.hp - dmg);
+      events.push({
+        type: "strike",
+        actorUid: fa.uid,
+        targetUid: at.uid,
+        dmg,
+        targetHp: at.hp,
+        text: `${fa.name} 反擊 ${at.name} −${dmg}`,
+      });
+      if (at.hp <= 0) events.push({ type: "ko", uid: at.uid, name: at.name });
+    }
+  }
+  // 強制結局對齊 won 旗標
+  if (won) {
+    for (const x of f) x.hp = 0;
+  } else if (a.every((x) => x.hp > 0) && f.every((x) => x.hp <= 0)) {
+    // random said lose but sim wiped foes — soften
+  }
+  return {
+    won,
+    events,
+    combatStart: { allies, foes },
+    power,
+    threat,
+    label,
+  };
+}
+
+/** UI：閒置掛機戰場快照（文字單位＋血條） */
+export function trainIdleCombatView(state) {
+  ensureTrainMap(state);
+  const zoneId = state.trainSite || "shore";
+  const site = trainSiteById(zoneId);
+  const depthIdx = trainDepthIndex(state, zoneId);
+  const threat = trainTierThreat(zoneId, depthIdx);
+  const eff = trainClearEfficiency(state, zoneId);
+  const depthMult = trainDepthMultFor(state, zoneId);
+  const allies = (state.pets || []).slice(0, 4).map((p, i) => ({
+    uid: p.uid || `idle-a-${i}`,
+    name: displayPetName(p),
+    hpPct: Math.min(100, Math.round(40 + eff * 55)),
+    elementId: p.elementId || "tide",
+    side: "ally",
+  }));
+  const foeName =
+    state.trainMap.wardenCleared?.[zoneId]
+      ? `${site.name}殘影`
+      : `霧階影·${depthIdx + 1}`;
+  const foes = [
+    {
+      uid: "idle-f-0",
+      name: foeName,
+      hpPct: Math.min(100, Math.round(100 - eff * 45)),
+      elementId: "gloom",
+      side: "foe",
+    },
+  ];
+  return {
+    zoneId,
+    zoneName: site.name,
+    depthLabel: state.trainMap.wardenCleared?.[zoneId]
+      ? "域主已通"
+      : `霧階 ${depthIdx + 1}/${TRAIN_TIER_COUNT}`,
+    depthMult,
+    efficiency: eff,
+    power: partyCombatPower(state.pets),
+    threat,
+    allies,
+    foes,
+    logLine:
+      allies.length === 0
+        ? "未出戰——掛機效率最低（請編成出戰隊）"
+        : `掛機清場中 · 效率 ×${eff.toFixed(2)} · 深度 ×${depthMult.toFixed(2)}`,
+  };
+}
+
+export function trainMapView(state) {
+  ensureTrainMap(state);
+  const sites = trainSitesView(state);
+  const cur = sites.find((s) => s.selected) || sites[0];
+  return {
+    sites,
+    current: cur,
+    idle: trainIdleCombatView(state),
+  };
 }
 
 export function materialsView(state) {
@@ -797,7 +1226,17 @@ function ensureDaily(dailyOrState, now = Date.now()) {
       state.daily = emptyDaily(now);
     }
     if (!state.daily.progress) {
-      state.daily.progress = { idle: 0, dungeon: 0, bond: 0, breed: 0, win: 0, dispatch: 0, fuse: 0 };
+      state.daily.progress = {
+        idle: 0,
+        dungeon: 0,
+        bond: 0,
+        breed: 0,
+        win: 0,
+        dispatch: 0,
+        fuse: 0,
+        train_tier: 0,
+        train_warden: 0,
+      };
     }
     if (!state.daily.claimed) state.daily.claimed = {};
     if (state.daily.hubDismissed == null) state.daily.hubDismissed = false;
@@ -2974,16 +3413,24 @@ export function runDungeon(state, dungeonId, opts = {}) {
         state.stones += bonusStones;
         state.scrap += bonusScrap;
         state.clearedDungeons[dungeonId] = true;
-        // 主線：首通解鎖對應練功地圖
+        // 主線：首通仍提示舊練功解鎖（潮域主路徑改走域主）
         for (const site of TRAIN_SITES) {
           if (site.needClear === dungeonId) {
             unlockedSites.push(site.name);
-            pushLog(state, `主線推進：解鎖練功地【${site.name}】！`);
+            pushLog(state, `秘境回響：【${site.name}】相關潮鑰機率提升。`);
           }
         }
         note(
           `攻克【${d.name}】，獲靈石 ${d.reward.stones}、碎片 ${d.reward.scrap}。首通額外 +${bonusStones} 石／+${bonusScrap} 碎片！`
         );
+        // 首通保底潮鑰 1
+        {
+          const keyDrop = rollTideKeyDrop(dungeonId, { guaranteed: true, bossCleared });
+          if (keyDrop) {
+            addMaterials(state, { [keyDrop.matId]: keyDrop.amount || 1 });
+            say(`首通獲【${MATERIALS[keyDrop.matId]?.name || keyDrop.matId}】×1！`);
+          }
+        }
         if (dungeonId === "tide_3") {
           if (!state.materials) state.materials = emptyMaterials();
           state.materials.fuse_sand = (state.materials.fuse_sand || 0) + 2;
@@ -3089,6 +3536,16 @@ export function runDungeon(state, dungeonId, opts = {}) {
         const mname = MATERIALS[drop.matId]?.name || drop.matId;
         const why = bossCleared ? "（BOSS 掉落加成）" : eliteCleared ? "（精英掉落加成）" : "";
         say(`拾獲【${mname}】×${drop.amount || 1}${why}！`);
+      }
+      // 潮鑰：高機率、非必然（首通已另給保底）
+      if (!first) {
+        const keyDrop = rollTideKeyDrop(dungeonId, { bossCleared });
+        if (keyDrop) {
+          addMaterials(state, { [keyDrop.matId]: keyDrop.amount || 1 });
+          say(`獲得【${MATERIALS[keyDrop.matId]?.name || keyDrop.matId}】×1！`);
+        } else {
+          say("潮霧散去——未掉落潮鑰。");
+        }
       }
     }
   }
@@ -4355,6 +4812,10 @@ export {
   GEAR_SETS,
   MATERIALS,
   TRAIN_SITES,
+  TRAIN_TIER_COUNT,
+  TRAIN_DEPTH_MULT,
+  TRAIN_ZONE_CHAIN,
+  trainZoneMeta,
   upgradeMatCost,
   breedMatCost,
   skillMatCost,
@@ -4362,8 +4823,8 @@ export {
   primaryTrainSiteForMat,
   suggestTrainForShortage,
   trainDailySpotlightView,
-  trainDropMult,
   trainSiteRatesView,
+  trainDropMult,
   TRAIN_FOCUS_BONUS,
   TRAIN_DAILY_SPOT_BONUS,
   pickDailyTrainSpotlight,
@@ -4375,4 +4836,6 @@ export {
   buildDungeonForTier,
   dungeonTrialFor,
   dungeonDisplayName,
+  rollTideKeyDrop,
+  DUNGEON_TIDE_KEY,
 };

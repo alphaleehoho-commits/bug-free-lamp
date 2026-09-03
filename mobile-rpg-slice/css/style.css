@@ -977,6 +977,17 @@ button.flash-act {
 .train-site-btn.is-daily-spot:not(.is-locked) {
   box-shadow: inset 0 0 0 1px rgba(232, 184, 109, 0.55);
 }
+.train-idle-strip {
+  margin: 0.55rem 0 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 88%, #1a2430);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+}
+.train-idle-log { margin: 0 0 0.4rem; font-size: 0.86rem; }
+.train-idle-roster { gap: 0.45rem; }
+.train-idle-roster .combat-unit { min-width: 0; }
+.train-tier-actions { flex-wrap: wrap; gap: 0.4rem; }
 .train-daily-spot {
   margin: 0.15rem 0 0.35rem;
   font-size: 0.62rem;
