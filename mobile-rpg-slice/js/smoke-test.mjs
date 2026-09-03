@@ -159,6 +159,7 @@ import {
   useBreedTicket,
   advanceTrainTier,
   challengeTrainWarden,
+  setTrainDepth,
   trainClearEfficiency,
   trainDepthMultFor,
   partyCombatPower,
@@ -1559,10 +1560,17 @@ assert(idle.allies?.length >= 1 && idle.foes?.length >= 1, "idle combat strip da
 assert(DAILY_QUESTS.some((q) => q.id === "train_tier"), "daily train_tier");
 assert(DAILY_QUESTS.some((q) => q.id === "train_warden"), "daily train_warden");
 
+const setD = setTrainDepth(tzSt, 1);
+assert(setD.ok && trainDepthMultFor(tzSt, "shore") === TRAIN_DEPTH_MULT[1], "set depth to tier 2");
+const setDFail = setTrainDepth({ ...tzSt, trainMap: { ...tzSt.trainMap, wardenCleared: {} }, trainSite: "shore" }, 4);
+assert(!setDFail.ok, "cannot set depth beyond cleared");
+
 const uiSrc2 = readFileSync(join(__dir, "ui.js"), "utf8");
 assert(uiSrc2.includes("data-advance-tier"), "ui advance mist tier");
 assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
+assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
+assert(uiSrc2.includes('id: "mats"'), "ui materials sub-tab");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
