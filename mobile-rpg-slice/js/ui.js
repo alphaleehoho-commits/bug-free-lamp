@@ -21,9 +21,14 @@ import {
   dungeonSweepCost,
   startDungeonSummon,
   dungeonGateView,
+  dungeonAttackBlockReason,
+  isFusionUnlocked,
   forgeHint,
   tryBreed,
+  claimBreed,
   breedStatus,
+  breedBusyUids,
+  BREED_QUEUE_MAX,
   breedPreview,
   petLineage,
   dungeonStatus,
@@ -839,6 +844,9 @@ function markTutorialSubVisit(group, id) {
   } else if (group === "party" && id === "dispatch" && step === "dispatch") {
     const adv = markTutorialFlag(state, "dispatchVisited");
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+  } else if (group === "party" && id === "breed" && step === "breed_intro") {
+    const adv = markTutorialFlag(state, "breedVisited");
+    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
   } else if (group === "dungeon" && id === "setup" && step === "tactics") {
     const adv = markTutorialFlag(state, "tacticsVisited");
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
@@ -898,7 +906,7 @@ function upgradeMatSummaryHtml(level) {
 }
 
 function upgradeCostLine(stoneCost, feedCost, level) {
-  return `${fmtMatQty(stoneCost)}靈石／${fmtMatQty(feedCost)}飼料＋${upgradeMatSummaryHtml(level)}`;
+  return `飼料 ${fmtMatQty(feedCost)} 或 靈石 ${fmtMatQty(stoneCost)} ＋ ${upgradeMatSummaryHtml(level)}`;
 }
 
 function matChipsHtml() {
@@ -1982,12 +1990,7 @@ function petsListView() {
   const syn = partySynergy(state.pets);
   const synNote = syn.labels.length ? syn.labels.join("、") : "同元素／種類／親子可羈絆";
 
-  const nav = panelSubNav("party", [
-    { id: "fight", label: "出戰" },
-    { id: "ranch", label: "牧場" },
-    { id: "dispatch", label: "派遣" },
-    { id: "bond", label: "待契" },
-  ]);
+  const nav = partyNavHtml();
   const sub = panelSub.party;
 
   if (sub === "ranch") {
@@ -1997,10 +2000,13 @@ function petsListView() {
       <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 蛋 ${(state.eggs || []).length}/6 · 待命微產飼料／靈塵／潮霧令</p>
       <h3>寵物蛋</h3>
       <ul class="list">${eggRows}</ul>
-      <div class="row"><button type="button" class="primary${tutGlow({ type: "act", act: "open-breed" })}" data-act="open-breed">繁殖</button></div>
       <div class="ranch-sort" role="group" aria-label="牧場排序">${sortOpts}</div>
       <ul class="pet-grid">${ranchList}</ul>`
     );
+  }
+  if (sub === "breed") {
+    const breed = petsBreedView();
+    return wrapStage(nav, breed.body, breed.dock);
   }
   if (sub === "dispatch") {
     return wrapStage(
@@ -2107,51 +2113,114 @@ function lineageHtml(lineage) {
 function petsBreedView() {
   const bs = breedStatus(state);
   const ranch = state.ranch || [];
+  const dispatchBusy = new Set(dispatchView(state).busyUids || []);
+  const matingBusy = new Set(bs.busyUids || []);
   const selected = new Set(petView.breedParents || []);
-  const cdSec = Math.ceil(bs.cooldownLeftMs / 1000);
-  const list =
-    ranch
-      .map((p) => {
-        const on = selected.has(p.uid);
-        const r = rarityInfo(p.rarity ?? 0);
-        const lineBadge = p.bornFrom?.length
-          ? `<span class="lineage-tag" title="有繁殖血統">血</span>`
-          : "";
-        return `
-        <li class="card-row">
-          <div>
-            <strong>${lineBadge}${escapeHtml(displayPetName(p))}</strong>
-            <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
-              petGeneration(p)
-            )} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}</span>
-          </div>
-          <button type="button" class="${on ? "primary" : ""}" data-breed-toggle="${escapeHtml(p.uid)}">${on ? "已選" : "選擇"}</button>
-        </li>`;
-      })
-      .join("") || `<li class="empty">牧場需要至少兩隻靈寵才能繁殖。</li>`;
-
   const [ua, ub] = petView.breedParents || [];
   const pa = ranch.find((p) => p.uid === ua);
   const pb = ranch.find((p) => p.uid === ub);
+
+  const jobRows =
+    (bs.jobs || [])
+      .map((j) => {
+        const sec = Math.ceil((j.leftMs || 0) / 1000);
+        if (j.ready) {
+          return `<li class="card-row breed-job is-ready">
+            <div>
+              <strong>${escapeHtml(j.names?.[0] || "？")} × ${escapeHtml(j.names?.[1] || "？")}</strong>
+              <span class="muted">孕育完成 · 可領子代</span>
+              <div class="bar breed-cd-bar"><i style="width:100%"></i></div>
+            </div>
+            <button type="button" class="primary success" data-breed-claim="${escapeHtml(j.id)}">領取子代</button>
+          </li>`;
+        }
+        return `<li class="card-row breed-job">
+          <div>
+            <strong>${escapeHtml(j.names?.[0] || "？")} × ${escapeHtml(j.names?.[1] || "？")}</strong>
+            <span class="muted">孕育中 · 剩餘 <strong>${sec}s</strong></span>
+            <div class="bar breed-cd-bar"><i style="width:${j.pct || 0}%"></i></div>
+          </div>
+          <span class="pet-tag pet-tag-dispatch">交配中</span>
+        </li>`;
+      })
+      .join("") ||
+    `<li class="empty muted">尚無交配中——下方選雙親開始（最多 ${bs.queueMax || BREED_QUEUE_MAX} 欄，似秘境召喚）。</li>`;
+
+  const slotHtml = (pet, idx) => {
+    if (!pet) {
+      return `<div class="breed-slot is-empty"><span class="muted">空位 ${idx + 1} · 下方加入</span></div>`;
+    }
+    return `<div class="breed-slot">
+      ${petIconFromPet(pet, { size: 36 })}
+      <div>
+        <strong>${escapeHtml(displayPetName(pet))}</strong>
+        <span class="muted">${genTagHtml(petGeneration(pet))} · ${escapeHtml(pet.elementName)}·${escapeHtml(pet.personalityName)}</span>
+      </div>
+      <button type="button" class="secondary" data-breed-toggle="${escapeHtml(pet.uid)}">移除</button>
+    </div>`;
+  };
+
+  const idlePets = ranch.filter((p) => !dispatchBusy.has(p.uid));
+  const list =
+    idlePets
+      .map((p) => {
+        const on = selected.has(p.uid);
+        const mating = matingBusy.has(p.uid);
+        const r = rarityInfo(p.rarity ?? 0);
+        return `
+        <li class="card-row">
+          <div>
+            <strong>${escapeHtml(displayPetName(p))}</strong>
+            <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
+              petGeneration(p)
+            )} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}${
+              mating ? " · 交配中" : ""
+            }</span>
+          </div>
+          <button type="button" class="${on ? "primary" : "secondary"}" data-breed-toggle="${escapeHtml(p.uid)}" ${
+            mating && !on ? "disabled" : ""
+          }>${mating ? "交配中" : on ? "已選" : "加入交配"}</button>
+        </li>`;
+      })
+      .join("") || `<li class="empty">牧場需要待命靈寵才能交配（派遣中不可用）。</li>`;
+
   const preview = pa && pb ? breedPreview(pa, pb) : null;
   const bMat =
     pa && pb
       ? breedMatCost(petGeneration(pa), petGeneration(pb))
       : { coral_shard: 1 };
   const bMatHtml = matAffordHtml(bMat);
+  const canStart =
+    selected.size === 2 &&
+    bs.ready &&
+    !!pa &&
+    !!pb &&
+    !matingBusy.has(pa.uid) &&
+    !matingBusy.has(pb.uid);
 
-  const ready = selected.size === 2 && bs.ready && ranch.length < ranchCap(state);
-  return wrapStage(
-    "",
-    `<h2>繁殖</h2>
-    ${preview ? breedPreviewHtml(preview, bMatHtml) : `<p class="lead">${BREED_STONE_COST} 石＋材料 · 選擇雙親預覽結果</p>`}
-    ${!bs.ready ? `<p class="meta">冷卻 ${cdSec}s</p>` : ""}
-    <ul class="list">${list}</ul>`,
-    `<div class="row">
-      <button type="button" class="primary" data-breed-confirm ${ready ? "" : "disabled"}>確認（${selected.size}/2）</button>
-      <button type="button" data-pet-back>返回</button>
-    </div>`
-  );
+  const body = `<h2>靈寵 · 繁殖</h2>
+    <p class="lead">開始交配後進入孕育（約 ${Math.ceil((bs.cooldownTotalMs || 45000) / 1000)}s），就緒再領子代 · 欄位 ${bs.slotsUsed || 0}/${bs.queueMax || BREED_QUEUE_MAX} · ${BREED_STONE_COST} 石＋材料</p>
+    <h3>孕育中／可領</h3>
+    <ul class="list breed-job-list">${jobRows}</ul>
+    <h3>新一輪交配</h3>
+    <div class="breed-slots">${slotHtml(pa, 0)}${slotHtml(pb, 1)}</div>
+    ${preview ? breedPreviewHtml(preview, bMatHtml) : `<p class="meta">選擇雙親後顯示預覽</p>`}
+    <h3>待命靈寵</h3>
+    <ul class="list">${list}</ul>`;
+  const dock = `<div class="row">
+      <button type="button" class="primary${tutGlow({ type: "act", act: "start-breed" })}" data-breed-confirm ${canStart ? "" : "disabled"}>開始交配（${selected.size}/2）</button>
+    </div>`;
+  return { body, dock };
+}
+
+function partyNavHtml() {
+  return panelSubNav("party", [
+    { id: "fight", label: "出戰" },
+    { id: "ranch", label: "牧場" },
+    { id: "breed", label: "繁殖" },
+    { id: "dispatch", label: "派遣" },
+    { id: "bond", label: "待契" },
+  ]);
 }
 
 function petsDetailView() {
@@ -2229,13 +2298,17 @@ function petsDetailView() {
       <button type="button" data-rename="${escapeHtml(pet.uid)}">命名</button>
     </div>`,
     `<div class="row">
-      <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade="${escapeHtml(pet.uid)}">升級</button>
-      <button type="button" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升</button>
+      <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升級</button>
+      <button type="button" class="secondary" data-upgrade="${escapeHtml(pet.uid)}">靈石升級</button>
       <button type="button" data-upgrade-skill="${escapeHtml(pet.uid)}" ${skillMaxed ? "disabled" : ""}>技能</button>
       <button type="button" data-temper-oil="${escapeHtml(pet.uid)}" ${(state.materials?.temper_oil || 0) < 1 ? "disabled" : ""}>洗性格${(state.materials?.temper_oil || 0) > 0 ? `（${state.materials.temper_oil}）` : ""}</button>
     </div>
     <div class="row">
-      <button type="button" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>
+      ${
+        isFusionUnlocked(state)
+          ? `<button type="button" class="primary${tutGlow({ type: "start-fuse" })}" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>`
+          : ""
+      }
       ${
         deployed
           ? `<button type="button" data-undeploy="${escapeHtml(pet.uid)}">撤回</button>`
@@ -2299,7 +2372,6 @@ function petsFuseView() {
 function petsPanel() {
   if (petView.mode === "detail") return petsDetailView();
   if (petView.mode === "fuse") return petsFuseView();
-  if (petView.mode === "breed") return petsBreedView();
   return petsListView();
 }
 
@@ -2727,15 +2799,23 @@ function dungeonPanel() {
           const tokenHave = Math.floor(state.materials?.mist_token || 0);
           const baseCdMs = dCur.cooldownMs || gate?.baseCdMs || 20_000;
 
-          // 首通／教學：直接進攻
+          // 首通／教學：直接進攻（鎖階段仍可撳，彈原因）
           if (!gate?.needsSummon) {
+            const block = locked ? dungeonAttackBlockReason(state, dCur.id) : null;
             return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">
             ${pager}
-            <button type="button" class="primary dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" data-attack-preview="${escapeHtml(dCur.id)}" data-attack-mode="single" data-dungeon="${escapeHtml(dCur.id)}" ${
-              locked ? "disabled" : ""
-            }>進攻 · ${escapeHtml(dCur.name)}</button>
+            <button type="button" class="primary dungeon-attack-btn${tutGlow({ type: "dungeon", dungeonId: dCur.id })}" ${
+              locked
+                ? `data-dungeon-blocked="${escapeHtml(dCur.id)}"`
+                : `data-attack-preview="${escapeHtml(dCur.id)}" data-attack-mode="single" data-dungeon="${escapeHtml(dCur.id)}"`
+            }>${locked ? `無法進攻 · ${escapeHtml(stageAt(dCur.needRealm).name)}` : `進攻 · ${escapeHtml(dCur.name)}`}</button>
           </div>
+          ${
+            locked && block
+              ? `<p class="dungeon-lock-reason">${escapeHtml(block)}</p>`
+              : ""
+          }
         </div>`;
           }
 
@@ -2954,7 +3034,9 @@ function bind() {
           const adv = markTutorialFlag(state, "breedVisited");
           if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
         }
-        petView = { mode: "breed", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+        tab = "party";
+        panelSub = { ...panelSub, party: "breed" };
+        petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
         render();
       } else if (act === "use-breed-ticket") {
         const r = useBreedTicket(state);
@@ -3148,16 +3230,12 @@ function bind() {
       const r = tryBreed(state, a, b);
       saveState(state);
       if (r.ok) {
+        // 開始交配＝進孕育欄（似秘境召喚），唔即出子代
         petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+        panelSub = { ...panelSub, party: "breed" };
       }
       render();
-      let tone = "";
-      if (r.ok && r.celebrate) {
-        if (r.hybrid) tone = "hybrid";
-        else if ((r.rarity ?? 0) >= 3) tone = "legend";
-        else tone = "celebrate";
-      }
-      if (r.ok) setFlash(r.msg, tone);
+      if (r.ok) setFlash(r.msg, "unlock");
       else flashResult(r);
     });
   });
@@ -3394,6 +3472,11 @@ function bind() {
   });
   app.querySelectorAll("[data-start-fuse]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (!isFusionUnlocked(state)) {
+        setFlash("通關秘境三【潮汐廢墟 · 心核】後解鎖融合。");
+        window.alert("通關秘境三【潮汐廢墟 · 心核】後解鎖融合。融砂練功地亦同時開放。");
+        return;
+      }
       petView = {
         mode: "fuse",
         uid: null,
@@ -3454,6 +3537,23 @@ function bind() {
       flashResult(r);
     });
   });
+  
+  app.querySelectorAll("[data-breed-claim]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = claimBreed(state, btn.dataset.breedClaim);
+      saveState(state);
+      panelSub = { ...panelSub, party: "breed" };
+      render();
+      let tone = "";
+      if (r.ok && r.celebrate) {
+        if (r.hybrid) tone = "hybrid";
+        else if ((r.rarity ?? 0) >= 3) tone = "legend";
+        else tone = "celebrate";
+      }
+      if (r.ok) setFlash(r.msg, tone);
+      else flashResult(r);
+    });
+  });
   app.querySelectorAll("[data-pet-back]").forEach((btn) => {
     btn.addEventListener("click", () => {
       petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
@@ -3483,11 +3583,25 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       if (playback && !playback.done) return;
+      const dungeonId = btn.dataset.attackPreview;
+      const block = dungeonAttackBlockReason(state, dungeonId);
+      if (block) {
+        setFlash(block);
+        return;
+      }
       attackPreview = {
-        dungeonId: btn.dataset.attackPreview,
+        dungeonId,
         mode: btn.dataset.attackMode === "sweep" ? "sweep" : "single",
       };
       render();
+    });
+  });
+  app.querySelectorAll("[data-dungeon-blocked]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.dungeonBlocked;
+      const msg = dungeonAttackBlockReason(state, id) || "目前無法進攻此秘境。";
+      setFlash(msg);
+      window.alert(msg);
     });
   });
 }
@@ -3548,6 +3662,15 @@ setInterval(() => {
         if (summonFlip) setFlash("潮霧已凝成秘境——可以開始挑戰！", "unlock");
         return;
       }
+    }
+  }
+  if (tab === "party" && panelSub.party === "breed" && petView.mode === "list") {
+    const bs = breedStatus(state);
+    const gestating = (bs.jobs || []).some((j) => !j.ready);
+    if (gestating || (bs.claimable || []).length) {
+      saveState(state);
+      render();
+      return;
     }
   }
   if (eggReadyNow || adv.advanced || snap !== tutorialSnapCache) {
