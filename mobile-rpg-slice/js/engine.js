@@ -1104,7 +1104,7 @@ function simulateTrainSkirmish(pets, threat, label) {
   };
 }
 
-/** UI：閒置掛機戰場快照（文字單位＋血條） */
+/** UI：閒置掛機戰場 live state（帶時間演進） */
 export function trainIdleCombatView(state) {
   ensureTrainMap(state);
   const zoneId = state.trainSite || "shore";
@@ -1116,23 +1116,18 @@ export function trainIdleCombatView(state) {
   const allies = (state.pets || []).slice(0, 4).map((p, i) => ({
     uid: p.uid || `idle-a-${i}`,
     name: displayPetName(p),
-    hpPct: Math.min(100, Math.round(40 + eff * 55)),
+    hpPct: 100,
     elementId: p.elementId || "tide",
+    atk: Math.max(3, p.atk || 8),
+    maxHp: Math.max(20, p.hp || 40),
     side: "ally",
   }));
   const foeName =
     state.trainMap.wardenCleared?.[zoneId]
       ? `${site.name}殘影`
       : `霧階影·${depthIdx + 1}`;
-  const foes = [
-    {
-      uid: "idle-f-0",
-      name: foeName,
-      hpPct: Math.min(100, Math.round(100 - eff * 45)),
-      elementId: "gloom",
-      side: "foe",
-    },
-  ];
+  const foeHp = Math.max(40, Math.round(threat * 1.6));
+  const foeAtk = Math.max(3, Math.round(threat * 0.18));
   return {
     zoneId,
     zoneName: site.name,
@@ -1144,7 +1139,15 @@ export function trainIdleCombatView(state) {
     power: partyCombatPower(state.pets),
     threat,
     allies,
-    foes,
+    foe: {
+      uid: "idle-f-0",
+      name: foeName,
+      hp: foeHp,
+      maxHp: foeHp,
+      atk: foeAtk,
+      elementId: "gloom",
+      side: "foe",
+    },
     logLine:
       allies.length === 0
         ? "未出戰——掛機效率最低（請編成出戰隊）"

@@ -1556,7 +1556,7 @@ const effWeak = trainClearEfficiency(
 );
 assert(effStrong > effWeak, "strong party higher AFK efficiency");
 const idle = trainIdleCombatView(tzSt);
-assert(idle.allies?.length >= 1 && idle.foes?.length >= 1, "idle combat strip data");
+assert(idle.allies?.length >= 1 && idle.foe?.hp > 0, "idle combat strip data");
 assert(DAILY_QUESTS.some((q) => q.id === "train_tier"), "daily train_tier");
 assert(DAILY_QUESTS.some((q) => q.id === "train_warden"), "daily train_warden");
 
