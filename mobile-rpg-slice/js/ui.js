@@ -25,7 +25,10 @@ import {
   isFusionUnlocked,
   forgeHint,
   tryBreed,
+  claimBreed,
   breedStatus,
+  breedBusyUids,
+  BREED_QUEUE_MAX,
   breedPreview,
   petLineage,
   dungeonStatus,
@@ -2110,13 +2113,38 @@ function lineageHtml(lineage) {
 function petsBreedView() {
   const bs = breedStatus(state);
   const ranch = state.ranch || [];
-  const busy = new Set(dispatchView(state).busyUids || []);
+  const dispatchBusy = new Set(dispatchView(state).busyUids || []);
+  const matingBusy = new Set(bs.busyUids || []);
   const selected = new Set(petView.breedParents || []);
-  const cdSec = Math.ceil(bs.cooldownLeftMs / 1000);
-  const pair = bs.pair;
   const [ua, ub] = petView.breedParents || [];
   const pa = ranch.find((p) => p.uid === ua);
   const pb = ranch.find((p) => p.uid === ub);
+
+  const jobRows =
+    (bs.jobs || [])
+      .map((j) => {
+        const sec = Math.ceil((j.leftMs || 0) / 1000);
+        if (j.ready) {
+          return `<li class="card-row breed-job is-ready">
+            <div>
+              <strong>${escapeHtml(j.names?.[0] || "？")} × ${escapeHtml(j.names?.[1] || "？")}</strong>
+              <span class="muted">孕育完成 · 可領子代</span>
+              <div class="bar breed-cd-bar"><i style="width:100%"></i></div>
+            </div>
+            <button type="button" class="primary success" data-breed-claim="${escapeHtml(j.id)}">領取子代</button>
+          </li>`;
+        }
+        return `<li class="card-row breed-job">
+          <div>
+            <strong>${escapeHtml(j.names?.[0] || "？")} × ${escapeHtml(j.names?.[1] || "？")}</strong>
+            <span class="muted">孕育中 · 剩餘 <strong>${sec}s</strong></span>
+            <div class="bar breed-cd-bar"><i style="width:${j.pct || 0}%"></i></div>
+          </div>
+          <span class="pet-tag pet-tag-dispatch">交配中</span>
+        </li>`;
+      })
+      .join("") ||
+    `<li class="empty muted">尚無交配中——下方選雙親開始（最多 ${bs.queueMax || BREED_QUEUE_MAX} 欄，似秘境召喚）。</li>`;
 
   const slotHtml = (pet, idx) => {
     if (!pet) {
@@ -2132,29 +2160,12 @@ function petsBreedView() {
     </div>`;
   };
 
-  const matingSlots =
-    pair && !bs.ready
-      ? `<div class="breed-mating">
-          <p class="breed-mating-label">交配冷卻中</p>
-          <div class="breed-slots">
-            <div class="breed-slot is-cooling"><strong>${escapeHtml(pair.names?.[0] || "雙親A")}</strong></div>
-            <div class="breed-slot is-cooling"><strong>${escapeHtml(pair.names?.[1] || "雙親B")}</strong></div>
-          </div>
-        </div>`
-      : `<div class="breed-slots">${slotHtml(pa, 0)}${slotHtml(pb, 1)}</div>`;
-
-  const cdBar = !bs.ready
-    ? `<div class="breed-cd-wrap">
-        <p class="breed-cd-label">繁殖冷卻 · 剩餘 <strong>${cdSec}s</strong></p>
-        <div class="bar breed-cd-bar"><i style="width:${bs.cooldownPct}%"></i></div>
-      </div>`
-    : `<p class="breed-cd-ready">冷卻就緒 · 可再繁殖</p>`;
-
-  const idlePets = ranch.filter((p) => !busy.has(p.uid));
+  const idlePets = ranch.filter((p) => !dispatchBusy.has(p.uid));
   const list =
     idlePets
       .map((p) => {
         const on = selected.has(p.uid);
+        const mating = matingBusy.has(p.uid);
         const r = rarityInfo(p.rarity ?? 0);
         return `
         <li class="card-row">
@@ -2162,14 +2173,16 @@ function petsBreedView() {
             <strong>${escapeHtml(displayPetName(p))}</strong>
             <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
               petGeneration(p)
-            )} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}</span>
+            )} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}${
+              mating ? " · 交配中" : ""
+            }</span>
           </div>
           <button type="button" class="${on ? "primary" : "secondary"}" data-breed-toggle="${escapeHtml(p.uid)}" ${
-            !bs.ready && !on ? "disabled" : ""
-          }>${on ? "已選" : "加入交配"}</button>
+            mating && !on ? "disabled" : ""
+          }>${mating ? "交配中" : on ? "已選" : "加入交配"}</button>
         </li>`;
       })
-      .join("") || `<li class="empty">牧場需要待命靈寵才能繁殖（派遣中不可用）。</li>`;
+      .join("") || `<li class="empty">牧場需要待命靈寵才能交配（派遣中不可用）。</li>`;
 
   const preview = pa && pb ? breedPreview(pa, pb) : null;
   const bMat =
@@ -2177,18 +2190,25 @@ function petsBreedView() {
       ? breedMatCost(petGeneration(pa), petGeneration(pb))
       : { coral_shard: 1 };
   const bMatHtml = matAffordHtml(bMat);
-  const ready =
-    selected.size === 2 && bs.ready && ranch.length < ranchCap(state) && !!pa && !!pb;
+  const canStart =
+    selected.size === 2 &&
+    bs.ready &&
+    !!pa &&
+    !!pb &&
+    !matingBusy.has(pa.uid) &&
+    !matingBusy.has(pb.uid);
 
   const body = `<h2>靈寵 · 繁殖</h2>
-    <p class="lead">${BREED_STONE_COST} 石＋材料 · 選兩隻牧場待命靈寵</p>
-    ${matingSlots}
-    ${cdBar}
+    <p class="lead">開始交配後進入孕育（約 ${Math.ceil((bs.cooldownTotalMs || 45000) / 1000)}s），就緒再領子代 · 欄位 ${bs.slotsUsed || 0}/${bs.queueMax || BREED_QUEUE_MAX} · ${BREED_STONE_COST} 石＋材料</p>
+    <h3>孕育中／可領</h3>
+    <ul class="list breed-job-list">${jobRows}</ul>
+    <h3>新一輪交配</h3>
+    <div class="breed-slots">${slotHtml(pa, 0)}${slotHtml(pb, 1)}</div>
     ${preview ? breedPreviewHtml(preview, bMatHtml) : `<p class="meta">選擇雙親後顯示預覽</p>`}
     <h3>待命靈寵</h3>
     <ul class="list">${list}</ul>`;
   const dock = `<div class="row">
-      <button type="button" class="primary${tutGlow({ type: "act", act: "start-breed" })}" data-breed-confirm ${ready ? "" : "disabled"}>繁殖（${selected.size}/2）</button>
+      <button type="button" class="primary${tutGlow({ type: "act", act: "start-breed" })}" data-breed-confirm ${canStart ? "" : "disabled"}>開始交配（${selected.size}/2）</button>
     </div>`;
   return { body, dock };
 }
@@ -3210,16 +3230,12 @@ function bind() {
       const r = tryBreed(state, a, b);
       saveState(state);
       if (r.ok) {
+        // 開始交配＝進孕育欄（似秘境召喚），唔即出子代
         petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+        panelSub = { ...panelSub, party: "breed" };
       }
       render();
-      let tone = "";
-      if (r.ok && r.celebrate) {
-        if (r.hybrid) tone = "hybrid";
-        else if ((r.rarity ?? 0) >= 3) tone = "legend";
-        else tone = "celebrate";
-      }
-      if (r.ok) setFlash(r.msg, tone);
+      if (r.ok) setFlash(r.msg, "unlock");
       else flashResult(r);
     });
   });
@@ -3521,6 +3537,23 @@ function bind() {
       flashResult(r);
     });
   });
+  
+  app.querySelectorAll("[data-breed-claim]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = claimBreed(state, btn.dataset.breedClaim);
+      saveState(state);
+      panelSub = { ...panelSub, party: "breed" };
+      render();
+      let tone = "";
+      if (r.ok && r.celebrate) {
+        if (r.hybrid) tone = "hybrid";
+        else if ((r.rarity ?? 0) >= 3) tone = "legend";
+        else tone = "celebrate";
+      }
+      if (r.ok) setFlash(r.msg, tone);
+      else flashResult(r);
+    });
+  });
   app.querySelectorAll("[data-pet-back]").forEach((btn) => {
     btn.addEventListener("click", () => {
       petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
@@ -3633,7 +3666,8 @@ setInterval(() => {
   }
   if (tab === "party" && panelSub.party === "breed" && petView.mode === "list") {
     const bs = breedStatus(state);
-    if (!bs.ready) {
+    const gestating = (bs.jobs || []).some((j) => !j.ready);
+    if (gestating || (bs.claimable || []).length) {
       saveState(state);
       render();
       return;

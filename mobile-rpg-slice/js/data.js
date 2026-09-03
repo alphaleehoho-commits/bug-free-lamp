@@ -1381,7 +1381,10 @@ function pickWeighted(weightMap) {
 
 /** 繁殖：靈石消耗、冷卻 */
 export const BREED_STONE_COST = 45;
+/** 單次交配孕育時長（似秘境召喚凝聚） */
 export const BREED_COOLDOWN_MS = 45_000;
+/** 同時進行中的交配欄位上限 */
+export const BREED_QUEUE_MAX = 3;
 export const BREED_ELEMENT_MUTATION_RATE = 0.1;
 
 /**

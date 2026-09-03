@@ -98,6 +98,7 @@ import {
   breedStatInheritancePreview,
   BREED_STONE_COST,
   BREED_COOLDOWN_MS,
+  BREED_QUEUE_MAX,
   FORGE_SCRAP_COST,
   BOND_COST_MAX,
   fusionStoneCost,
@@ -147,6 +148,11 @@ import {
   isFusionUnlocked,
   dungeonAttackBlockReason,
   fusePets,
+  tryBreed,
+  claimBreed,
+  breedStatus,
+  breedBusyUids,
+  useBreedTicket,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -1267,7 +1273,9 @@ assert(uiSrc.includes("data-ranch-sort"), "ui ranch sort");
 assert(uiSrc.includes("pet-grid"), "ui ranch 2-col grid");
 assert(uiSrc.includes('id: "breed"'), "ui breed party sub-tab");
 assert(uiSrc.includes("breed-cd-bar"), "ui breed cd bar");
+assert(uiSrc.includes("data-breed-claim"), "ui breed claim after CD");
 assert(uiSrc.includes("data-dungeon-blocked"), "ui dungeon blocked reason");
+assert(BREED_QUEUE_MAX === 3, "breed queue max 3");
 assert(uiSrc.includes("panel-subnav-dock"), "ui subnav near bottom tabs");
 assert(uiSrc.includes("function wrapStage"), "ui has wrapStage layout helper");
 assert(uiSrc.includes("tabs-bottom"), "ui has bottom tab bar");
@@ -1396,6 +1404,64 @@ const blockRealm = dungeonAttackBlockReason(
   "tide_3"
 );
 assert(blockRealm && blockRealm.includes("御靈"), "tide3 needs 御靈");
+
+/* Breed queue: start → gestate CD → claim (like dungeon summon) */
+function mkBreedPet(uid, species, element) {
+  return {
+    ...buildPetStats({
+      id: uid,
+      species,
+      element,
+      personality: "gentle",
+      cost: 0,
+    }),
+    uid,
+    generation: 0,
+  };
+}
+const breedQSt = {
+  stones: 500,
+  materials: { coral_shard: 20 },
+  ranch: [
+    mkBreedPet("bq-a", "reefox", "tide"),
+    mkBreedPet("bq-b", "reefox", "tide"),
+    mkBreedPet("bq-c", "glowfin", "tide"),
+    mkBreedPet("bq-d", "glowfin", "tide"),
+  ],
+  pets: [],
+  breedJobs: [],
+  breedReadyAt: 0,
+  breedPair: null,
+  dispatches: [],
+  log: [],
+  stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+  bestiary: {},
+  daily: { date: todayKey(), progress: {}, claimed: {} },
+  breedGoals: { date: todayKey(), week: "w", progress: {}, claimed: {} },
+  achievements: {},
+};
+const ranchBefore = breedQSt.ranch.length;
+const start1 = tryBreed(breedQSt, "bq-a", "bq-b");
+assert(start1.ok && start1.started && start1.job?.id, "breed start enqueues job");
+assert(breedQSt.ranch.length === ranchBefore, "breed start does not birth yet");
+assert(breedQSt.breedJobs.length === 1, "one gestating job");
+const start2 = tryBreed(breedQSt, "bq-c", "bq-d");
+assert(start2.ok && breedQSt.breedJobs.length === 2, "second concurrent mating ok");
+const busyDup = tryBreed(breedQSt, "bq-a", "bq-c");
+assert(!busyDup.ok, "busy parent cannot remate");
+assert(breedBusyUids(breedQSt).has("bq-a"), "busy uids lock parents");
+const early = claimBreed(breedQSt, start1.job.id);
+assert(!early.ok && String(early.msg).includes("孕育"), "cannot claim before CD");
+const bsMid = breedStatus(breedQSt);
+assert(bsMid.slotsUsed === 2 && bsMid.claimable.length === 0, "status shows gestating");
+breedQSt.breedJobs[0].readyAt = Date.now() - 1;
+const claim1 = claimBreed(breedQSt, start1.job.id);
+assert(claim1.ok && claim1.pet, "claim after ready births child");
+assert(breedQSt.ranch.length === ranchBefore + 1, "child added on claim");
+assert(breedQSt.breedJobs.length === 1, "claimed job removed");
+breedQSt.materials.breed_ticket = 1;
+const ticket = useBreedTicket(breedQSt);
+assert(ticket.ok && breedStatus(breedQSt).claimable.length === 1, "breed ticket readies job");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

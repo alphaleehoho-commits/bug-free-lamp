@@ -25,6 +25,7 @@ import {
   rollBreedGenes,
   BREED_STONE_COST,
   BREED_COOLDOWN_MS,
+  BREED_QUEUE_MAX,
   BOND_FAIL_RATE_BONUS,
   BOND_FAIL_RATE_CAP,
   FORGE_SCRAP_COST,
@@ -248,6 +249,8 @@ function defaultState() {
     dungeonReadyAt: {},
     dungeonSummon: {},
     breedReadyAt: 0,
+    breedPair: null,
+    breedJobs: [],
     /** P2 */
     bestiary: {},
     daily: emptyDaily(),
@@ -474,6 +477,8 @@ export function loadState() {
       dungeonReadyAt: parsed.dungeonReadyAt || {},
       dungeonSummon: parsed.dungeonSummon || {},
       breedReadyAt: parsed.breedReadyAt || 0,
+      breedPair: parsed.breedPair || null,
+      breedJobs: migrateBreedJobs(parsed),
       breedingUnlocked: true,
       bestiary,
       daily: ensureDaily(parsed.daily),
@@ -3476,32 +3481,44 @@ export function forgeHint(_state) {
   return { ok: false, msg: "靈紋鍛造已廢止——秘境改掉落寵用素材。" };
 }
 
-/** 催生符：立即重置繁殖冷卻 */
+/** 催生符：將最早孕育中的交配立即就緒（可領） */
 export function useBreedTicket(state) {
   if ((state.materials?.breed_ticket || 0) < 1) {
     return { ok: false, msg: "沒有催生符。" };
   }
+  ensureBreedJobs(state);
+  const now = Date.now();
+  const gestating = state.breedJobs
+    .filter((j) => !j.claimed && (j.readyAt || 0) > now)
+    .sort((a, b) => (a.readyAt || 0) - (b.readyAt || 0));
+  if (!gestating.length) {
+    return { ok: false, msg: "目前沒有孕育中的交配。" };
+  }
   state.materials.breed_ticket -= 1;
-  state.breedReadyAt = 0;
-  state.breedPair = null;
-  pushLog(state, "使用催生符，繁殖冷卻已重置。");
-  return { ok: true, msg: "繁殖冷卻已重置" };
+  gestating[0].readyAt = now;
+  pushLog(state, `使用催生符，【${gestating[0].names?.join("×") || "交配"}】提前就緒。`);
+  return { ok: true, msg: "交配已就緒，可領取子代" };
 }
 
-/** 血統催化：縮短當前繁殖冷卻一半 */
+/** 血統催化：縮短最早孕育中交配剩餘時間一半 */
 export function useBloodCatalyst(state) {
   if ((state.materials?.blood_catalyst || 0) < 1) {
     return { ok: false, msg: "沒有血統催化。" };
   }
+  ensureBreedJobs(state);
   const now = Date.now();
-  const left = Math.max(0, (state.breedReadyAt || 0) - now);
-  if (left <= 0) {
-    return { ok: false, msg: "目前沒有繁殖冷卻。" };
+  const gestating = state.breedJobs
+    .filter((j) => !j.claimed && (j.readyAt || 0) > now)
+    .sort((a, b) => (a.readyAt || 0) - (b.readyAt || 0));
+  if (!gestating.length) {
+    return { ok: false, msg: "目前沒有孕育中的交配。" };
   }
+  const job = gestating[0];
+  const left = Math.max(0, (job.readyAt || 0) - now);
   state.materials.blood_catalyst -= 1;
-  state.breedReadyAt = now + Math.floor(left / 2);
-  pushLog(state, "使用血統催化，繁殖冷卻減半。");
-  return { ok: true, msg: "繁殖冷卻減半" };
+  job.readyAt = now + Math.floor(left / 2);
+  pushLog(state, `使用血統催化，【${job.names?.join("×") || "交配"}】孕育時間減半。`);
+  return { ok: true, msg: "孕育時間減半" };
 }
 
 /** 性格洗劑：重抽主性格（耗 1） */
@@ -3757,53 +3774,54 @@ export function claimPathQuest(state, questId) {
 }
 
 /**
- * 牧場雙親繁殖（恐龍突變式）：
- * 雜交新種族 + 稀有度升階 + 元素變異 + 天生繼承；融合仍負責同種升階。
+ * 舊存檔：breedReadyAt／breedPair → breedJobs 佇列
+ * （舊邏輯即出子代＋冷卻；遷移後只保留冷卻展示，唔再補產）
  */
-export function tryBreed(state, uidA, uidB) {
-  if (!uidA || !uidB || uidA === uidB) {
-    return { ok: false, msg: "請選擇兩隻不同的牧場靈寵。" };
+function migrateBreedJobs(parsed) {
+  if (Array.isArray(parsed.breedJobs) && parsed.breedJobs.length) {
+    return parsed.breedJobs.map((j) => ({ ...j }));
   }
-  const now = Date.now();
-  if ((state.breedReadyAt || 0) > now) {
-    const sec = Math.ceil((state.breedReadyAt - now) / 1000);
-    return { ok: false, msg: `繁殖冷卻中（${sec}s）。` };
+  const readyAt = parsed.breedReadyAt || 0;
+  const pair = parsed.breedPair;
+  if (pair && readyAt > Date.now()) {
+    return [
+      {
+        id: `legacy-breed-${readyAt}`,
+        uids: pair.uids || [],
+        names: pair.names || [],
+        readyAt,
+        startedAt: readyAt - BREED_COOLDOWN_MS,
+        genes: null,
+        claimed: true,
+        legacy: true,
+      },
+    ];
   }
-  if (!state.ranch) state.ranch = [];
-  const cap = ranchCap(state);
-  if (state.ranch.length >= cap) {
-    return { ok: false, msg: `牧場已滿（${cap}），無法容納子代。` };
-  }
-  if (state.stones < BREED_STONE_COST) {
-    return { ok: false, msg: `靈石不足（需 ${BREED_STONE_COST}）。` };
-  }
+  return [];
+}
 
-  const a = state.ranch.find((p) => p.uid === uidA);
-  const b = state.ranch.find((p) => p.uid === uidB);
-  if (!a || !b) return { ok: false, msg: "雙親必須都在牧場待命。" };
-  const busy = dispatchBusyUids(state);
-  if (busy.has(uidA) || busy.has(uidB)) {
-    return { ok: false, msg: "派遣中的靈寵不能繁殖。" };
-  }
-  const matCost = breedMatCost(petGeneration(a), petGeneration(b));
-  if (!spendMaterials(state, matCost)) {
-    const sh = shortageHint(state, matCost);
-    return {
-      ok: false,
-      msg: `材料不足（需 ${formatMats(matCost)}）${sh.hint ? `｜${sh.hint}` : ""}。`,
-      suggest: sh.suggest,
-    };
-  }
+function ensureBreedJobs(state) {
+  if (!Array.isArray(state.breedJobs)) state.breedJobs = migrateBreedJobs(state);
+  return state.breedJobs;
+}
 
-  const genes = rollBreedGenes(a, b);
-  state.stones -= BREED_STONE_COST;
-  state.breedReadyAt = now + BREED_COOLDOWN_MS;
-  state.breedPair = {
-    uids: [a.uid, b.uid],
-    names: [displayPetName(a), displayPetName(b)],
-    readyAt: state.breedReadyAt,
-  };
+/** 正在交配／待領的雙親 uid */
+export function breedBusyUids(state) {
+  ensureBreedJobs(state);
+  const set = new Set();
+  for (const j of state.breedJobs) {
+    if (j.claimed || j.legacy) continue;
+    for (const uid of j.uids || []) if (uid) set.add(uid);
+  }
+  return set;
+}
 
+function materializeBreedChild(state, job) {
+  const [uidA, uidB] = job.uids || [];
+  const a = findOwnedPet(state, uidA)?.pet;
+  const b = findOwnedPet(state, uidB)?.pet;
+  if (!a || !b) return { ok: false, msg: "雙親已不在，無法領取子代。" };
+  const genes = job.genes || rollBreedGenes(a, b);
   const child = normalizePet(
     buildPetStats({
       id: `breed-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
@@ -3829,9 +3847,10 @@ export function tryBreed(state, uidA, uidB) {
       child.skillLevel = awaken.skillLevel;
     }
   }
-  child.uid = `${child.templateId}-born`;
+  child.uid = `${child.templateId}-born-${Math.floor(Math.random() * 99999)}`;
   child.bornFrom = [a.uid, b.uid];
   child.generation = genes.generation;
+  if (!state.ranch) state.ranch = [];
   state.ranch.push(child);
 
   if (!state.stats) {
@@ -3858,9 +3877,7 @@ export function tryBreed(state, uidA, uidB) {
     state.stats.gen3Breeds = (state.stats.gen3Breeds || 0) + 1;
   }
   registerBestiary(state, child);
-  if (a.kind !== b.kind) {
-    bumpBreedGoalProgress(state, "daily_hybrid", 1);
-  }
+  if (a.kind !== b.kind) bumpBreedGoalProgress(state, "daily_hybrid", 1);
   progressBreedGoalsFromChild(state, child, genes);
   bumpDaily(state, "breed", 1);
 
@@ -3878,21 +3895,19 @@ export function tryBreed(state, uidA, uidB) {
     born.atk || born.hp || born.spd
       ? `｜天生 +${born.atk}攻/${born.hp}血/${born.spd}速`
       : "";
-  const matNote = formatMats(matCost);
   pushLog(
     state,
-    `繁殖成功：${displayPetName(a)} × ${displayPetName(b)} → ${petLabel(child)}${tagNote}${innNote}｜耗 ${BREED_STONE_COST} 石${matNote ? `／${matNote}` : ""}。`
+    `交配誕生：${displayPetName(a)} × ${displayPetName(b)} → ${petLabel(child)}${tagNote}${innNote}。`
   );
   checkAchievements(state);
   return {
     ok: true,
-    msg: `誕生 ${child.name}${tagNote}${innNote}`,
     pet: child,
-    mutated: genes.mutated,
-    hybrid: genes.hybrid,
-    rarity: genes.rarity,
-    rarityUp: genes.rarityUp,
-    generation: genes.generation,
+    genes,
+    awaken,
+    born,
+    tagNote,
+    innNote,
     celebrate: !!(
       genes.hybrid ||
       genes.rarityUp ||
@@ -3900,6 +3915,125 @@ export function tryBreed(state, uidA, uidB) {
       genes.generation >= 2 ||
       awaken?.label
     ),
+  };
+}
+
+/**
+ * 開始交配（似秘境召喚）：扣費進佇列，孕育完才可領子代。
+ * 可同時進行最多 BREED_QUEUE_MAX 欄。
+ */
+export function tryBreed(state, uidA, uidB) {
+  if (!uidA || !uidB || uidA === uidB) {
+    return { ok: false, msg: "請選擇兩隻不同的牧場靈寵。" };
+  }
+  ensureBreedJobs(state);
+  const active = state.breedJobs.filter((j) => !j.claimed && !j.legacy);
+  if (active.length >= BREED_QUEUE_MAX) {
+    return { ok: false, msg: `交配欄已滿（${BREED_QUEUE_MAX}）。先領取就緒子代或等孕育完成。` };
+  }
+  if (!state.ranch) state.ranch = [];
+  const cap = ranchCap(state);
+  const pendingBirths = active.length;
+  if (state.ranch.length + pendingBirths >= cap) {
+    return { ok: false, msg: `牧場將滿（${cap}），請先騰位再交配。` };
+  }
+  if (state.stones < BREED_STONE_COST) {
+    return { ok: false, msg: `靈石不足（需 ${BREED_STONE_COST}）。` };
+  }
+
+  const a = state.ranch.find((p) => p.uid === uidA);
+  const b = state.ranch.find((p) => p.uid === uidB);
+  if (!a || !b) return { ok: false, msg: "雙親必須都在牧場待命。" };
+  const dispatchBusy = dispatchBusyUids(state);
+  if (dispatchBusy.has(uidA) || dispatchBusy.has(uidB)) {
+    return { ok: false, msg: "派遣中的靈寵不能交配。" };
+  }
+  const matingBusy = breedBusyUids(state);
+  if (matingBusy.has(uidA) || matingBusy.has(uidB)) {
+    return { ok: false, msg: "雙親已在其他交配中。" };
+  }
+  const matCost = breedMatCost(petGeneration(a), petGeneration(b));
+  if (!spendMaterials(state, matCost)) {
+    const sh = shortageHint(state, matCost);
+    return {
+      ok: false,
+      msg: `材料不足（需 ${formatMats(matCost)}）${sh.hint ? `｜${sh.hint}` : ""}。`,
+      suggest: sh.suggest,
+    };
+  }
+
+  const now = Date.now();
+  const genes = rollBreedGenes(a, b);
+  state.stones -= BREED_STONE_COST;
+  const readyAt = now + BREED_COOLDOWN_MS;
+  const job = {
+    id: `breed-${now}-${Math.floor(Math.random() * 9999)}`,
+    uids: [a.uid, b.uid],
+    names: [displayPetName(a), displayPetName(b)],
+    startedAt: now,
+    readyAt,
+    genes,
+    claimed: false,
+  };
+  state.breedJobs.push(job);
+  // 相容舊欄位：顯示「最近一次」孕育
+  state.breedReadyAt = readyAt;
+  state.breedPair = { uids: job.uids, names: job.names, readyAt };
+
+  const matNote = formatMats(matCost);
+  const sec = Math.ceil(BREED_COOLDOWN_MS / 1000);
+  pushLog(
+    state,
+    `開始交配：${job.names[0]} × ${job.names[1]}（孕育約 ${sec}s｜耗 ${BREED_STONE_COST} 石${matNote ? `／${matNote}` : ""}）。`
+  );
+  return {
+    ok: true,
+    msg: `交配開始 · ${sec}s 後可領子代（${active.length + 1}/${BREED_QUEUE_MAX}）`,
+    job,
+    started: true,
+  };
+}
+
+/** 領取就緒交配子代（似秘境凝聚完再開戰） */
+export function claimBreed(state, jobId) {
+  ensureBreedJobs(state);
+  const job = state.breedJobs.find((j) => j.id === jobId);
+  if (!job) return { ok: false, msg: "找不到這次交配。" };
+  if (job.claimed || job.legacy) return { ok: false, msg: "已領取過。" };
+  const now = Date.now();
+  if ((job.readyAt || 0) > now) {
+    const sec = Math.ceil((job.readyAt - now) / 1000);
+    return { ok: false, msg: `仍在孕育（${sec}s）。` };
+  }
+  if (!state.ranch) state.ranch = [];
+  const cap = ranchCap(state);
+  if (state.ranch.length >= cap) {
+    return { ok: false, msg: `牧場已滿（${cap}），先騰位再領取。` };
+  }
+  const born = materializeBreedChild(state, job);
+  if (!born.ok) return born;
+  job.claimed = true;
+  // 清走已領，避免列表膨脹
+  state.breedJobs = state.breedJobs.filter((j) => !j.claimed && !j.legacy);
+  const open = state.breedJobs.filter((j) => !j.claimed);
+  if (!open.length) {
+    state.breedReadyAt = 0;
+    state.breedPair = null;
+  } else {
+    const next = open.reduce((a, b) => ((a.readyAt || 0) <= (b.readyAt || 0) ? a : b));
+    state.breedReadyAt = next.readyAt || 0;
+    state.breedPair = { uids: next.uids, names: next.names, readyAt: next.readyAt };
+  }
+  return {
+    ok: true,
+    msg: `誕生 ${born.pet.name}${born.tagNote || ""}${born.innNote || ""}`,
+    pet: born.pet,
+    celebrate: born.celebrate,
+    mutated: born.genes?.mutated,
+    hybrid: born.genes?.hybrid,
+    rarity: born.genes?.rarity,
+    rarityUp: born.genes?.rarityUp,
+    generation: born.genes?.generation,
   };
 }
 
@@ -4078,22 +4212,40 @@ export function breedPairHint(petA, petB) {
 }
 
 export function breedStatus(state) {
+  ensureBreedJobs(state);
   const now = Date.now();
-  const readyAt = state.breedReadyAt || 0;
-  const left = Math.max(0, readyAt - now);
-  const ready = left <= 0;
-  if (ready && state.breedPair) state.breedPair = null;
-  const pair = state.breedPair || null;
   const totalMs = BREED_COOLDOWN_MS;
-  const elapsed = ready ? totalMs : Math.max(0, totalMs - left);
-  const pct = Math.min(100, Math.round((elapsed / Math.max(1, totalMs)) * 100));
+  const jobs = state.breedJobs
+    .filter((j) => !j.claimed && !j.legacy)
+    .map((j) => {
+      const left = Math.max(0, (j.readyAt || 0) - now);
+      const elapsed = Math.max(0, totalMs - left);
+      const pct = Math.min(100, Math.round((elapsed / Math.max(1, totalMs)) * 100));
+      return {
+        id: j.id,
+        uids: j.uids || [],
+        names: j.names || [],
+        readyAt: j.readyAt || 0,
+        leftMs: left,
+        pct,
+        ready: left <= 0,
+      };
+    })
+    .sort((a, b) => a.readyAt - b.readyAt);
+  const next = jobs.find((j) => !j.ready) || null;
+  const claimable = jobs.filter((j) => j.ready);
   return {
     cost: BREED_STONE_COST,
-    cooldownLeftMs: left,
+    queueMax: BREED_QUEUE_MAX,
+    slotsUsed: jobs.length,
+    cooldownLeftMs: next?.leftMs || 0,
     cooldownTotalMs: totalMs,
-    cooldownPct: pct,
-    ready,
-    pair: ready ? null : pair,
+    cooldownPct: next ? next.pct : 100,
+    ready: jobs.length < BREED_QUEUE_MAX,
+    pair: next ? { uids: next.uids, names: next.names, readyAt: next.readyAt } : null,
+    jobs,
+    claimable,
+    busyUids: [...breedBusyUids(state)],
   };
 }
 
@@ -4150,6 +4302,7 @@ export {
   FUSION_RULES,
   BREED_STONE_COST,
   BREED_COOLDOWN_MS,
+  BREED_QUEUE_MAX,
   FORGE_SCRAP_COST,
   BOND_FAIL_RATE_BONUS,
   BOND_FAIL_RATE_CAP,
