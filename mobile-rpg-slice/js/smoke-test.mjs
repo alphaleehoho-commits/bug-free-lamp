@@ -160,6 +160,10 @@ import {
   breedBusyUids,
   useBreedTicket,
   advanceTrainTier,
+  claimTrainTierClear,
+  createTrainIdleSession,
+  stepTrainIdleSession,
+  markTrainIdleClearReady,
   runTrainLayerCombat,
   challengeTrainWarden,
   setTrainDepth,
@@ -1538,10 +1542,30 @@ const weakSt = {
 };
 const tierFail = runTrainLayerCombat(weakSt, { zoneId: "shore", tierIndex: 0, mode: "tier" });
 assert(tierFail.ok && !tierFail.won, "weak party fails train tier");
+const claimBlocked = claimTrainTierClear(tzSt);
+assert(!claimBlocked.ok, "cannot claim next without clearReady");
+const idleSess = createTrainIdleSession(tzSt);
+assert(idleSess && idleSess.waveCount === TRAIN_MIST_WAVE_COUNT, "idle session 5 waves");
+assert(idleSess.foes?.length >= 1 && idleSess.allies?.length >= 1, "idle session units");
+let idleSteps = 0;
+let idleWon = false;
+while (idleSteps < 500 && !idleWon) {
+  const step = stepTrainIdleSession(idleSess);
+  idleSteps += 1;
+  if (step.status === "won") {
+    idleWon = true;
+    assert(markTrainIdleClearReady(tzSt, idleSess), "mark clear ready");
+    break;
+  }
+  if (step.status === "restart") break;
+}
+assert(idleWon, "idle session can clear with strong party");
+assert(tzSt.trainMap.zones.shore.clearReady, "clearReady persisted");
 for (let i = 0; i < 4; i++) {
-  const ar = advanceTrainTier(tzSt);
-  assert(ar.ok, `advance tier ${i + 1}`);
-  assert(ar.combatEvents?.length > 5, `advance tier ${i + 1} combat playback`);
+  tzSt.trainMap.zones.shore.clearReady = true;
+  const ar = claimTrainTierClear(tzSt);
+  assert(ar.ok, `claim tier ${i + 1}`);
+  assert(!tzSt.trainMap.zones.shore.clearReady, `clearReady spent ${i + 1}`);
 }
 assert(tzSt.trainMap.zones.shore.tiersCleared === 4, "4 mist tiers cleared");
 assert(trainDepthMultFor(tzSt, "shore") === 1.35, "depth at mist4");
@@ -1575,7 +1599,7 @@ const effWeak = trainClearEfficiency(
 );
 assert(effStrong > effWeak, "strong party higher AFK efficiency");
 const idle = trainIdleCombatView(tzSt);
-assert(idle.allies?.length >= 1 && idle.foe?.hp > 0, "idle combat strip data");
+assert(idle.petCount >= 1 && idle.waveCount === TRAIN_MIST_WAVE_COUNT, "idle combat strip data");
 assert(DAILY_QUESTS.some((q) => q.id === "train_tier"), "daily train_tier");
 assert(DAILY_QUESTS.some((q) => q.id === "train_warden"), "daily train_warden");
 
@@ -1585,9 +1609,11 @@ const setDFail = setTrainDepth({ ...tzSt, trainMap: { ...tzSt.trainMap, wardenCl
 assert(!setDFail.ok, "cannot set depth beyond cleared");
 
 const uiSrc2 = readFileSync(join(__dir, "ui.js"), "utf8");
-assert(uiSrc2.includes("data-advance-tier"), "ui advance mist tier");
-assert(uiSrc2.includes("推進霧階"), "ui advance mist tier label");
+assert(uiSrc2.includes("data-claim-tier"), "ui claim next mist tier");
+assert(uiSrc2.includes("去下一層"), "ui claim next label");
+assert(!uiSrc2.includes("data-advance-tier"), "ui no manual advance fight button");
 assert(!uiSrc2.includes("advanceCooldownAt"), "ui no advance cooldown");
+assert(uiSrc2.includes("createTrainIdleSession"), "ui idle wave session");
 assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
 assert(uiSrc2.includes("data-set-depth"), "ui depth selector");

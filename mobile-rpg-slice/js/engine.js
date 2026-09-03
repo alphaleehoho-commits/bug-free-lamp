@@ -865,6 +865,11 @@ export function trainSitesView(state) {
       keyName: MATERIALS[meta.keyMatId]?.name || "潮鑰",
       keyHave: Math.floor(state.materials?.[meta.keyMatId] || 0),
       canAdvance: !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT,
+      clearReady: !!z.clearReady,
+      canClaimNext:
+        !wardenDone &&
+        !!z.clearReady &&
+        (z.tiersCleared | 0) < TRAIN_TIER_COUNT,
       canChallengeWarden: !wardenDone && (z.tiersCleared | 0) >= TRAIN_TIER_COUNT,
       canRematchWarden: wardenDone,
       idleDepth: trainDepthIndex(state, s.id),
@@ -873,8 +878,11 @@ export function trainSitesView(state) {
   });
 }
 
-/** 推進當前潮域下一霧階（5 波實戰；出戰隊不全滅方算通關） */
-export function advanceTrainTier(state) {
+/**
+ * 領取霧階推進：需掛機戰鬥先清完一輪五波（z.clearReady）。
+ * 唔再開即時戰鬥／彈窗。
+ */
+export function claimTrainTierClear(state) {
   ensureTrainMap(state);
   const zoneId = state.trainSite || "shore";
   if (!isTrainSiteUnlocked(state, zoneId)) {
@@ -887,22 +895,12 @@ export function advanceTrainTier(state) {
   if ((z.tiersCleared | 0) >= TRAIN_TIER_COUNT) {
     return { ok: false, msg: "霧階已清——請挑戰域主關。" };
   }
-  if (!(state.pets || []).length) {
-    return { ok: false, msg: "請先派出至少一隻靈寵。" };
+  if (!z.clearReady) {
+    return { ok: false, msg: `需先掛機清完一輪 ${TRAIN_MIST_WAVE_COUNT} 波，先可去下一層。` };
   }
   const tier = z.tiersCleared | 0;
   const site = trainSiteById(zoneId);
-  const combat = runTrainLayerCombat(state, { zoneId, tierIndex: tier, mode: "tier" });
-  if (!combat.ok) return combat;
-  if (!combat.won) {
-    pushLog(state, `【${site.name}】霧階${tier + 1}未破——出戰隊未能清完 ${TRAIN_MIST_WAVE_COUNT} 波。`);
-    return {
-      ok: false,
-      msg: `霧階${tier + 1}未破 · ${TRAIN_MIST_WAVE_COUNT} 波未清或全滅`,
-      combatKind: "train",
-      ...combat,
-    };
-  }
+  z.clearReady = false;
   z.tiersCleared = tier + 1;
   bumpDaily(state, "train_tier", 1);
   const primary = site.primaryMat;
@@ -915,20 +913,23 @@ export function advanceTrainTier(state) {
   state.stones = (state.stones || 0) + 5;
   pushLog(
     state,
-    `【${site.name}】攻破霧階${tier + 1}（${TRAIN_MIST_WAVE_COUNT} 波）！產量上限升至 ×${trainDepthMultFor(state, zoneId).toFixed(2)}。`
+    `【${site.name}】推進至霧階${tier + 1}通關！產量上限升至 ×${trainDepthMultFor(state, zoneId).toFixed(2)}。`
   );
   const msg =
     z.tiersCleared >= TRAIN_TIER_COUNT
       ? `霧階全破 · 可挑戰域主（需${MATERIALS[trainZoneMeta(zoneId).keyMatId]?.name || "潮鑰"}）`
-      : `攻破霧階${tier + 1} · 深度 ×${trainDepthMultFor(state, zoneId).toFixed(2)}`;
+      : `已進霧階${tier + 1} · 深度 ×${trainDepthMultFor(state, zoneId).toFixed(2)}`;
   return {
     ok: true,
     msg,
-    combatKind: "train",
-    reward,
     tiersCleared: z.tiersCleared,
-    ...combat,
+    reward,
   };
+}
+
+/** @deprecated 改用 claimTrainTierClear；掛機五波循環後再領取 */
+export function advanceTrainTier(state) {
+  return claimTrainTierClear(state);
 }
 
 /** 挑戰／複打域主（扣潮鑰；首次開下一潮域；複打掉稀有材） */
@@ -1320,54 +1321,189 @@ export function runTrainLayerCombat(state, { zoneId, tierIndex = 0, mode = "tier
   };
 }
 
-/** UI：閒置掛機戰場 live state（帶時間演進） */
+/** 掛機五波戰場：建立一輪實戰 session（逐步 tick） */
+export function createTrainIdleSession(state) {
+  ensureTrainMap(state);
+  if (!(state.pets || []).length) return null;
+  const zoneId = state.trainSite || "shore";
+  if (!isTrainSiteUnlocked(state, zoneId)) return null;
+  const z = ensureZoneProgress(state, zoneId);
+  const wardenDone = !!state.trainMap.wardenCleared?.[zoneId];
+  const canUnlockNext = !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT;
+  const tierIndex = canUnlockNext
+    ? z.tiersCleared | 0
+    : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, trainDepthIndex(state, zoneId)));
+  const waves = buildTrainCombatWaves(zoneId, tierIndex, { warden: false });
+  const { allies, tactics } = buildTrainCombatAllies(state);
+  if (!allies.length) return null;
+  _combatUid = 0;
+  tagCombatUnits(allies, "a");
+  const foes = tagCombatUnits(spawnWaveFoes(waves[0]), "f");
+  const site = trainSiteById(zoneId);
+  const petSig = (state.pets || []).map((p) => `${p.uid}:${p.atk}:${p.hp}:${p.spd}`).join("|");
+  return {
+    zoneId,
+    tierIndex,
+    canUnlockNext,
+    clearReady: !!z.clearReady,
+    petSig,
+    waves,
+    waveCount: waves.length,
+    waveIndex: 0,
+    allies,
+    foes,
+    tactics,
+    round: 0,
+    maxRounds: 60,
+    order: [],
+    orderIdx: 0,
+    phase: "fight",
+    pauseLeft: 0,
+    ended: false,
+    won: false,
+    lastText: `—— 第 1 波・${waves[0].label} ——`,
+    waveLabel: `第 1／${waves.length} 波・${waves[0].label}`,
+    layerLabel: `霧階${tierIndex + 1}`,
+    siteName: site.name,
+    efficiency: trainClearEfficiency(state, zoneId),
+    depthMult: trainDepthMultFor(state, zoneId),
+  };
+}
+
+/**
+ * 掛機戰鬥一步（約 1 次出手／開新回合／轉場）。
+ * @returns {{ status: string, session: object, events?: object[] }}
+ */
+export function stepTrainIdleSession(session) {
+  if (!session) return { status: "empty", session: null };
+
+  if (session.phase === "pause") {
+    session.pauseLeft -= 1;
+    if (session.pauseLeft <= 0) {
+      return { status: "restart", session };
+    }
+    return { status: "pause", session };
+  }
+
+  if (session.ended) {
+    return { status: session.won ? "won" : "lost", session };
+  }
+
+  const allies = session.allies;
+  const foes = session.foes;
+
+  if (session.orderIdx >= session.order.length) {
+    session.round += 1;
+    if (session.round > session.maxRounds) {
+      session.ended = true;
+      session.won = false;
+      session.lastText = "戰鬥逾時，重新開始…";
+      session.phase = "pause";
+      session.pauseLeft = 2;
+      return { status: "lost", session };
+    }
+    session.order = [...allies, ...foes]
+      .filter((u) => u.hp > 0)
+      .sort((a, b) => b.spd - a.spd || a.name.localeCompare(b.name));
+    session.orderIdx = 0;
+    session.lastText = `—— 第 ${session.round} 回合 ——`;
+    return { status: "round", session };
+  }
+
+  const actor = session.order[session.orderIdx];
+  session.orderIdx += 1;
+  if (!actor || actor.hp <= 0) return { status: "skip", session };
+
+  const transcript = [];
+  const events = [];
+  const actions = Math.max(1, actor.actions || 1);
+  for (let a = 0; a < actions; a += 1) {
+    if (actor.hp <= 0) break;
+    if (allies.every((x) => x.hp <= 0) || foes.every((x) => x.hp <= 0)) break;
+    if (actor.side === "ally") act(actor, allies, foes, transcript, events, session.tactics);
+    else act(actor, foes, allies, transcript, events, "balanced");
+  }
+  tickCooldowns(actor);
+
+  if (events.length) {
+    const last = events[events.length - 1];
+    session.lastText = last.text || session.lastText;
+  }
+
+  if (allies.every((x) => x.hp <= 0)) {
+    session.ended = true;
+    session.won = false;
+    session.lastText = `折戟【${session.siteName}】${session.layerLabel}……全滅，重新開始`;
+    session.phase = "pause";
+    session.pauseLeft = 2;
+    return { status: "lost", session, events };
+  }
+
+  if (foes.every((x) => x.hp <= 0)) {
+    if (session.waveIndex + 1 < session.waves.length) {
+      session.waveIndex += 1;
+      session.foes = tagCombatUnits(spawnWaveFoes(session.waves[session.waveIndex]), "f");
+      session.order = [];
+      session.orderIdx = 0;
+      const w = session.waves[session.waveIndex];
+      session.waveLabel = `第 ${session.waveIndex + 1}／${session.waves.length} 波・${w.label}`;
+      session.lastText = `—— 第 ${session.waveIndex + 1} 波・${w.label} 湧出！——`;
+      return { status: "wave", session, events };
+    }
+    session.ended = true;
+    session.won = true;
+    session.lastText = `清完 ${session.waves.length} 波！可去下一層`;
+    session.phase = "pause";
+    session.pauseLeft = 2;
+    return { status: "won", session, events };
+  }
+
+  return { status: "fight", session, events };
+}
+
+/** 掛機清完一輪後標記可領取下一霧階 */
+export function markTrainIdleClearReady(state, session) {
+  if (!session?.canUnlockNext || !session.won) return false;
+  const z = ensureZoneProgress(state, session.zoneId);
+  z.clearReady = true;
+  session.clearReady = true;
+  return true;
+}
+
+/** UI：閒置掛機戰場摘要（建立 session 用） */
 export function trainIdleCombatView(state) {
   ensureTrainMap(state);
   const zoneId = state.trainSite || "shore";
   const site = trainSiteById(zoneId);
+  const z = ensureZoneProgress(state, zoneId);
   const depthIdx = trainDepthIndex(state, zoneId);
-  const threat = trainTierThreat(zoneId, depthIdx);
   const eff = trainClearEfficiency(state, zoneId);
   const depthMult = trainDepthMultFor(state, zoneId);
-  const allies = (state.pets || []).slice(0, 4).map((p, i) => ({
-    uid: p.uid || `idle-a-${i}`,
-    name: displayPetName(p),
-    hpPct: 100,
-    elementId: p.elementId || "tide",
-    atk: Math.max(3, p.atk || 8),
-    maxHp: Math.max(20, p.hp || 40),
-    side: "ally",
-  }));
-  const foeName =
-    state.trainMap.wardenCleared?.[zoneId]
-      ? `${site.name}殘影`
-      : `霧階影·${depthIdx + 1}`;
-  const foeHp = Math.max(40, Math.round(threat * 1.6));
-  const foeAtk = Math.max(3, Math.round(threat * 0.18));
+  const wardenDone = !!state.trainMap.wardenCleared?.[zoneId];
+  const canUnlockNext = !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT;
+  const tierIndex = canUnlockNext
+    ? z.tiersCleared | 0
+    : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, depthIdx));
   return {
     zoneId,
     zoneName: site.name,
-    depthLabel: state.trainMap.wardenCleared?.[zoneId]
+    tierIndex,
+    canUnlockNext,
+    clearReady: !!z.clearReady,
+    depthLabel: wardenDone
       ? "域主已通"
-      : `霧階 ${depthIdx + 1}/${TRAIN_TIER_COUNT}`,
+      : `霧階 ${Math.min((z.tiersCleared | 0) + 1, TRAIN_TIER_COUNT)}/${TRAIN_TIER_COUNT}`,
     depthMult,
     efficiency: eff,
     power: partyCombatPower(state.pets),
-    threat,
-    allies,
-    foe: {
-      uid: "idle-f-0",
-      name: foeName,
-      hp: foeHp,
-      maxHp: foeHp,
-      atk: foeAtk,
-      elementId: "gloom",
-      side: "foe",
-    },
+    petCount: (state.pets || []).length,
+    waveCount: TRAIN_MIST_WAVE_COUNT,
     logLine:
-      allies.length === 0
+      !(state.pets || []).length
         ? "未出戰——掛機效率最低（請編成出戰隊）"
-        : `掛機清場中 · 效率 ×${eff.toFixed(2)} · 深度 ×${depthMult.toFixed(2)}`,
+        : canUnlockNext
+          ? `掛機清場 · ${TRAIN_MIST_WAVE_COUNT} 波循環 · 效率 ×${eff.toFixed(2)}`
+          : `掛機清場中 · 效率 ×${eff.toFixed(2)} · 深度 ×${depthMult.toFixed(2)}`,
   };
 }
 

@@ -83,7 +83,10 @@ import {
   trainSitesView,
   trainMapView,
   trainIdleCombatView,
-  advanceTrainTier,
+  createTrainIdleSession,
+  stepTrainIdleSession,
+  markTrainIdleClearReady,
+  claimTrainTierClear,
   challengeTrainWarden,
   setTrainDepth,
   trainDailySpotlightView,
@@ -113,7 +116,7 @@ import {
   loginStreakView,
   claimLoginStreak,
 } from "./engine.js";
-import { DUNGEON_SUMMON_MIN, DUNGEON_SUMMON_MAX, clampDungeonSummonCount, TRAIN_DEPTH_MULT, TRAIN_TIER_COUNT, TRAIN_MIST_WAVE_COUNT } from "./data.js";
+import { DUNGEON_SUMMON_MIN, DUNGEON_SUMMON_MAX, clampDungeonSummonCount, TRAIN_DEPTH_MULT, TRAIN_TIER_COUNT } from "./data.js";
 import { petIconHtml, petIconFromPet } from "./pet-icons.js";
 import {
   tutorialActive,
@@ -1546,135 +1549,116 @@ function tabBtn(id, label, busy) {
   return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${glow}" data-tab="${id}" ${disabled}>${label}</button>`;
 }
 
-/** Live idle combat state — persists across ticks */
+/** Live idle combat — real 5-wave session stepped each second */
 let idleCombat = null;
+
+function idlePetSig(st) {
+  return (st.pets || []).map((p) => `${p.uid}:${p.atk}:${p.hp}:${p.spd}`).join("|");
+}
 
 function ensureIdleCombat() {
   const view = trainIdleCombatView(state);
-  if (!view.allies.length) { idleCombat = null; return null; }
-  if (
+  if (!view.petCount) {
+    idleCombat = null;
+    return null;
+  }
+  const sig = idlePetSig(state);
+  const needNew =
     !idleCombat ||
+    !idleCombat.session ||
     idleCombat.zoneId !== view.zoneId ||
-    idleCombat.depthLabel !== view.depthLabel
-  ) {
+    idleCombat.tierIndex !== view.tierIndex ||
+    idleCombat.petSig !== sig;
+  if (needNew) {
+    const session = createTrainIdleSession(state);
+    if (!session) {
+      idleCombat = null;
+      return null;
+    }
     idleCombat = {
       zoneId: view.zoneId,
-      depthLabel: view.depthLabel,
+      tierIndex: view.tierIndex,
+      petSig: sig,
+      clearReady: !!view.clearReady,
+      canUnlockNext: !!view.canUnlockNext,
+      session,
       logLine: view.logLine,
-      efficiency: view.efficiency,
-      depthMult: view.depthMult,
-      allies: view.allies.map((a) => ({
-        ...a,
-        hp: a.maxHp,
-        maxHp: a.maxHp,
-      })),
-      foe: { ...view.foe },
-      foeTemplate: { ...view.foe },
-      wave: 1,
-      lastHitText: "",
-      phase: "fight",
-      phaseTimer: 0,
     };
+  } else {
+    idleCombat.logLine = view.logLine;
+    idleCombat.clearReady = !!view.clearReady || !!idleCombat.clearReady;
+    idleCombat.session.clearReady = idleCombat.clearReady;
   }
-  idleCombat.logLine = view.logLine;
-  idleCombat.efficiency = view.efficiency;
-  idleCombat.depthMult = view.depthMult;
   return idleCombat;
 }
 
 function tickIdleCombat() {
-  const ic = ensureIdleCombat();
-  if (!ic) return;
+  const wrap = ensureIdleCombat();
+  if (!wrap?.session) return;
 
-  if (ic.phase === "transition") {
-    ic.phaseTimer -= 1;
-    if (ic.phaseTimer <= 0) {
-      ic.wave += 1;
-      ic.foe = {
-        ...ic.foeTemplate,
-        uid: `idle-f-${ic.wave}`,
-        name: ic.foeTemplate.name.replace(/·\d+$/, "") + `·${ic.wave}`,
-        hp: ic.foeTemplate.maxHp,
-        maxHp: ic.foeTemplate.maxHp,
-      };
-      for (const a of ic.allies) {
-        a.hp = Math.min(a.maxHp, a.hp + Math.ceil(a.maxHp * 0.15));
-      }
-      ic.phase = "fight";
-      ic.lastHitText = `波${ic.wave} 登場！`;
+  const result = stepTrainIdleSession(wrap.session);
+  if (result.status === "restart") {
+    const keepReady = wrap.clearReady;
+    const session = createTrainIdleSession(state);
+    if (!session) {
+      idleCombat = null;
+      return;
     }
+    session.clearReady = keepReady;
+    wrap.session = session;
+    wrap.petSig = idlePetSig(state);
     return;
   }
-
-  const alive = ic.allies.filter((a) => a.hp > 0);
-  if (!alive.length) {
-    for (const a of ic.allies) a.hp = a.maxHp;
-    ic.lastHitText = "全體復活";
-    return;
-  }
-
-  const actor = alive[Math.floor(Math.random() * alive.length)];
-  const dmg = Math.max(1, Math.floor(actor.atk * (0.85 + Math.random() * 0.35)));
-  ic.foe.hp = Math.max(0, ic.foe.hp - dmg);
-  ic.lastHitText = `${actor.name} → ${ic.foe.name} −${dmg}`;
-
-  if (ic.foe.hp <= 0) {
-    ic.lastHitText = `${ic.foe.name} 擊破！轉場中…`;
-    ic.phase = "transition";
-    ic.phaseTimer = 2;
-    return;
-  }
-
-  if (Math.random() < 0.4) {
-    const target = alive[Math.floor(Math.random() * alive.length)];
-    const fdmg = Math.max(1, Math.floor(ic.foe.atk * (0.7 + Math.random() * 0.4)));
-    target.hp = Math.max(0, target.hp - fdmg);
-    ic.lastHitText += ` ｜ ${ic.foe.name} → ${target.name} −${fdmg}`;
-    if (target.hp <= 0) {
-      ic.lastHitText += `（倒下）`;
-    }
-  }
-
-  if (Math.random() < 0.2) {
-    const hurt = ic.allies.filter((a) => a.hp > 0 && a.hp < a.maxHp);
-    if (hurt.length) {
-      const h = hurt[Math.floor(Math.random() * hurt.length)];
-      const heal = Math.ceil(h.maxHp * 0.08);
-      h.hp = Math.min(h.maxHp, h.hp + heal);
+  if (result.status === "won") {
+    if (markTrainIdleClearReady(state, wrap.session)) {
+      wrap.clearReady = true;
+      saveState(state);
     }
   }
 }
 
+function idleUnitBarHtml(u) {
+  const pct = u.maxHp > 0 ? Math.max(0, Math.round((u.hp / u.maxHp) * 100)) : 0;
+  const dead = u.hp <= 0;
+  const role =
+    u.role === "boss" ? "【BOSS】" : u.role === "elite" ? "【精英】" : "";
+  return `<div class="combat-unit${dead ? " is-down" : ""}" data-uid="${escapeHtml(u.uid || "")}" data-element="${escapeHtml(u.elementId || "")}">
+    <span class="cu-name">${role}${escapeHtml(u.name)}</span>
+    <div class="cu-bar"><i style="width:${pct}%"></i></div>
+  </div>`;
+}
+
 function trainIdleStripHtml() {
-  const ic = ensureIdleCombat();
-  if (!ic) {
+  const wrap = ensureIdleCombat();
+  if (!wrap?.session) {
     return `<div class="train-idle-strip" data-live="train-idle">
       <p class="meta train-idle-log muted">未出戰——掛機效率最低</p>
     </div>`;
   }
-  const allyBars = ic.allies
-    .map((u) => {
-      const pct = u.maxHp > 0 ? Math.max(0, Math.round((u.hp / u.maxHp) * 100)) : 0;
-      const dead = u.hp <= 0;
-      return `<div class="combat-unit${dead ? " is-down" : ""}" data-element="${escapeHtml(u.elementId || "")}">
-        <span class="cu-name">${escapeHtml(u.name)}</span>
-        <div class="cu-bar"><i style="width:${pct}%"></i></div>
-      </div>`;
-    })
-    .join("");
-  const foePct = ic.foe.maxHp > 0 ? Math.max(0, Math.round((ic.foe.hp / ic.foe.maxHp) * 100)) : 0;
-  const foeDead = ic.foe.hp <= 0;
-  const foeHtml = `<div class="combat-unit${foeDead ? " is-down idle-foe-dying" : ""}" data-element="${escapeHtml(ic.foe.elementId || "")}">
-    <span class="cu-name">${escapeHtml(ic.foe.name)}</span>
-    <div class="cu-bar"><i style="width:${foePct}%"></i></div>
-  </div>`;
+  const s = wrap.session;
+  const allyBars = s.allies.map(idleUnitBarHtml).join("");
+  const foeBars = s.foes.map(idleUnitBarHtml).join("");
+  const meta = s.phase === "pause"
+    ? s.lastText
+    : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`;
+  const pct = Math.min(
+    100,
+    Math.round(((s.waveIndex + (s.ended && s.won ? 1 : 0)) / Math.max(1, s.waveCount)) * 100)
+  );
+  const claimBtn =
+    wrap.clearReady && wrap.canUnlockNext
+      ? `<div class="row train-idle-claim"><button type="button" class="primary" data-claim-tier>去下一層</button></div>`
+      : "";
   return `<div class="train-idle-strip" data-live="train-idle">
-    <p class="meta train-idle-log">${escapeHtml(ic.logLine || "")}</p>
-    <div class="combat-roster train-idle-roster">
+    <p class="meta train-idle-log">${escapeHtml(wrap.logLine || "")}</p>
+    <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
+    <div class="bar combat-bar train-idle-bar"><i data-live="train-idle-bar" style="width:${pct}%"></i></div>
+    <div class="combat-roster train-idle-roster" data-live="train-idle-roster">
       <div class="combat-side allies">${allyBars}</div>
-      <div class="combat-side foes">${foeHtml}</div>
+      <div class="combat-side foes">${foeBars}</div>
     </div>
-    <p class="train-idle-hit">${escapeHtml(ic.lastHitText || `波${ic.wave} 戰鬥中`)}</p>
+    <p class="train-idle-hit" data-live="train-idle-hit">${escapeHtml(s.lastText || "")}</p>
+    ${claimBtn}
   </div>`;
 }
 
@@ -1811,10 +1795,8 @@ function cultivatePanel(qiPct, next, m) {
     : "";
 
   const tierActionBtns = [];
-  if (siteCur?.canAdvance) {
-    tierActionBtns.push(
-      `<button type="button" class="primary" data-advance-tier>推進霧階（${TRAIN_MIST_WAVE_COUNT}波）</button>`
-    );
+  if (siteCur?.canClaimNext) {
+    tierActionBtns.push(`<button type="button" class="primary" data-claim-tier>去下一層</button>`);
   }
   if (siteCur?.canChallengeWarden) tierActionBtns.push(`<button type="button" class="primary" data-challenge-warden>挑戰域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`);
   if (siteCur?.canRematchWarden) tierActionBtns.push(`<button type="button" class="secondary" data-challenge-warden>複打域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`);
@@ -3553,16 +3535,14 @@ function bind() {
       setFlash(r.msg);
     });
   });
-  app.querySelectorAll("[data-advance-tier]").forEach((btn) => {
+  app.querySelectorAll("[data-claim-tier]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (btn.disabled) return;
-      const r = advanceTrainTier(state);
+      const r = claimTrainTierClear(state);
+      if (r.ok) {
+        idleCombat = null;
+      }
       saveState(state);
       panelSub = { ...panelSub, cultivate: "train" };
-      if (r.combatEvents?.length) {
-        startPlayback(r);
-        return;
-      }
       render();
       setFlash(r.msg, r.ok ? "unlock" : "");
     });
@@ -3889,29 +3869,52 @@ setInterval(() => {
     tickIdleCombat();
     const strip = document.querySelector("[data-live=train-idle]");
     if (strip) {
-      const ic = idleCombat;
-      if (ic) {
+      const wrap = idleCombat;
+      const s = wrap?.session;
+      if (s) {
         const log = strip.querySelector(".train-idle-log");
-        if (log) log.textContent = ic.logLine || "";
-        const hitEl = strip.querySelector(".train-idle-hit");
-        if (hitEl) hitEl.textContent = ic.lastHitText || `波${ic.wave} 戰鬥中`;
-        const allyEls = strip.querySelectorAll(".allies .combat-unit");
-        ic.allies.forEach((a, i) => {
-          if (!allyEls[i]) return;
-          const pct = a.maxHp > 0 ? Math.max(0, Math.round((a.hp / a.maxHp) * 100)) : 0;
-          const bar = allyEls[i].querySelector(".cu-bar i");
-          if (bar) bar.style.width = `${pct}%`;
-          allyEls[i].classList.toggle("is-down", a.hp <= 0);
-        });
-        const foeEl = strip.querySelector(".foes .combat-unit");
-        if (foeEl) {
-          const fp = ic.foe.maxHp > 0 ? Math.max(0, Math.round((ic.foe.hp / ic.foe.maxHp) * 100)) : 0;
-          const fb = foeEl.querySelector(".cu-bar i");
-          if (fb) fb.style.width = `${fp}%`;
-          foeEl.classList.toggle("is-down", ic.foe.hp <= 0);
-          foeEl.classList.toggle("idle-foe-dying", ic.foe.hp <= 0);
-          const nameEl = foeEl.querySelector(".cu-name");
-          if (nameEl) nameEl.textContent = ic.foe.name;
+        if (log) log.textContent = wrap.logLine || "";
+        const meta = strip.querySelector("[data-live=train-idle-meta]");
+        if (meta) {
+          meta.textContent =
+            s.phase === "pause" ? s.lastText : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`;
+        }
+        const bar = strip.querySelector("[data-live=train-idle-bar]");
+        if (bar) {
+          const pct = Math.min(
+            100,
+            Math.round(
+              ((s.waveIndex + (s.ended && s.won ? 1 : 0)) / Math.max(1, s.waveCount)) * 100
+            )
+          );
+          bar.style.width = `${pct}%`;
+        }
+        const roster = strip.querySelector("[data-live=train-idle-roster]");
+        if (roster) {
+          roster.innerHTML = `<div class="combat-side allies">${s.allies.map(idleUnitBarHtml).join("")}</div>
+            <div class="combat-side foes">${s.foes.map(idleUnitBarHtml).join("")}</div>`;
+        }
+        const hitEl = strip.querySelector("[data-live=train-idle-hit]");
+        if (hitEl) hitEl.textContent = s.lastText || "";
+        // 通關後動態補「去下一層」
+        let claimRow = strip.querySelector(".train-idle-claim");
+        if (wrap.clearReady && wrap.canUnlockNext) {
+          if (!claimRow) {
+            claimRow = document.createElement("div");
+            claimRow.className = "row train-idle-claim";
+            claimRow.innerHTML = `<button type="button" class="primary" data-claim-tier>去下一層</button>`;
+            strip.appendChild(claimRow);
+            claimRow.querySelector("[data-claim-tier]")?.addEventListener("click", () => {
+              const r = claimTrainTierClear(state);
+              if (r.ok) idleCombat = null;
+              saveState(state);
+              panelSub = { ...panelSub, cultivate: "train" };
+              render();
+              setFlash(r.msg, r.ok ? "unlock" : "");
+            });
+          }
+        } else if (claimRow) {
+          claimRow.remove();
         }
       }
     }

@@ -992,6 +992,12 @@ button.flash-act {
   min-height: 1.1em;
   animation: fadeUp 0.32s ease-out;
 }
+.train-idle-meta {
+  margin: 0 0 0.25rem;
+  font-size: 0.78rem;
+}
+.train-idle-bar { margin: 0 0 0.4rem; height: 0.28rem; }
+.train-idle-claim { margin-top: 0.45rem; }
 .train-idle-roster { gap: 0.45rem; }
 .train-idle-roster .combat-unit { min-width: 0; transition: opacity 0.35s ease; }
 .idle-foe-dying { opacity: 0.15; transform: scale(0.92); transition: opacity 0.5s, transform 0.5s; }
