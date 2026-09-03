@@ -113,7 +113,7 @@ import {
   loginStreakView,
   claimLoginStreak,
 } from "./engine.js";
-import { DUNGEON_SUMMON_MIN, DUNGEON_SUMMON_MAX, clampDungeonSummonCount, TRAIN_DEPTH_MULT, TRAIN_TIER_COUNT } from "./data.js";
+import { DUNGEON_SUMMON_MIN, DUNGEON_SUMMON_MAX, clampDungeonSummonCount, TRAIN_DEPTH_MULT, TRAIN_TIER_COUNT, TRAIN_MIST_WAVE_COUNT } from "./data.js";
 import { petIconHtml, petIconFromPet } from "./pet-icons.js";
 import {
   tutorialActive,
@@ -243,6 +243,7 @@ function saveCombatPrefs(prefs) {
 let combatPrefs = loadCombatPrefs();
 
 function isFarmCombat(result) {
+  if (result?.combatKind === "train") return false;
   if (!result?.won) return false;
   const fc = result.rewardBreakdown?.firstClear;
   return !(fc && (fc.stones || fc.scrap));
@@ -1203,7 +1204,7 @@ function advancePlayback() {
 
 function startPlayback(result) {
   stopPlayback();
-  tab = "dungeon";
+  if (result?.combatKind !== "train") tab = "dungeon";
   condSheetOpen = false;
   rewardDetailsOpen = false;
   const events =
@@ -1811,11 +1812,9 @@ function cultivatePanel(qiPct, next, m) {
 
   const tierActionBtns = [];
   if (siteCur?.canAdvance) {
-    const zp = state.trainMap?.zones?.[state.trainSite];
-    const cdAt = zp?.advanceCooldownAt || 0;
-    const cdSec = Math.max(0, Math.ceil((cdAt - Date.now()) / 1000));
-    const cdLabel = cdSec > 0 ? ` 推進冷卻 ${cdSec}s` : "推進霧階";
-    tierActionBtns.push(`<button type="button" class="primary" data-advance-tier ${cdSec > 0 ? "disabled" : ""}>${cdLabel}</button>`);
+    tierActionBtns.push(
+      `<button type="button" class="primary" data-advance-tier>推進霧階（${TRAIN_MIST_WAVE_COUNT}波）</button>`
+    );
   }
   if (siteCur?.canChallengeWarden) tierActionBtns.push(`<button type="button" class="primary" data-challenge-warden>挑戰域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`);
   if (siteCur?.canRematchWarden) tierActionBtns.push(`<button type="button" class="secondary" data-challenge-warden>複打域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`);
@@ -2795,7 +2794,8 @@ function combatModalHtml() {
         <ul class="combat" data-live="combat-log">${lines}</ul>
       </div>`;
   const tacticsStep = tutorialActive(state) && state.tutorial.step === "tactics";
-  const clearLabel = tacticsStep ? "前往戰術設定" : "返回秘境";
+  const isTrain = playback.result?.combatKind === "train";
+  const clearLabel = tacticsStep ? "前往戰術設定" : isTrain ? "返回練功" : "返回秘境";
   const clearAct = tacticsStep ? "clear-combat-setup" : "clear-combat";
   return `
     <div class="combat-modal-overlay" data-live="combat-modal" role="dialog" aria-label="${playback.done ? "結算" : "戰報"}">
@@ -3555,9 +3555,14 @@ function bind() {
   });
   app.querySelectorAll("[data-advance-tier]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (btn.disabled) return;
       const r = advanceTrainTier(state);
       saveState(state);
       panelSub = { ...panelSub, cultivate: "train" };
+      if (r.combatEvents?.length) {
+        startPlayback(r);
+        return;
+      }
       render();
       setFlash(r.msg, r.ok ? "unlock" : "");
     });
@@ -3567,6 +3572,10 @@ function bind() {
       const r = challengeTrainWarden(state);
       saveState(state);
       panelSub = { ...panelSub, cultivate: "train" };
+      if (r.combatEvents?.length) {
+        startPlayback(r);
+        return;
+      }
       render();
       setFlash(r.msg, r.ok ? (r.firstClear ? "unlock" : "celebrate") : "");
     });
@@ -3904,18 +3913,6 @@ setInterval(() => {
           const nameEl = foeEl.querySelector(".cu-name");
           if (nameEl) nameEl.textContent = ic.foe.name;
         }
-      }
-    }
-    // 推進冷卻倒數刷新
-    const advBtn = document.querySelector("[data-advance-tier]");
-    if (advBtn) {
-      const z = state.trainMap?.zones?.[state.trainSite];
-      if (z?.advanceCooldownAt > Date.now()) {
-        const sec = Math.ceil((z.advanceCooldownAt - Date.now()) / 1000);
-        advBtn.textContent = `推進冷卻 ${sec}s`;
-        advBtn.disabled = true;
-      } else if (advBtn.disabled && advBtn.textContent.includes("冷卻")) {
-        render();
       }
     }
   }

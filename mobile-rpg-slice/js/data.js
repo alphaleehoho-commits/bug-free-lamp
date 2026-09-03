@@ -4132,6 +4132,9 @@ export const TRAIN_SITES = [
 
 /** 霧階數；深度倍率：霧階一～四／已通域主 */
 export const TRAIN_TIER_COUNT = 4;
+/** 一層霧階＝多波敵人；域主關波數更多 */
+export const TRAIN_MIST_WAVE_COUNT = 5;
+export const TRAIN_WARDEN_WAVE_COUNT = 7;
 export const TRAIN_DEPTH_MULT = [1.0, 1.1, 1.2, 1.35, 1.5];
 
 /**
