@@ -1545,30 +1545,135 @@ function tabBtn(id, label, busy) {
   return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${glow}" data-tab="${id}" ${disabled}>${label}</button>`;
 }
 
-function trainIdleStripHtml(idle) {
-  if (!idle) return "";
-  const allyBars = (idle.allies || [])
-    .map(
-      (u) => `<div class="combat-unit" data-element="${escapeHtml(u.elementId || "")}">
-      <span class="cu-name">${escapeHtml(u.name)}</span>
-      <div class="cu-bar"><i style="width:${u.hpPct || 0}%"></i></div>
-    </div>`
-    )
-    .join("") || `<div class="muted">無出戰靈寵</div>`;
-  const foeBars = (idle.foes || [])
-    .map(
-      (u) => `<div class="combat-unit" data-element="${escapeHtml(u.elementId || "")}">
-      <span class="cu-name">${escapeHtml(u.name)}</span>
-      <div class="cu-bar"><i style="width:${u.hpPct || 0}%"></i></div>
-    </div>`
-    )
+/** Live idle combat state — persists across ticks */
+let idleCombat = null;
+
+function ensureIdleCombat() {
+  const view = trainIdleCombatView(state);
+  if (!view.allies.length) { idleCombat = null; return null; }
+  if (
+    !idleCombat ||
+    idleCombat.zoneId !== view.zoneId ||
+    idleCombat.depthLabel !== view.depthLabel
+  ) {
+    idleCombat = {
+      zoneId: view.zoneId,
+      depthLabel: view.depthLabel,
+      logLine: view.logLine,
+      efficiency: view.efficiency,
+      depthMult: view.depthMult,
+      allies: view.allies.map((a) => ({
+        ...a,
+        hp: a.maxHp,
+        maxHp: a.maxHp,
+      })),
+      foe: { ...view.foe },
+      foeTemplate: { ...view.foe },
+      wave: 1,
+      lastHitText: "",
+      phase: "fight",
+      phaseTimer: 0,
+    };
+  }
+  idleCombat.logLine = view.logLine;
+  idleCombat.efficiency = view.efficiency;
+  idleCombat.depthMult = view.depthMult;
+  return idleCombat;
+}
+
+function tickIdleCombat() {
+  const ic = ensureIdleCombat();
+  if (!ic) return;
+
+  if (ic.phase === "transition") {
+    ic.phaseTimer -= 1;
+    if (ic.phaseTimer <= 0) {
+      ic.wave += 1;
+      ic.foe = {
+        ...ic.foeTemplate,
+        uid: `idle-f-${ic.wave}`,
+        name: ic.foeTemplate.name.replace(/·\d+$/, "") + `·${ic.wave}`,
+        hp: ic.foeTemplate.maxHp,
+        maxHp: ic.foeTemplate.maxHp,
+      };
+      for (const a of ic.allies) {
+        a.hp = Math.min(a.maxHp, a.hp + Math.ceil(a.maxHp * 0.15));
+      }
+      ic.phase = "fight";
+      ic.lastHitText = `波${ic.wave} 登場！`;
+    }
+    return;
+  }
+
+  const alive = ic.allies.filter((a) => a.hp > 0);
+  if (!alive.length) {
+    for (const a of ic.allies) a.hp = a.maxHp;
+    ic.lastHitText = "全體復活";
+    return;
+  }
+
+  const actor = alive[Math.floor(Math.random() * alive.length)];
+  const dmg = Math.max(1, Math.floor(actor.atk * (0.85 + Math.random() * 0.35)));
+  ic.foe.hp = Math.max(0, ic.foe.hp - dmg);
+  ic.lastHitText = `${actor.name} → ${ic.foe.name} −${dmg}`;
+
+  if (ic.foe.hp <= 0) {
+    ic.lastHitText = `${ic.foe.name} 擊破！轉場中…`;
+    ic.phase = "transition";
+    ic.phaseTimer = 2;
+    return;
+  }
+
+  if (Math.random() < 0.4) {
+    const target = alive[Math.floor(Math.random() * alive.length)];
+    const fdmg = Math.max(1, Math.floor(ic.foe.atk * (0.7 + Math.random() * 0.4)));
+    target.hp = Math.max(0, target.hp - fdmg);
+    ic.lastHitText += ` ｜ ${ic.foe.name} → ${target.name} −${fdmg}`;
+    if (target.hp <= 0) {
+      ic.lastHitText += `（倒下）`;
+    }
+  }
+
+  if (Math.random() < 0.2) {
+    const hurt = ic.allies.filter((a) => a.hp > 0 && a.hp < a.maxHp);
+    if (hurt.length) {
+      const h = hurt[Math.floor(Math.random() * hurt.length)];
+      const heal = Math.ceil(h.maxHp * 0.08);
+      h.hp = Math.min(h.maxHp, h.hp + heal);
+    }
+  }
+}
+
+function trainIdleStripHtml() {
+  const ic = ensureIdleCombat();
+  if (!ic) {
+    return `<div class="train-idle-strip" data-live="train-idle">
+      <p class="meta train-idle-log muted">未出戰——掛機效率最低</p>
+    </div>`;
+  }
+  const allyBars = ic.allies
+    .map((u) => {
+      const pct = u.maxHp > 0 ? Math.max(0, Math.round((u.hp / u.maxHp) * 100)) : 0;
+      const dead = u.hp <= 0;
+      return `<div class="combat-unit${dead ? " is-down" : ""}" data-element="${escapeHtml(u.elementId || "")}">
+        <span class="cu-name">${escapeHtml(u.name)}</span>
+        <div class="cu-bar"><i style="width:${pct}%"></i></div>
+      </div>`;
+    })
     .join("");
+  const foePct = ic.foe.maxHp > 0 ? Math.max(0, Math.round((ic.foe.hp / ic.foe.maxHp) * 100)) : 0;
+  const foeDead = ic.foe.hp <= 0;
+  const foeHtml = `<div class="combat-unit${foeDead ? " is-down idle-foe-dying" : ""}" data-element="${escapeHtml(ic.foe.elementId || "")}">
+    <span class="cu-name">${escapeHtml(ic.foe.name)}</span>
+    <div class="cu-bar"><i style="width:${foePct}%"></i></div>
+  </div>`;
   return `<div class="train-idle-strip" data-live="train-idle">
-    <p class="meta train-idle-log">${escapeHtml(idle.logLine || "")}</p>
+    <p class="meta train-idle-log">${escapeHtml(ic.logLine || "")}</p>
     <div class="combat-roster train-idle-roster">
       <div class="combat-side allies">${allyBars}</div>
-      <div class="combat-side foes">${foeBars}</div>
+      <div class="combat-side foes">${foeHtml}</div>
     </div>
+    <p class="train-idle-hit">${escapeHtml(ic.lastHitText || `波${ic.wave} 戰鬥中`)}</p>
   </div>`;
 }
 
@@ -1722,7 +1827,7 @@ function cultivatePanel(qiPct, next, m) {
         ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
         : ""
     }
-    ${trainIdleStripHtml(map.idle)}
+    ${trainIdleStripHtml()}
     ${depthRow}
     <div class="row train-tier-actions">${tierActionBtns.join("")}</div>
     <h3>潮域 ×${fmtMult(siteCur?.qiMult || 1)}${siteCur?.focus ? ` · 專精${escapeHtml(siteCur.focus)}` : ""}${siteCur?.isDailySpot ? " · 今日強化" : ""}</h3>
@@ -3766,17 +3871,13 @@ setInterval(() => {
     }
   }
   if (tab === "cultivate" && panelSub.cultivate === "train") {
+    tickIdleCombat();
     const strip = document.querySelector("[data-live=train-idle]");
     if (strip) {
-      const idle = trainIdleCombatView(state);
-      // 輕量刷新血條／文案，唔成頁重繪
-      const log = strip.querySelector(".train-idle-log");
-      if (log) log.textContent = idle.logLine || "";
-      const bars = strip.querySelectorAll(".cu-bar i");
-      const units = [...(idle.allies || []), ...(idle.foes || [])];
-      bars.forEach((el, i) => {
-        if (units[i]) el.style.width = `${units[i].hpPct || 0}%`;
-      });
+      strip.innerHTML = trainIdleStripHtml().replace(
+        /^<div[^>]*data-live="train-idle"[^>]*>|<\/div>$/g,
+        ""
+      );
     }
   }
   if (eggReadyNow || adv.advanced || snap !== tutorialSnapCache) {
