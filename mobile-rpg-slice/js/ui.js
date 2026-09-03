@@ -85,6 +85,7 @@ import {
   trainIdleCombatView,
   advanceTrainTier,
   challengeTrainWarden,
+  setTrainDepth,
   trainDailySpotlightView,
   materialHintsView,
   dungeonDailyView,
@@ -112,7 +113,7 @@ import {
   loginStreakView,
   claimLoginStreak,
 } from "./engine.js";
-import { DUNGEON_SUMMON_MIN, DUNGEON_SUMMON_MAX, clampDungeonSummonCount } from "./data.js";
+import { DUNGEON_SUMMON_MIN, DUNGEON_SUMMON_MAX, clampDungeonSummonCount, TRAIN_DEPTH_MULT, TRAIN_TIER_COUNT } from "./data.js";
 import { petIconHtml, petIconFromPet } from "./pet-icons.js";
 import {
   tutorialActive,
@@ -1641,9 +1642,19 @@ function cultivatePanel(qiPct, next, m) {
   const sub = panelSub.cultivate;
   const nav = panelSubNav("cultivate", [
     { id: "train", label: "練功" },
+    { id: "mats", label: "材料" },
     { id: "shop", label: "商肆" },
     { id: "advance", label: "進階" },
   ]);
+
+  if (sub === "mats") {
+    return wrapStage(
+      nav,
+      `<h2>材料一覽</h2>
+      <p class="lead">靈石 ${Math.floor(state.stones)} · 飼料 ${Math.floor(state.feed || 0)} · 靈塵 ${Math.floor(state.dust || 0)}</p>
+      ${matHintListHtml()}`
+    );
+  }
 
   if (sub === "shop") {
     return wrapStage(
@@ -1680,32 +1691,30 @@ function cultivatePanel(qiPct, next, m) {
     );
   }
 
-  const tierDock = siteCur
-    ? `<div class="row train-tier-actions">
-        ${
-          siteCur.canAdvance
-            ? `<button type="button" class="primary" data-advance-tier>推進霧階</button>`
-            : ""
-        }
-        ${
-          siteCur.canChallengeWarden
-            ? `<button type="button" class="primary" data-challenge-warden>挑戰域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`
-            : ""
-        }
-        ${
-          siteCur.canRematchWarden
-            ? `<button type="button" class="secondary" data-challenge-warden>複打域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`
-            : ""
-        }
-        ${(state.materials?.breed_ticket || 0) >= 1 ? `<button type="button" class="secondary" data-act="use-breed-ticket">催生符</button>` : ""}
-        ${(state.materials?.blood_catalyst || 0) >= 1 ? `<button type="button" class="secondary" data-act="use-blood-catalyst">血統催化</button>` : ""}
-      </div>`
-    : `<div class="row"></div>`;
+  const depthMax = siteCur?.maxDepth ?? 0;
+  const depthCur = siteCur?.idleDepth ?? 0;
+  const depthBtns = depthMax > 0
+    ? Array.from({ length: depthMax + 1 }, (_, i) => {
+        const label = i >= TRAIN_TIER_COUNT ? "域主" : `霧${i + 1}`;
+        const mult = (TRAIN_DEPTH_MULT[i] ?? 1).toFixed(2);
+        return `<button type="button" class="${i === depthCur ? "primary" : "secondary"} train-depth-btn" data-set-depth="${i}" title="×${mult}">${label}</button>`;
+      }).join("")
+    : "";
+  const depthRow = depthBtns
+    ? `<div class="row train-depth-row"><span class="muted">掛機層：</span>${depthBtns}</div>`
+    : "";
+
+  const tierActionBtns = [];
+  if (siteCur?.canAdvance) tierActionBtns.push(`<button type="button" class="primary" data-advance-tier>推進霧階</button>`);
+  if (siteCur?.canChallengeWarden) tierActionBtns.push(`<button type="button" class="primary" data-challenge-warden>挑戰域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`);
+  if (siteCur?.canRematchWarden) tierActionBtns.push(`<button type="button" class="secondary" data-challenge-warden>複打域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`);
+  if ((state.materials?.breed_ticket || 0) >= 1) tierActionBtns.push(`<button type="button" class="secondary" data-act="use-breed-ticket">催生符</button>`);
+  if ((state.materials?.blood_catalyst || 0) >= 1) tierActionBtns.push(`<button type="button" class="secondary" data-act="use-blood-catalyst">血統催化</button>`);
 
   return wrapStage(
     nav,
     `<h2>契壇修行 · 潮域</h2>
-    <p class="lead">御靈師【${escapeHtml(m.name)}】· 牧場 ${ranchN}／${ranchCap(state)} · 重心在靈寵</p>
+    <p class="lead">御靈師【${escapeHtml(m.name)}】· 牧場 ${ranchN}／${ranchCap(state)}</p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 【${escapeHtml(br.cur?.name || "")}】→【${escapeHtml(br.next.name)}】</p>
     ${
@@ -1713,17 +1722,16 @@ function cultivatePanel(qiPct, next, m) {
         ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
         : ""
     }
+    ${trainIdleStripHtml(map.idle)}
+    ${depthRow}
+    <div class="row train-tier-actions">${tierActionBtns.join("")}</div>
     <h3>潮域 ×${fmtMult(siteCur?.qiMult || 1)}${siteCur?.focus ? ` · 專精${escapeHtml(siteCur.focus)}` : ""}${siteCur?.isDailySpot ? " · 今日強化" : ""}</h3>
     ${spotNote}
     <div class="row tactics-row">${siteBtns}</div>
     ${trainLockNote}
-    <p class="meta">${escapeHtml(siteCur?.depthLabel || "")} · 深度 ×${fmtMult(siteCur?.depthMult || 1)} · 出戰效率 ×${fmtMult(siteCur?.efficiency || 1)} · ${escapeHtml(siteCur?.keyName || "潮鑰")} ${siteCur?.keyHave ?? 0}</p>
-    <p class="meta">${escapeHtml(siteCur?.desc || "")} · 產物種類跟潮域 · 產量隨霧階／戰力 · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
-    ${trainIdleStripHtml(map.idle)}
+    <p class="meta">${escapeHtml(siteCur?.depthLabel || "")} · 深度 ×${fmtMult(siteCur?.depthMult || 1)} · 效率 ×${fmtMult(siteCur?.efficiency || 1)} · ${escapeHtml(siteCur?.keyName || "潮鑰")} ${siteCur?.keyHave ?? 0}</p>
     ${trainRatesBlockHtml(rateLines)}
-    <p class="meta muted">潮鑰由秘境高機率掉落 · 域主消耗潮鑰 · 複打掉稀有材</p>
-    ${materialsBlockHtml()}`,
-    tierDock
+    <p class="meta muted">潮鑰由秘境高機率掉落 · 域主消耗潮鑰 · 複打掉稀有材</p>`
   );
 }
 
@@ -3421,6 +3429,14 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = setTrainSite(state, btn.dataset.setTrain);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-set-depth]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = setTrainDepth(state, Number(btn.dataset.setDepth));
       saveState(state);
       render();
       setFlash(r.msg);

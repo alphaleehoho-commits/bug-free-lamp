@@ -988,6 +988,8 @@ button.flash-act {
 .train-idle-roster { gap: 0.45rem; }
 .train-idle-roster .combat-unit { min-width: 0; }
 .train-tier-actions { flex-wrap: wrap; gap: 0.4rem; }
+.train-depth-row { flex-wrap: wrap; gap: 0.3rem; align-items: center; margin: 0.3rem 0; }
+.train-depth-btn { min-width: 2.6rem; padding: 0.25rem 0.4rem; font-size: 0.78rem; }
 .train-daily-spot {
   margin: 0.15rem 0 0.35rem;
   font-size: 0.62rem;

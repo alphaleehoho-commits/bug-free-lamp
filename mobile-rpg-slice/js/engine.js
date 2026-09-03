@@ -285,13 +285,30 @@ export function partyCombatPower(pets) {
   return Math.round(sum);
 }
 
-/** 深度倍率索引：0–3 霧階；4＝已通域主 */
+/** 深度倍率索引：0–3 霧階；4＝已通域主。可手選已通霧階掛機 */
 export function trainDepthIndex(state, zoneId) {
   ensureTrainMap(state);
   const id = zoneId || state.trainSite || "shore";
-  if (state.trainMap.wardenCleared?.[id]) return 4;
   const z = ensureZoneProgress(state, id);
-  return Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0));
+  const maxIdx = state.trainMap.wardenCleared?.[id] ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0));
+  const chosen = z.idleDepth;
+  if (chosen != null && chosen >= 0 && chosen <= maxIdx) return chosen;
+  return maxIdx;
+}
+
+/** 手動選擇掛機深度（只能選已通關霧階或域主） */
+export function setTrainDepth(state, depthIdx) {
+  ensureTrainMap(state);
+  const zoneId = state.trainSite || "shore";
+  const z = ensureZoneProgress(state, zoneId);
+  const maxIdx = state.trainMap.wardenCleared?.[zoneId] ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0));
+  const idx = depthIdx | 0;
+  if (idx < 0 || idx > maxIdx) {
+    return { ok: false, msg: `只可選已通關霧階（0–${maxIdx}）。` };
+  }
+  z.idleDepth = idx;
+  const label = idx >= TRAIN_TIER_COUNT ? "域主" : `霧階${idx + 1}`;
+  return { ok: true, msg: `掛機深度：${label} · ×${(TRAIN_DEPTH_MULT[idx] ?? 1).toFixed(2)}` };
 }
 
 export function trainDepthMultFor(state, zoneId) {
@@ -848,6 +865,8 @@ export function trainSitesView(state) {
       canAdvance: !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT,
       canChallengeWarden: !wardenDone && (z.tiersCleared | 0) >= TRAIN_TIER_COUNT,
       canRematchWarden: wardenDone,
+      idleDepth: trainDepthIndex(state, s.id),
+      maxDepth: wardenDone ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0)),
     };
   });
 }
