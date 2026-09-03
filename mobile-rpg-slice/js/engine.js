@@ -165,6 +165,8 @@ import {
   dungeonEntryMatCost,
   dungeonEntryTokenPerRun,
   TRAIN_TIER_COUNT,
+  TRAIN_MIST_WAVE_COUNT,
+  TRAIN_WARDEN_WAVE_COUNT,
   TRAIN_DEPTH_MULT,
   TRAIN_ZONE_CHAIN,
   trainZoneMeta,
@@ -285,13 +287,30 @@ export function partyCombatPower(pets) {
   return Math.round(sum);
 }
 
-/** 深度倍率索引：0–3 霧階；4＝已通域主 */
+/** 深度倍率索引：0–3 霧階；4＝已通域主。可手選已通霧階掛機 */
 export function trainDepthIndex(state, zoneId) {
   ensureTrainMap(state);
   const id = zoneId || state.trainSite || "shore";
-  if (state.trainMap.wardenCleared?.[id]) return 4;
   const z = ensureZoneProgress(state, id);
-  return Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0));
+  const maxIdx = state.trainMap.wardenCleared?.[id] ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0));
+  const chosen = z.idleDepth;
+  if (chosen != null && chosen >= 0 && chosen <= maxIdx) return chosen;
+  return maxIdx;
+}
+
+/** 手動選擇掛機深度（只能選已通關霧階或域主） */
+export function setTrainDepth(state, depthIdx) {
+  ensureTrainMap(state);
+  const zoneId = state.trainSite || "shore";
+  const z = ensureZoneProgress(state, zoneId);
+  const maxIdx = state.trainMap.wardenCleared?.[zoneId] ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0));
+  const idx = depthIdx | 0;
+  if (idx < 0 || idx > maxIdx) {
+    return { ok: false, msg: `只可選已通關霧階（0–${maxIdx}）。` };
+  }
+  z.idleDepth = idx;
+  const label = idx >= TRAIN_TIER_COUNT ? "域主" : `霧階${idx + 1}`;
+  return { ok: true, msg: `掛機深度：${label} · ×${(TRAIN_DEPTH_MULT[idx] ?? 1).toFixed(2)}` };
 }
 
 export function trainDepthMultFor(state, zoneId) {
@@ -846,14 +865,24 @@ export function trainSitesView(state) {
       keyName: MATERIALS[meta.keyMatId]?.name || "潮鑰",
       keyHave: Math.floor(state.materials?.[meta.keyMatId] || 0),
       canAdvance: !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT,
+      clearReady: !!z.clearReady,
+      canClaimNext:
+        !wardenDone &&
+        !!z.clearReady &&
+        (z.tiersCleared | 0) < TRAIN_TIER_COUNT,
       canChallengeWarden: !wardenDone && (z.tiersCleared | 0) >= TRAIN_TIER_COUNT,
       canRematchWarden: wardenDone,
+      idleDepth: trainDepthIndex(state, s.id),
+      maxDepth: wardenDone ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0)),
     };
   });
 }
 
-/** 推進當前潮域下一霧階（出戰隊簡化判定） */
-export function advanceTrainTier(state) {
+/**
+ * 領取霧階推進：需掛機戰鬥先清完一輪五波（z.clearReady）。
+ * 唔再開即時戰鬥／彈窗。
+ */
+export function claimTrainTierClear(state) {
   ensureTrainMap(state);
   const zoneId = state.trainSite || "shore";
   if (!isTrainSiteUnlocked(state, zoneId)) {
@@ -866,24 +895,12 @@ export function advanceTrainTier(state) {
   if ((z.tiersCleared | 0) >= TRAIN_TIER_COUNT) {
     return { ok: false, msg: "霧階已清——請挑戰域主關。" };
   }
-  if (!(state.pets || []).length) {
-    return { ok: false, msg: "請先派出至少一隻靈寵。" };
+  if (!z.clearReady) {
+    return { ok: false, msg: `需先掛機清完一輪 ${TRAIN_MIST_WAVE_COUNT} 波，先可去下一層。` };
   }
   const tier = z.tiersCleared | 0;
-  const threat = trainTierThreat(zoneId, tier);
-  const power = partyCombatPower(state.pets);
   const site = trainSiteById(zoneId);
-  const combat = simulateTrainSkirmish(state.pets, threat, `霧階${tier + 1}`);
-  if (!combat.won) {
-    pushLog(state, `【${site.name}】霧階${tier + 1}未破（戰力 ${power}／威脅 ${threat}）。`);
-    return {
-      ok: false,
-      msg: `霧階${tier + 1}未破 · 戰力 ${power}＜威脅 ${threat}`,
-      combat,
-      power,
-      threat,
-    };
-  }
+  z.clearReady = false;
   z.tiersCleared = tier + 1;
   bumpDaily(state, "train_tier", 1);
   const primary = site.primaryMat;
@@ -896,18 +913,23 @@ export function advanceTrainTier(state) {
   state.stones = (state.stones || 0) + 5;
   pushLog(
     state,
-    `【${site.name}】攻破霧階${tier + 1}！產量上限升至 ×${trainDepthMultFor(state, zoneId).toFixed(2)}。`
+    `【${site.name}】推進至霧階${tier + 1}通關！產量上限升至 ×${trainDepthMultFor(state, zoneId).toFixed(2)}。`
   );
+  const msg =
+    z.tiersCleared >= TRAIN_TIER_COUNT
+      ? `霧階全破 · 可挑戰域主（需${MATERIALS[trainZoneMeta(zoneId).keyMatId]?.name || "潮鑰"}）`
+      : `已進霧階${tier + 1} · 深度 ×${trainDepthMultFor(state, zoneId).toFixed(2)}`;
   return {
     ok: true,
-    msg:
-      z.tiersCleared >= TRAIN_TIER_COUNT
-        ? `霧階全破 · 可挑戰域主（需${MATERIALS[trainZoneMeta(zoneId).keyMatId]?.name || "潮鑰"}）`
-        : `攻破霧階${tier + 1} · 深度 ×${trainDepthMultFor(state, zoneId).toFixed(2)}`,
-    combat,
+    msg,
     tiersCleared: z.tiersCleared,
     reward,
   };
+}
+
+/** @deprecated 改用 claimTrainTierClear；掛機五波循環後再領取 */
+export function advanceTrainTier(state) {
+  return claimTrainTierClear(state);
 }
 
 /** 挑戰／複打域主（扣潮鑰；首次開下一潮域；複打掉稀有材） */
@@ -938,17 +960,20 @@ export function challengeTrainWarden(state) {
   // 勝負都扣
   state.materials[keyId] -= 1;
   bumpDaily(state, "train_warden", 1);
-  const threat = trainWardenThreat(zoneId);
-  const power = partyCombatPower(state.pets);
-  const combat = simulateTrainSkirmish(state.pets, threat, `${site.name}域主`);
+  const combat = runTrainLayerCombat(state, { zoneId, tierIndex: TRAIN_TIER_COUNT, mode: "warden" });
+  if (!combat.ok) {
+    // 已扣鑰但戰鬥無法開打（理論上僅無出戰）
+    return combat;
+  }
   if (!combat.won) {
-    pushLog(state, `【${site.name}】域主未破，潮鑰已耗（戰力 ${power}／威脅 ${threat}）。`);
+    pushLog(state, `【${site.name}】域主未破——出戰隊未能清完 ${TRAIN_WARDEN_WAVE_COUNT} 波，潮鑰已耗。`);
     return {
       ok: false,
-      msg: `域主未破 · 已扣潮鑰 · 戰力 ${power}／威脅 ${threat}`,
-      combat,
+      msg: `域主未破 · 已扣潮鑰 · ${TRAIN_WARDEN_WAVE_COUNT} 波未清或全滅`,
+      combatKind: "train",
       keySpent: true,
       rematch,
+      ...combat,
     };
   }
 
@@ -968,10 +993,11 @@ export function challengeTrainWarden(state) {
     return {
       ok: true,
       msg: `域主已破 · 深度 ×${trainDepthMultFor(state, zoneId).toFixed(2)}${unlockMsg}`,
-      combat,
+      combatKind: "train",
       firstClear: true,
       unlockedZoneId: nextMeta?.id || null,
       keySpent: true,
+      ...combat,
     };
   }
 
@@ -988,148 +1014,496 @@ export function challengeTrainWarden(state) {
   return {
     ok: true,
     msg: `複打成功 · ${bits.join("／")}`,
-    combat,
+    combatKind: "train",
     rematch: true,
     reward: rem,
     keySpent: true,
+    ...combat,
   };
 }
 
-/** 簡易潮域戰鬥（文字＋血條事件，供 UI／判定） */
-function simulateTrainSkirmish(pets, threat, label) {
-  const allies = (pets || []).map((p, i) => ({
-    uid: p.uid || `ally-${i}`,
-    name: displayPetName(p),
-    hp: Math.max(20, p.hp || 40),
-    maxHp: Math.max(20, p.hp || 40),
-    atk: Math.max(3, p.atk || 8),
-    elementId: p.elementId || "tide",
-    side: "ally",
-  }));
-  const foeHp = Math.max(40, Math.round(threat * 1.8));
-  const foeAtk = Math.max(4, Math.round(threat * 0.22));
-  const foes = [
-    {
-      uid: "foe-0",
-      name: label || "霧影",
-      hp: foeHp,
-      maxHp: foeHp,
-      atk: foeAtk,
-      elementId: "gloom",
-      side: "foe",
-    },
-  ];
-  const events = [{ type: "wave", label: label || "潮域戰" }];
-  const power = partyCombatPower(pets);
-  // 戰力遠超威脅則穩勝；接近則機率；明顯不足則穩敗（測試／節奏可預期）
-  let won;
-  if (power >= threat * 1.15) won = true;
-  else if (power <= threat * 0.55) won = false;
-  else {
-    const chance = Math.max(0.12, Math.min(0.88, power / Math.max(1, threat) * 0.8));
-    won = Math.random() < chance;
+const TRAIN_FOE_PREFIX = {
+  shore: "潮霧",
+  ruins: "廢墟",
+  deep: "深層",
+  mistveil: "霧帷",
+  core: "心核",
+  fusehall: "融砂",
+  abyss: "暗潮",
+};
+
+const TRAIN_FOE_ELEMENT = {
+  shore: "tide",
+  ruins: "stone",
+  deep: "gloom",
+  mistveil: "gale",
+  core: "tide",
+  fusehall: "flame",
+  abyss: "gloom",
+};
+
+/** 依潮域／霧階組成多波敵陣（一層霧階 = TRAIN_MIST_WAVE_COUNT 波） */
+function buildTrainCombatWaves(zoneId, tierIndex, { warden = false } = {}) {
+  const threat = warden ? trainWardenThreat(zoneId) : trainTierThreat(zoneId, tierIndex);
+  const site = trainSiteById(zoneId);
+  const prefix = TRAIN_FOE_PREFIX[zoneId] || "潮域";
+  const elem = TRAIN_FOE_ELEMENT[zoneId] || "gloom";
+  const tier = tierIndex | 0;
+  const tierScale = 1 + tier * 0.06;
+
+  const mkNormal = (name, scale = 1) => ({
+    name,
+    hp: Math.max(24, Math.round(threat * 1.12 * scale * tierScale)),
+    atk: Math.max(4, Math.round(threat * 0.16 * scale * tierScale)),
+    spd: Math.max(5, Math.round(5 + threat * 0.055 * scale)),
+    element: elem,
+    role: "normal",
+  });
+
+  const mkElite = (name, scale = 1.35) => ({
+    name,
+    hp: Math.max(40, Math.round(threat * 1.62 * scale * tierScale)),
+    atk: Math.max(5, Math.round(threat * 0.2 * scale * tierScale)),
+    spd: Math.max(6, Math.round(6 + threat * 0.065 * scale)),
+    element: elem,
+    role: "elite",
+    skills: ["tide_crush", "coral_spike"].filter((id) => SKILLS[id]),
+  });
+
+  const mkBoss = (name) => ({
+    name,
+    hp: Math.max(80, Math.round(threat * 2.55 * tierScale)),
+    atk: Math.max(8, Math.round(threat * 0.24 * tierScale)),
+    spd: Math.max(7, Math.round(7 + threat * 0.075)),
+    element: "gloom",
+    role: "boss",
+    actions: 2,
+    skills: ["tide_crush", "mist_veil", "coral_spike"].filter((id) => SKILLS[id]),
+  });
+
+  if (!warden) {
+    return [
+      {
+        label: `${prefix}散霧`,
+        enemies: [mkNormal(`${prefix}游魂`, 0.88), mkNormal(`${prefix}鼠`, 0.84)],
+      },
+      {
+        label: `${prefix}暗流`,
+        enemies: [mkNormal(`${prefix}妖`, 0.96), mkNormal(`${prefix}刺`, 0.92)],
+      },
+      {
+        label: `${prefix}潮獸`,
+        enemies: [mkNormal(`${prefix}獸`, 1.02), mkNormal(`${prefix}衛`, 0.98)],
+      },
+      {
+        label: `霧階${tier + 1}·精英`,
+        enemies: [mkElite(`${prefix}精英`, 1.08 + tier * 0.04)],
+      },
+      {
+        label: `霧階${tier + 1}·守門`,
+        enemies: [mkElite(`${prefix}守門`, 1.22 + tier * 0.06)],
+      },
+    ];
   }
+
+  const waves = [];
+  for (let w = 0; w < TRAIN_WARDEN_WAVE_COUNT - 1; w += 1) {
+    const scale = 0.88 + w * 0.07;
+    if (w === TRAIN_WARDEN_WAVE_COUNT - 2) {
+      waves.push({
+        label: `${site.name}精英`,
+        enemies: [mkElite(`${prefix}域衛`, scale + 0.18)],
+      });
+    } else if (w % 2 === 0) {
+      waves.push({
+        label: `${prefix}第${w + 1}陣`,
+        enemies: [mkNormal(`${prefix}影`, scale), mkNormal(`${prefix}靈`, scale * 0.96)],
+      });
+    } else {
+      waves.push({
+        label: `${prefix}第${w + 1}陣`,
+        enemies: [mkNormal(`${prefix}潮衛`, scale + 0.04)],
+      });
+    }
+  }
+  waves.push({ label: `${site.name}域主`, enemies: [mkBoss(`${site.name}域主`)] });
+  return waves;
+}
+
+/** 組出戰方（潮域實戰；與秘境共用加成公式） */
+function buildTrainCombatAllies(state) {
+  const tactics = TACTIC_IDS.includes(state.tactics) ? state.tactics : "balanced";
+  const formationId = FORMATION_IDS.includes(state.formation) ? state.formation : "balanced";
+  const formation = FORMATIONS[formationId] || FORMATIONS.balanced;
+  const stageBonus = (state.realm || 0) * 2;
+  const synergy = partySynergy(state.pets);
+  const dex = bestiaryStatus(state);
+  const sealMult = tideSealCombatMult(state.tideSeals || 0);
+  const atkMult = synergy.atkMult * dex.atkMult * sealMult;
+  const hpMult = synergy.hpMult * dex.hpMult * sealMult;
+  const allies = [];
+  for (const p of state.pets) {
+    const skills = petSkillIds(p);
+    const gen = petGeneration(p);
+    const gMult = genCombatMult(gen);
+    const fAtk = formation.petAtkMult || 1;
+    const fHp = formation.petHpMult || 1;
+    const fSpd = formation.petSpdMult || 1;
+    const pe = personalityCombatForPet(p);
+    const pAtk = pe?.atkMult || 1;
+    const pHp = pe?.hpMult || 1;
+    const pSpd = pe?.spdMult || 1;
+    const bm = bloodmarkCombatMult(p.bloodmarks);
+    allies.push({
+      side: "ally",
+      name: displayPetName(p),
+      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp),
+      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp),
+      atk: Math.round((p.atk + stageBonus) * atkMult * gMult * fAtk * pAtk * bm.atk),
+      spd: Math.round(p.spd * synergy.spdMult * fSpd * pSpd * bm.spd),
+      elementId: p.elementId,
+      skillLevel: p.skillLevel ?? 1,
+      skills,
+      skillCd: Object.fromEntries(skills.map((id) => [id, 0])),
+      guardTurns: 0,
+      atkBuffTurns: 0,
+      atkBuffPct: 0,
+      generation: gen,
+      sustainBias: !!pe?.sustainBias,
+    });
+  }
+  return { allies, synergy, formation, tactics };
+}
+
+/**
+ * 潮域一層實戰（多波自動戰鬥；至少一隻友方存活且清完所有波才算贏）
+ * @returns {{ ok: boolean, won?: boolean, combatEvents?: object[], combatStart?: object, transcript?: string[], waves?: number, rounds?: number, msg?: string, label?: string, mode?: string }}
+ */
+export function runTrainLayerCombat(state, { zoneId, tierIndex = 0, mode = "tier" } = {}) {
+  if (!(state.pets || []).length) {
+    return { ok: false, msg: "請先派出至少一隻靈寵。" };
+  }
+  const warden = mode === "warden";
+  const site = trainSiteById(zoneId);
+  const tier = tierIndex | 0;
+  const waves = buildTrainCombatWaves(zoneId, tier, { warden });
+  const ctx = buildTrainCombatAllies(state);
+  const { allies, synergy, formation, tactics } = ctx;
+  if (!allies.length) {
+    return { ok: false, msg: "請先派出至少一隻靈寵。" };
+  }
+
+  let waveIndex = 0;
+  let foes = spawnWaveFoes(waves[0]);
+  _combatUid = 0;
+  tagCombatUnits(allies, "a");
+  tagCombatUnits(foes, "f");
+
+  const transcript = [];
+  const combatEvents = [];
+  const say = (text) => {
+    transcript.push(text);
+    pushCombatText(combatEvents, text);
+  };
+  const pushWave = (waveIdx, label, foeList) => {
+    const waveLine =
+      waveIdx === 1
+        ? `—— 第 1 波・${label} ——`
+        : `—— 第 ${waveIdx} 波・${label} 湧出！——`;
+    transcript.push(waveLine);
+    combatEvents.push({
+      type: "wave",
+      text: waveLine,
+      waveIndex: waveIdx,
+      label,
+      foes: foeList.map(unitRosterEntry),
+    });
+  };
+  const pushRound = (r) => {
+    const roundLine = `—— 第 ${r} 回合 ——`;
+    transcript.push(roundLine);
+    combatEvents.push({ type: "round", text: roundLine, round: r });
+  };
+
+  const layerLabel = warden ? `${site.name}域主關` : `霧階${tier + 1}`;
+  transcript.push(`御靈師進入【${site.name}】${layerLabel}（${waves.length} 波）。`);
+  transcript.push(
+    `戰術【${TACTICS[tactics]?.name || tactics}】· 陣型【${formation.name}】· 自動戰鬥。`
+  );
+  if (synergy.labels.length) {
+    transcript.push(`陣容羈絆：${synergy.labels.join("、")}。`);
+  }
+
+  pushWave(1, waves[0].label, foes);
+  const combatStart = {
+    allies: allies.map(unitRosterEntry),
+    foes: foes.map(unitRosterEntry),
+  };
+
   let round = 0;
-  const a = allies.map((x) => ({ ...x }));
-  const f = foes.map((x) => ({ ...x }));
-  while (round < 12 && a.some((x) => x.hp > 0) && f.some((x) => x.hp > 0)) {
+  const maxRounds = warden ? 75 : 60;
+  let won = false;
+  let ended = false;
+
+  const checkSideDown = () => {
+    if (allies.every((a) => a.hp <= 0)) return "lose";
+    if (foes.every((f) => f.hp <= 0)) return "wave";
+    return null;
+  };
+
+  const advanceOrWin = () => {
+    if (waveIndex + 1 < waves.length) {
+      waveIndex += 1;
+      foes = tagCombatUnits(spawnWaveFoes(waves[waveIndex]), "f");
+      pushWave(waveIndex + 1, waves[waveIndex].label, foes);
+      return false;
+    }
+    return true;
+  };
+
+  while (round < maxRounds && !ended) {
     round += 1;
-    events.push({ type: "round", n: round });
-    const actor = a.find((x) => x.hp > 0);
-    const target = f.find((x) => x.hp > 0);
-    if (actor && target) {
-      const dmg = Math.max(1, Math.floor(actor.atk * (0.85 + Math.random() * 0.4)));
-      target.hp = Math.max(0, target.hp - dmg);
-      events.push({
-        type: "strike",
-        actorUid: actor.uid,
-        targetUid: target.uid,
-        dmg,
-        targetHp: target.hp,
-        text: `${actor.name} 擊中 ${target.name} −${dmg}`,
-      });
-      if (target.hp <= 0) events.push({ type: "ko", uid: target.uid, name: target.name });
-    }
-    if (!f.some((x) => x.hp > 0)) break;
-    const fa = f.find((x) => x.hp > 0);
-    const at = a.find((x) => x.hp > 0);
-    if (fa && at) {
-      let dmg = Math.max(1, Math.floor(fa.atk * (0.8 + Math.random() * 0.35)));
-      if (!won && round >= 3) dmg = Math.max(dmg, Math.ceil(at.hp / 2));
-      if (won && round >= 2) dmg = Math.min(dmg, Math.max(1, Math.floor(at.maxHp * 0.2)));
-      at.hp = Math.max(0, at.hp - dmg);
-      events.push({
-        type: "strike",
-        actorUid: fa.uid,
-        targetUid: at.uid,
-        dmg,
-        targetHp: at.hp,
-        text: `${fa.name} 反擊 ${at.name} −${dmg}`,
-      });
-      if (at.hp <= 0) events.push({ type: "ko", uid: at.uid, name: at.name });
+    pushRound(round);
+    const order = [...allies, ...foes]
+      .filter((u) => u.hp > 0)
+      .sort((a, b) => b.spd - a.spd || a.name.localeCompare(b.name));
+
+    for (const actor of order) {
+      if (actor.hp <= 0) continue;
+      const actions = Math.max(1, actor.actions || 1);
+      for (let a = 0; a < actions; a += 1) {
+        if (actor.hp <= 0) break;
+        const down = checkSideDown();
+        if (down) break;
+        if (actor.side === "ally") act(actor, allies, foes, transcript, combatEvents, tactics);
+        else act(actor, foes, allies, transcript, combatEvents, "balanced");
+      }
+      tickCooldowns(actor);
+
+      const down = checkSideDown();
+      if (down === "lose") {
+        ended = true;
+        say(`折戟【${site.name}】${layerLabel}……出戰隊全滅。`);
+        break;
+      }
+      if (down === "wave") {
+        if (advanceOrWin()) {
+          won = true;
+          ended = true;
+          say(`清完 ${waves.length} 波，攻破【${site.name}】${layerLabel}！`);
+          break;
+        }
+      }
     }
   }
-  // 強制結局對齊 won 旗標
-  if (won) {
-    for (const x of f) x.hp = 0;
-  } else if (a.every((x) => x.hp > 0) && f.every((x) => x.hp <= 0)) {
-    // random said lose but sim wiped foes — soften
+
+  if (!ended) {
+    say("戰鬥逾時，未能通關。");
   }
+
+  const msg = won
+    ? `通關 ${layerLabel}（${waves.length} 波）`
+    : ended
+      ? `${layerLabel} 未破`
+      : `${layerLabel} 逾時`;
+
   return {
+    ok: true,
     won,
-    events,
-    combatStart: { allies, foes },
-    power,
-    threat,
-    label,
+    mode,
+    label: layerLabel,
+    waves: waves.length,
+    rounds: round,
+    transcript: transcript.slice(0, 80),
+    combatEvents: combatEvents.slice(0, 120),
+    combatStart,
+    msg,
   };
 }
 
-/** UI：閒置掛機戰場快照（文字單位＋血條） */
+/** 掛機五波戰場：建立一輪實戰 session（逐步 tick） */
+export function createTrainIdleSession(state) {
+  ensureTrainMap(state);
+  if (!(state.pets || []).length) return null;
+  const zoneId = state.trainSite || "shore";
+  if (!isTrainSiteUnlocked(state, zoneId)) return null;
+  const z = ensureZoneProgress(state, zoneId);
+  const wardenDone = !!state.trainMap.wardenCleared?.[zoneId];
+  const canUnlockNext = !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT;
+  const tierIndex = canUnlockNext
+    ? z.tiersCleared | 0
+    : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, trainDepthIndex(state, zoneId)));
+  const waves = buildTrainCombatWaves(zoneId, tierIndex, { warden: false });
+  const { allies, tactics } = buildTrainCombatAllies(state);
+  if (!allies.length) return null;
+  _combatUid = 0;
+  tagCombatUnits(allies, "a");
+  const foes = tagCombatUnits(spawnWaveFoes(waves[0]), "f");
+  const site = trainSiteById(zoneId);
+  const petSig = (state.pets || []).map((p) => `${p.uid}:${p.atk}:${p.hp}:${p.spd}`).join("|");
+  return {
+    zoneId,
+    tierIndex,
+    canUnlockNext,
+    clearReady: !!z.clearReady,
+    petSig,
+    waves,
+    waveCount: waves.length,
+    waveIndex: 0,
+    allies,
+    foes,
+    tactics,
+    round: 0,
+    maxRounds: 60,
+    order: [],
+    orderIdx: 0,
+    phase: "fight",
+    pauseLeft: 0,
+    ended: false,
+    won: false,
+    lastText: `—— 第 1 波・${waves[0].label} ——`,
+    waveLabel: `第 1／${waves.length} 波・${waves[0].label}`,
+    layerLabel: `霧階${tierIndex + 1}`,
+    siteName: site.name,
+    efficiency: trainClearEfficiency(state, zoneId),
+    depthMult: trainDepthMultFor(state, zoneId),
+  };
+}
+
+/**
+ * 掛機戰鬥一步（約 1 次出手／開新回合／轉場）。
+ * @returns {{ status: string, session: object, events?: object[] }}
+ */
+export function stepTrainIdleSession(session) {
+  if (!session) return { status: "empty", session: null };
+
+  if (session.phase === "pause") {
+    session.pauseLeft -= 1;
+    if (session.pauseLeft <= 0) {
+      return { status: "restart", session };
+    }
+    return { status: "pause", session };
+  }
+
+  if (session.ended) {
+    return { status: session.won ? "won" : "lost", session };
+  }
+
+  const allies = session.allies;
+  const foes = session.foes;
+
+  if (session.orderIdx >= session.order.length) {
+    session.round += 1;
+    if (session.round > session.maxRounds) {
+      session.ended = true;
+      session.won = false;
+      session.lastText = "戰鬥逾時，重新開始…";
+      session.phase = "pause";
+      session.pauseLeft = 2;
+      return { status: "lost", session };
+    }
+    session.order = [...allies, ...foes]
+      .filter((u) => u.hp > 0)
+      .sort((a, b) => b.spd - a.spd || a.name.localeCompare(b.name));
+    session.orderIdx = 0;
+    session.lastText = `—— 第 ${session.round} 回合 ——`;
+    return { status: "round", session };
+  }
+
+  const actor = session.order[session.orderIdx];
+  session.orderIdx += 1;
+  if (!actor || actor.hp <= 0) return { status: "skip", session };
+
+  const transcript = [];
+  const events = [];
+  const actions = Math.max(1, actor.actions || 1);
+  for (let a = 0; a < actions; a += 1) {
+    if (actor.hp <= 0) break;
+    if (allies.every((x) => x.hp <= 0) || foes.every((x) => x.hp <= 0)) break;
+    if (actor.side === "ally") act(actor, allies, foes, transcript, events, session.tactics);
+    else act(actor, foes, allies, transcript, events, "balanced");
+  }
+  tickCooldowns(actor);
+
+  if (events.length) {
+    const last = events[events.length - 1];
+    session.lastText = last.text || session.lastText;
+  }
+
+  if (allies.every((x) => x.hp <= 0)) {
+    session.ended = true;
+    session.won = false;
+    session.lastText = `折戟【${session.siteName}】${session.layerLabel}……全滅，重新開始`;
+    session.phase = "pause";
+    session.pauseLeft = 2;
+    return { status: "lost", session, events };
+  }
+
+  if (foes.every((x) => x.hp <= 0)) {
+    if (session.waveIndex + 1 < session.waves.length) {
+      session.waveIndex += 1;
+      session.foes = tagCombatUnits(spawnWaveFoes(session.waves[session.waveIndex]), "f");
+      session.order = [];
+      session.orderIdx = 0;
+      const w = session.waves[session.waveIndex];
+      session.waveLabel = `第 ${session.waveIndex + 1}／${session.waves.length} 波・${w.label}`;
+      session.lastText = `—— 第 ${session.waveIndex + 1} 波・${w.label} 湧出！——`;
+      return { status: "wave", session, events };
+    }
+    session.ended = true;
+    session.won = true;
+    session.lastText = `清完 ${session.waves.length} 波！可去下一層`;
+    session.phase = "pause";
+    session.pauseLeft = 2;
+    return { status: "won", session, events };
+  }
+
+  return { status: "fight", session, events };
+}
+
+/** 掛機清完一輪後標記可領取下一霧階 */
+export function markTrainIdleClearReady(state, session) {
+  if (!session?.canUnlockNext || !session.won) return false;
+  const z = ensureZoneProgress(state, session.zoneId);
+  z.clearReady = true;
+  session.clearReady = true;
+  return true;
+}
+
+/** UI：閒置掛機戰場摘要（建立 session 用） */
 export function trainIdleCombatView(state) {
   ensureTrainMap(state);
   const zoneId = state.trainSite || "shore";
   const site = trainSiteById(zoneId);
+  const z = ensureZoneProgress(state, zoneId);
   const depthIdx = trainDepthIndex(state, zoneId);
-  const threat = trainTierThreat(zoneId, depthIdx);
   const eff = trainClearEfficiency(state, zoneId);
   const depthMult = trainDepthMultFor(state, zoneId);
-  const allies = (state.pets || []).slice(0, 4).map((p, i) => ({
-    uid: p.uid || `idle-a-${i}`,
-    name: displayPetName(p),
-    hpPct: Math.min(100, Math.round(40 + eff * 55)),
-    elementId: p.elementId || "tide",
-    side: "ally",
-  }));
-  const foeName =
-    state.trainMap.wardenCleared?.[zoneId]
-      ? `${site.name}殘影`
-      : `霧階影·${depthIdx + 1}`;
-  const foes = [
-    {
-      uid: "idle-f-0",
-      name: foeName,
-      hpPct: Math.min(100, Math.round(100 - eff * 45)),
-      elementId: "gloom",
-      side: "foe",
-    },
-  ];
+  const wardenDone = !!state.trainMap.wardenCleared?.[zoneId];
+  const canUnlockNext = !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT;
+  const tierIndex = canUnlockNext
+    ? z.tiersCleared | 0
+    : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, depthIdx));
   return {
     zoneId,
     zoneName: site.name,
-    depthLabel: state.trainMap.wardenCleared?.[zoneId]
+    tierIndex,
+    canUnlockNext,
+    clearReady: !!z.clearReady,
+    depthLabel: wardenDone
       ? "域主已通"
-      : `霧階 ${depthIdx + 1}/${TRAIN_TIER_COUNT}`,
+      : `霧階 ${Math.min((z.tiersCleared | 0) + 1, TRAIN_TIER_COUNT)}/${TRAIN_TIER_COUNT}`,
     depthMult,
     efficiency: eff,
     power: partyCombatPower(state.pets),
-    threat,
-    allies,
-    foes,
+    petCount: (state.pets || []).length,
+    waveCount: TRAIN_MIST_WAVE_COUNT,
     logLine:
-      allies.length === 0
+      !(state.pets || []).length
         ? "未出戰——掛機效率最低（請編成出戰隊）"
-        : `掛機清場中 · 效率 ×${eff.toFixed(2)} · 深度 ×${depthMult.toFixed(2)}`,
+        : canUnlockNext
+          ? `掛機清場 · ${TRAIN_MIST_WAVE_COUNT} 波循環 · 效率 ×${eff.toFixed(2)}`
+          : `掛機清場中 · 效率 ×${eff.toFixed(2)} · 深度 ×${depthMult.toFixed(2)}`,
   };
 }
 

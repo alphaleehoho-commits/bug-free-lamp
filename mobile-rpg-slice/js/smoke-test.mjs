@@ -120,6 +120,8 @@ import {
   todayKey,
   TRAIN_DEPTH_MULT,
   TRAIN_TIER_COUNT,
+  TRAIN_MIST_WAVE_COUNT,
+  TRAIN_WARDEN_WAVE_COUNT,
   TRAIN_ZONE_CHAIN,
   rollTideKeyDrop,
 } from "./data.js";
@@ -158,7 +160,13 @@ import {
   breedBusyUids,
   useBreedTicket,
   advanceTrainTier,
+  claimTrainTierClear,
+  createTrainIdleSession,
+  stepTrainIdleSession,
+  markTrainIdleClearReady,
+  runTrainLayerCombat,
   challengeTrainWarden,
+  setTrainDepth,
   trainClearEfficiency,
   trainDepthMultFor,
   partyCombatPower,
@@ -1476,6 +1484,8 @@ assert(ticket.ok && breedStatus(breedQSt).claimable.length === 1, "breed ticket 
 /* Tide zones: mist tiers, depth yield, warden keys */
 assert(TRAIN_ZONE_CHAIN.length === TRAIN_SITES.length, "zone chain matches sites");
 assert(TRAIN_DEPTH_MULT.length === TRAIN_TIER_COUNT + 1, "depth mult fog+warden");
+assert(TRAIN_MIST_WAVE_COUNT === 5, "mist layer wave count");
+assert(TRAIN_WARDEN_WAVE_COUNT >= TRAIN_MIST_WAVE_COUNT, "warden has more waves");
 assert(MATERIALS.tide_key_1?.tier === "key" && MATERIALS.warden_echo?.tier === "key", "key mats");
 assert(
   !TRAIN_SITES.some((s) => (s.drops || []).some((d) => MATERIALS[d.mat]?.tier === "key")),
@@ -1510,6 +1520,9 @@ const tzSt = {
   trainMap: { zones: { shore: { tiersCleared: 0 } }, wardenCleared: {} },
   pets: [strongPet],
   ranch: [],
+  realm: 0,
+  tactics: "balanced",
+  formation: "balanced",
   clearedDungeons: {},
   log: [],
   daily: { date: todayKey(), progress: {}, claimed: {} },
@@ -1518,10 +1531,41 @@ const tzSt = {
 };
 assert(trainDepthMultFor(tzSt, "shore") === 1, "depth mist1");
 const d0 = Math.floor(tzSt.materials.tide_dew);
-// bump depth by clearing tiers with forced win via high power
+const tierCombat = runTrainLayerCombat(tzSt, { zoneId: "shore", tierIndex: 0, mode: "tier" });
+assert(tierCombat.ok && tierCombat.won, "train tier combat win strong party");
+assert(tierCombat.waves === TRAIN_MIST_WAVE_COUNT, "train tier has 5 waves");
+assert(tierCombat.combatEvents?.some((e) => e.type === "wave"), "train tier wave events");
+assert(tierCombat.combatEvents?.some((e) => e.type === "strike"), "train tier strike events");
+const weakSt = {
+  ...tzSt,
+  pets: [{ ...strongPet, atk: 2, hp: 20, spd: 2, uid: "weak-only" }],
+};
+const tierFail = runTrainLayerCombat(weakSt, { zoneId: "shore", tierIndex: 0, mode: "tier" });
+assert(tierFail.ok && !tierFail.won, "weak party fails train tier");
+const claimBlocked = claimTrainTierClear(tzSt);
+assert(!claimBlocked.ok, "cannot claim next without clearReady");
+const idleSess = createTrainIdleSession(tzSt);
+assert(idleSess && idleSess.waveCount === TRAIN_MIST_WAVE_COUNT, "idle session 5 waves");
+assert(idleSess.foes?.length >= 1 && idleSess.allies?.length >= 1, "idle session units");
+let idleSteps = 0;
+let idleWon = false;
+while (idleSteps < 500 && !idleWon) {
+  const step = stepTrainIdleSession(idleSess);
+  idleSteps += 1;
+  if (step.status === "won") {
+    idleWon = true;
+    assert(markTrainIdleClearReady(tzSt, idleSess), "mark clear ready");
+    break;
+  }
+  if (step.status === "restart") break;
+}
+assert(idleWon, "idle session can clear with strong party");
+assert(tzSt.trainMap.zones.shore.clearReady, "clearReady persisted");
 for (let i = 0; i < 4; i++) {
-  const ar = advanceTrainTier(tzSt);
-  assert(ar.ok, `advance tier ${i + 1}`);
+  tzSt.trainMap.zones.shore.clearReady = true;
+  const ar = claimTrainTierClear(tzSt);
+  assert(ar.ok, `claim tier ${i + 1}`);
+  assert(!tzSt.trainMap.zones.shore.clearReady, `clearReady spent ${i + 1}`);
 }
 assert(tzSt.trainMap.zones.shore.tiersCleared === 4, "4 mist tiers cleared");
 assert(trainDepthMultFor(tzSt, "shore") === 1.35, "depth at mist4");
@@ -1555,14 +1599,25 @@ const effWeak = trainClearEfficiency(
 );
 assert(effStrong > effWeak, "strong party higher AFK efficiency");
 const idle = trainIdleCombatView(tzSt);
-assert(idle.allies?.length >= 1 && idle.foes?.length >= 1, "idle combat strip data");
+assert(idle.petCount >= 1 && idle.waveCount === TRAIN_MIST_WAVE_COUNT, "idle combat strip data");
 assert(DAILY_QUESTS.some((q) => q.id === "train_tier"), "daily train_tier");
 assert(DAILY_QUESTS.some((q) => q.id === "train_warden"), "daily train_warden");
 
+const setD = setTrainDepth(tzSt, 1);
+assert(setD.ok && trainDepthMultFor(tzSt, "shore") === TRAIN_DEPTH_MULT[1], "set depth to tier 2");
+const setDFail = setTrainDepth({ ...tzSt, trainMap: { ...tzSt.trainMap, wardenCleared: {} }, trainSite: "shore" }, 4);
+assert(!setDFail.ok, "cannot set depth beyond cleared");
+
 const uiSrc2 = readFileSync(join(__dir, "ui.js"), "utf8");
-assert(uiSrc2.includes("data-advance-tier"), "ui advance mist tier");
+assert(uiSrc2.includes("data-claim-tier"), "ui claim next mist tier");
+assert(uiSrc2.includes("去下一層"), "ui claim next label");
+assert(!uiSrc2.includes("data-advance-tier"), "ui no manual advance fight button");
+assert(!uiSrc2.includes("advanceCooldownAt"), "ui no advance cooldown");
+assert(uiSrc2.includes("createTrainIdleSession"), "ui idle wave session");
 assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
+assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
+assert(uiSrc2.includes('id: "mats"'), "ui materials sub-tab");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

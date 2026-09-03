@@ -83,8 +83,12 @@ import {
   trainSitesView,
   trainMapView,
   trainIdleCombatView,
-  advanceTrainTier,
+  createTrainIdleSession,
+  stepTrainIdleSession,
+  markTrainIdleClearReady,
+  claimTrainTierClear,
   challengeTrainWarden,
+  setTrainDepth,
   trainDailySpotlightView,
   materialHintsView,
   dungeonDailyView,
@@ -112,7 +116,7 @@ import {
   loginStreakView,
   claimLoginStreak,
 } from "./engine.js";
-import { DUNGEON_SUMMON_MIN, DUNGEON_SUMMON_MAX, clampDungeonSummonCount } from "./data.js";
+import { DUNGEON_SUMMON_MIN, DUNGEON_SUMMON_MAX, clampDungeonSummonCount, TRAIN_DEPTH_MULT, TRAIN_TIER_COUNT } from "./data.js";
 import { petIconHtml, petIconFromPet } from "./pet-icons.js";
 import {
   tutorialActive,
@@ -242,6 +246,7 @@ function saveCombatPrefs(prefs) {
 let combatPrefs = loadCombatPrefs();
 
 function isFarmCombat(result) {
+  if (result?.combatKind === "train") return false;
   if (!result?.won) return false;
   const fc = result.rewardBreakdown?.firstClear;
   return !(fc && (fc.stones || fc.scrap));
@@ -1202,7 +1207,7 @@ function advancePlayback() {
 
 function startPlayback(result) {
   stopPlayback();
-  tab = "dungeon";
+  if (result?.combatKind !== "train") tab = "dungeon";
   condSheetOpen = false;
   rewardDetailsOpen = false;
   const events =
@@ -1544,30 +1549,116 @@ function tabBtn(id, label, busy) {
   return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${glow}" data-tab="${id}" ${disabled}>${label}</button>`;
 }
 
-function trainIdleStripHtml(idle) {
-  if (!idle) return "";
-  const allyBars = (idle.allies || [])
-    .map(
-      (u) => `<div class="combat-unit" data-element="${escapeHtml(u.elementId || "")}">
-      <span class="cu-name">${escapeHtml(u.name)}</span>
-      <div class="cu-bar"><i style="width:${u.hpPct || 0}%"></i></div>
-    </div>`
-    )
-    .join("") || `<div class="muted">無出戰靈寵</div>`;
-  const foeBars = (idle.foes || [])
-    .map(
-      (u) => `<div class="combat-unit" data-element="${escapeHtml(u.elementId || "")}">
-      <span class="cu-name">${escapeHtml(u.name)}</span>
-      <div class="cu-bar"><i style="width:${u.hpPct || 0}%"></i></div>
-    </div>`
-    )
-    .join("");
+/** Live idle combat — real 5-wave session stepped each second */
+let idleCombat = null;
+
+function idlePetSig(st) {
+  return (st.pets || []).map((p) => `${p.uid}:${p.atk}:${p.hp}:${p.spd}`).join("|");
+}
+
+function ensureIdleCombat() {
+  const view = trainIdleCombatView(state);
+  if (!view.petCount) {
+    idleCombat = null;
+    return null;
+  }
+  const sig = idlePetSig(state);
+  const needNew =
+    !idleCombat ||
+    !idleCombat.session ||
+    idleCombat.zoneId !== view.zoneId ||
+    idleCombat.tierIndex !== view.tierIndex ||
+    idleCombat.petSig !== sig;
+  if (needNew) {
+    const session = createTrainIdleSession(state);
+    if (!session) {
+      idleCombat = null;
+      return null;
+    }
+    idleCombat = {
+      zoneId: view.zoneId,
+      tierIndex: view.tierIndex,
+      petSig: sig,
+      clearReady: !!view.clearReady,
+      canUnlockNext: !!view.canUnlockNext,
+      session,
+      logLine: view.logLine,
+    };
+  } else {
+    idleCombat.logLine = view.logLine;
+    idleCombat.clearReady = !!view.clearReady || !!idleCombat.clearReady;
+    idleCombat.session.clearReady = idleCombat.clearReady;
+  }
+  return idleCombat;
+}
+
+function tickIdleCombat() {
+  const wrap = ensureIdleCombat();
+  if (!wrap?.session) return;
+
+  const result = stepTrainIdleSession(wrap.session);
+  if (result.status === "restart") {
+    const keepReady = wrap.clearReady;
+    const session = createTrainIdleSession(state);
+    if (!session) {
+      idleCombat = null;
+      return;
+    }
+    session.clearReady = keepReady;
+    wrap.session = session;
+    wrap.petSig = idlePetSig(state);
+    return;
+  }
+  if (result.status === "won") {
+    if (markTrainIdleClearReady(state, wrap.session)) {
+      wrap.clearReady = true;
+      saveState(state);
+    }
+  }
+}
+
+function idleUnitBarHtml(u) {
+  const pct = u.maxHp > 0 ? Math.max(0, Math.round((u.hp / u.maxHp) * 100)) : 0;
+  const dead = u.hp <= 0;
+  const role =
+    u.role === "boss" ? "【BOSS】" : u.role === "elite" ? "【精英】" : "";
+  return `<div class="combat-unit${dead ? " is-down" : ""}" data-uid="${escapeHtml(u.uid || "")}" data-element="${escapeHtml(u.elementId || "")}">
+    <span class="cu-name">${role}${escapeHtml(u.name)}</span>
+    <div class="cu-bar"><i style="width:${pct}%"></i></div>
+  </div>`;
+}
+
+function trainIdleStripHtml() {
+  const wrap = ensureIdleCombat();
+  if (!wrap?.session) {
+    return `<div class="train-idle-strip" data-live="train-idle">
+      <p class="meta train-idle-log muted">未出戰——掛機效率最低</p>
+    </div>`;
+  }
+  const s = wrap.session;
+  const allyBars = s.allies.map(idleUnitBarHtml).join("");
+  const foeBars = s.foes.map(idleUnitBarHtml).join("");
+  const meta = s.phase === "pause"
+    ? s.lastText
+    : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`;
+  const pct = Math.min(
+    100,
+    Math.round(((s.waveIndex + (s.ended && s.won ? 1 : 0)) / Math.max(1, s.waveCount)) * 100)
+  );
+  const claimBtn =
+    wrap.clearReady && wrap.canUnlockNext
+      ? `<div class="row train-idle-claim"><button type="button" class="primary" data-claim-tier>去下一層</button></div>`
+      : "";
   return `<div class="train-idle-strip" data-live="train-idle">
-    <p class="meta train-idle-log">${escapeHtml(idle.logLine || "")}</p>
-    <div class="combat-roster train-idle-roster">
+    <p class="meta train-idle-log">${escapeHtml(wrap.logLine || "")}</p>
+    <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
+    <div class="bar combat-bar train-idle-bar"><i data-live="train-idle-bar" style="width:${pct}%"></i></div>
+    <div class="combat-roster train-idle-roster" data-live="train-idle-roster">
       <div class="combat-side allies">${allyBars}</div>
       <div class="combat-side foes">${foeBars}</div>
     </div>
+    <p class="train-idle-hit" data-live="train-idle-hit">${escapeHtml(s.lastText || "")}</p>
+    ${claimBtn}
   </div>`;
 }
 
@@ -1641,9 +1732,19 @@ function cultivatePanel(qiPct, next, m) {
   const sub = panelSub.cultivate;
   const nav = panelSubNav("cultivate", [
     { id: "train", label: "練功" },
+    { id: "mats", label: "材料" },
     { id: "shop", label: "商肆" },
     { id: "advance", label: "進階" },
   ]);
+
+  if (sub === "mats") {
+    return wrapStage(
+      nav,
+      `<h2>材料一覽</h2>
+      <p class="lead">靈石 ${Math.floor(state.stones)} · 飼料 ${Math.floor(state.feed || 0)} · 靈塵 ${Math.floor(state.dust || 0)}</p>
+      ${matHintListHtml()}`
+    );
+  }
 
   if (sub === "shop") {
     return wrapStage(
@@ -1680,32 +1781,32 @@ function cultivatePanel(qiPct, next, m) {
     );
   }
 
-  const tierDock = siteCur
-    ? `<div class="row train-tier-actions">
-        ${
-          siteCur.canAdvance
-            ? `<button type="button" class="primary" data-advance-tier>推進霧階</button>`
-            : ""
-        }
-        ${
-          siteCur.canChallengeWarden
-            ? `<button type="button" class="primary" data-challenge-warden>挑戰域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`
-            : ""
-        }
-        ${
-          siteCur.canRematchWarden
-            ? `<button type="button" class="secondary" data-challenge-warden>複打域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`
-            : ""
-        }
-        ${(state.materials?.breed_ticket || 0) >= 1 ? `<button type="button" class="secondary" data-act="use-breed-ticket">催生符</button>` : ""}
-        ${(state.materials?.blood_catalyst || 0) >= 1 ? `<button type="button" class="secondary" data-act="use-blood-catalyst">血統催化</button>` : ""}
-      </div>`
-    : `<div class="row"></div>`;
+  const depthMax = siteCur?.maxDepth ?? 0;
+  const depthCur = siteCur?.idleDepth ?? 0;
+  const depthBtns = depthMax > 0
+    ? Array.from({ length: depthMax + 1 }, (_, i) => {
+        const label = i >= TRAIN_TIER_COUNT ? "域主" : `霧${i + 1}`;
+        const mult = (TRAIN_DEPTH_MULT[i] ?? 1).toFixed(2);
+        return `<button type="button" class="${i === depthCur ? "primary" : "secondary"} train-depth-btn" data-set-depth="${i}" title="×${mult}">${label}</button>`;
+      }).join("")
+    : "";
+  const depthRow = depthBtns
+    ? `<div class="row train-depth-row"><span class="muted">掛機層：</span>${depthBtns}</div>`
+    : "";
+
+  const tierActionBtns = [];
+  if (siteCur?.canClaimNext) {
+    tierActionBtns.push(`<button type="button" class="primary" data-claim-tier>去下一層</button>`);
+  }
+  if (siteCur?.canChallengeWarden) tierActionBtns.push(`<button type="button" class="primary" data-challenge-warden>挑戰域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`);
+  if (siteCur?.canRematchWarden) tierActionBtns.push(`<button type="button" class="secondary" data-challenge-warden>複打域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`);
+  if ((state.materials?.breed_ticket || 0) >= 1) tierActionBtns.push(`<button type="button" class="secondary" data-act="use-breed-ticket">催生符</button>`);
+  if ((state.materials?.blood_catalyst || 0) >= 1) tierActionBtns.push(`<button type="button" class="secondary" data-act="use-blood-catalyst">血統催化</button>`);
 
   return wrapStage(
     nav,
     `<h2>契壇修行 · 潮域</h2>
-    <p class="lead">御靈師【${escapeHtml(m.name)}】· 牧場 ${ranchN}／${ranchCap(state)} · 重心在靈寵</p>
+    <p class="lead">御靈師【${escapeHtml(m.name)}】· 牧場 ${ranchN}／${ranchCap(state)}</p>
     <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
     <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 【${escapeHtml(br.cur?.name || "")}】→【${escapeHtml(br.next.name)}】</p>
     ${
@@ -1713,17 +1814,16 @@ function cultivatePanel(qiPct, next, m) {
         ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
         : ""
     }
+    ${trainIdleStripHtml()}
+    ${depthRow}
+    <div class="row train-tier-actions">${tierActionBtns.join("")}</div>
     <h3>潮域 ×${fmtMult(siteCur?.qiMult || 1)}${siteCur?.focus ? ` · 專精${escapeHtml(siteCur.focus)}` : ""}${siteCur?.isDailySpot ? " · 今日強化" : ""}</h3>
     ${spotNote}
     <div class="row tactics-row">${siteBtns}</div>
     ${trainLockNote}
-    <p class="meta">${escapeHtml(siteCur?.depthLabel || "")} · 深度 ×${fmtMult(siteCur?.depthMult || 1)} · 出戰效率 ×${fmtMult(siteCur?.efficiency || 1)} · ${escapeHtml(siteCur?.keyName || "潮鑰")} ${siteCur?.keyHave ?? 0}</p>
-    <p class="meta">${escapeHtml(siteCur?.desc || "")} · 產物種類跟潮域 · 產量隨霧階／戰力 · 飼料 ${Math.floor(state.feed || 0)}／靈塵 ${Math.floor(state.dust || 0)}</p>
-    ${trainIdleStripHtml(map.idle)}
+    <p class="meta">${escapeHtml(siteCur?.depthLabel || "")} · 深度 ×${fmtMult(siteCur?.depthMult || 1)} · 效率 ×${fmtMult(siteCur?.efficiency || 1)} · ${escapeHtml(siteCur?.keyName || "潮鑰")} ${siteCur?.keyHave ?? 0}</p>
     ${trainRatesBlockHtml(rateLines)}
-    <p class="meta muted">潮鑰由秘境高機率掉落 · 域主消耗潮鑰 · 複打掉稀有材</p>
-    ${materialsBlockHtml()}`,
-    tierDock
+    <p class="meta muted">潮鑰由秘境高機率掉落 · 域主消耗潮鑰 · 複打掉稀有材</p>`
   );
 }
 
@@ -2676,7 +2776,8 @@ function combatModalHtml() {
         <ul class="combat" data-live="combat-log">${lines}</ul>
       </div>`;
   const tacticsStep = tutorialActive(state) && state.tutorial.step === "tactics";
-  const clearLabel = tacticsStep ? "前往戰術設定" : "返回秘境";
+  const isTrain = playback.result?.combatKind === "train";
+  const clearLabel = tacticsStep ? "前往戰術設定" : isTrain ? "返回練功" : "返回秘境";
   const clearAct = tacticsStep ? "clear-combat-setup" : "clear-combat";
   return `
     <div class="combat-modal-overlay" data-live="combat-modal" role="dialog" aria-label="${playback.done ? "結算" : "戰報"}">
@@ -3426,9 +3527,20 @@ function bind() {
       setFlash(r.msg);
     });
   });
-  app.querySelectorAll("[data-advance-tier]").forEach((btn) => {
+  app.querySelectorAll("[data-set-depth]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const r = advanceTrainTier(state);
+      const r = setTrainDepth(state, Number(btn.dataset.setDepth));
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-claim-tier]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = claimTrainTierClear(state);
+      if (r.ok) {
+        idleCombat = null;
+      }
       saveState(state);
       panelSub = { ...panelSub, cultivate: "train" };
       render();
@@ -3440,6 +3552,10 @@ function bind() {
       const r = challengeTrainWarden(state);
       saveState(state);
       panelSub = { ...panelSub, cultivate: "train" };
+      if (r.combatEvents?.length) {
+        startPlayback(r);
+        return;
+      }
       render();
       setFlash(r.msg, r.ok ? (r.firstClear ? "unlock" : "celebrate") : "");
     });
@@ -3750,17 +3866,57 @@ setInterval(() => {
     }
   }
   if (tab === "cultivate" && panelSub.cultivate === "train") {
+    tickIdleCombat();
     const strip = document.querySelector("[data-live=train-idle]");
     if (strip) {
-      const idle = trainIdleCombatView(state);
-      // 輕量刷新血條／文案，唔成頁重繪
-      const log = strip.querySelector(".train-idle-log");
-      if (log) log.textContent = idle.logLine || "";
-      const bars = strip.querySelectorAll(".cu-bar i");
-      const units = [...(idle.allies || []), ...(idle.foes || [])];
-      bars.forEach((el, i) => {
-        if (units[i]) el.style.width = `${units[i].hpPct || 0}%`;
-      });
+      const wrap = idleCombat;
+      const s = wrap?.session;
+      if (s) {
+        const log = strip.querySelector(".train-idle-log");
+        if (log) log.textContent = wrap.logLine || "";
+        const meta = strip.querySelector("[data-live=train-idle-meta]");
+        if (meta) {
+          meta.textContent =
+            s.phase === "pause" ? s.lastText : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`;
+        }
+        const bar = strip.querySelector("[data-live=train-idle-bar]");
+        if (bar) {
+          const pct = Math.min(
+            100,
+            Math.round(
+              ((s.waveIndex + (s.ended && s.won ? 1 : 0)) / Math.max(1, s.waveCount)) * 100
+            )
+          );
+          bar.style.width = `${pct}%`;
+        }
+        const roster = strip.querySelector("[data-live=train-idle-roster]");
+        if (roster) {
+          roster.innerHTML = `<div class="combat-side allies">${s.allies.map(idleUnitBarHtml).join("")}</div>
+            <div class="combat-side foes">${s.foes.map(idleUnitBarHtml).join("")}</div>`;
+        }
+        const hitEl = strip.querySelector("[data-live=train-idle-hit]");
+        if (hitEl) hitEl.textContent = s.lastText || "";
+        // 通關後動態補「去下一層」
+        let claimRow = strip.querySelector(".train-idle-claim");
+        if (wrap.clearReady && wrap.canUnlockNext) {
+          if (!claimRow) {
+            claimRow = document.createElement("div");
+            claimRow.className = "row train-idle-claim";
+            claimRow.innerHTML = `<button type="button" class="primary" data-claim-tier>去下一層</button>`;
+            strip.appendChild(claimRow);
+            claimRow.querySelector("[data-claim-tier]")?.addEventListener("click", () => {
+              const r = claimTrainTierClear(state);
+              if (r.ok) idleCombat = null;
+              saveState(state);
+              panelSub = { ...panelSub, cultivate: "train" };
+              render();
+              setFlash(r.msg, r.ok ? "unlock" : "");
+            });
+          }
+        } else if (claimRow) {
+          claimRow.remove();
+        }
+      }
     }
   }
   if (eggReadyNow || adv.advanced || snap !== tutorialSnapCache) {
