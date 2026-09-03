@@ -1519,8 +1519,9 @@ const tzSt = {
 };
 assert(trainDepthMultFor(tzSt, "shore") === 1, "depth mist1");
 const d0 = Math.floor(tzSt.materials.tide_dew);
-// bump depth by clearing tiers with forced win via high power
+// bump depth by clearing tiers with forced win via high power (clear cooldown between)
 for (let i = 0; i < 4; i++) {
+  if (tzSt.trainMap?.zones?.shore) tzSt.trainMap.zones.shore.advanceCooldownAt = 0;
   const ar = advanceTrainTier(tzSt);
   assert(ar.ok, `advance tier ${i + 1}`);
 }

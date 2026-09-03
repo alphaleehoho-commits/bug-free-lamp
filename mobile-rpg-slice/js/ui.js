@@ -1810,7 +1810,13 @@ function cultivatePanel(qiPct, next, m) {
     : "";
 
   const tierActionBtns = [];
-  if (siteCur?.canAdvance) tierActionBtns.push(`<button type="button" class="primary" data-advance-tier>推進霧階</button>`);
+  if (siteCur?.canAdvance) {
+    const zp = state.trainMap?.zones?.[state.trainSite];
+    const cdAt = zp?.advanceCooldownAt || 0;
+    const cdSec = Math.max(0, Math.ceil((cdAt - Date.now()) / 1000));
+    const cdLabel = cdSec > 0 ? ` 推進冷卻 ${cdSec}s` : "推進霧階";
+    tierActionBtns.push(`<button type="button" class="primary" data-advance-tier ${cdSec > 0 ? "disabled" : ""}>${cdLabel}</button>`);
+  }
   if (siteCur?.canChallengeWarden) tierActionBtns.push(`<button type="button" class="primary" data-challenge-warden>挑戰域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`);
   if (siteCur?.canRematchWarden) tierActionBtns.push(`<button type="button" class="secondary" data-challenge-warden>複打域主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`);
   if ((state.materials?.breed_ticket || 0) >= 1) tierActionBtns.push(`<button type="button" class="secondary" data-act="use-breed-ticket">催生符</button>`);
@@ -3874,10 +3880,43 @@ setInterval(() => {
     tickIdleCombat();
     const strip = document.querySelector("[data-live=train-idle]");
     if (strip) {
-      strip.innerHTML = trainIdleStripHtml().replace(
-        /^<div[^>]*data-live="train-idle"[^>]*>|<\/div>$/g,
-        ""
-      );
+      const ic = idleCombat;
+      if (ic) {
+        const log = strip.querySelector(".train-idle-log");
+        if (log) log.textContent = ic.logLine || "";
+        const hitEl = strip.querySelector(".train-idle-hit");
+        if (hitEl) hitEl.textContent = ic.lastHitText || `波${ic.wave} 戰鬥中`;
+        const allyEls = strip.querySelectorAll(".allies .combat-unit");
+        ic.allies.forEach((a, i) => {
+          if (!allyEls[i]) return;
+          const pct = a.maxHp > 0 ? Math.max(0, Math.round((a.hp / a.maxHp) * 100)) : 0;
+          const bar = allyEls[i].querySelector(".cu-bar i");
+          if (bar) bar.style.width = `${pct}%`;
+          allyEls[i].classList.toggle("is-down", a.hp <= 0);
+        });
+        const foeEl = strip.querySelector(".foes .combat-unit");
+        if (foeEl) {
+          const fp = ic.foe.maxHp > 0 ? Math.max(0, Math.round((ic.foe.hp / ic.foe.maxHp) * 100)) : 0;
+          const fb = foeEl.querySelector(".cu-bar i");
+          if (fb) fb.style.width = `${fp}%`;
+          foeEl.classList.toggle("is-down", ic.foe.hp <= 0);
+          foeEl.classList.toggle("idle-foe-dying", ic.foe.hp <= 0);
+          const nameEl = foeEl.querySelector(".cu-name");
+          if (nameEl) nameEl.textContent = ic.foe.name;
+        }
+      }
+    }
+    // 推進冷卻倒數刷新
+    const advBtn = document.querySelector("[data-advance-tier]");
+    if (advBtn) {
+      const z = state.trainMap?.zones?.[state.trainSite];
+      if (z?.advanceCooldownAt > Date.now()) {
+        const sec = Math.ceil((z.advanceCooldownAt - Date.now()) / 1000);
+        advBtn.textContent = `推進冷卻 ${sec}s`;
+        advBtn.disabled = true;
+      } else if (advBtn.disabled && advBtn.textContent.includes("冷卻")) {
+        render();
+      }
     }
   }
   if (eggReadyNow || adv.advanced || snap !== tutorialSnapCache) {

@@ -871,7 +871,10 @@ export function trainSitesView(state) {
   });
 }
 
-/** 推進當前潮域下一霧階（出戰隊簡化判定） */
+/** 推進冷卻（毫秒）：成功推進後需等待才能再推 */
+const TRAIN_ADVANCE_COOLDOWN_MS = 60_000;
+
+/** 推進當前潮域下一霧階（出戰隊簡化判定＋冷卻） */
 export function advanceTrainTier(state) {
   ensureTrainMap(state);
   const zoneId = state.trainSite || "shore";
@@ -887,6 +890,11 @@ export function advanceTrainTier(state) {
   }
   if (!(state.pets || []).length) {
     return { ok: false, msg: "請先派出至少一隻靈寵。" };
+  }
+  const now = Date.now();
+  if (z.advanceCooldownAt && z.advanceCooldownAt > now) {
+    const sec = Math.ceil((z.advanceCooldownAt - now) / 1000);
+    return { ok: false, msg: `推進冷卻中（${sec}s）`, cooldown: true, sec };
   }
   const tier = z.tiersCleared | 0;
   const threat = trainTierThreat(zoneId, tier);
@@ -904,6 +912,7 @@ export function advanceTrainTier(state) {
     };
   }
   z.tiersCleared = tier + 1;
+  z.advanceCooldownAt = now + TRAIN_ADVANCE_COOLDOWN_MS;
   bumpDaily(state, "train_tier", 1);
   const primary = site.primaryMat;
   const reward = {};
