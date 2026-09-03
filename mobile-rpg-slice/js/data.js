@@ -3945,6 +3945,37 @@ export const MATERIALS = {
     desc: "已通關秘境入場／掃蕩消耗 · 練功、每日、升階產出",
     tier: "gate",
   },
+  /** 潮鑰：秘境高機率掉落；挑戰／複打域主消耗（唔進 AFK） */
+  tide_key_1: {
+    id: "tide_key_1",
+    name: "一層潮鑰",
+    desc: "開啟／挑戰潮岸·廢墟域主 · 秘境一層高機率掉落",
+    tier: "key",
+  },
+  tide_key_2: {
+    id: "tide_key_2",
+    name: "二層潮鑰",
+    desc: "開啟／挑戰深層·霧帷域主 · 秘境二層高機率掉落",
+    tier: "key",
+  },
+  tide_key_3: {
+    id: "tide_key_3",
+    name: "三層潮鑰",
+    desc: "開啟／挑戰心核·融砂域主 · 秘境三層高機率掉落",
+    tier: "key",
+  },
+  tide_key_4: {
+    id: "tide_key_4",
+    name: "四層潮鑰",
+    desc: "開啟／挑戰暗潮域主 · 秘境四層高機率掉落",
+    tier: "key",
+  },
+  warden_echo: {
+    id: "warden_echo",
+    name: "域主殘響",
+    desc: "複打域主所得 · 可當進階催化碎片",
+    tier: "key",
+  },
 };
 
 export const MATERIAL_IDS = Object.keys(MATERIALS);
@@ -3996,7 +4027,7 @@ export const TRAIN_DAILY_SPOT_BONUS = 1.25;
 export const TRAIN_SITES = [
   {
     id: "shore",
-    name: "潮岸練場",
+    name: "潮岸域",
     needClear: null,
     qiMult: 1,
     focus: "升級",
@@ -4011,7 +4042,7 @@ export const TRAIN_SITES = [
   },
   {
     id: "ruins",
-    name: "廢墟影堂",
+    name: "廢墟域",
     needClear: "tide_1",
     qiMult: 1.02,
     focus: "繁殖",
@@ -4026,7 +4057,7 @@ export const TRAIN_SITES = [
   },
   {
     id: "deep",
-    name: "深層祭壇",
+    name: "深層域",
     needClear: "tide_2",
     qiMult: 1.03,
     focus: "高階升級",
@@ -4041,7 +4072,7 @@ export const TRAIN_SITES = [
   },
   {
     id: "mistveil",
-    name: "霧帷練台",
+    name: "霧帷域",
     needClear: "tide_2",
     qiMult: 1.025,
     focus: "技能",
@@ -4056,7 +4087,7 @@ export const TRAIN_SITES = [
   },
   {
     id: "core",
-    name: "心核道場",
+    name: "心核域",
     needClear: "tide_3",
     qiMult: 1.04,
     focus: "雜交",
@@ -4070,7 +4101,7 @@ export const TRAIN_SITES = [
   },
   {
     id: "fusehall",
-    name: "融砂坊",
+    name: "融砂域",
     needClear: "tide_3",
     qiMult: 1.035,
     focus: "融合",
@@ -4085,7 +4116,7 @@ export const TRAIN_SITES = [
   },
   {
     id: "abyss",
-    name: "暗潮心壇",
+    name: "暗潮域",
     needClear: "tide_4",
     qiMult: 1.06,
     focus: "突破",
@@ -4098,6 +4129,140 @@ export const TRAIN_SITES = [
     ],
   },
 ];
+
+/** 霧階數；深度倍率：霧階一～四／已通域主 */
+export const TRAIN_TIER_COUNT = 4;
+export const TRAIN_DEPTH_MULT = [1.0, 1.1, 1.2, 1.35, 1.5];
+
+/**
+ * 潮域鏈：prevZone 域主首通 → 解鎖本域
+ * keyMatId／keyDungeonId：挑戰域主所需潮鑰（秘境高機率掉）
+ * threatBase：霧階一掛機／推進基準威脅（隨階遞增）
+ */
+export const TRAIN_ZONE_CHAIN = [
+  {
+    id: "shore",
+    prevZone: null,
+    keyMatId: "tide_key_1",
+    keyDungeonId: "tide_1",
+    threatBase: 28,
+    rematch: { stones: 10, materials: { tide_dew: 4, warden_echo: 1 } },
+  },
+  {
+    id: "ruins",
+    prevZone: "shore",
+    keyMatId: "tide_key_1",
+    keyDungeonId: "tide_1",
+    threatBase: 42,
+    rematch: { stones: 12, materials: { coral_shard: 4, warden_echo: 1 } },
+  },
+  {
+    id: "deep",
+    prevZone: "ruins",
+    keyMatId: "tide_key_2",
+    keyDungeonId: "tide_2",
+    threatBase: 58,
+    rematch: { stones: 14, materials: { mist_silk: 3, warden_echo: 1 } },
+  },
+  {
+    id: "mistveil",
+    prevZone: "deep",
+    keyMatId: "tide_key_2",
+    keyDungeonId: "tide_2",
+    threatBase: 64,
+    rematch: { stones: 14, materials: { echo_resin: 3, warden_echo: 1 } },
+  },
+  {
+    id: "core",
+    prevZone: "mistveil",
+    keyMatId: "tide_key_3",
+    keyDungeonId: "tide_3",
+    threatBase: 82,
+    rematch: { stones: 18, materials: { abyss_ink: 3, warden_echo: 1 } },
+  },
+  {
+    id: "fusehall",
+    prevZone: "core",
+    keyMatId: "tide_key_3",
+    keyDungeonId: "tide_3",
+    threatBase: 88,
+    rematch: { stones: 18, materials: { fuse_sand: 3, warden_echo: 1 } },
+  },
+  {
+    id: "abyss",
+    prevZone: "fusehall",
+    keyMatId: "tide_key_4",
+    keyDungeonId: "tide_4",
+    threatBase: 110,
+    rematch: { stones: 22, materials: { seal_ember: 3, warden_echo: 2 } },
+  },
+];
+
+export function trainZoneMeta(zoneId) {
+  return TRAIN_ZONE_CHAIN.find((z) => z.id === zoneId) || TRAIN_ZONE_CHAIN[0];
+}
+
+export function trainZoneOrderIndex(zoneId) {
+  const i = TRAIN_ZONE_CHAIN.findIndex((z) => z.id === zoneId);
+  return i < 0 ? 0 : i;
+}
+
+/** 霧階／域主威脅值 */
+export function trainTierThreat(zoneId, tierIndex) {
+  const meta = trainZoneMeta(zoneId);
+  const base = meta.threatBase || 30;
+  const t = Math.max(0, Math.min(TRAIN_TIER_COUNT, tierIndex | 0));
+  return Math.round(base * (1 + t * 0.22));
+}
+
+export function trainWardenThreat(zoneId) {
+  return trainTierThreat(zoneId, TRAIN_TIER_COUNT);
+}
+
+/** 秘境→潮鑰對照 */
+export const DUNGEON_TIDE_KEY = {
+  tide_1: "tide_key_1",
+  tide_2: "tide_key_2",
+  tide_3: "tide_key_3",
+  tide_4: "tide_key_4",
+};
+
+/** 秘境勝利掉潮鑰基礎機率（非必然；首通另保底） */
+export const TIDE_KEY_DROP_CHANCE = {
+  tide_1: 0.72,
+  tide_2: 0.68,
+  tide_3: 0.64,
+  tide_4: 0.6,
+};
+
+export function rollTideKeyDrop(dungeonId, opts = {}) {
+  let keyId = DUNGEON_TIDE_KEY[dungeonId];
+  if (!keyId) {
+    const tier = Number(String(dungeonId || "").replace(/^tide_/, "")) || 0;
+    if (tier >= 4) keyId = "tide_key_4";
+    else if (tier === 3) keyId = "tide_key_3";
+    else if (tier === 2) keyId = "tide_key_2";
+    else if (tier === 1) keyId = "tide_key_1";
+  }
+  if (!keyId || !MATERIALS[keyId]) return null;
+  if (opts.guaranteed) return { matId: keyId, amount: 1, guaranteed: true };
+  const chanceBase =
+    TIDE_KEY_DROP_CHANCE[dungeonId] ??
+    TIDE_KEY_DROP_CHANCE[
+      keyId === "tide_key_4"
+        ? "tide_4"
+        : keyId === "tide_key_3"
+          ? "tide_3"
+          : keyId === "tide_key_2"
+            ? "tide_2"
+            : "tide_1"
+    ] ??
+    0.65;
+  let chance = chanceBase;
+  if (opts.bossCleared) chance = Math.min(0.92, chance + 0.08);
+  if (Math.random() > chance) return null;
+  return { matId: keyId, amount: 1, guaranteed: false };
+}
 
 export function trainSiteById(id) {
   return TRAIN_SITES.find((s) => s.id === id) || TRAIN_SITES[0];
@@ -4175,8 +4340,13 @@ export function trainSiteRatesView(site, dateKey = todayKey()) {
 
 export function isTrainSiteUnlocked(state, siteId) {
   const site = trainSiteById(siteId);
-  if (!site.needClear) return true;
-  return !!(state.clearedDungeons || {})[site.needClear];
+  const meta = trainZoneMeta(siteId);
+  // 主路徑：上一潮域域主首通
+  if (!meta?.prevZone) return true;
+  if (state.trainMap?.wardenCleared?.[meta.prevZone]) return true;
+  // 舊存檔相容：仍認秘境首通
+  if (site.needClear && (state.clearedDungeons || {})[site.needClear]) return true;
+  return false;
 }
 
 /** 由通關狀態推算已解鎖地點 */
@@ -4198,6 +4368,11 @@ export const MATERIAL_USES = {
   blood_catalyst: "縮短繁殖冷卻",
   breed_ticket: "重置繁殖冷卻",
   mist_token: "秘境入場／掃蕩",
+  tide_key_1: "潮岸／廢墟域主",
+  tide_key_2: "深層／霧帷域主",
+  tide_key_3: "心核／融砂域主",
+  tide_key_4: "暗潮域主",
+  warden_echo: "域主複打殘響",
 };
 
 /** 材料來源索引（練功地／派遣） */
@@ -4229,17 +4404,22 @@ export const MATERIAL_SOURCE_INDEX = buildMaterialSourceIndex();
 
 export function materialSourceLabel(matId) {
   const mat = MATERIALS[matId];
-  if (mat?.tier === "dungeon") return "秘境專屬";
-  if (mat?.tier === "gate") return "練功／每日／升階（秘境不掉）";
+  if (!mat) return "";
+  if (mat.tier === "dungeon") return "秘境專屬";
+  if (mat.tier === "key") {
+    if (matId === "warden_echo") return "域主複打";
+    return "秘境潮鑰／域主";
+  }
+  if (mat.tier === "gate") return "練功／每日／升階（秘境不掉）";
   const e = MATERIAL_SOURCE_INDEX[matId];
-  if (!e) return mat?.desc || "";
+  if (!e) return mat.desc || "";
   const parts = [];
   if (e.sites.length) parts.push(`練功：${e.sites.join("／")}`);
   if (e.missions.length) {
     const ms = e.missions.slice(0, 2).join("／");
     parts.push(`派遣：${ms}${e.missions.length > 2 ? "…" : ""}`);
   }
-  return parts.join(" · ") || mat?.desc || "";
+  return parts.join(" · ") || mat.desc || "";
 }
 
 export function dungeonNameForClear(clearId) {
@@ -4248,8 +4428,11 @@ export function dungeonNameForClear(clearId) {
 }
 
 export function trainSiteUnlockHint(site) {
-  if (!site?.needClear) return null;
-  return `首通【${dungeonNameForClear(site.needClear)}】`;
+  if (!site) return null;
+  const meta = trainZoneMeta(site.id);
+  if (!meta?.prevZone) return null;
+  const prev = trainSiteById(meta.prevZone);
+  return `打通【${prev.name}】域主`;
 }
 
 /** 某 bulk 材料的主要練功地（第一個產出該料的專精地） */
@@ -4543,9 +4726,23 @@ export const DAILY_QUESTS = [
     need: 1,
     reward: { stones: 26, scrap: 1 },
   },
+  {
+    id: "train_tier",
+    name: "霧階推進",
+    desc: "在潮域推進 1 次霧階",
+    need: 1,
+    reward: { stones: 22, feed: 4, materials: { mist_token: 1 } },
+  },
+  {
+    id: "train_warden",
+    name: "域主試煉",
+    desc: "挑戰潮域域主 1 次（不論勝負）",
+    need: 1,
+    reward: { stones: 32, dust: 6 },
+  },
 ];
 
-/** 7 個每日任務全領後的全清獎（每日一次） */
+/** 每日任務全領後的全清獎（每日一次） */
 export const DAILY_ALL_CLEAR_BONUS = {
   stones: 60,
   materials: { mist_token: 5, breed_ticket: 1 },
