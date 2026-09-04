@@ -1637,9 +1637,27 @@ button.linkish strong { color: var(--jade); }
 }
 .combat-formation-side {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-rows: repeat(3, minmax(1.55rem, auto));
-  gap: 0.2rem;
+  gap: 0.2rem 0.12rem;
   min-height: 5.2rem;
+  align-content: start;
+}
+.combat-unit[data-slot="0"] { grid-row: 1; }
+.combat-unit[data-slot="1"] { grid-row: 2; }
+.combat-unit[data-slot="2"] { grid-row: 3; }
+/* 友方：rear=外側(左)，front=對敵(右)；敵方鏡像 */
+.combat-formation-side[data-side="ally"] .combat-unit[data-lane="rear"] {
+  grid-column: 1;
+}
+.combat-formation-side[data-side="ally"] .combat-unit[data-lane="front"] {
+  grid-column: 2;
+}
+.combat-formation-side[data-side="foe"] .combat-unit[data-lane="front"] {
+  grid-column: 1;
+}
+.combat-formation-side[data-side="foe"] .combat-unit[data-lane="rear"] {
+  grid-column: 2;
 }
 .combat-unit.is-empty-slot {
   opacity: 0.2;

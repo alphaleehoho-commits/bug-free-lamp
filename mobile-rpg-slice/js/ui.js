@@ -105,6 +105,10 @@ import {
   suggestTrainForShortage,
   TACTICS,
   FORMATIONS,
+  FORMATION_IDS,
+  FORMATION_SLOT_COUNT,
+  formationAllyPlacement,
+  formationFoePlacement,
   MATERIALS,
   pathQuestsView,
   claimPathQuest,
@@ -737,30 +741,33 @@ function combatLogLineHtml(text, event) {
   return `<li class="${cls}">${badge}${escapeHtml(text)}</li>`;
 }
 
-const FORMATION_SLOT_COUNT = 3;
+const FORMATION_SLOT_COUNT_UI = FORMATION_SLOT_COUNT;
 
 function formationSlotIndex(i) {
-  return Math.min(FORMATION_SLOT_COUNT - 1, Math.max(0, i | 0));
+  return Math.min(FORMATION_SLOT_COUNT_UI - 1, Math.max(0, i | 0));
 }
 
-/** 3 企位陣型：空 slot 保留位置（將來擴充） */
-function formationSideHtml(units, side, renderUnit) {
+function currentFormationId() {
+  return FORMATION_IDS.includes(state.formation) ? state.formation : "balanced";
+}
+
+/** 3 企位陣型：依 formation 填 lane（前／後排）；空 slot 保留位置 */
+function formationSideHtml(units, side, renderUnit, formationId = "balanced") {
   const list = units || [];
-  const slots = [];
-  for (let i = 0; i < FORMATION_SLOT_COUNT; i += 1) {
-    const u = list[i];
-    if (u) {
-      slots.push(renderUnit(u, i));
-    } else {
-      slots.push(
-        `<div class="combat-unit is-empty-slot" data-side="${side}" data-slot="${i}" aria-hidden="true"></div>`
-      );
-    }
-  }
-  return slots.join("");
+  const placement =
+    side === "foe"
+      ? formationFoePlacement(list.length)
+      : formationAllyPlacement(formationId, list.length);
+  return placement
+    .map((p) => {
+      const u = p.unitIndex != null ? list[p.unitIndex] : null;
+      if (u) return renderUnit(u, p.slot, p.lane);
+      return `<div class="combat-unit is-empty-slot" data-side="${side}" data-slot="${p.slot}" data-lane="${p.lane}" aria-hidden="true"></div>`;
+    })
+    .join("");
 }
 
-function combatUnitBar(u, pb, slotIndex = 0) {
+function combatUnitBar(u, pb, slotIndex = 0, lane = "front") {
   const hp = pb.unitHp.get(u.uid) ?? u.hp;
   const pct = u.maxHp > 0 ? Math.max(0, Math.min(100, Math.round((hp / u.maxHp) * 100))) : 0;
   const dead = hp <= 0;
@@ -768,26 +775,30 @@ function combatUnitBar(u, pb, slotIndex = 0) {
   const actBadge = doubleAct ? `<span class="cu-act" title="可連續行動">雙動</span>` : "";
   const side = u.side === "foe" || u.side === "enemy" ? "foe" : "ally";
   const slot = formationSlotIndex(slotIndex);
+  const laneAttr = lane === "rear" ? "rear" : "front";
   // 攻擊高亮／扣血數字由 playAttackSequence 負責，靜態條只顯示 HP
   return `<div class="combat-unit${dead ? " is-down" : ""}${
     doubleAct ? " is-boss-act" : ""
-  }" data-combat-uid="${escapeHtml(u.uid)}" data-side="${side}" data-slot="${slot}" data-element="${escapeHtml(u.elementId || "")}">
+  }" data-combat-uid="${escapeHtml(u.uid)}" data-side="${side}" data-slot="${slot}" data-lane="${laneAttr}" data-element="${escapeHtml(u.elementId || "")}">
     <span class="cu-name">${actBadge}${escapeHtml(u.name)}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
 }
 
 function renderCombatRoster(pb) {
-  return `<div class="combat-roster combat-formation" data-live="combat-roster">
+  const formationId = currentFormationId();
+  return `<div class="combat-roster combat-formation" data-live="combat-roster" data-formation="${escapeHtml(formationId)}">
     <div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
       pb.allyUnits,
       "ally",
-      (u, i) => combatUnitBar(u, pb, i)
+      (u, i, lane) => combatUnitBar(u, pb, i, lane),
+      formationId
     )}</div>
     <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
       pb.foeUnits,
       "foe",
-      (u, i) => combatUnitBar(u, pb, i)
+      (u, i, lane) => combatUnitBar(u, pb, i, lane),
+      formationId
     )}</div>
   </div>`;
 }
@@ -795,17 +806,21 @@ function renderCombatRoster(pb) {
 function patchCombatRosterDom(pb) {
   const root = document.querySelector("[data-live=combat-roster]");
   if (!root) return;
+  const formationId = currentFormationId();
   root.classList.add("combat-formation");
+  root.dataset.formation = formationId;
   root.innerHTML = `
     <div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
       pb.allyUnits,
       "ally",
-      (u, i) => combatUnitBar(u, pb, i)
+      (u, i, lane) => combatUnitBar(u, pb, i, lane),
+      formationId
     )}</div>
     <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
       pb.foeUnits,
       "foe",
-      (u, i) => combatUnitBar(u, pb, i)
+      (u, i, lane) => combatUnitBar(u, pb, i, lane),
+      formationId
     )}</div>`;
   const waveEl = document.querySelector("[data-live=combat-wave]");
   if (waveEl) {
@@ -1871,12 +1886,14 @@ function ensureIdleCombat() {
     return null;
   }
   const sig = idlePetSig(state);
+  const formationId = currentFormationId();
   const needNew =
     !idleCombat ||
     !idleCombat.session ||
     idleCombat.zoneId !== view.zoneId ||
     idleCombat.tierIndex !== view.tierIndex ||
-    idleCombat.petSig !== sig;
+    idleCombat.petSig !== sig ||
+    idleCombat.formationId !== formationId;
   if (needNew) {
     const session = createTrainIdleSession(state);
     if (!session) {
@@ -1887,6 +1904,7 @@ function ensureIdleCombat() {
       zoneId: view.zoneId,
       tierIndex: view.tierIndex,
       petSig: sig,
+      formationId,
       clearReady: !!view.clearReady,
       canUnlockNext: !!view.canUnlockNext,
       session,
@@ -1911,16 +1929,20 @@ function patchIdleRosterFromSession(wrap) {
   const roster = document.querySelector("[data-live=train-idle-roster]");
   if (!roster || !wrap?.session) return;
   const s = wrap.session;
+  const formationId = wrap.formationId || currentFormationId();
   roster.classList.add("combat-formation");
+  roster.dataset.formation = formationId;
   roster.innerHTML = `<div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
     s.allies,
     "ally",
-    idleUnitBarHtml
+    idleUnitBarHtml,
+    formationId
   )}</div>
     <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
       s.foes,
       "foe",
-      idleUnitBarHtml
+      idleUnitBarHtml,
+      formationId
     )}</div>`;
 }
 
@@ -2034,11 +2056,10 @@ function emptyIdleFx() {
     lastDmg: null,
     lastHealAmt: null,
     lastHealTarget: null,
-    shake: false,
   };
 }
 
-function idleUnitBarHtml(u, slotIndex = 0) {
+function idleUnitBarHtml(u, slotIndex = 0, lane = "front") {
   const pct = u.maxHp > 0 ? Math.max(0, Math.round((u.hp / u.maxHp) * 100)) : 0;
   const dead = u.hp <= 0;
   const doubleAct = u.role === "boss" || (u.actions || 1) > 1;
@@ -2047,9 +2068,10 @@ function idleUnitBarHtml(u, slotIndex = 0) {
     u.role === "boss" ? "【BOSS】" : u.role === "elite" ? "【精英】" : "";
   const side = u.side === "foe" || u.side === "enemy" ? "foe" : "ally";
   const slot = formationSlotIndex(slotIndex);
+  const laneAttr = lane === "rear" ? "rear" : "front";
   return `<div class="combat-unit${dead ? " is-down" : ""}${
     doubleAct && !dead ? " is-boss-act" : ""
-  }" data-uid="${escapeHtml(u.uid || "")}" data-side="${side}" data-slot="${slot}" data-element="${escapeHtml(u.elementId || "")}">
+  }" data-uid="${escapeHtml(u.uid || "")}" data-side="${side}" data-slot="${slot}" data-lane="${laneAttr}" data-element="${escapeHtml(u.elementId || "")}">
     <span class="cu-name">${actBadge}${role}${escapeHtml(u.name)}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
@@ -2063,6 +2085,7 @@ function trainIdleStripHtml() {
     </div>`;
   }
   const s = wrap.session;
+  const formationId = wrap.formationId || currentFormationId();
   const meta =
     s.phase === "pause"
       ? s.won
@@ -2090,16 +2113,18 @@ function trainIdleStripHtml() {
     <p class="meta train-idle-log">${escapeHtml(wrap.logLine || "")}</p>
     <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
     <div class="bar combat-bar train-idle-bar"><i data-live="train-idle-bar" style="width:${pct}%"></i></div>
-    <div class="combat-roster train-idle-roster combat-formation" data-live="train-idle-roster">
+    <div class="combat-roster train-idle-roster combat-formation" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}">
       <div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
         s.allies,
         "ally",
-        idleUnitBarHtml
+        idleUnitBarHtml,
+        formationId
       )}</div>
       <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
         s.foes,
         "foe",
-        idleUnitBarHtml
+        idleUnitBarHtml,
+        formationId
       )}</div>
     </div>
     <p class="train-idle-hit${resultCls}" data-live="train-idle-hit"${resultLine ? "" : " hidden"}>${escapeHtml(resultLine)}</p>
