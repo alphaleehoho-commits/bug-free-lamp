@@ -869,7 +869,7 @@ export function trainSitesView(state) {
       canClaimNext:
         !wardenDone &&
         !!z.clearReady &&
-        (z.tiersCleared | 0) < TRAIN_TIER_COUNT,
+        (z.tiersCleared | 0) < TRAIN_TIER_COUNT - 1,
       canChallengeWarden: !wardenDone && (z.tiersCleared | 0) >= TRAIN_TIER_COUNT,
       canRematchWarden: wardenDone,
       idleDepth: trainDepthIndex(state, s.id),
@@ -1452,7 +1452,10 @@ export function stepTrainIdleSession(session) {
     }
     session.ended = true;
     session.won = true;
-    session.lastText = `清完 ${session.waves.length} 波！可去下一層`;
+    const isLastMist = (session.tierIndex | 0) >= TRAIN_TIER_COUNT - 1;
+    session.lastText = isLastMist
+      ? `清完 ${session.waves.length} 波！霧階全破`
+      : `清完 ${session.waves.length} 波！可去下一層`;
     session.phase = "pause";
     session.pauseLeft = 2;
     return { status: "won", session, events };
@@ -1461,13 +1464,28 @@ export function stepTrainIdleSession(session) {
   return { status: "fight", session, events };
 }
 
-/** 掛機清完一輪後標記可領取下一霧階 */
+/**
+ * 掛機清完一輪後：
+ * - 仲有下一霧階 → 標記 clearReady，顯示「去下一層」
+ * - 已係最後霧階（下一關係域主）→ 自動領取，唔顯示「去下一層」
+ */
 export function markTrainIdleClearReady(state, session) {
-  if (!session?.canUnlockNext || !session.won) return false;
+  if (!session?.canUnlockNext || !session.won) {
+    return { ok: false, autoClaimed: false };
+  }
+  const isLastMist = (session.tierIndex | 0) >= TRAIN_TIER_COUNT - 1;
+  if (isLastMist) {
+    const z = ensureZoneProgress(state, session.zoneId);
+    z.clearReady = true;
+    const claim = claimTrainTierClear(state);
+    session.clearReady = false;
+    session.canUnlockNext = false;
+    return { ok: !!claim.ok, autoClaimed: true, claim };
+  }
   const z = ensureZoneProgress(state, session.zoneId);
   z.clearReady = true;
   session.clearReady = true;
-  return true;
+  return { ok: true, autoClaimed: false };
 }
 
 /** UI：閒置掛機戰場摘要（建立 session 用） */

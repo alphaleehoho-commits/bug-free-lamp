@@ -1614,9 +1614,17 @@ function tickIdleCombat() {
     return;
   }
   if (result.status === "won") {
-    if (markTrainIdleClearReady(state, wrap.session)) {
-      wrap.clearReady = true;
+    const marked = markTrainIdleClearReady(state, wrap.session);
+    if (marked?.ok) {
       saveState(state);
+      if (marked.autoClaimed) {
+        // 最後霧階下一關係域主——自動領取，唔顯示「去下一層」
+        idleCombat = null;
+        setFlash(marked.claim?.msg || "霧階全破 · 可挑戰域主", "unlock");
+        render();
+        return;
+      }
+      wrap.clearReady = true;
     }
   }
 }
@@ -1714,7 +1722,7 @@ function trainIdleStripHtml() {
     Math.round(((s.waveIndex + (s.ended && s.won ? 1 : 0)) / Math.max(1, s.waveCount)) * 100)
   );
   const claimBtn =
-    wrap.clearReady && wrap.canUnlockNext
+    wrap.clearReady && wrap.canUnlockNext && (s.tierIndex | 0) < TRAIN_TIER_COUNT - 1
       ? `<div class="row train-idle-claim"><button type="button" class="primary" data-claim-tier>去下一層</button></div>`
       : "";
   return `<div class="train-idle-strip" data-live="train-idle">
@@ -3981,7 +3989,7 @@ setInterval(() => {
         }
         // 通關後動態補「去下一層」
         let claimRow = strip.querySelector(".train-idle-claim");
-        if (wrap.clearReady && wrap.canUnlockNext) {
+        if (wrap.clearReady && wrap.canUnlockNext && (s.tierIndex | 0) < TRAIN_TIER_COUNT - 1) {
           if (!claimRow) {
             claimRow = document.createElement("div");
             claimRow.className = "row train-idle-claim";
