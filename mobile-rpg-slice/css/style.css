@@ -1624,24 +1624,92 @@ button.linkish strong { color: var(--jade); }
 .combat-roster {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.25rem;
+  gap: 0.35rem;
   margin: 0.15rem 0 0.35rem;
+}
+.combat-roster.combat-formation {
+  align-items: stretch;
 }
 .combat-side {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
 }
+.combat-formation-side {
+  display: grid;
+  grid-template-rows: repeat(3, minmax(1.55rem, auto));
+  gap: 0.2rem;
+  min-height: 5.2rem;
+}
+.combat-unit.is-empty-slot {
+  opacity: 0.2;
+  border-style: dashed;
+  background: transparent;
+  pointer-events: none;
+  min-height: 1.55rem;
+}
 .combat-unit {
+  position: relative;
   font-size: 0.55rem;
   line-height: 1.2;
   padding: 0.12rem 0.2rem;
   border-radius: 5px;
   border: 1px solid rgba(126, 168, 160, 0.15);
   background: rgba(0, 0, 0, 0.2);
+  transition:
+    transform 0.14s ease-out,
+    opacity 0.4s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease,
+    background 0.12s ease;
+  will-change: transform;
+  z-index: 1;
 }
 .combat-unit.is-down { opacity: 0.38; }
-.combat-unit.is-hit { animation: combatHit 0.42s ease-out; }
+.combat-unit.is-dying {
+  opacity: 0 !important;
+  transform: scale(0.9);
+  pointer-events: none;
+}
+/* 1. 攻方高亮 */
+.combat-unit.is-attacker {
+  z-index: 4;
+  border-color: rgba(126, 184, 163, 0.85);
+  box-shadow: 0 0 0 1px rgba(126, 184, 163, 0.45), 0 0 10px rgba(90, 160, 140, 0.25);
+  background: rgba(40, 90, 75, 0.35);
+}
+.combat-unit.is-attacker .cu-name { color: var(--jade-bright); }
+/* 2. 攻方輕撞守方：位移由 JS translate(dx,dy) 對準目標 */
+/* 3. 守方淺紅高亮 */
+.combat-unit.is-defender {
+  z-index: 3;
+  border-color: rgba(232, 120, 100, 0.8);
+  box-shadow: 0 0 0 1px rgba(232, 120, 100, 0.4), 0 0 8px rgba(200, 70, 50, 0.22);
+  background: rgba(140, 45, 40, 0.28);
+}
+.combat-unit.is-defender .cu-name { color: #f0b0a0; }
+/* legacy classes kept quiet — sequence uses new ones */
+.combat-unit.is-hit { /* replaced by is-defender sequence */ }
+.combat-unit.is-actor .cu-name { color: var(--jade-bright); }
+.combat-unit.is-ko-flash { animation: none; }
+.cu-temp-buff {
+  display: inline-block;
+  margin-right: 0.2rem;
+  padding: 0 0.22rem;
+  border-radius: 3px;
+  font-size: 0.48rem;
+  font-weight: 700;
+  vertical-align: middle;
+  color: #d8f0e4;
+  background: rgba(70, 140, 120, 0.45);
+  border: 1px solid rgba(126, 184, 163, 0.5);
+  animation: fadeUp 0.2s ease-out;
+}
+.cu-temp-buff.is-guard {
+  color: #e8d8a8;
+  background: rgba(140, 120, 60, 0.4);
+  border-color: rgba(200, 180, 100, 0.45);
+}
 .combat-unit[data-element="tide"] .cu-bar i { background: linear-gradient(90deg, #4a90a8, #6db3d9); }
 .combat-unit[data-element="flame"] .cu-bar i { background: linear-gradient(90deg, #a86048, #e89070); }
 .combat-unit[data-element="gale"] .cu-bar i { background: linear-gradient(90deg, #6888a8, #a8c4d8); }
@@ -1654,6 +1722,7 @@ button.linkish strong { color: var(--jade); }
   text-overflow: ellipsis;
   color: var(--fog);
   margin-bottom: 0.08rem;
+  position: relative;
 }
 .cu-bar {
   height: 0.28rem;
@@ -1666,7 +1735,29 @@ button.linkish strong { color: var(--jade); }
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--jade), var(--ember-soft));
-  transition: width 0.28s ease-out;
+  transition: width 0.2s ease-out;
+}
+.cu-dmg,
+.cu-heal {
+  display: inline-block;
+  margin-left: 0.2rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  animation: dmgPopIn 0.28s ease-out;
+}
+.cu-dmg { color: #e89078; }
+.cu-heal { color: #7eb8a3; }
+.cu-dmg.is-fading,
+.cu-heal.is-fading {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.92);
+}
+@keyframes dmgPopIn {
+  0% { opacity: 0; transform: translateY(5px) scale(0.8); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 .combat .log-adv { color: #9fd4c0; }
 .combat .log-dis { color: #e8a090; }
@@ -1699,27 +1790,6 @@ button.linkish strong { color: var(--jade); }
   text-align: center;
   animation: fadeUp 0.35s ease-out;
 }
-.combat-unit.is-actor .cu-name { color: var(--jade-bright); }
-.combat-unit.is-ko-flash { animation: koFlash 0.55s ease-out; }
-.cu-dmg,
-.cu-heal {
-  display: inline-block;
-  margin-left: 0.2rem;
-  font-size: 0.52rem;
-  font-weight: 700;
-  animation: dmgPop 0.55s ease-out;
-}
-.cu-dmg { color: #e89078; }
-.cu-heal { color: #7eb8a3; }
-@keyframes dmgPop {
-  0% { opacity: 0; transform: translateY(4px) scale(0.85); }
-  30% { opacity: 1; transform: translateY(0) scale(1.05); }
-  100% { opacity: 0.7; transform: translateY(-2px) scale(1); }
-}
-@keyframes koFlash {
-  0% { filter: brightness(1.8); box-shadow: 0 0 0 0 rgba(232, 184, 109, 0.55); }
-  100% { filter: brightness(1); box-shadow: 0 0 0 8px rgba(232, 184, 109, 0); }
-}
 .skip-summary {
   font-size: 0.62rem;
   color: var(--jade-bright);
@@ -1728,12 +1798,6 @@ button.linkish strong { color: var(--jade); }
   border-radius: 6px;
   border: 1px solid rgba(126, 184, 163, 0.35);
   background: rgba(40, 90, 75, 0.22);
-}
-@keyframes combatHit {
-  0% { transform: translateX(0); filter: brightness(1.5); }
-  25% { transform: translateX(-3px); }
-  50% { transform: translateX(3px); }
-  100% { transform: translateX(0); filter: brightness(1); }
 }
 .combat-bar { margin: 0.2rem 0 0.3rem; }
 .combat-bar i {

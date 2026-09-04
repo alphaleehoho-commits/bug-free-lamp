@@ -874,6 +874,8 @@ export function trainSitesView(state) {
       canRematchWarden: wardenDone,
       idleDepth: trainDepthIndex(state, s.id),
       maxDepth: wardenDone ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0)),
+      lastClearLine: z.lastClear?.line || null,
+      lastClear: z.lastClear || null,
     };
   });
 }
@@ -1400,6 +1402,7 @@ export function stepTrainIdleSession(session) {
   const finishIdleResult = (won) => {
     const sec = Math.max(1, session.fightTicks | 0);
     session.clearSec = sec;
+    session.won = !!won;
     if (won) {
       session.resultLine = session.isFirstClear ? `首次通關：${sec}s` : `通關時間：${sec}s`;
     } else {
@@ -1426,9 +1429,20 @@ export function stepTrainIdleSession(session) {
     return { status: "round", session };
   }
 
-  const actor = session.order[session.orderIdx];
-  session.orderIdx += 1;
-  if (!actor || actor.hp <= 0) return { status: "skip", session };
+  // 跳過已死單位（同一 tick 內連跳，避免死怪高亮／空轉）
+  let actor = null;
+  while (session.orderIdx < session.order.length) {
+    const cand = session.order[session.orderIdx];
+    session.orderIdx += 1;
+    if (cand && cand.hp > 0) {
+      actor = cand;
+      break;
+    }
+  }
+  if (!actor) {
+    // 本輪剩餘皆死——下一 tick 開新回合
+    return { status: "skip", session };
+  }
 
   session.fightTicks = (session.fightTicks || 0) + 1;
 
@@ -1485,6 +1499,23 @@ export function stepTrainIdleSession(session) {
 }
 
 /**
+ * 將掛機一輪結果寫入當前潮域（通關時間跟地點）
+ */
+export function persistTrainIdleClearResult(state, session) {
+  if (!session?.resultLine || !session.zoneId) return false;
+  const z = ensureZoneProgress(state, session.zoneId);
+  z.lastClear = {
+    line: session.resultLine,
+    sec: session.clearSec ?? null,
+    at: Date.now(),
+    first: !!(session.won && session.isFirstClear),
+    tierIndex: session.tierIndex | 0,
+    won: !!session.won,
+  };
+  return true;
+}
+
+/**
  * 掛機清完一輪後：
  * - 仲有下一霧階 → 標記 clearReady，顯示「去下一層」
  * - 已係最後霧階（下一關係域主）→ 自動領取，唔顯示「去下一層」
@@ -1528,6 +1559,8 @@ export function trainIdleCombatView(state) {
     tierIndex,
     canUnlockNext,
     clearReady: !!z.clearReady,
+    lastClearLine: z.lastClear?.line || null,
+    lastClear: z.lastClear || null,
     depthLabel: wardenDone
       ? "域主已通"
       : `霧階 ${Math.min((z.tiersCleared | 0) + 1, TRAIN_TIER_COUNT)}/${TRAIN_TIER_COUNT}`,
@@ -3184,7 +3217,7 @@ function pushCombatText(events, text) {
 }
 
 function dealStrike(actor, target, power, transcript, events, skillName) {
-  if (!target) return;
+  if (!target || target.hp <= 0) return;
   const pMult = skillPowerMult(actor.skillLevel || 1);
   let dmg = Math.max(1, Math.floor(actor.atk * power * pMult) + Math.floor(Math.random() * 4) - 1);
   if (skillName === "嵐擊" || skillName === "穿空" || skillName === "礁襲") {
@@ -3216,6 +3249,11 @@ function dealStrike(actor, target, power, transcript, events, skillName) {
       targetHp: target.hp,
       targetMaxHp: target.maxHp,
       ko: target.hp === 0,
+      actorBuff:
+        actor.atkBuffTurns > 0
+          ? `攻↑${Math.round((actor.atkBuffPct || 0) * 100)}%`
+          : null,
+      targetBuff: target.guardTurns > 0 ? "甲盾" : null,
     });
   }
 }

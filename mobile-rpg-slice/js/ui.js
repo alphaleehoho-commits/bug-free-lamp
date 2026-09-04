@@ -86,6 +86,7 @@ import {
   createTrainIdleSession,
   stepTrainIdleSession,
   markTrainIdleClearReady,
+  persistTrainIdleClearResult,
   claimTrainTierClear,
   challengeTrainWarden,
   setTrainDepth,
@@ -410,6 +411,16 @@ let playback = null;
 
 const LINE_MS = 520;
 
+/** 一次攻擊動畫各階段（ms；再乘 speedMult） */
+const ATTACK_PHASE_MS = {
+  windup: 130,
+  lunge: 150,
+  impact: 190,
+  ret: 130,
+  resolve: 200,
+  resolveKo: 340,
+};
+
 function playbackDelayMs(event, speedMult = 1) {
   if (!event) return Math.round(LINE_MS * speedMult);
   let base = LINE_MS;
@@ -417,12 +428,177 @@ function playbackDelayMs(event, speedMult = 1) {
   else if (event.type === "round") base = 680;
   else if (event.type === "heal") base = 540;
   else if (event.type === "strike") {
-    if (event.ko) base = 760;
-    else if (event.skillName) base = 580;
-    else if (event.elemTag) base = 520;
-    else base = 460;
+    // strike 用分階段動畫，呢度只作 fallback
+    if (event.ko) base = 900;
+    else if (event.skillName) base = 780;
+    else base = 720;
   } else base = 380;
   return Math.max(40, Math.round(base * speedMult));
+}
+
+function waitAnimMs(ms, token) {
+  return new Promise((resolve) => {
+    const t = window.setTimeout(resolve, Math.max(0, ms));
+    if (token?.timers) token.timers.push(t);
+  });
+}
+
+function findCombatUnitEl(root, uid) {
+  if (!root || !uid) return null;
+  const esc = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(uid) : uid.replace(/"/g, '\\"');
+  return (
+    root.querySelector(`[data-combat-uid="${esc}"]`) ||
+    root.querySelector(`[data-uid="${esc}"]`)
+  );
+}
+
+function clearAttackFx(el) {
+  if (!el) return;
+  el.classList.remove(
+    "is-attacker",
+    "is-defender",
+    "is-lunge-east",
+    "is-lunge-west",
+    "is-hit",
+    "is-actor",
+    "is-ko-flash"
+  );
+  el.style.transform = "";
+  el.querySelectorAll(".cu-temp-buff, .cu-dmg, .cu-heal").forEach((n) => n.remove());
+}
+
+/** 攻方框推向守方框中心（向量輕撞） */
+function lungeTowardTarget(actorEl, targetEl, distancePx = 12) {
+  if (!actorEl || !targetEl) return;
+  const a = actorEl.getBoundingClientRect();
+  const t = targetEl.getBoundingClientRect();
+  const ax = a.left + a.width / 2;
+  const ay = a.top + a.height / 2;
+  const tx = t.left + t.width / 2;
+  const ty = t.top + t.height / 2;
+  let dx = tx - ax;
+  let dy = ty - ay;
+  const len = Math.hypot(dx, dy) || 1;
+  dx = (dx / len) * distancePx;
+  dy = (dy / len) * distancePx;
+  actorEl.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+}
+
+/**
+ * 完整一次攻擊動畫：
+ * 1 攻方高亮+buff → 2 輕撞目標 → 3 守方淺紅+扣血 → 4 返回 → 5 清高亮／數字fade／死亡fade
+ */
+async function playAttackSequence(opts) {
+  const {
+    rosterRoot,
+    actorUid,
+    targetUid,
+    dmg = null,
+    heal = null,
+    ko = false,
+    buffText = null,
+    targetBuff = null,
+    targetHp = null,
+    targetMaxHp = null,
+    speedMult = 1,
+    onImpact = null,
+    token = null,
+  } = opts;
+  const cancelled = () => !!(token?.cancelled);
+  const sm = Math.max(0.08, speedMult);
+  const ms = (base) => Math.round(base * sm);
+
+  const actorEl = findCombatUnitEl(rosterRoot, actorUid);
+  const targetEl = findCombatUnitEl(rosterRoot, targetUid);
+  if (!actorEl || !targetEl) {
+    onImpact?.();
+    return;
+  }
+
+  clearAttackFx(actorEl);
+  clearAttackFx(targetEl);
+
+  // 1. 攻方高亮 + 臨時 buff
+  actorEl.classList.add("is-attacker");
+  const nameEl = actorEl.querySelector(".cu-name");
+  if (buffText && nameEl) {
+    const badge = document.createElement("span");
+    badge.className = "cu-temp-buff";
+    badge.textContent = buffText;
+    nameEl.prepend(badge);
+  }
+  await waitAnimMs(ms(ATTACK_PHASE_MS.windup), token);
+  if (cancelled()) return;
+
+  // 2. 向守方實際位置輕撞
+  lungeTowardTarget(actorEl, targetEl, 12);
+  await waitAnimMs(ms(ATTACK_PHASE_MS.lunge), token);
+  if (cancelled()) return;
+
+  // 3. 守方高亮 + 數字 + 扣血
+  targetEl.classList.add("is-defender");
+  if (targetBuff) {
+    const tName = targetEl.querySelector(".cu-name");
+    if (tName) {
+      const gb = document.createElement("span");
+      gb.className = "cu-temp-buff is-guard";
+      gb.textContent = targetBuff;
+      tName.prepend(gb);
+    }
+  }
+  const tNameEl = targetEl.querySelector(".cu-name");
+  if (dmg != null && tNameEl) {
+    const pop = document.createElement("span");
+    pop.className = "cu-dmg";
+    pop.textContent = `-${dmg}`;
+    tNameEl.appendChild(pop);
+  } else if (heal != null && tNameEl) {
+    const pop = document.createElement("span");
+    pop.className = "cu-heal";
+    pop.textContent = `+${heal}`;
+    tNameEl.appendChild(pop);
+  }
+  if (targetHp != null && targetMaxHp != null) {
+    const bar = targetEl.querySelector(".cu-bar i");
+    if (bar) {
+      const pct = targetMaxHp > 0 ? Math.max(0, Math.round((targetHp / targetMaxHp) * 100)) : 0;
+      bar.style.width = `${pct}%`;
+    }
+  }
+  onImpact?.();
+  await waitAnimMs(ms(ATTACK_PHASE_MS.impact), token);
+  if (cancelled()) return;
+
+  // 4. 攻方返回
+  actorEl.style.transform = "";
+  await waitAnimMs(ms(ATTACK_PHASE_MS.ret), token);
+  if (cancelled()) return;
+
+  // 5. 清高亮、數字 fade、死亡 fade
+  actorEl.classList.remove("is-attacker");
+  actorEl.querySelectorAll(".cu-temp-buff").forEach((n) => n.remove());
+  targetEl.classList.remove("is-defender");
+  targetEl.querySelectorAll(".cu-temp-buff").forEach((n) => n.remove());
+  targetEl.querySelectorAll(".cu-dmg, .cu-heal").forEach((n) => n.classList.add("is-fading"));
+  const dead = ko || (targetHp != null && targetHp <= 0);
+  if (dead) {
+    targetEl.classList.add("is-dying", "is-down");
+  }
+  await waitAnimMs(ms(dead ? ATTACK_PHASE_MS.resolveKo : ATTACK_PHASE_MS.resolve), token);
+  if (cancelled()) return;
+  targetEl.querySelectorAll(".cu-dmg, .cu-heal").forEach((n) => n.remove());
+  if (dead) {
+    targetEl.classList.remove("is-dying");
+    targetEl.classList.add("is-down");
+  }
+}
+
+function strikeBuffLabel(event) {
+  if (!event) return null;
+  if (event.actorBuff) return event.actorBuff;
+  if (event.skillName) return event.skillName;
+  if (event.elemTag === "克制") return "克制";
+  return null;
 }
 
 function buildSkipSummary(events, result) {
@@ -561,44 +737,76 @@ function combatLogLineHtml(text, event) {
   return `<li class="${cls}">${badge}${escapeHtml(text)}</li>`;
 }
 
-function combatUnitBar(u, pb) {
+const FORMATION_SLOT_COUNT = 3;
+
+function formationSlotIndex(i) {
+  return Math.min(FORMATION_SLOT_COUNT - 1, Math.max(0, i | 0));
+}
+
+/** 3 企位陣型：空 slot 保留位置（將來擴充） */
+function formationSideHtml(units, side, renderUnit) {
+  const list = units || [];
+  const slots = [];
+  for (let i = 0; i < FORMATION_SLOT_COUNT; i += 1) {
+    const u = list[i];
+    if (u) {
+      slots.push(renderUnit(u, i));
+    } else {
+      slots.push(
+        `<div class="combat-unit is-empty-slot" data-side="${side}" data-slot="${i}" aria-hidden="true"></div>`
+      );
+    }
+  }
+  return slots.join("");
+}
+
+function combatUnitBar(u, pb, slotIndex = 0) {
   const hp = pb.unitHp.get(u.uid) ?? u.hp;
   const pct = u.maxHp > 0 ? Math.max(0, Math.min(100, Math.round((hp / u.maxHp) * 100))) : 0;
   const dead = hp <= 0;
   const doubleAct = u.role === "boss" || (u.actions || 1) > 1;
   const actBadge = doubleAct ? `<span class="cu-act" title="可連續行動">雙動</span>` : "";
-  const isHit = pb.lastHitUid === u.uid;
-  const isActor = pb.lastActorUid === u.uid;
-  const isKo = pb.lastKoUid === u.uid;
-  const dmgPop =
-    isHit && pb.lastDmg != null ? `<span class="cu-dmg">-${pb.lastDmg}</span>` : "";
-  const healPop =
-    pb.lastHealAmt != null && pb.lastHealTarget === u.uid
-      ? `<span class="cu-heal">+${pb.lastHealAmt}</span>`
-      : "";
-  return `<div class="combat-unit ${dead ? "is-down" : ""}${doubleAct ? " is-boss-act" : ""}${
-    isHit ? " is-hit" : ""
-  }${isActor && !isHit ? " is-actor" : ""}${isKo ? " is-ko-flash" : ""}" data-combat-uid="${escapeHtml(
-    u.uid
-  )}" data-element="${escapeHtml(u.elementId || "")}">
-    <span class="cu-name">${actBadge}${escapeHtml(u.name)}${dmgPop}${healPop}</span>
+  const side = u.side === "foe" || u.side === "enemy" ? "foe" : "ally";
+  const slot = formationSlotIndex(slotIndex);
+  // 攻擊高亮／扣血數字由 playAttackSequence 負責，靜態條只顯示 HP
+  return `<div class="combat-unit${dead ? " is-down" : ""}${
+    doubleAct ? " is-boss-act" : ""
+  }" data-combat-uid="${escapeHtml(u.uid)}" data-side="${side}" data-slot="${slot}" data-element="${escapeHtml(u.elementId || "")}">
+    <span class="cu-name">${actBadge}${escapeHtml(u.name)}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
 }
 
 function renderCombatRoster(pb) {
-  return `<div class="combat-roster" data-live="combat-roster">
-    <div class="combat-side allies">${pb.allyUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>
-    <div class="combat-side foes">${pb.foeUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>
+  return `<div class="combat-roster combat-formation" data-live="combat-roster">
+    <div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
+      pb.allyUnits,
+      "ally",
+      (u, i) => combatUnitBar(u, pb, i)
+    )}</div>
+    <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
+      pb.foeUnits,
+      "foe",
+      (u, i) => combatUnitBar(u, pb, i)
+    )}</div>
   </div>`;
 }
 
 function patchCombatRosterDom(pb) {
   const root = document.querySelector("[data-live=combat-roster]");
   if (!root) return;
+  root.classList.add("combat-formation");
   root.innerHTML = `
-    <div class="combat-side allies">${pb.allyUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>
-    <div class="combat-side foes">${pb.foeUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>`;
+    <div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
+      pb.allyUnits,
+      "ally",
+      (u, i) => combatUnitBar(u, pb, i)
+    )}</div>
+    <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
+      pb.foeUnits,
+      "foe",
+      (u, i) => combatUnitBar(u, pb, i)
+    )}</div>`;
   const waveEl = document.querySelector("[data-live=combat-wave]");
   if (waveEl) {
     waveEl.textContent = pb.waveLabel && !pb.done ? pb.waveLabel : "";
@@ -807,6 +1015,10 @@ function recipeBoardHtml() {
 
 function stopPlayback() {
   if (playback?.timer) clearTimeout(playback.timer);
+  if (playback?.animToken) {
+    playback.animToken.cancelled = true;
+    for (const t of playback.animToken.timers || []) clearTimeout(t);
+  }
   playback = null;
 }
 
@@ -1084,48 +1296,164 @@ function combatPlaybackMeta(pb) {
   return `${roundNote}戰鬥進行中… ${pb.index}/${total}`;
 }
 
+function appendCombatLogLine(event, text) {
+  const list = document.querySelector("[data-live=combat-log]");
+  if (!list || !text) return;
+  if (list.dataset.lastLine === text) return;
+  const li = document.createElement("li");
+  li.className = `log-line-in ${combatLogClass(event)}`.trim();
+  if (event?.type === "strike" && event.elemTag) {
+    const kind = event.elemTag === "克制" ? "adv" : "dis";
+    const badge = document.createElement("span");
+    badge.className = `elem-badge elem-${kind}`;
+    badge.textContent = event.elemTag;
+    li.appendChild(badge);
+  } else if (event?.type === "strike" && event.skillName) {
+    const badge = document.createElement("span");
+    badge.className = "skill-badge";
+    badge.textContent = event.skillName;
+    li.appendChild(badge);
+  } else if (event?.type === "wave") {
+    const badge = document.createElement("span");
+    badge.className = "wave-badge";
+    badge.textContent = "波";
+    li.appendChild(badge);
+  }
+  li.append(document.createTextNode(text));
+  list.appendChild(li);
+  list.dataset.lastLine = text;
+  while (list.children.length > 40) list.removeChild(list.firstChild);
+  const scroller = document.querySelector("[data-live=combat-scroll]");
+  if (scroller) scroller.scrollTop = scroller.scrollHeight;
+}
+
 function updatePlaybackDom(latestEvent = null) {
   if (!playback) return;
   const total = Math.max(1, playback.events.length);
   const pct = Math.min(100, Math.round((playback.index / total) * 100));
   const bar = document.querySelector("[data-live=combat-bar]");
   const meta = document.querySelector("[data-live=combat-meta]");
-  const list = document.querySelector("[data-live=combat-log]");
   if (bar) bar.style.width = `${pct}%`;
   if (meta) meta.textContent = combatPlaybackMeta(playback);
-  patchCombatRosterDom(playback);
-  if (list && playback.shown.length) {
-    const idx = playback.shown.length - 1;
-    const event = playback.events[idx] || latestEvent;
-    const last = playback.shown[idx];
-    if (!list.dataset.lastLine || list.dataset.lastLine !== last) {
-      const li = document.createElement("li");
-      li.className = `log-line-in ${combatLogClass(event)}`.trim();
-      if (event?.type === "strike" && event.elemTag) {
-        const kind = event.elemTag === "克制" ? "adv" : "dis";
-        const badge = document.createElement("span");
-        badge.className = `elem-badge elem-${kind}`;
-        badge.textContent = event.elemTag;
-        li.appendChild(badge);
-      } else if (event?.type === "strike" && event.skillName) {
-        const badge = document.createElement("span");
-        badge.className = "skill-badge";
-        badge.textContent = event.skillName;
-        li.appendChild(badge);
-      } else if (event?.type === "wave") {
-        const badge = document.createElement("span");
-        badge.className = "wave-badge";
-        badge.textContent = "波";
-        li.appendChild(badge);
-      }
-      li.append(document.createTextNode(last));
-      list.appendChild(li);
-      list.dataset.lastLine = last;
-      while (list.children.length > 40) list.removeChild(list.firstChild);
-      const scroller = document.querySelector("[data-live=combat-scroll]");
-      if (scroller) scroller.scrollTop = scroller.scrollHeight;
-    }
+  // 攻擊動畫進行中唔重繪 roster，避免打斷 transform
+  if (!playback.animating) {
+    patchCombatRosterDom(playback);
   }
+  if (latestEvent?.text && playback.shown.length) {
+    appendCombatLogLine(latestEvent, playback.shown[playback.shown.length - 1]);
+  }
+}
+
+async function playPhasedPlaybackEvent(event, token) {
+  if (!playback || playback.done || token.cancelled) return;
+  const sm = playback.speedMult || 1;
+  const rosterRoot = document.querySelector("[data-live=combat-roster]");
+  playback.animating = true;
+
+  if (event.type === "strike") {
+    await playAttackSequence({
+      rosterRoot,
+      actorUid: event.actorUid,
+      targetUid: event.targetUid,
+      dmg: event.dmg,
+      ko: !!event.ko,
+      buffText: strikeBuffLabel(event),
+      targetBuff: event.targetBuff || null,
+      targetHp: event.targetHp,
+      targetMaxHp: event.targetMaxHp,
+      speedMult: sm,
+      token,
+      onImpact: () => {
+        if (!playback || token.cancelled) return;
+        applyCombatEvent(event, playback);
+        playback.shown.push(event.text);
+        state.log.unshift(event.text);
+        if (state.log.length > 60) state.log.length = 60;
+        appendCombatLogLine(event, event.text);
+        const bar = document.querySelector("[data-live=combat-bar]");
+        const meta = document.querySelector("[data-live=combat-meta]");
+        const total = Math.max(1, playback.events.length);
+        if (bar) bar.style.width = `${Math.min(100, Math.round(((playback.index + 1) / total) * 100))}%`;
+        if (meta) meta.textContent = combatPlaybackMeta({ ...playback, index: playback.index + 1 });
+      },
+    });
+  } else if (event.type === "heal") {
+    await playAttackSequence({
+      rosterRoot,
+      actorUid: event.actorUid || event.targetUid,
+      targetUid: event.targetUid,
+      heal: event.heal,
+      ko: false,
+      buffText: event.skillName || "治療",
+      targetHp: event.targetHp,
+      targetMaxHp: event.targetMaxHp,
+      speedMult: sm,
+      token,
+      onImpact: () => {
+        if (!playback || token.cancelled) return;
+        applyCombatEvent(event, playback);
+        playback.shown.push(event.text);
+        state.log.unshift(event.text);
+        if (state.log.length > 60) state.log.length = 60;
+        appendCombatLogLine(event, event.text);
+      },
+    });
+  }
+
+  if (playback) playback.animating = false;
+  // 動畫完同步一次乾淨 roster（保留死亡狀態）
+  if (playback && !token.cancelled) {
+    playback.lastHitUid = null;
+    playback.lastActorUid = null;
+    playback.lastDmg = null;
+    playback.lastHealAmt = null;
+    patchCombatRosterDom(playback);
+  }
+}
+
+function schedulePlaybackStep() {
+  if (!playback || playback.done) return;
+  if (playback.index >= playback.events.length) {
+    finishPlayback();
+    return;
+  }
+  const event = playback.events[playback.index];
+  const sm = playback.speedMult || 1;
+
+  if (event.type === "strike" || event.type === "heal") {
+    const token = { cancelled: false, timers: [] };
+    playback.animToken = token;
+    playPhasedPlaybackEvent(event, token).then(() => {
+      if (!playback || playback.done || token.cancelled) return;
+      playback.index += 1;
+      playback.animToken = null;
+      if (playback.index >= playback.events.length) finishPlayback();
+      else schedulePlaybackStep();
+    });
+    return;
+  }
+
+  playback.timer = window.setTimeout(() => {
+    playback.timer = null;
+    advancePlayback();
+    if (playback && !playback.done) schedulePlaybackStep();
+  }, playbackDelayMs(event, sm));
+}
+
+function advancePlayback() {
+  if (!playback || playback.done) return;
+  if (playback.index >= playback.events.length) {
+    finishPlayback();
+    return;
+  }
+  const event = playback.events[playback.index];
+  applyCombatEvent(event, playback);
+  playback.shown.push(event.text);
+  playback.index += 1;
+  state.log.unshift(event.text);
+  if (state.log.length > 60) state.log.length = 60;
+  updatePlaybackDom(event);
+  if (playback.index >= playback.events.length) finishPlayback();
 }
 
 function clearCombatPlayback(opts = {}) {
@@ -1175,36 +1503,6 @@ function finishPlayback() {
   }
 }
 
-function schedulePlaybackStep() {
-  if (!playback || playback.done) return;
-  if (playback.index >= playback.events.length) {
-    finishPlayback();
-    return;
-  }
-  const delay = playbackDelayMs(playback.events[playback.index], playback.speedMult || 1);
-  playback.timer = window.setTimeout(() => {
-    playback.timer = null;
-    advancePlayback();
-    if (playback && !playback.done) schedulePlaybackStep();
-  }, delay);
-}
-
-function advancePlayback() {
-  if (!playback || playback.done) return;
-  if (playback.index >= playback.events.length) {
-    finishPlayback();
-    return;
-  }
-  const event = playback.events[playback.index];
-  applyCombatEvent(event, playback);
-  playback.shown.push(event.text);
-  playback.index += 1;
-  state.log.unshift(event.text);
-  if (state.log.length > 60) state.log.length = 60;
-  updatePlaybackDom(event);
-  if (playback.index >= playback.events.length) finishPlayback();
-}
-
 function startPlayback(result) {
   stopPlayback();
   if (result?.combatKind !== "train") tab = "dungeon";
@@ -1221,6 +1519,8 @@ function startPlayback(result) {
     index: 0,
     result,
     timer: null,
+    animToken: null,
+    animating: false,
     done: false,
     skipped: false,
     skipSummary: null,
@@ -1258,6 +1558,12 @@ function skipPlayback() {
     clearTimeout(playback.timer);
     playback.timer = null;
   }
+  if (playback.animToken) {
+    playback.animToken.cancelled = true;
+    for (const t of playback.animToken.timers || []) clearTimeout(t);
+    playback.animToken = null;
+  }
+  playback.animating = false;
   while (playback.index < playback.events.length) {
     const event = playback.events[playback.index];
     applyCombatEvent(event, playback);
@@ -1551,6 +1857,8 @@ function tabBtn(id, label, busy) {
 
 /** Live idle combat — real 5-wave session stepped each second */
 let idleCombat = null;
+let idleAnimBusy = false;
+let idleAnimToken = null;
 
 function idlePetSig(st) {
   return (st.pets || []).map((p) => `${p.uid}:${p.atk}:${p.hp}:${p.spd}`).join("|");
@@ -1583,27 +1891,85 @@ function ensureIdleCombat() {
       canUnlockNext: !!view.canUnlockNext,
       session,
       logLine: view.logLine,
-      resultLine: idleCombat?.resultLine || null,
+      // 通關時間跟當前潮域，唔跨域帶舊結果
+      resultLine: view.lastClearLine || null,
       fx: emptyIdleFx(),
     };
   } else {
     idleCombat.logLine = view.logLine;
     idleCombat.clearReady = !!view.clearReady || !!idleCombat.clearReady;
     idleCombat.session.clearReady = idleCombat.clearReady;
+    // 同步當前域存檔結果（轉地後 view 已換）
+    if (!idleCombat.session.resultLine) {
+      idleCombat.resultLine = view.lastClearLine || null;
+    }
   }
   return idleCombat;
 }
 
+function patchIdleRosterFromSession(wrap) {
+  const roster = document.querySelector("[data-live=train-idle-roster]");
+  if (!roster || !wrap?.session) return;
+  const s = wrap.session;
+  roster.classList.add("combat-formation");
+  roster.innerHTML = `<div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
+    s.allies,
+    "ally",
+    idleUnitBarHtml
+  )}</div>
+    <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
+      s.foes,
+      "foe",
+      idleUnitBarHtml
+    )}</div>`;
+}
+
+async function playIdleCombatEvents(events) {
+  const root = document.querySelector("[data-live=train-idle-roster]");
+  if (!root) return;
+  const token = { cancelled: false, timers: [] };
+  idleAnimToken = token;
+  for (const event of events || []) {
+    if (token.cancelled) break;
+    if (event.type === "strike") {
+      await playAttackSequence({
+        rosterRoot: root,
+        actorUid: event.actorUid,
+        targetUid: event.targetUid,
+        dmg: event.dmg,
+        ko: !!event.ko,
+        buffText: strikeBuffLabel(event),
+        targetBuff: event.targetBuff || null,
+        targetHp: event.targetHp,
+        targetMaxHp: event.targetMaxHp,
+        speedMult: 1,
+        token,
+      });
+    } else if (event.type === "heal") {
+      await playAttackSequence({
+        rosterRoot: root,
+        actorUid: event.actorUid || event.targetUid,
+        targetUid: event.targetUid,
+        heal: event.heal,
+        buffText: "治療",
+        targetHp: event.targetHp,
+        targetMaxHp: event.targetMaxHp,
+        speedMult: 1,
+        token,
+      });
+    }
+  }
+  if (idleAnimToken === token) idleAnimToken = null;
+}
+
 function tickIdleCombat() {
+  if (idleAnimBusy) return;
   const wrap = ensureIdleCombat();
   if (!wrap?.session) return;
 
   const result = stepTrainIdleSession(wrap.session);
-  // 套用同秘境一樣嘅即時 hit／傷害數字狀態
-  applyIdleFxFromStep(wrap, result);
   if (result.status === "restart") {
     const keepReady = wrap.clearReady;
-    const keepResult = wrap.session.resultLine || wrap.resultLine;
     const session = createTrainIdleSession(state);
     if (!session) {
       idleCombat = null;
@@ -1612,25 +1978,47 @@ function tickIdleCombat() {
     session.clearReady = keepReady;
     wrap.session = session;
     wrap.petSig = idlePetSig(state);
-    wrap.resultLine = keepResult || null;
+    // 重開後繼續顯示本域上次通關時間
+    wrap.resultLine =
+      trainIdleCombatView(state).lastClearLine || wrap.resultLine || null;
     wrap.fx = emptyIdleFx();
+    patchIdleRosterFromSession(wrap);
     return;
   }
   if (result.status === "won" || result.status === "lost") {
-    if (wrap.session.resultLine) wrap.resultLine = wrap.session.resultLine;
+    if (wrap.session.resultLine) {
+      wrap.resultLine = wrap.session.resultLine;
+      persistTrainIdleClearResult(state, wrap.session);
+      saveState(state);
+    }
   }
+
+  const combatEvents = (result.events || []).filter(
+    (e) => e.type === "strike" || e.type === "heal"
+  );
+  if (combatEvents.length) {
+    idleAnimBusy = true;
+    playIdleCombatEvents(combatEvents)
+      .catch(() => {})
+      .finally(() => {
+        idleAnimBusy = false;
+        if (idleCombat?.session) patchIdleRosterFromSession(idleCombat);
+      });
+  } else if (result.status === "wave" || result.status === "round") {
+    patchIdleRosterFromSession(wrap);
+  }
+
   if (result.status === "won") {
     const marked = markTrainIdleClearReady(state, wrap.session);
     if (marked?.ok) {
       saveState(state);
       if (marked.autoClaimed) {
-        // 最後霧階下一關係域主——自動領取，唔顯示「去下一層」
         const keepResult = wrap.resultLine;
         idleCombat = null;
-        // 短暫保留結果行：下一輪 ensure 會帶上
-        idleCombat = { resultLine: keepResult };
+        // 重建時 ensure 會讀本域 lastClear；先寫入再 render
         setFlash(marked.claim?.msg || "霧階全破 · 可挑戰域主", "unlock");
         render();
+        if (idleCombat && keepResult) idleCombat.resultLine = keepResult;
         return;
       }
       wrap.clearReady = true;
@@ -1650,58 +2038,19 @@ function emptyIdleFx() {
   };
 }
 
-function applyIdleFxFromStep(wrap, result) {
-  if (!wrap.fx) wrap.fx = emptyIdleFx();
-  const fx = wrap.fx;
-  fx.shake = false;
-  const events = result?.events || [];
-  // 預設清掉上一跳；有 strike／heal 再寫入
-  fx.lastHitUid = null;
-  fx.lastActorUid = null;
-  fx.lastDmg = null;
-  fx.lastHealAmt = null;
-  fx.lastHealTarget = null;
-  // 保留 KO flash 短暫；新事件覆蓋
-  if (result?.status === "round" || result?.status === "wave" || result?.status === "pause") {
-    fx.lastKoUid = null;
-  }
-  for (const event of events) {
-    if (event.type === "strike") {
-      fx.lastHitUid = event.targetUid;
-      fx.lastActorUid = event.actorUid;
-      fx.lastDmg = event.dmg;
-      fx.shake = true;
-      if (event.ko) fx.lastKoUid = event.targetUid;
-    } else if (event.type === "heal") {
-      fx.lastHealAmt = event.heal;
-      fx.lastHealTarget = event.targetUid;
-      fx.lastActorUid = event.actorUid || null;
-    }
-  }
-}
-
-function idleUnitBarHtml(u, fx = null) {
+function idleUnitBarHtml(u, slotIndex = 0) {
   const pct = u.maxHp > 0 ? Math.max(0, Math.round((u.hp / u.maxHp) * 100)) : 0;
   const dead = u.hp <= 0;
   const doubleAct = u.role === "boss" || (u.actions || 1) > 1;
   const actBadge = doubleAct ? `<span class="cu-act" title="可連續行動">雙動</span>` : "";
   const role =
     u.role === "boss" ? "【BOSS】" : u.role === "elite" ? "【精英】" : "";
-  const isHit = fx?.lastHitUid === u.uid;
-  const isActor = fx?.lastActorUid === u.uid;
-  const isKo = fx?.lastKoUid === u.uid;
-  const dmgPop =
-    isHit && fx?.lastDmg != null ? `<span class="cu-dmg">-${fx.lastDmg}</span>` : "";
-  const healPop =
-    fx?.lastHealAmt != null && fx?.lastHealTarget === u.uid
-      ? `<span class="cu-heal">+${fx.lastHealAmt}</span>`
-      : "";
-  return `<div class="combat-unit${dead ? " is-down" : ""}${doubleAct ? " is-boss-act" : ""}${
-    isHit ? " is-hit" : ""
-  }${isActor && !isHit ? " is-actor" : ""}${isKo ? " is-ko-flash" : ""}" data-uid="${escapeHtml(
-    u.uid || ""
-  )}" data-element="${escapeHtml(u.elementId || "")}">
-    <span class="cu-name">${actBadge}${role}${escapeHtml(u.name)}${dmgPop}${healPop}</span>
+  const side = u.side === "foe" || u.side === "enemy" ? "foe" : "ally";
+  const slot = formationSlotIndex(slotIndex);
+  return `<div class="combat-unit${dead ? " is-down" : ""}${
+    doubleAct && !dead ? " is-boss-act" : ""
+  }" data-uid="${escapeHtml(u.uid || "")}" data-side="${side}" data-slot="${slot}" data-element="${escapeHtml(u.elementId || "")}">
+    <span class="cu-name">${actBadge}${role}${escapeHtml(u.name)}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
 }
@@ -1713,11 +2062,7 @@ function trainIdleStripHtml() {
       <p class="meta train-idle-log muted">未出戰——掛機效率最低</p>
     </div>`;
   }
-  if (!wrap.fx) wrap.fx = emptyIdleFx();
   const s = wrap.session;
-  const fx = wrap.fx;
-  const allyBars = s.allies.map((u) => idleUnitBarHtml(u, fx)).join("");
-  const foeBars = s.foes.map((u) => idleUnitBarHtml(u, fx)).join("");
   const meta =
     s.phase === "pause"
       ? s.won
@@ -1734,16 +2079,28 @@ function trainIdleStripHtml() {
     wrap.clearReady && wrap.canUnlockNext && (s.tierIndex | 0) < TRAIN_TIER_COUNT - 1
       ? `<div class="row train-idle-claim"><button type="button" class="primary" data-claim-tier>去下一層</button></div>`
       : "";
-  const resultLine = wrap.resultLine || s.resultLine || "";
+  const resultLine =
+    trainIdleCombatView(state).lastClearLine ||
+    wrap.resultLine ||
+    s.resultLine ||
+    "";
   const resultCls =
     resultLine === "挑戰失敗" ? " is-fail" : resultLine ? " is-clear" : "";
   return `<div class="train-idle-strip" data-live="train-idle">
     <p class="meta train-idle-log">${escapeHtml(wrap.logLine || "")}</p>
     <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
     <div class="bar combat-bar train-idle-bar"><i data-live="train-idle-bar" style="width:${pct}%"></i></div>
-    <div class="combat-roster train-idle-roster" data-live="train-idle-roster">
-      <div class="combat-side allies">${allyBars}</div>
-      <div class="combat-side foes">${foeBars}</div>
+    <div class="combat-roster train-idle-roster combat-formation" data-live="train-idle-roster">
+      <div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
+        s.allies,
+        "ally",
+        idleUnitBarHtml
+      )}</div>
+      <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
+        s.foes,
+        "foe",
+        idleUnitBarHtml
+      )}</div>
     </div>
     <p class="train-idle-hit${resultCls}" data-live="train-idle-hit"${resultLine ? "" : " hidden"}>${escapeHtml(resultLine)}</p>
     ${claimBtn}
@@ -3610,6 +3967,13 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = setTrainSite(state, btn.dataset.setTrain);
+      // 轉地即時換通關時間／重建掛機戰場
+      idleCombat = null;
+      idleAnimBusy = false;
+      if (idleAnimToken) {
+        idleAnimToken.cancelled = true;
+        idleAnimToken = null;
+      }
       saveState(state);
       render();
       setFlash(r.msg);
@@ -3983,26 +4347,17 @@ setInterval(() => {
           );
           bar.style.width = `${pct}%`;
         }
-        const roster = strip.querySelector("[data-live=train-idle-roster]");
-        if (roster) {
-          const fx = wrap.fx || emptyIdleFx();
-          // 完整重繪以重啟 CSS 動畫（傷害數字／震動）
-          roster.innerHTML = `<div class="combat-side allies">${s.allies
-            .map((u) => idleUnitBarHtml(u, fx))
-            .join("")}</div>
-            <div class="combat-side foes">${s.foes.map((u) => idleUnitBarHtml(u, fx)).join("")}</div>`;
-        }
-        strip.classList.remove("is-hit-shake");
-        if (wrap.fx?.shake) {
-          // 強制重播 strip 震動（同秘境 hit feedback）
-          // eslint-disable-next-line no-unused-expressions
-          strip.offsetWidth;
-          strip.classList.add("is-hit-shake");
-          wrap.fx.shake = false;
+        // 攻擊動畫進行中唔重繪 roster
+        if (!idleAnimBusy) {
+          patchIdleRosterFromSession(wrap);
         }
         const hitEl = strip.querySelector("[data-live=train-idle-hit]");
         if (hitEl) {
-          const resultLine = wrap.resultLine || s.resultLine || "";
+          const resultLine =
+            trainIdleCombatView(state).lastClearLine ||
+            wrap.resultLine ||
+            s.resultLine ||
+            "";
           hitEl.textContent = resultLine;
           hitEl.hidden = !resultLine;
           hitEl.classList.toggle("is-fail", resultLine === "挑戰失敗");
