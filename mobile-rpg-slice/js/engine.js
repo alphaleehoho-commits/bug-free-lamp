@@ -1426,9 +1426,20 @@ export function stepTrainIdleSession(session) {
     return { status: "round", session };
   }
 
-  const actor = session.order[session.orderIdx];
-  session.orderIdx += 1;
-  if (!actor || actor.hp <= 0) return { status: "skip", session };
+  // 跳過已死單位（同一 tick 內連跳，避免死怪高亮／空轉）
+  let actor = null;
+  while (session.orderIdx < session.order.length) {
+    const cand = session.order[session.orderIdx];
+    session.orderIdx += 1;
+    if (cand && cand.hp > 0) {
+      actor = cand;
+      break;
+    }
+  }
+  if (!actor) {
+    // 本輪剩餘皆死——下一 tick 開新回合
+    return { status: "skip", session };
+  }
 
   session.fightTicks = (session.fightTicks || 0) + 1;
 
@@ -3184,7 +3195,7 @@ function pushCombatText(events, text) {
 }
 
 function dealStrike(actor, target, power, transcript, events, skillName) {
-  if (!target) return;
+  if (!target || target.hp <= 0) return;
   const pMult = skillPowerMult(actor.skillLevel || 1);
   let dmg = Math.max(1, Math.floor(actor.atk * power * pMult) + Math.floor(Math.random() * 4) - 1);
   if (skillName === "嵐擊" || skillName === "穿空" || skillName === "礁襲") {

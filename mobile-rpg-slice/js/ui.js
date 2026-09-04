@@ -1655,16 +1655,13 @@ function applyIdleFxFromStep(wrap, result) {
   const fx = wrap.fx;
   fx.shake = false;
   const events = result?.events || [];
-  // 預設清掉上一跳；有 strike／heal 再寫入
+  // 每步清晒 hit／actor／ko，只顯示本 tick 事件（避免死怪殘留高亮）
   fx.lastHitUid = null;
   fx.lastActorUid = null;
+  fx.lastKoUid = null;
   fx.lastDmg = null;
   fx.lastHealAmt = null;
   fx.lastHealTarget = null;
-  // 保留 KO flash 短暫；新事件覆蓋
-  if (result?.status === "round" || result?.status === "wave" || result?.status === "pause") {
-    fx.lastKoUid = null;
-  }
   for (const event of events) {
     if (event.type === "strike") {
       fx.lastHitUid = event.targetUid;
@@ -1687,16 +1684,17 @@ function idleUnitBarHtml(u, fx = null) {
   const actBadge = doubleAct ? `<span class="cu-act" title="可連續行動">雙動</span>` : "";
   const role =
     u.role === "boss" ? "【BOSS】" : u.role === "elite" ? "【精英】" : "";
-  const isHit = fx?.lastHitUid === u.uid;
-  const isActor = fx?.lastActorUid === u.uid;
-  const isKo = fx?.lastKoUid === u.uid;
+  const isKo = !!(fx?.lastKoUid === u.uid);
+  const isHit = !dead && fx?.lastHitUid === u.uid;
+  // 已死單位唔做出手高亮；擊破當下保留 ko flash
+  const isActor = !dead && fx?.lastActorUid === u.uid;
   const dmgPop =
-    isHit && fx?.lastDmg != null ? `<span class="cu-dmg">-${fx.lastDmg}</span>` : "";
+    (isHit || isKo) && fx?.lastDmg != null ? `<span class="cu-dmg">-${fx.lastDmg}</span>` : "";
   const healPop =
-    fx?.lastHealAmt != null && fx?.lastHealTarget === u.uid
+    !dead && fx?.lastHealAmt != null && fx?.lastHealTarget === u.uid
       ? `<span class="cu-heal">+${fx.lastHealAmt}</span>`
       : "";
-  return `<div class="combat-unit${dead ? " is-down" : ""}${doubleAct ? " is-boss-act" : ""}${
+  return `<div class="combat-unit${dead ? " is-down" : ""}${doubleAct && !dead ? " is-boss-act" : ""}${
     isHit ? " is-hit" : ""
   }${isActor && !isHit ? " is-actor" : ""}${isKo ? " is-ko-flash" : ""}" data-uid="${escapeHtml(
     u.uid || ""
