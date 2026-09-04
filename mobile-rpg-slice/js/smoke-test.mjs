@@ -54,6 +54,9 @@ import {
   breakthroughGateFor,
   FORMATIONS,
   FORMATION_IDS,
+  FORMATION_SLOT_COUNT,
+  formationAllyPlacement,
+  formationFoePlacement,
   DUNGEON_CHALLENGE_RULES,
   pickDailyChallenge,
   DUNGEON_DAILY_MODS,
@@ -536,6 +539,33 @@ assert(DAILY_QUESTS.length >= 7, "7 daily quests");
 assert(ACHIEVEMENTS.length >= 20, "expanded achievements");
 assert(typeof weekKey() === "string" && weekKey().includes("-W"), "weekKey");
 assert(FORMATIONS.vanguard && FORMATION_IDS.length === 3, "formations");
+assert(FORMATION_SLOT_COUNT === 3, "formation slot count");
+{
+  const vg = formationAllyPlacement("vanguard", 3);
+  const rr = formationAllyPlacement("rear", 3);
+  const bl = formationAllyPlacement("balanced", 3);
+  assert(vg.every((p) => p.lane === "front"), "vanguard all front lane");
+  assert(rr.every((p) => p.lane === "rear"), "rear all rear lane");
+  assert(
+    bl.map((p) => p.lane).join(",") === "rear,front,rear",
+    "balanced stagger lanes"
+  );
+  assert(
+    vg.map((p) => p.unitIndex).join(",") !== rr.map((p) => p.lane).join(","),
+    "vanguard vs rear lane coords differ"
+  );
+  assert(
+    JSON.stringify(vg.map((p) => p.lane)) !== JSON.stringify(bl.map((p) => p.lane)),
+    "vanguard vs balanced placement differ"
+  );
+  const foes = formationFoePlacement(2);
+  assert(foes[0].unitIndex === 0 && foes[1].unitIndex === 1 && foes[2].unitIndex === null, "foe wave order slots");
+  assert(foes.every((p) => p.lane === "front"), "foes stay front lane");
+  const one = formationAllyPlacement("vanguard", 1);
+  assert(one[0].unitIndex === 0 && one[1].unitIndex === null && one[2].unitIndex === null, "partial party empty slots");
+}
+assert(FORMATIONS.vanguard.desc.includes("前排"), "vanguard desc mentions front");
+assert(FORMATIONS.rear.desc.includes("後排"), "rear desc mentions rear");
 assert(DUNGEON_CHALLENGE_RULES.length >= 5, "challenge rules");
 const chal = pickDailyChallenge("2026-08-26", "tide_2");
 assert(chal?.label && pickDailyChallenge("2026-08-26", "tide_2").id === chal.id, "chal deterministic");
@@ -1662,7 +1692,9 @@ assert(uiSrc2.includes("playAttackSequence"), "ui phased attack sequence");
 assert(uiSrc2.includes("lungeTowardTarget"), "ui vector lunge toward target");
 assert(uiSrc2.includes("getBoundingClientRect"), "ui lunge uses element rects");
 assert(uiSrc2.includes('data-slot="'), "ui formation data-slot attrs");
+assert(uiSrc2.includes('data-lane="'), "ui formation data-lane attrs");
 assert(uiSrc2.includes("combat-formation"), "ui formation roster class");
+assert(uiSrc2.includes("formationAllyPlacement"), "ui uses ally placement helper");
 assert(uiSrc2.includes("FORMATION_SLOT_COUNT"), "ui 3-slot formation");
 assert(uiSrc2.includes("persistTrainIdleClearResult"), "ui persists zone lastClear");
 assert(uiSrc2.includes("is-defender"), "ui defender highlight");
@@ -1678,6 +1710,8 @@ assert(uiSrc2.includes('id: "mats"'), "ui materials sub-tab");
 const cssSrc = readFileSync(join(__dir, "../css/style.css"), "utf8");
 assert(cssSrc.includes("combat-formation-side"), "css formation side grid");
 assert(cssSrc.includes("is-empty-slot"), "css empty formation slots");
+assert(cssSrc.includes('data-lane="front"'), "css front lane columns");
+assert(cssSrc.includes('data-lane="rear"'), "css rear lane columns");
 assert(!cssSrc.includes("is-lunge-east"), "css no legacy east lunge");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);

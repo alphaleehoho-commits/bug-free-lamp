@@ -1871,12 +1871,12 @@ export const TACTICS = {
 
 export const TACTIC_IDS = ["balanced", "focus_boss", "sustain"];
 
-/** 出戰陣型（影響寵物攻／血／速；人物不受影響） */
+/** 出戰陣型（影響寵物攻／血／速＋友方企位；人物不受影響） */
 export const FORMATIONS = {
   vanguard: {
     id: "vanguard",
     name: "前衛",
-    desc: "寵物血量 +12%，攻擊 −5%",
+    desc: "寵物壓前排 · 血量 +12%，攻擊 −5%",
     petHpMult: 1.12,
     petAtkMult: 0.95,
     petSpdMult: 1,
@@ -1884,7 +1884,7 @@ export const FORMATIONS = {
   balanced: {
     id: "balanced",
     name: "均衡",
-    desc: "無額外修正",
+    desc: "前後交錯站位 · 無額外修正",
     petHpMult: 1,
     petAtkMult: 1,
     petSpdMult: 1,
@@ -1892,7 +1892,7 @@ export const FORMATIONS = {
   rear: {
     id: "rear",
     name: "後場",
-    desc: "寵物攻擊 +12%，血量 −6%，速度 +5%",
+    desc: "寵物靠後排 · 攻擊 +12%，血量 −6%，速度 +5%",
     petHpMult: 0.94,
     petAtkMult: 1.12,
     petSpdMult: 1.05,
@@ -1900,6 +1900,50 @@ export const FORMATIONS = {
 };
 
 export const FORMATION_IDS = ["vanguard", "balanced", "rear"];
+
+/** 每側固定 3 企位（列）；前／後排用 lane 分欄 */
+export const FORMATION_SLOT_COUNT = 3;
+
+/**
+ * 友方陣型企位：slot=列(0上…2下)，lane=front|rear（對敵遠近）
+ * @returns {{ slot: number, lane: "front"|"rear", unitIndex: number|null }[]}
+ */
+export function formationAllyPlacement(formationId, unitCount = 0) {
+  const id = FORMATION_IDS.includes(formationId) ? formationId : "balanced";
+  const n = Math.max(0, Math.min(FORMATION_SLOT_COUNT, unitCount | 0));
+  const lanes =
+    id === "vanguard"
+      ? ["front", "front", "front"]
+      : id === "rear"
+        ? ["rear", "rear", "rear"]
+        : ["rear", "front", "rear"];
+  const out = [];
+  for (let slot = 0; slot < FORMATION_SLOT_COUNT; slot += 1) {
+    out.push({
+      slot,
+      lane: lanes[slot],
+      unitIndex: slot < n ? slot : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * 敵方企位：波次順序填 slot，一律前排（對準友軍）
+ * @returns {{ slot: number, lane: "front"|"rear", unitIndex: number|null }[]}
+ */
+export function formationFoePlacement(unitCount = 0) {
+  const n = Math.max(0, Math.min(FORMATION_SLOT_COUNT, unitCount | 0));
+  const out = [];
+  for (let slot = 0; slot < FORMATION_SLOT_COUNT; slot += 1) {
+    out.push({
+      slot,
+      lane: "front",
+      unitIndex: slot < n ? slot : null,
+    });
+  }
+  return out;
+}
 
 /**
  * 每日秘境挑戰規則（每層 seed 抽 1；過關另獎）
