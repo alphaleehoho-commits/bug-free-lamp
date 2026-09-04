@@ -3227,6 +3227,11 @@ function dealStrike(actor, target, power, transcript, events, skillName) {
       targetHp: target.hp,
       targetMaxHp: target.maxHp,
       ko: target.hp === 0,
+      actorBuff:
+        actor.atkBuffTurns > 0
+          ? `攻↑${Math.round((actor.atkBuffPct || 0) * 100)}%`
+          : null,
+      targetBuff: target.guardTurns > 0 ? "甲盾" : null,
     });
   }
 }
