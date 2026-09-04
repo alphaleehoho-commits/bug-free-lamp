@@ -986,12 +986,15 @@ button.flash-act {
 }
 .train-idle-log { margin: 0 0 0.4rem; font-size: 0.86rem; }
 .train-idle-hit {
-  margin: 0.3rem 0 0;
+  margin: 0.35rem 0 0;
   font-size: 0.72rem;
   color: var(--fog);
   min-height: 1.1em;
-  animation: fadeUp 0.32s ease-out;
+  letter-spacing: 0.02em;
 }
+.train-idle-hit.is-clear { color: color-mix(in srgb, var(--jade-bright) 75%, var(--fog)); }
+.train-idle-hit.is-fail { color: color-mix(in srgb, #e89078 70%, var(--fog)); }
+.train-idle-hit[hidden] { display: none; }
 .train-idle-meta {
   margin: 0 0 0.25rem;
   font-size: 0.78rem;
@@ -1000,6 +1003,16 @@ button.flash-act {
 .train-idle-claim { margin-top: 0.45rem; }
 .train-idle-roster { gap: 0.45rem; }
 .train-idle-roster .combat-unit { min-width: 0; transition: opacity 0.35s ease; }
+.train-idle-strip.is-hit-shake {
+  animation: trainIdleShake 0.38s ease-out;
+}
+@keyframes trainIdleShake {
+  0% { transform: translateX(0); }
+  20% { transform: translateX(-2px); }
+  40% { transform: translateX(2px); }
+  60% { transform: translateX(-1px); }
+  100% { transform: translateX(0); }
+}
 .idle-foe-dying { opacity: 0.15; transform: scale(0.92); transition: opacity 0.5s, transform 0.5s; }
 .train-tier-actions { flex-wrap: wrap; gap: 0.4rem; }
 .train-depth-row { flex-wrap: wrap; gap: 0.3rem; align-items: center; margin: 0.3rem 0; }

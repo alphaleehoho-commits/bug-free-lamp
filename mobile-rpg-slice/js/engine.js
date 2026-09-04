@@ -869,7 +869,7 @@ export function trainSitesView(state) {
       canClaimNext:
         !wardenDone &&
         !!z.clearReady &&
-        (z.tiersCleared | 0) < TRAIN_TIER_COUNT,
+        (z.tiersCleared | 0) < TRAIN_TIER_COUNT - 1,
       canChallengeWarden: !wardenDone && (z.tiersCleared | 0) >= TRAIN_TIER_COUNT,
       canRematchWarden: wardenDone,
       idleDepth: trainDepthIndex(state, s.id),
@@ -1345,6 +1345,8 @@ export function createTrainIdleSession(state) {
     zoneId,
     tierIndex,
     canUnlockNext,
+    /** 本輪是否首次挑戰當前未通霧階（隱晦效率：通關秒數） */
+    isFirstClear: canUnlockNext && !z.clearReady,
     clearReady: !!z.clearReady,
     petSig,
     waves,
@@ -1361,6 +1363,9 @@ export function createTrainIdleSession(state) {
     pauseLeft: 0,
     ended: false,
     won: false,
+    fightTicks: 0,
+    clearSec: null,
+    resultLine: null,
     lastText: `—— 第 1 波・${waves[0].label} ——`,
     waveLabel: `第 1／${waves.length} 波・${waves[0].label}`,
     layerLabel: `霧階${tierIndex + 1}`,
@@ -1392,12 +1397,23 @@ export function stepTrainIdleSession(session) {
   const allies = session.allies;
   const foes = session.foes;
 
+  const finishIdleResult = (won) => {
+    const sec = Math.max(1, session.fightTicks | 0);
+    session.clearSec = sec;
+    if (won) {
+      session.resultLine = session.isFirstClear ? `首次通關：${sec}s` : `通關時間：${sec}s`;
+    } else {
+      session.resultLine = "挑戰失敗";
+    }
+  };
+
   if (session.orderIdx >= session.order.length) {
     session.round += 1;
     if (session.round > session.maxRounds) {
       session.ended = true;
       session.won = false;
       session.lastText = "戰鬥逾時，重新開始…";
+      finishIdleResult(false);
       session.phase = "pause";
       session.pauseLeft = 2;
       return { status: "lost", session };
@@ -1413,6 +1429,8 @@ export function stepTrainIdleSession(session) {
   const actor = session.order[session.orderIdx];
   session.orderIdx += 1;
   if (!actor || actor.hp <= 0) return { status: "skip", session };
+
+  session.fightTicks = (session.fightTicks || 0) + 1;
 
   const transcript = [];
   const events = [];
@@ -1434,6 +1452,7 @@ export function stepTrainIdleSession(session) {
     session.ended = true;
     session.won = false;
     session.lastText = `折戟【${session.siteName}】${session.layerLabel}……全滅，重新開始`;
+    finishIdleResult(false);
     session.phase = "pause";
     session.pauseLeft = 2;
     return { status: "lost", session, events };
@@ -1452,7 +1471,11 @@ export function stepTrainIdleSession(session) {
     }
     session.ended = true;
     session.won = true;
-    session.lastText = `清完 ${session.waves.length} 波！可去下一層`;
+    const isLastMist = (session.tierIndex | 0) >= TRAIN_TIER_COUNT - 1;
+    session.lastText = isLastMist
+      ? `清完 ${session.waves.length} 波！霧階全破`
+      : `清完 ${session.waves.length} 波！可去下一層`;
+    finishIdleResult(true);
     session.phase = "pause";
     session.pauseLeft = 2;
     return { status: "won", session, events };
@@ -1461,13 +1484,28 @@ export function stepTrainIdleSession(session) {
   return { status: "fight", session, events };
 }
 
-/** 掛機清完一輪後標記可領取下一霧階 */
+/**
+ * 掛機清完一輪後：
+ * - 仲有下一霧階 → 標記 clearReady，顯示「去下一層」
+ * - 已係最後霧階（下一關係域主）→ 自動領取，唔顯示「去下一層」
+ */
 export function markTrainIdleClearReady(state, session) {
-  if (!session?.canUnlockNext || !session.won) return false;
+  if (!session?.canUnlockNext || !session.won) {
+    return { ok: false, autoClaimed: false };
+  }
+  const isLastMist = (session.tierIndex | 0) >= TRAIN_TIER_COUNT - 1;
+  if (isLastMist) {
+    const z = ensureZoneProgress(state, session.zoneId);
+    z.clearReady = true;
+    const claim = claimTrainTierClear(state);
+    session.clearReady = false;
+    session.canUnlockNext = false;
+    return { ok: !!claim.ok, autoClaimed: true, claim };
+  }
   const z = ensureZoneProgress(state, session.zoneId);
   z.clearReady = true;
   session.clearReady = true;
-  return true;
+  return { ok: true, autoClaimed: false };
 }
 
 /** UI：閒置掛機戰場摘要（建立 session 用） */

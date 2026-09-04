@@ -1583,6 +1583,8 @@ function ensureIdleCombat() {
       canUnlockNext: !!view.canUnlockNext,
       session,
       logLine: view.logLine,
+      resultLine: idleCombat?.resultLine || null,
+      fx: emptyIdleFx(),
     };
   } else {
     idleCombat.logLine = view.logLine;
@@ -1597,8 +1599,11 @@ function tickIdleCombat() {
   if (!wrap?.session) return;
 
   const result = stepTrainIdleSession(wrap.session);
+  // 套用同秘境一樣嘅即時 hit／傷害數字狀態
+  applyIdleFxFromStep(wrap, result);
   if (result.status === "restart") {
     const keepReady = wrap.clearReady;
+    const keepResult = wrap.session.resultLine || wrap.resultLine;
     const session = createTrainIdleSession(state);
     if (!session) {
       idleCombat = null;
@@ -1607,23 +1612,96 @@ function tickIdleCombat() {
     session.clearReady = keepReady;
     wrap.session = session;
     wrap.petSig = idlePetSig(state);
+    wrap.resultLine = keepResult || null;
+    wrap.fx = emptyIdleFx();
     return;
   }
+  if (result.status === "won" || result.status === "lost") {
+    if (wrap.session.resultLine) wrap.resultLine = wrap.session.resultLine;
+  }
   if (result.status === "won") {
-    if (markTrainIdleClearReady(state, wrap.session)) {
-      wrap.clearReady = true;
+    const marked = markTrainIdleClearReady(state, wrap.session);
+    if (marked?.ok) {
       saveState(state);
+      if (marked.autoClaimed) {
+        // 最後霧階下一關係域主——自動領取，唔顯示「去下一層」
+        const keepResult = wrap.resultLine;
+        idleCombat = null;
+        // 短暫保留結果行：下一輪 ensure 會帶上
+        idleCombat = { resultLine: keepResult };
+        setFlash(marked.claim?.msg || "霧階全破 · 可挑戰域主", "unlock");
+        render();
+        return;
+      }
+      wrap.clearReady = true;
     }
   }
 }
 
-function idleUnitBarHtml(u) {
+function emptyIdleFx() {
+  return {
+    lastHitUid: null,
+    lastActorUid: null,
+    lastKoUid: null,
+    lastDmg: null,
+    lastHealAmt: null,
+    lastHealTarget: null,
+    shake: false,
+  };
+}
+
+function applyIdleFxFromStep(wrap, result) {
+  if (!wrap.fx) wrap.fx = emptyIdleFx();
+  const fx = wrap.fx;
+  fx.shake = false;
+  const events = result?.events || [];
+  // 預設清掉上一跳；有 strike／heal 再寫入
+  fx.lastHitUid = null;
+  fx.lastActorUid = null;
+  fx.lastDmg = null;
+  fx.lastHealAmt = null;
+  fx.lastHealTarget = null;
+  // 保留 KO flash 短暫；新事件覆蓋
+  if (result?.status === "round" || result?.status === "wave" || result?.status === "pause") {
+    fx.lastKoUid = null;
+  }
+  for (const event of events) {
+    if (event.type === "strike") {
+      fx.lastHitUid = event.targetUid;
+      fx.lastActorUid = event.actorUid;
+      fx.lastDmg = event.dmg;
+      fx.shake = true;
+      if (event.ko) fx.lastKoUid = event.targetUid;
+    } else if (event.type === "heal") {
+      fx.lastHealAmt = event.heal;
+      fx.lastHealTarget = event.targetUid;
+      fx.lastActorUid = event.actorUid || null;
+    }
+  }
+}
+
+function idleUnitBarHtml(u, fx = null) {
   const pct = u.maxHp > 0 ? Math.max(0, Math.round((u.hp / u.maxHp) * 100)) : 0;
   const dead = u.hp <= 0;
+  const doubleAct = u.role === "boss" || (u.actions || 1) > 1;
+  const actBadge = doubleAct ? `<span class="cu-act" title="可連續行動">雙動</span>` : "";
   const role =
     u.role === "boss" ? "【BOSS】" : u.role === "elite" ? "【精英】" : "";
-  return `<div class="combat-unit${dead ? " is-down" : ""}" data-uid="${escapeHtml(u.uid || "")}" data-element="${escapeHtml(u.elementId || "")}">
-    <span class="cu-name">${role}${escapeHtml(u.name)}</span>
+  const isHit = fx?.lastHitUid === u.uid;
+  const isActor = fx?.lastActorUid === u.uid;
+  const isKo = fx?.lastKoUid === u.uid;
+  const dmgPop =
+    isHit && fx?.lastDmg != null ? `<span class="cu-dmg">-${fx.lastDmg}</span>` : "";
+  const healPop =
+    fx?.lastHealAmt != null && fx?.lastHealTarget === u.uid
+      ? `<span class="cu-heal">+${fx.lastHealAmt}</span>`
+      : "";
+  return `<div class="combat-unit${dead ? " is-down" : ""}${doubleAct ? " is-boss-act" : ""}${
+    isHit ? " is-hit" : ""
+  }${isActor && !isHit ? " is-actor" : ""}${isKo ? " is-ko-flash" : ""}" data-uid="${escapeHtml(
+    u.uid || ""
+  )}" data-element="${escapeHtml(u.elementId || "")}">
+    <span class="cu-name">${actBadge}${role}${escapeHtml(u.name)}${dmgPop}${healPop}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
 }
@@ -1635,20 +1713,30 @@ function trainIdleStripHtml() {
       <p class="meta train-idle-log muted">未出戰——掛機效率最低</p>
     </div>`;
   }
+  if (!wrap.fx) wrap.fx = emptyIdleFx();
   const s = wrap.session;
-  const allyBars = s.allies.map(idleUnitBarHtml).join("");
-  const foeBars = s.foes.map(idleUnitBarHtml).join("");
-  const meta = s.phase === "pause"
-    ? s.lastText
-    : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`;
+  const fx = wrap.fx;
+  const allyBars = s.allies.map((u) => idleUnitBarHtml(u, fx)).join("");
+  const foeBars = s.foes.map((u) => idleUnitBarHtml(u, fx)).join("");
+  const meta =
+    s.phase === "pause"
+      ? s.won
+        ? `清完 ${s.waveCount} 波！`
+        : s.ended
+          ? "全滅／逾時，重開中…"
+          : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`
+      : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`;
   const pct = Math.min(
     100,
     Math.round(((s.waveIndex + (s.ended && s.won ? 1 : 0)) / Math.max(1, s.waveCount)) * 100)
   );
   const claimBtn =
-    wrap.clearReady && wrap.canUnlockNext
+    wrap.clearReady && wrap.canUnlockNext && (s.tierIndex | 0) < TRAIN_TIER_COUNT - 1
       ? `<div class="row train-idle-claim"><button type="button" class="primary" data-claim-tier>去下一層</button></div>`
       : "";
+  const resultLine = wrap.resultLine || s.resultLine || "";
+  const resultCls =
+    resultLine === "挑戰失敗" ? " is-fail" : resultLine ? " is-clear" : "";
   return `<div class="train-idle-strip" data-live="train-idle">
     <p class="meta train-idle-log">${escapeHtml(wrap.logLine || "")}</p>
     <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
@@ -1657,7 +1745,7 @@ function trainIdleStripHtml() {
       <div class="combat-side allies">${allyBars}</div>
       <div class="combat-side foes">${foeBars}</div>
     </div>
-    <p class="train-idle-hit" data-live="train-idle-hit">${escapeHtml(s.lastText || "")}</p>
+    <p class="train-idle-hit${resultCls}" data-live="train-idle-hit"${resultLine ? "" : " hidden"}>${escapeHtml(resultLine)}</p>
     ${claimBtn}
   </div>`;
 }
@@ -3877,7 +3965,13 @@ setInterval(() => {
         const meta = strip.querySelector("[data-live=train-idle-meta]");
         if (meta) {
           meta.textContent =
-            s.phase === "pause" ? s.lastText : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`;
+            s.phase === "pause"
+              ? s.won
+                ? `清完 ${s.waveCount} 波！`
+                : s.ended
+                  ? "全滅／逾時，重開中…"
+                  : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`
+              : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`;
         }
         const bar = strip.querySelector("[data-live=train-idle-bar]");
         if (bar) {
@@ -3891,14 +3985,32 @@ setInterval(() => {
         }
         const roster = strip.querySelector("[data-live=train-idle-roster]");
         if (roster) {
-          roster.innerHTML = `<div class="combat-side allies">${s.allies.map(idleUnitBarHtml).join("")}</div>
-            <div class="combat-side foes">${s.foes.map(idleUnitBarHtml).join("")}</div>`;
+          const fx = wrap.fx || emptyIdleFx();
+          // 完整重繪以重啟 CSS 動畫（傷害數字／震動）
+          roster.innerHTML = `<div class="combat-side allies">${s.allies
+            .map((u) => idleUnitBarHtml(u, fx))
+            .join("")}</div>
+            <div class="combat-side foes">${s.foes.map((u) => idleUnitBarHtml(u, fx)).join("")}</div>`;
+        }
+        strip.classList.remove("is-hit-shake");
+        if (wrap.fx?.shake) {
+          // 強制重播 strip 震動（同秘境 hit feedback）
+          // eslint-disable-next-line no-unused-expressions
+          strip.offsetWidth;
+          strip.classList.add("is-hit-shake");
+          wrap.fx.shake = false;
         }
         const hitEl = strip.querySelector("[data-live=train-idle-hit]");
-        if (hitEl) hitEl.textContent = s.lastText || "";
+        if (hitEl) {
+          const resultLine = wrap.resultLine || s.resultLine || "";
+          hitEl.textContent = resultLine;
+          hitEl.hidden = !resultLine;
+          hitEl.classList.toggle("is-fail", resultLine === "挑戰失敗");
+          hitEl.classList.toggle("is-clear", !!resultLine && resultLine !== "挑戰失敗");
+        }
         // 通關後動態補「去下一層」
         let claimRow = strip.querySelector(".train-idle-claim");
-        if (wrap.clearReady && wrap.canUnlockNext) {
+        if (wrap.clearReady && wrap.canUnlockNext && (s.tierIndex | 0) < TRAIN_TIER_COUNT - 1) {
           if (!claimRow) {
             claimRow = document.createElement("div");
             claimRow.className = "row train-idle-claim";

@@ -171,6 +171,7 @@ import {
   trainDepthMultFor,
   partyCombatPower,
   trainIdleCombatView,
+  trainSitesView,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -1554,20 +1555,45 @@ while (idleSteps < 500 && !idleWon) {
   idleSteps += 1;
   if (step.status === "won") {
     idleWon = true;
-    assert(markTrainIdleClearReady(tzSt, idleSess), "mark clear ready");
+    const marked = markTrainIdleClearReady(tzSt, idleSess);
+    assert(marked.ok && !marked.autoClaimed, "mark clear ready for mist1");
+    assert(/首次通關：\d+s/.test(idleSess.resultLine || ""), "first clear time line");
     break;
   }
   if (step.status === "restart") break;
 }
 assert(idleWon, "idle session can clear with strong party");
 assert(tzSt.trainMap.zones.shore.clearReady, "clearReady persisted");
-for (let i = 0; i < 4; i++) {
+// claim mist 1–3 manually; mist 4 auto-claims to warden gate
+for (let i = 0; i < 3; i++) {
   tzSt.trainMap.zones.shore.clearReady = true;
   const ar = claimTrainTierClear(tzSt);
   assert(ar.ok, `claim tier ${i + 1}`);
   assert(!tzSt.trainMap.zones.shore.clearReady, `clearReady spent ${i + 1}`);
 }
+assert(tzSt.trainMap.zones.shore.tiersCleared === 3, "3 mist tiers claimed");
+const lastSess = createTrainIdleSession(tzSt);
+assert(lastSess && lastSess.tierIndex === 3, "last mist session at tier 4");
+let lastSteps = 0;
+let lastWon = false;
+while (lastSteps < 500 && !lastWon) {
+  const step = stepTrainIdleSession(lastSess);
+  lastSteps += 1;
+  if (step.status === "won") {
+    lastWon = true;
+    const marked = markTrainIdleClearReady(tzSt, lastSess);
+    assert(marked.ok && marked.autoClaimed, "last mist auto-claims (next is warden)");
+    break;
+  }
+  if (step.status === "restart") break;
+}
+assert(lastWon, "last mist idle clear");
 assert(tzSt.trainMap.zones.shore.tiersCleared === 4, "4 mist tiers cleared");
+assert(!tzSt.trainMap.zones.shore.clearReady, "no clearReady after last mist");
+const sitesAfter = trainSitesView(tzSt);
+const shoreAfter = sitesAfter.find((s) => s.id === "shore");
+assert(shoreAfter?.canChallengeWarden, "warden challenge available after mist4");
+assert(!shoreAfter?.canClaimNext, "no go-next after mist4");
 assert(trainDepthMultFor(tzSt, "shore") === 1.35, "depth at mist4");
 assert(!unlockedTrainSiteIds(tzSt).includes("ruins"), "ruins locked until warden");
 const wFailKey = { ...tzSt, materials: { ...tzSt.materials, tide_key_1: 0 } };
