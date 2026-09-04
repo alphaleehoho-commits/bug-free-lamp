@@ -1635,6 +1635,9 @@ const setDFail = setTrainDepth({ ...tzSt, trainMap: { ...tzSt.trainMap, wardenCl
 assert(!setDFail.ok, "cannot set depth beyond cleared");
 
 const uiSrc2 = readFileSync(join(__dir, "ui.js"), "utf8");
+assert(uiSrc2.includes("playAttackSequence"), "ui phased attack sequence");
+assert(uiSrc2.includes("is-lunge-east"), "ui attack lunge class");
+assert(uiSrc2.includes("is-defender"), "ui defender highlight");
 assert(uiSrc2.includes("data-claim-tier"), "ui claim next mist tier");
 assert(uiSrc2.includes("去下一層"), "ui claim next label");
 assert(!uiSrc2.includes("data-advance-tier"), "ui no manual advance fight button");
