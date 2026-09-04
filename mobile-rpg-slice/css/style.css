@@ -985,7 +985,16 @@ button.flash-act {
   border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
 }
 .train-idle-log { margin: 0 0 0.4rem; font-size: 0.86rem; }
-.train-idle-hit { display: none; }
+.train-idle-hit {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  color: var(--fog);
+  min-height: 1.1em;
+  letter-spacing: 0.02em;
+}
+.train-idle-hit.is-clear { color: color-mix(in srgb, var(--jade-bright) 75%, var(--fog)); }
+.train-idle-hit.is-fail { color: color-mix(in srgb, #e89078 70%, var(--fog)); }
+.train-idle-hit[hidden] { display: none; }
 .train-idle-meta {
   margin: 0 0 0.25rem;
   font-size: 0.78rem;

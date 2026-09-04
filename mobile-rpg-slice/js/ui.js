@@ -1583,6 +1583,7 @@ function ensureIdleCombat() {
       canUnlockNext: !!view.canUnlockNext,
       session,
       logLine: view.logLine,
+      resultLine: idleCombat?.resultLine || null,
       fx: emptyIdleFx(),
     };
   } else {
@@ -1602,6 +1603,7 @@ function tickIdleCombat() {
   applyIdleFxFromStep(wrap, result);
   if (result.status === "restart") {
     const keepReady = wrap.clearReady;
+    const keepResult = wrap.session.resultLine || wrap.resultLine;
     const session = createTrainIdleSession(state);
     if (!session) {
       idleCombat = null;
@@ -1610,8 +1612,12 @@ function tickIdleCombat() {
     session.clearReady = keepReady;
     wrap.session = session;
     wrap.petSig = idlePetSig(state);
+    wrap.resultLine = keepResult || null;
     wrap.fx = emptyIdleFx();
     return;
+  }
+  if (result.status === "won" || result.status === "lost") {
+    if (wrap.session.resultLine) wrap.resultLine = wrap.session.resultLine;
   }
   if (result.status === "won") {
     const marked = markTrainIdleClearReady(state, wrap.session);
@@ -1619,7 +1625,10 @@ function tickIdleCombat() {
       saveState(state);
       if (marked.autoClaimed) {
         // 最後霧階下一關係域主——自動領取，唔顯示「去下一層」
+        const keepResult = wrap.resultLine;
         idleCombat = null;
+        // 短暫保留結果行：下一輪 ensure 會帶上
+        idleCombat = { resultLine: keepResult };
         setFlash(marked.claim?.msg || "霧階全破 · 可挑戰域主", "unlock");
         render();
         return;
@@ -1725,6 +1734,9 @@ function trainIdleStripHtml() {
     wrap.clearReady && wrap.canUnlockNext && (s.tierIndex | 0) < TRAIN_TIER_COUNT - 1
       ? `<div class="row train-idle-claim"><button type="button" class="primary" data-claim-tier>去下一層</button></div>`
       : "";
+  const resultLine = wrap.resultLine || s.resultLine || "";
+  const resultCls =
+    resultLine === "挑戰失敗" ? " is-fail" : resultLine ? " is-clear" : "";
   return `<div class="train-idle-strip" data-live="train-idle">
     <p class="meta train-idle-log">${escapeHtml(wrap.logLine || "")}</p>
     <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
@@ -1733,6 +1745,7 @@ function trainIdleStripHtml() {
       <div class="combat-side allies">${allyBars}</div>
       <div class="combat-side foes">${foeBars}</div>
     </div>
+    <p class="train-idle-hit${resultCls}" data-live="train-idle-hit"${resultLine ? "" : " hidden"}>${escapeHtml(resultLine)}</p>
     ${claimBtn}
   </div>`;
 }
@@ -3986,6 +3999,14 @@ setInterval(() => {
           strip.offsetWidth;
           strip.classList.add("is-hit-shake");
           wrap.fx.shake = false;
+        }
+        const hitEl = strip.querySelector("[data-live=train-idle-hit]");
+        if (hitEl) {
+          const resultLine = wrap.resultLine || s.resultLine || "";
+          hitEl.textContent = resultLine;
+          hitEl.hidden = !resultLine;
+          hitEl.classList.toggle("is-fail", resultLine === "挑戰失敗");
+          hitEl.classList.toggle("is-clear", !!resultLine && resultLine !== "挑戰失敗");
         }
         // 通關後動態補「去下一層」
         let claimRow = strip.querySelector(".train-idle-claim");

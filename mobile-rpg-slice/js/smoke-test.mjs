@@ -1557,6 +1557,7 @@ while (idleSteps < 500 && !idleWon) {
     idleWon = true;
     const marked = markTrainIdleClearReady(tzSt, idleSess);
     assert(marked.ok && !marked.autoClaimed, "mark clear ready for mist1");
+    assert(/首次通關：\d+s/.test(idleSess.resultLine || ""), "first clear time line");
     break;
   }
   if (step.status === "restart") break;
