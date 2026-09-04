@@ -86,6 +86,7 @@ import {
   createTrainIdleSession,
   stepTrainIdleSession,
   markTrainIdleClearReady,
+  persistTrainIdleClearResult,
   claimTrainTierClear,
   challengeTrainWarden,
   setTrainDepth,
@@ -462,12 +463,30 @@ function clearAttackFx(el) {
     "is-actor",
     "is-ko-flash"
   );
+  el.style.transform = "";
   el.querySelectorAll(".cu-temp-buff, .cu-dmg, .cu-heal").forEach((n) => n.remove());
+}
+
+/** 攻方框推向守方框中心（向量輕撞） */
+function lungeTowardTarget(actorEl, targetEl, distancePx = 12) {
+  if (!actorEl || !targetEl) return;
+  const a = actorEl.getBoundingClientRect();
+  const t = targetEl.getBoundingClientRect();
+  const ax = a.left + a.width / 2;
+  const ay = a.top + a.height / 2;
+  const tx = t.left + t.width / 2;
+  const ty = t.top + t.height / 2;
+  let dx = tx - ax;
+  let dy = ty - ay;
+  const len = Math.hypot(dx, dy) || 1;
+  dx = (dx / len) * distancePx;
+  dy = (dy / len) * distancePx;
+  actorEl.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
 }
 
 /**
  * 完整一次攻擊動畫：
- * 1 攻方高亮+buff → 2 輕撞 → 3 守方淺紅+扣血 → 4 返回 → 5 清高亮／數字fade／死亡fade
+ * 1 攻方高亮+buff → 2 輕撞目標 → 3 守方淺紅+扣血 → 4 返回 → 5 清高亮／數字fade／死亡fade
  */
 async function playAttackSequence(opts) {
   const {
@@ -499,9 +518,6 @@ async function playAttackSequence(opts) {
   clearAttackFx(actorEl);
   clearAttackFx(targetEl);
 
-  const actorIsAlly = !!actorEl.closest(".allies");
-  const lungeClass = actorIsAlly ? "is-lunge-east" : "is-lunge-west";
-
   // 1. 攻方高亮 + 臨時 buff
   actorEl.classList.add("is-attacker");
   const nameEl = actorEl.querySelector(".cu-name");
@@ -514,8 +530,8 @@ async function playAttackSequence(opts) {
   await waitAnimMs(ms(ATTACK_PHASE_MS.windup), token);
   if (cancelled()) return;
 
-  // 2. 向守方輕撞
-  actorEl.classList.add(lungeClass);
+  // 2. 向守方實際位置輕撞
+  lungeTowardTarget(actorEl, targetEl, 12);
   await waitAnimMs(ms(ATTACK_PHASE_MS.lunge), token);
   if (cancelled()) return;
 
@@ -554,7 +570,7 @@ async function playAttackSequence(opts) {
   if (cancelled()) return;
 
   // 4. 攻方返回
-  actorEl.classList.remove(lungeClass);
+  actorEl.style.transform = "";
   await waitAnimMs(ms(ATTACK_PHASE_MS.ret), token);
   if (cancelled()) return;
 
@@ -721,34 +737,76 @@ function combatLogLineHtml(text, event) {
   return `<li class="${cls}">${badge}${escapeHtml(text)}</li>`;
 }
 
-function combatUnitBar(u, pb) {
+const FORMATION_SLOT_COUNT = 3;
+
+function formationSlotIndex(i) {
+  return Math.min(FORMATION_SLOT_COUNT - 1, Math.max(0, i | 0));
+}
+
+/** 3 企位陣型：空 slot 保留位置（將來擴充） */
+function formationSideHtml(units, side, renderUnit) {
+  const list = units || [];
+  const slots = [];
+  for (let i = 0; i < FORMATION_SLOT_COUNT; i += 1) {
+    const u = list[i];
+    if (u) {
+      slots.push(renderUnit(u, i));
+    } else {
+      slots.push(
+        `<div class="combat-unit is-empty-slot" data-side="${side}" data-slot="${i}" aria-hidden="true"></div>`
+      );
+    }
+  }
+  return slots.join("");
+}
+
+function combatUnitBar(u, pb, slotIndex = 0) {
   const hp = pb.unitHp.get(u.uid) ?? u.hp;
   const pct = u.maxHp > 0 ? Math.max(0, Math.min(100, Math.round((hp / u.maxHp) * 100))) : 0;
   const dead = hp <= 0;
   const doubleAct = u.role === "boss" || (u.actions || 1) > 1;
   const actBadge = doubleAct ? `<span class="cu-act" title="可連續行動">雙動</span>` : "";
+  const side = u.side === "foe" || u.side === "enemy" ? "foe" : "ally";
+  const slot = formationSlotIndex(slotIndex);
   // 攻擊高亮／扣血數字由 playAttackSequence 負責，靜態條只顯示 HP
   return `<div class="combat-unit${dead ? " is-down" : ""}${
     doubleAct ? " is-boss-act" : ""
-  }" data-combat-uid="${escapeHtml(u.uid)}" data-element="${escapeHtml(u.elementId || "")}">
+  }" data-combat-uid="${escapeHtml(u.uid)}" data-side="${side}" data-slot="${slot}" data-element="${escapeHtml(u.elementId || "")}">
     <span class="cu-name">${actBadge}${escapeHtml(u.name)}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
 }
 
 function renderCombatRoster(pb) {
-  return `<div class="combat-roster" data-live="combat-roster">
-    <div class="combat-side allies">${pb.allyUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>
-    <div class="combat-side foes">${pb.foeUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>
+  return `<div class="combat-roster combat-formation" data-live="combat-roster">
+    <div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
+      pb.allyUnits,
+      "ally",
+      (u, i) => combatUnitBar(u, pb, i)
+    )}</div>
+    <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
+      pb.foeUnits,
+      "foe",
+      (u, i) => combatUnitBar(u, pb, i)
+    )}</div>
   </div>`;
 }
 
 function patchCombatRosterDom(pb) {
   const root = document.querySelector("[data-live=combat-roster]");
   if (!root) return;
+  root.classList.add("combat-formation");
   root.innerHTML = `
-    <div class="combat-side allies">${pb.allyUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>
-    <div class="combat-side foes">${pb.foeUnits.map((u) => combatUnitBar(u, pb)).join("")}</div>`;
+    <div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
+      pb.allyUnits,
+      "ally",
+      (u, i) => combatUnitBar(u, pb, i)
+    )}</div>
+    <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
+      pb.foeUnits,
+      "foe",
+      (u, i) => combatUnitBar(u, pb, i)
+    )}</div>`;
   const waveEl = document.querySelector("[data-live=combat-wave]");
   if (waveEl) {
     waveEl.textContent = pb.waveLabel && !pb.done ? pb.waveLabel : "";
@@ -1833,13 +1891,18 @@ function ensureIdleCombat() {
       canUnlockNext: !!view.canUnlockNext,
       session,
       logLine: view.logLine,
-      resultLine: idleCombat?.resultLine || null,
+      // 通關時間跟當前潮域，唔跨域帶舊結果
+      resultLine: view.lastClearLine || null,
       fx: emptyIdleFx(),
     };
   } else {
     idleCombat.logLine = view.logLine;
     idleCombat.clearReady = !!view.clearReady || !!idleCombat.clearReady;
     idleCombat.session.clearReady = idleCombat.clearReady;
+    // 同步當前域存檔結果（轉地後 view 已換）
+    if (!idleCombat.session.resultLine) {
+      idleCombat.resultLine = view.lastClearLine || null;
+    }
   }
   return idleCombat;
 }
@@ -1848,10 +1911,17 @@ function patchIdleRosterFromSession(wrap) {
   const roster = document.querySelector("[data-live=train-idle-roster]");
   if (!roster || !wrap?.session) return;
   const s = wrap.session;
-  roster.innerHTML = `<div class="combat-side allies">${s.allies
-    .map((u) => idleUnitBarHtml(u))
-    .join("")}</div>
-    <div class="combat-side foes">${s.foes.map((u) => idleUnitBarHtml(u)).join("")}</div>`;
+  roster.classList.add("combat-formation");
+  roster.innerHTML = `<div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
+    s.allies,
+    "ally",
+    idleUnitBarHtml
+  )}</div>
+    <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
+      s.foes,
+      "foe",
+      idleUnitBarHtml
+    )}</div>`;
 }
 
 async function playIdleCombatEvents(events) {
@@ -1900,7 +1970,6 @@ function tickIdleCombat() {
   const result = stepTrainIdleSession(wrap.session);
   if (result.status === "restart") {
     const keepReady = wrap.clearReady;
-    const keepResult = wrap.session.resultLine || wrap.resultLine;
     const session = createTrainIdleSession(state);
     if (!session) {
       idleCombat = null;
@@ -1909,13 +1978,19 @@ function tickIdleCombat() {
     session.clearReady = keepReady;
     wrap.session = session;
     wrap.petSig = idlePetSig(state);
-    wrap.resultLine = keepResult || null;
+    // 重開後繼續顯示本域上次通關時間
+    wrap.resultLine =
+      trainIdleCombatView(state).lastClearLine || wrap.resultLine || null;
     wrap.fx = emptyIdleFx();
     patchIdleRosterFromSession(wrap);
     return;
   }
   if (result.status === "won" || result.status === "lost") {
-    if (wrap.session.resultLine) wrap.resultLine = wrap.session.resultLine;
+    if (wrap.session.resultLine) {
+      wrap.resultLine = wrap.session.resultLine;
+      persistTrainIdleClearResult(state, wrap.session);
+      saveState(state);
+    }
   }
 
   const combatEvents = (result.events || []).filter(
@@ -1939,9 +2014,11 @@ function tickIdleCombat() {
       saveState(state);
       if (marked.autoClaimed) {
         const keepResult = wrap.resultLine;
-        idleCombat = { resultLine: keepResult };
+        idleCombat = null;
+        // 重建時 ensure 會讀本域 lastClear；先寫入再 render
         setFlash(marked.claim?.msg || "霧階全破 · 可挑戰域主", "unlock");
         render();
+        if (idleCombat && keepResult) idleCombat.resultLine = keepResult;
         return;
       }
       wrap.clearReady = true;
@@ -1961,16 +2038,18 @@ function emptyIdleFx() {
   };
 }
 
-function idleUnitBarHtml(u) {
+function idleUnitBarHtml(u, slotIndex = 0) {
   const pct = u.maxHp > 0 ? Math.max(0, Math.round((u.hp / u.maxHp) * 100)) : 0;
   const dead = u.hp <= 0;
   const doubleAct = u.role === "boss" || (u.actions || 1) > 1;
   const actBadge = doubleAct ? `<span class="cu-act" title="可連續行動">雙動</span>` : "";
   const role =
     u.role === "boss" ? "【BOSS】" : u.role === "elite" ? "【精英】" : "";
+  const side = u.side === "foe" || u.side === "enemy" ? "foe" : "ally";
+  const slot = formationSlotIndex(slotIndex);
   return `<div class="combat-unit${dead ? " is-down" : ""}${
     doubleAct && !dead ? " is-boss-act" : ""
-  }" data-uid="${escapeHtml(u.uid || "")}" data-element="${escapeHtml(u.elementId || "")}">
+  }" data-uid="${escapeHtml(u.uid || "")}" data-side="${side}" data-slot="${slot}" data-element="${escapeHtml(u.elementId || "")}">
     <span class="cu-name">${actBadge}${role}${escapeHtml(u.name)}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
@@ -1984,8 +2063,6 @@ function trainIdleStripHtml() {
     </div>`;
   }
   const s = wrap.session;
-  const allyBars = s.allies.map((u) => idleUnitBarHtml(u)).join("");
-  const foeBars = s.foes.map((u) => idleUnitBarHtml(u)).join("");
   const meta =
     s.phase === "pause"
       ? s.won
@@ -2002,16 +2079,28 @@ function trainIdleStripHtml() {
     wrap.clearReady && wrap.canUnlockNext && (s.tierIndex | 0) < TRAIN_TIER_COUNT - 1
       ? `<div class="row train-idle-claim"><button type="button" class="primary" data-claim-tier>去下一層</button></div>`
       : "";
-  const resultLine = wrap.resultLine || s.resultLine || "";
+  const resultLine =
+    trainIdleCombatView(state).lastClearLine ||
+    wrap.resultLine ||
+    s.resultLine ||
+    "";
   const resultCls =
     resultLine === "挑戰失敗" ? " is-fail" : resultLine ? " is-clear" : "";
   return `<div class="train-idle-strip" data-live="train-idle">
     <p class="meta train-idle-log">${escapeHtml(wrap.logLine || "")}</p>
     <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
     <div class="bar combat-bar train-idle-bar"><i data-live="train-idle-bar" style="width:${pct}%"></i></div>
-    <div class="combat-roster train-idle-roster" data-live="train-idle-roster">
-      <div class="combat-side allies">${allyBars}</div>
-      <div class="combat-side foes">${foeBars}</div>
+    <div class="combat-roster train-idle-roster combat-formation" data-live="train-idle-roster">
+      <div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
+        s.allies,
+        "ally",
+        idleUnitBarHtml
+      )}</div>
+      <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
+        s.foes,
+        "foe",
+        idleUnitBarHtml
+      )}</div>
     </div>
     <p class="train-idle-hit${resultCls}" data-live="train-idle-hit"${resultLine ? "" : " hidden"}>${escapeHtml(resultLine)}</p>
     ${claimBtn}
@@ -3878,6 +3967,13 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = setTrainSite(state, btn.dataset.setTrain);
+      // 轉地即時換通關時間／重建掛機戰場
+      idleCombat = null;
+      idleAnimBusy = false;
+      if (idleAnimToken) {
+        idleAnimToken.cancelled = true;
+        idleAnimToken = null;
+      }
       saveState(state);
       render();
       setFlash(r.msg);
@@ -4257,7 +4353,11 @@ setInterval(() => {
         }
         const hitEl = strip.querySelector("[data-live=train-idle-hit]");
         if (hitEl) {
-          const resultLine = wrap.resultLine || s.resultLine || "";
+          const resultLine =
+            trainIdleCombatView(state).lastClearLine ||
+            wrap.resultLine ||
+            s.resultLine ||
+            "";
           hitEl.textContent = resultLine;
           hitEl.hidden = !resultLine;
           hitEl.classList.toggle("is-fail", resultLine === "挑戰失敗");

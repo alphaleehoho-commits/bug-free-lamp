@@ -124,6 +124,7 @@ import {
   TRAIN_WARDEN_WAVE_COUNT,
   TRAIN_ZONE_CHAIN,
   rollTideKeyDrop,
+  ACTIVE_PET_MAX,
 } from "./data.js";
 import {
   affordMaterials,
@@ -164,8 +165,10 @@ import {
   createTrainIdleSession,
   stepTrainIdleSession,
   markTrainIdleClearReady,
+  persistTrainIdleClearResult,
   runTrainLayerCombat,
   challengeTrainWarden,
+  setTrainSite,
   setTrainDepth,
   trainClearEfficiency,
   trainDepthMultFor,
@@ -1564,6 +1567,26 @@ while (idleSteps < 500 && !idleWon) {
 }
 assert(idleWon, "idle session can clear with strong party");
 assert(tzSt.trainMap.zones.shore.clearReady, "clearReady persisted");
+assert(persistTrainIdleClearResult(tzSt, idleSess), "persist shore lastClear");
+assert(
+  /首次通關：\d+s/.test(tzSt.trainMap.zones.shore.lastClear?.line || ""),
+  "shore zone stores clear line"
+);
+assert(ACTIVE_PET_MAX === 3, "party size stays 3 for formation slots");
+// per-zone clear line: ruins empty until cleared; shore keeps its own
+tzSt.trainMap.zones.ruins = tzSt.trainMap.zones.ruins || { tiersCleared: 0 };
+assert(!tzSt.trainMap.zones.ruins.lastClear, "ruins has no clear yet");
+tzSt.trainSite = "ruins";
+const ruinsView = trainIdleCombatView(tzSt);
+assert(ruinsView.zoneId === "ruins", "train site switched to ruins");
+assert(!ruinsView.lastClearLine, "ruins view has no clear line after switch");
+tzSt.trainSite = "shore";
+const shoreView = trainIdleCombatView(tzSt);
+assert(
+  shoreView.lastClearLine === tzSt.trainMap.zones.shore.lastClear.line,
+  "shore clear line returns after switch back"
+);
+assert(typeof setTrainSite === "function", "setTrainSite exported for site switch");
 // claim mist 1–3 manually; mist 4 auto-claims to warden gate
 for (let i = 0; i < 3; i++) {
   tzSt.trainMap.zones.shore.clearReady = true;
@@ -1636,7 +1659,12 @@ assert(!setDFail.ok, "cannot set depth beyond cleared");
 
 const uiSrc2 = readFileSync(join(__dir, "ui.js"), "utf8");
 assert(uiSrc2.includes("playAttackSequence"), "ui phased attack sequence");
-assert(uiSrc2.includes("is-lunge-east"), "ui attack lunge class");
+assert(uiSrc2.includes("lungeTowardTarget"), "ui vector lunge toward target");
+assert(uiSrc2.includes("getBoundingClientRect"), "ui lunge uses element rects");
+assert(uiSrc2.includes('data-slot="'), "ui formation data-slot attrs");
+assert(uiSrc2.includes("combat-formation"), "ui formation roster class");
+assert(uiSrc2.includes("FORMATION_SLOT_COUNT"), "ui 3-slot formation");
+assert(uiSrc2.includes("persistTrainIdleClearResult"), "ui persists zone lastClear");
 assert(uiSrc2.includes("is-defender"), "ui defender highlight");
 assert(uiSrc2.includes("data-claim-tier"), "ui claim next mist tier");
 assert(uiSrc2.includes("去下一層"), "ui claim next label");
@@ -1647,6 +1675,10 @@ assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
 assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
 assert(uiSrc2.includes('id: "mats"'), "ui materials sub-tab");
+const cssSrc = readFileSync(join(__dir, "../css/style.css"), "utf8");
+assert(cssSrc.includes("combat-formation-side"), "css formation side grid");
+assert(cssSrc.includes("is-empty-slot"), "css empty formation slots");
+assert(!cssSrc.includes("is-lunge-east"), "css no legacy east lunge");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

@@ -874,6 +874,8 @@ export function trainSitesView(state) {
       canRematchWarden: wardenDone,
       idleDepth: trainDepthIndex(state, s.id),
       maxDepth: wardenDone ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0)),
+      lastClearLine: z.lastClear?.line || null,
+      lastClear: z.lastClear || null,
     };
   });
 }
@@ -1400,6 +1402,7 @@ export function stepTrainIdleSession(session) {
   const finishIdleResult = (won) => {
     const sec = Math.max(1, session.fightTicks | 0);
     session.clearSec = sec;
+    session.won = !!won;
     if (won) {
       session.resultLine = session.isFirstClear ? `首次通關：${sec}s` : `通關時間：${sec}s`;
     } else {
@@ -1496,6 +1499,23 @@ export function stepTrainIdleSession(session) {
 }
 
 /**
+ * 將掛機一輪結果寫入當前潮域（通關時間跟地點）
+ */
+export function persistTrainIdleClearResult(state, session) {
+  if (!session?.resultLine || !session.zoneId) return false;
+  const z = ensureZoneProgress(state, session.zoneId);
+  z.lastClear = {
+    line: session.resultLine,
+    sec: session.clearSec ?? null,
+    at: Date.now(),
+    first: !!(session.won && session.isFirstClear),
+    tierIndex: session.tierIndex | 0,
+    won: !!session.won,
+  };
+  return true;
+}
+
+/**
  * 掛機清完一輪後：
  * - 仲有下一霧階 → 標記 clearReady，顯示「去下一層」
  * - 已係最後霧階（下一關係域主）→ 自動領取，唔顯示「去下一層」
@@ -1539,6 +1559,8 @@ export function trainIdleCombatView(state) {
     tierIndex,
     canUnlockNext,
     clearReady: !!z.clearReady,
+    lastClearLine: z.lastClear?.line || null,
+    lastClear: z.lastClear || null,
     depthLabel: wardenDone
       ? "域主已通"
       : `霧階 ${Math.min((z.tiersCleared | 0) + 1, TRAIN_TIER_COUNT)}/${TRAIN_TIER_COUNT}`,

@@ -1624,13 +1624,29 @@ button.linkish strong { color: var(--jade); }
 .combat-roster {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.25rem;
+  gap: 0.35rem;
   margin: 0.15rem 0 0.35rem;
+}
+.combat-roster.combat-formation {
+  align-items: stretch;
 }
 .combat-side {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+}
+.combat-formation-side {
+  display: grid;
+  grid-template-rows: repeat(3, minmax(1.55rem, auto));
+  gap: 0.2rem;
+  min-height: 5.2rem;
+}
+.combat-unit.is-empty-slot {
+  opacity: 0.2;
+  border-style: dashed;
+  background: transparent;
+  pointer-events: none;
+  min-height: 1.55rem;
 }
 .combat-unit {
   position: relative;
@@ -1663,9 +1679,7 @@ button.linkish strong { color: var(--jade); }
   background: rgba(40, 90, 75, 0.35);
 }
 .combat-unit.is-attacker .cu-name { color: var(--jade-bright); }
-/* 2. 攻方輕撞守方 */
-.combat-unit.is-lunge-east { transform: translateX(12px); }
-.combat-unit.is-lunge-west { transform: translateX(-12px); }
+/* 2. 攻方輕撞守方：位移由 JS translate(dx,dy) 對準目標 */
 /* 3. 守方淺紅高亮 */
 .combat-unit.is-defender {
   z-index: 3;
