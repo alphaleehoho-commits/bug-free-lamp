@@ -532,6 +532,28 @@ assert(stageAt(10).need > stageAt(6).need, "stage scaling");
 const br5 = breakthroughView({ ...fakeState, realm: 5, qi: 99999, stones: 9999, scrap: 99, dust: 99, feed: 99, combatsWon: 99, clearedDungeons: { tide_4: true }, pets: [{ generation: 3 }], ranch: [], stats: { bonds: 5, fusions: 5, breeds: 5 }, bestiary: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`k${i}`, true])), master: { equip: { weapon: "a", armor: "b", accessory: "c" } } });
 assert(!br5.maxed && br5.next.id === 6, "no stage cap");
 assert(breakthroughGateFor(6).checks.some((c) => c.dungeonId === "tide_4"), "stage6 needs t4");
+/* Advance checklist must surface every gate (incl. bestiary past the old 6-row truncate). */
+const br2gates = breakthroughView({
+  ...fakeState,
+  realm: 2,
+  qi: 99999,
+  stones: 9999,
+  scrap: 99,
+  dust: 99,
+  combatsWon: 99,
+  clearedDungeons: { tide_2: true },
+  pets: [makeStarterPet(), makeStarterPet()],
+  ranch: [],
+  stats: { breeds: 1 },
+  bestiary: { only: true },
+});
+assert(br2gates.items.length > 6, "realm2→3 breakthrough has >6 checklist rows");
+assert(br2gates.items.some((i) => i.label.includes("圖鑑") && !i.ok), "bestiary gate visible & unmet");
+assert(!br2gates.ready, "not ready when bestiary unmet even if earlier rows met");
+assert(
+  br2gates.items.slice(0, 6).every((i) => i.ok) && br2gates.items.slice(6).some((i) => !i.ok),
+  "old slice(0,6) would hide unmet gates past row 6"
+);
 assert(dungeonsForRealm(4).includes("tide_5"), "realm4 sees t5");
 assert(dungeonsForRealm(0).length === 4, "min 4 dungeons");
 const t5 = buildDungeonForTier(5);
@@ -1732,7 +1754,13 @@ assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
 assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
 assert(uiSrc2.includes('id: "mats"'), "ui materials sub-tab");
+assert(!uiSrc2.includes("br.items.slice(0, 6)"), "ui breakthrough checklist shows all gates");
+assert(!uiSrc2.includes("gateCompact"), "ui no truncated gateCompact list");
+assert(uiSrc2.includes("breakthrough-gates"), "ui breakthrough gates list class");
+assert(uiSrc2.includes("未齊·"), "ui break button hints first unmet");
+assert(uiSrc2.includes("breakthrough-miss-note"), "ui shows remaining gate count");
 const cssSrc = readFileSync(join(__dir, "../css/style.css"), "utf8");
+assert(cssSrc.includes("cond-list.is-compact"), "css compact breakthrough checklist");
 assert(cssSrc.includes("combat-formation-side"), "css formation side grid");
 assert(cssSrc.includes("is-empty-slot"), "css empty formation slots");
 assert(cssSrc.includes('data-lane="front"'), "css front lane columns");

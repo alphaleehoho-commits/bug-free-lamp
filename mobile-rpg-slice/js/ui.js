@@ -2199,9 +2199,12 @@ function cultivatePanel(qiPct, next, m) {
       .join("") || `<li class="empty">今日商肆無可購貨。</li>`;
 
   const ranchN = state.ranch?.length || 0;
+  const firstMiss = br.items.find((it) => !it.ok);
   const breakLabel = br.ready
     ? `突破至${br.next.name}${br.costLabel ? `（耗${br.costLabel}）` : ""}`
-    : "突破階段（條件未齊）";
+    : firstMiss
+      ? `突破階段（未齊·${firstMiss.label}）`
+      : "突破階段（條件未齊）";
 
   if (panelSub.cultivate === "gear") panelSub.cultivate = "train";
   const sub = panelSub.cultivate;
@@ -2231,8 +2234,8 @@ function cultivatePanel(qiPct, next, m) {
   }
 
   if (sub === "advance") {
-    const gateCompact = br.items.slice(0, 6);
-    const gateRowsCompact = gateCompact
+    /* Show every breakthrough gate (incl. bestiary) — do not slice; ready checks all items. */
+    const gateRows = br.items
       .map(
         (it) => `
       <li class="cond-item ${it.ok ? "is-met" : "is-miss"}">
@@ -2244,11 +2247,20 @@ function cultivatePanel(qiPct, next, m) {
       </li>`
       )
       .join("");
+    const missN = br.items.filter((it) => !it.ok).length;
+    const missNote =
+      !br.ready && missN > 0
+        ? `<p class="meta breakthrough-miss-note">尚欠 ${missN} 項${
+            firstMiss ? ` · 先做：${escapeHtml(firstMiss.label)}（${escapeHtml(firstMiss.progress)}）` : ""
+          }</p>`
+        : "";
+    const compactCls = br.items.length > 6 ? " is-compact" : "";
     return wrapStage(
       nav,
       `<h2>契壇修行 · 進階</h2>
       <p class="lead">→【${escapeHtml(br.next.name)}】潮印 ${seal.seals}/${seal.max} · 全隊 ×${seal.mult.toFixed(2)}</p>
-      <ul class="cond-list">${gateRowsCompact}</ul>`,
+      ${missNote}
+      <ul class="cond-list breakthrough-gates${compactCls}">${gateRows}</ul>`,
       `<div class="row">
         <button type="button" class="primary${tutGlow({ type: "act", act: "break" })}" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
         <button type="button" data-act="tide-seal" ${seal.canSeal ? "" : "disabled"}>鑄潮印${seal.canSeal ? `+${seal.nextGain}` : ""}</button>

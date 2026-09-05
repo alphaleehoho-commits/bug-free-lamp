@@ -1429,6 +1429,27 @@ button.flash-act {
 .cond-item.is-miss .cond-badge { color: #e8c8c0; background: rgba(120, 60, 50, 0.55); }
 .cond-body { min-width: 0; }
 .cond-body strong { display: block; font-size: 0.72rem; font-weight: 600; }
+.cond-list.is-compact {
+  gap: 0.12rem;
+}
+.cond-list.is-compact .cond-item {
+  padding: 0.16rem 0.28rem;
+}
+.cond-list.is-compact .cond-body strong {
+  font-size: 0.66rem;
+}
+.cond-list.is-compact .cond-badge {
+  font-size: 0.52rem;
+  padding: 0.08rem 0.22rem;
+  min-width: 2rem;
+}
+.cond-list.is-compact .cond-body .muted {
+  font-size: 0.58rem;
+}
+.breakthrough-miss-note {
+  margin: 0.12rem 0 0.2rem;
+  color: #e0b8a8;
+}
 .reward-breakdown { margin: 0.35rem 0 0.2rem; }
 
 .log-scroll,
