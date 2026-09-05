@@ -3245,8 +3245,12 @@ export function hatchPetFromEgg(egg, opts = {}) {
   const personality =
     opts.personality || personalities[Math.floor(Math.random() * personalities.length)] || "sly";
   let rarity = 0;
-  if (tier === "B" && Math.random() < 0.35) rarity = 1;
-  if (tier === "A") rarity = Math.random() < 0.55 ? 1 : Math.random() < 0.25 ? 2 : 0;
+  const fromAbyss = egg?.source === "abyss_dive" || opts.abyssEgg;
+  if (fromAbyss) {
+    // 高階蛋：權重偏向稀有／血紋
+    rarity = Math.random() < 0.5 ? 2 : Math.random() < 0.7 ? 1 : 0;
+  } else if (tier === "B" && Math.random() < 0.35) rarity = 1;
+  else if (tier === "A") rarity = Math.random() < 0.55 ? 1 : Math.random() < 0.25 ? 2 : 0;
   const built = buildPetStats({
     id: `hatch-${egg?.uid || Date.now()}`,
     species,
@@ -3254,10 +3258,18 @@ export function hatchPetFromEgg(egg, opts = {}) {
     personality,
     cost: 0,
     rarity,
-    bloodmarks: tier === "A" && Math.random() < 0.4 ? [BLOODLINE_MARK_IDS[0]] : [],
+    bloodmarks:
+      (fromAbyss && Math.random() < 0.55) || (tier === "A" && Math.random() < 0.4)
+        ? [BLOODLINE_MARK_IDS[0]]
+        : [],
   });
-  const bonus =
-    tier === "A" ? { atk: 3, hp: 8, spd: 1 } : tier === "B" ? { atk: 1, hp: 4, spd: 0 } : { atk: 0, hp: 0, spd: 0 };
+  const bonus = fromAbyss
+    ? { atk: 4, hp: 10, spd: 1 }
+    : tier === "A"
+      ? { atk: 3, hp: 8, spd: 1 }
+      : tier === "B"
+        ? { atk: 1, hp: 4, spd: 0 }
+        : { atk: 0, hp: 0, spd: 0 };
   return {
     ...built,
     uid: `hatch-${egg?.uid || Date.now()}`,
@@ -4020,6 +4032,13 @@ export const MATERIALS = {
     desc: "複打域主所得 · 可當進階催化碎片",
     tier: "key",
   },
+  /** 潮淵深潛專屬：突變保險／外觀小加成／高階蛋 */
+  abyss_grit: {
+    id: "abyss_grit",
+    name: "淵砂",
+    desc: "潮淵深潛結算所得 · 換突變保險、深潛外觀、高階寵物蛋",
+    tier: "abyss",
+  },
 };
 
 export const MATERIAL_IDS = Object.keys(MATERIALS);
@@ -4420,7 +4439,133 @@ export const MATERIAL_USES = {
   tide_key_3: "心核／融砂域主",
   tide_key_4: "暗潮域主",
   warden_echo: "域主複打殘響",
+  abyss_grit: "潮淵兌換",
 };
+
+/* ─── 潮淵深潛（秘境旁路；唔改潮域產物表）─── */
+
+export const ABYSS_GRIT_ID = "abyss_grit";
+/** 每日首趟免費，其後每趟 */
+export const ABYSS_ENTRY_TOKEN_COST = 1;
+export const ABYSS_WIPE_KEEP_RATE = 0.4;
+export const ABYSS_MUTATION_EVERY = 3;
+export const ABYSS_MAX_ACTIVE_MUTATIONS = 2;
+
+/** @type {Record<string, { id: string, name: string, desc: string, healMult?: number, frontDmgTakenMult?: number, maxPets?: number }>} */
+export const ABYSS_MUTATIONS = {
+  mut_no_heal: {
+    id: "mut_no_heal",
+    name: "枯潮",
+    desc: "友方治療效果大幅削弱",
+    healMult: 0.15,
+  },
+  mut_front_tax: {
+    id: "mut_front_tax",
+    name: "浪壓",
+    desc: "前排承傷 +35%",
+    frontDmgTakenMult: 1.35,
+  },
+  mut_duo: {
+    id: "mut_duo",
+    name: "雙影",
+    desc: "本場出戰最多 2 寵",
+    maxPets: 2,
+  },
+};
+
+export const ABYSS_MUTATION_IDS = Object.keys(ABYSS_MUTATIONS);
+
+/** 深潛限定外觀（小幅 %，有帳號 cap） */
+export const ABYSS_COSMETICS = {
+  veil_mark: {
+    id: "veil_mark",
+    name: "霧帷紋",
+    desc: "深潛外觀 · 全隊攻擊 +1.5%",
+    cost: 40,
+    atkMult: 1.015,
+    hpMult: 1,
+  },
+  abyss_crown: {
+    id: "abyss_crown",
+    name: "淵冠影",
+    desc: "深潛外觀 · 全隊血量 +1.5%",
+    cost: 40,
+    atkMult: 1,
+    hpMult: 1.015,
+  },
+  tide_sigil: {
+    id: "tide_sigil",
+    name: "潮印華",
+    desc: "深潛外觀 · 攻血各 +1%",
+    cost: 70,
+    atkMult: 1.01,
+    hpMult: 1.01,
+  },
+};
+
+export const ABYSS_COSMETIC_IDS = Object.keys(ABYSS_COSMETICS);
+/** 外觀疊加攻／血倍率上限（相對 1） */
+export const ABYSS_COSMETIC_BONUS_CAP = 0.05;
+
+export const ABYSS_INSURANCE_COST = 25;
+export const ABYSS_EGG_COST = 90;
+export const ABYSS_EGG_WEEKLY_LIMIT = 2;
+
+export function emptyAbyssDive(now = Date.now()) {
+  return {
+    bestDepth: 0,
+    weekBestDepth: 0,
+    weekKey: "",
+    lastDate: "",
+    freeUsedDate: "",
+    insuranceCharges: 0,
+    cosmetics: {},
+    eggsBoughtWeek: 0,
+    eggsWeekKey: "",
+    run: null,
+  };
+}
+
+export function abyssFloorGrit(depth, mutationFloor = false) {
+  const d = Math.max(1, depth | 0);
+  return 2 + Math.floor(d * 1.2) + (mutationFloor ? 2 : 0);
+}
+
+/** 簡單 seed 雜湊（深潛波次／突變） */
+export function abyssHash(seed) {
+  let h = 2166136261;
+  const s = String(seed);
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+export function pickAbyssMutationId(seed, excludeIds = []) {
+  const pool = ABYSS_MUTATION_IDS.filter((id) => !excludeIds.includes(id));
+  if (!pool.length) return ABYSS_MUTATION_IDS[0];
+  const h = abyssHash(seed);
+  return pool[h % pool.length];
+}
+
+/** 已解鎖外觀疊加嘅攻血倍率（受 cap） */
+export function abyssCosmeticCombatMult(unlockedMap = {}) {
+  let atk = 1;
+  let hp = 1;
+  for (const id of ABYSS_COSMETIC_IDS) {
+    if (!unlockedMap?.[id]) continue;
+    const c = ABYSS_COSMETICS[id];
+    atk *= c.atkMult || 1;
+    hp *= c.hpMult || 1;
+  }
+  const capAtk = 1 + ABYSS_COSMETIC_BONUS_CAP;
+  const capHp = 1 + ABYSS_COSMETIC_BONUS_CAP;
+  return {
+    atkMult: Math.min(capAtk, atk),
+    hpMult: Math.min(capHp, hp),
+  };
+}
 
 /** 材料來源索引（練功地／派遣） */
 export function buildMaterialSourceIndex() {

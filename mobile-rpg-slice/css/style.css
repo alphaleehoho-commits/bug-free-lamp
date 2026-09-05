@@ -2403,3 +2403,7 @@ button.linkish strong { color: var(--jade); }
   justify-content: flex-end;
   gap: 0.35rem;
 }
+
+/* Tide Abyss Dive */
+.abyss-run.card-block{margin:.6rem 0;padding:.55rem .65rem;border:1px solid rgba(126,168,160,.22);border-radius:8px;background:rgba(0,20,28,.35)}
+.abyss-run .row{gap:.4rem;flex-wrap:wrap}
