@@ -1,4 +1,4 @@
-const CACHE = "void-tide-pets-v75";
+const CACHE = "void-tide-pets-v76";
 const ASSETS = [
   "./",
   "./index.html",

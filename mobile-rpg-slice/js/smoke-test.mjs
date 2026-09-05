@@ -128,6 +128,10 @@ import {
   TRAIN_ZONE_CHAIN,
   rollTideKeyDrop,
   ACTIVE_PET_MAX,
+  ABYSS_MUTATION_IDS,
+  ABYSS_COSMETIC_IDS,
+  emptyAbyssDive,
+  emptyMaterials,
 } from "./data.js";
 import {
   affordMaterials,
@@ -178,6 +182,13 @@ import {
   partyCombatPower,
   trainIdleCombatView,
   trainSitesView,
+  abyssDiveView,
+  startAbyssDive,
+  advanceAbyssDive,
+  retreatAbyssDive,
+  buyAbyssInsurance,
+  buyAbyssCosmetic,
+  buyAbyssEgg,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -1713,6 +1724,63 @@ assert(cssSrc.includes("is-empty-slot"), "css empty formation slots");
 assert(cssSrc.includes('data-lane="front"'), "css front lane columns");
 assert(cssSrc.includes('data-lane="rear"'), "css rear lane columns");
 assert(!cssSrc.includes("is-lunge-east"), "css no legacy east lunge");
+
+/* Tide Abyss Dive */
+assert(MATERIALS.abyss_grit?.tier === "abyss", "abyss grit material");
+assert(ABYSS_MUTATION_IDS.length === 3, "three abyss mutations");
+assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
+{
+  const abyssSt = {
+    realm: 1,
+    pets: [
+      {
+        uid: "ap1",
+        name: "淵測",
+        speciesId: "reefox",
+        elementId: "tide",
+        personalityId: "fierce",
+        kind: "獸",
+        atk: 60,
+        hp: 280,
+        spd: 28,
+        level: 8,
+        skillLevel: 1,
+        generation: 1,
+        bloodmarks: [],
+      },
+    ],
+    materials: { ...emptyMaterials(), mist_token: 5, abyss_grit: 200 },
+    clearedDungeons: { tide_1: true },
+    formation: "balanced",
+    tactics: "balanced",
+    eggs: [],
+    log: [],
+    abyssDive: emptyAbyssDive(),
+  };
+  const av = abyssDiveView(abyssSt);
+  assert(av.unlocked && av.freeLeft, "abyss unlocked free first");
+  const s1 = startAbyssDive(abyssSt);
+  assert(s1.ok && s1.won && s1.depth === 1 && s1.combatEvents?.length, "abyss floor 1 clear");
+  assert(abyssSt.abyssDive.run?.pendingGrit > 0, "pending grit after floor");
+  const s3 = advanceAbyssDive(abyssSt);
+  assert(s3.ok, "abyss floor 2");
+  const s4 = advanceAbyssDive(abyssSt);
+  assert(s4.ok && (abyssSt.abyssDive.run?.mutationIds || []).length >= 1, "mutation by floor 3");
+  const before = Math.floor(abyssSt.materials.abyss_grit || 0);
+  const ret = retreatAbyssDive(abyssSt);
+  assert(ret.ok && ret.grit > 0, "retreat grants grit");
+  assert(Math.floor(abyssSt.materials.abyss_grit) === before + ret.grit, "grit banked");
+  assert(!abyssSt.abyssDive.run, "run cleared on retreat");
+  assert(buyAbyssInsurance(abyssSt).ok, "buy insurance");
+  assert(buyAbyssCosmetic(abyssSt, "veil_mark").ok, "buy cosmetic");
+  assert(abyssSt.abyssDive.cosmetics.veil_mark, "cosmetic owned");
+  const eggR = buyAbyssEgg(abyssSt);
+  assert(eggR.ok && eggR.egg?.source === "abyss_dive", "buy abyss egg");
+  assert(TRAIN_SITES.every((s) => !(s.drops || []).some((d) => d.mat === "abyss_grit")), "train drops no grit");
+}
+assert(uiSrc2.includes("abyssDiveView"), "ui abyss view");
+assert(uiSrc2.includes("data-abyss-start"), "ui abyss start");
+assert(uiSrc2.includes("潮淵"), "ui abyss tab label");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

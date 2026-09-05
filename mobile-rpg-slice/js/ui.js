@@ -120,6 +120,13 @@ import {
   dismissDailyHub,
   loginStreakView,
   claimLoginStreak,
+  abyssDiveView,
+  startAbyssDive,
+  advanceAbyssDive,
+  retreatAbyssDive,
+  buyAbyssInsurance,
+  buyAbyssCosmetic,
+  buyAbyssEgg,
 } from "./engine.js";
 import { DUNGEON_SUMMON_MIN, DUNGEON_SUMMON_MAX, clampDungeonSummonCount, TRAIN_DEPTH_MULT, TRAIN_TIER_COUNT } from "./data.js";
 import { petIconHtml, petIconFromPet } from "./pet-icons.js";
@@ -3316,6 +3323,59 @@ function dungeonCondSheetHtml() {
     </div>`;
 }
 
+
+function abyssPanelHtml() {
+  const v = abyssDiveView(state);
+  if (!v.unlocked) {
+    return `<h2>潮淵深潛</h2>
+      <p class="lead">無盡程序層 · 突變規則 · 專屬淵砂</p>
+      <p class="meta">先通關秘境【潮汐一層】或達到通靈初期後解鎖。</p>`;
+  }
+  const run = v.run;
+  const mutLine = run?.mutations?.length
+    ? run.mutations.map((m) => `【${escapeHtml(m.name)}】${escapeHtml(m.desc)}`).join("<br/>")
+    : "尚無突變";
+  const runBlock = run
+    ? `<div class="abyss-run card-block">
+        <p class="lead">進行中 · 第 <strong>${run.depth}</strong> 層 · 待結算淵砂 <strong>${run.pendingGrit}</strong></p>
+        <p class="meta">突變：${mutLine}</p>
+        <div class="row">
+          <button type="button" class="primary" data-abyss-advance>再潛一層</button>
+          <button type="button" class="secondary" data-abyss-retreat>撤退結算</button>
+        </div>
+      </div>`
+    : `<div class="abyss-run card-block">
+        <p class="lead">未開潛</p>
+        <p class="meta">今日首趟免費 · 其後耗潮霧令 ×${v.entryCost || 1}（現有 ${v.tokenHave}）</p>
+        <button type="button" class="primary" data-abyss-start>開始深潛</button>
+      </div>`;
+  const cosRows = (v.cosmeticList || [])
+    .map((c) => {
+      const owned = c.owned ? "已擁有" : `淵砂×${c.cost}`;
+      return `<li class="card-row">
+        <div><strong>${escapeHtml(c.name)}</strong><span class="muted"> · ${escapeHtml(c.desc)}</span></div>
+        <button type="button" class="secondary" data-abyss-cosmetic="${c.id}" ${c.owned ? "disabled" : ""}>${owned}</button>
+      </li>`;
+    })
+    .join("");
+  return `<h2>潮淵深潛</h2>
+    <p class="lead">無限層 · 突變 · 淵砂兌換</p>
+    <p class="meta">淵砂 <strong>${v.gritHave}</strong> · 最深 ${v.bestDepth} · 本週 ${v.weekBestDepth} · 保險 ${v.insuranceCharges}</p>
+    ${runBlock}
+    <h3>淵砂兌換</h3>
+    <ul class="list">
+      <li class="card-row">
+        <div><strong>突變保險</strong><span class="muted"> · 下場略過 1 條新突變</span></div>
+        <button type="button" class="secondary" data-abyss-insurance ${v.insuranceCharges >= 1 ? "disabled" : ""}>淵砂×${v.insuranceCost}</button>
+      </li>
+      <li class="card-row">
+        <div><strong>潮淵高階蛋</strong><span class="muted"> · 本週 ${v.eggsBoughtWeek}/${v.eggsWeeklyLimit} · 較易出稀有</span></div>
+        <button type="button" class="secondary" data-abyss-egg ${v.eggsBoughtWeek >= v.eggsWeeklyLimit ? "disabled" : ""}>淵砂×${v.eggCost}</button>
+      </li>
+      ${cosRows}
+    </ul>`;
+}
+
 function dungeonPanel() {
   const dailyMod = dungeonDailyView(state);
   const tactics = tacticsView(state);
@@ -3500,6 +3560,7 @@ function dungeonPanel() {
       : "";
   const nav = panelSubNav("dungeon", [
     { id: "field", label: "秘境" },
+    { id: "abyss", label: "潮淵" },
     { id: "setup", label: "戰術" },
   ]);
 
@@ -3519,6 +3580,10 @@ function dungeonPanel() {
         : ""
     }`
     );
+  }
+
+  if (panelSub.dungeon === "abyss") {
+    return wrapStage(nav, abyssPanelHtml());
   }
 
   return wrapStage(
@@ -4022,6 +4087,62 @@ function bind() {
       panelSub = { ...panelSub, cultivate: "train" };
       render();
       setFlash(r.msg, r.ok ? "unlock" : "");
+    });
+  });
+  const playAbyssResult = (r) => {
+    saveState(state);
+    if (!r.ok) {
+      setFlash(r.msg);
+      render();
+      return;
+    }
+    if (r.combatEvents?.length) {
+      setFlash(r.msg || "");
+      startPlayback(r);
+      return;
+    }
+    render();
+    setFlash(r.msg || "");
+  };
+  app.querySelectorAll("[data-abyss-start]").forEach((btn) => {
+    btn.addEventListener("click", () => playAbyssResult(startAbyssDive(state)));
+  });
+  app.querySelectorAll("[data-abyss-advance]").forEach((btn) => {
+    btn.addEventListener("click", () => playAbyssResult(advanceAbyssDive(state)));
+  });
+  app.querySelectorAll("[data-abyss-retreat]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = retreatAbyssDive(state);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-abyss-insurance]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = buyAbyssInsurance(state);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-abyss-cosmetic]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = buyAbyssCosmetic(state, btn.dataset.abyssCosmetic);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-abyss-egg]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = buyAbyssEgg(state);
+      saveState(state);
+      render();
+      setFlash(r.msg);
     });
   });
   app.querySelectorAll("[data-challenge-warden]").forEach((btn) => {
