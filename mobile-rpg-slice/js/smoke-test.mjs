@@ -104,6 +104,12 @@ import {
   BREED_STONE_COST,
   BREED_COOLDOWN_MS,
   BREED_QUEUE_MAX,
+  BREED_BATCH_MIN,
+  BREED_BATCH_MAX,
+  clampBreedBatchCount,
+  EGG_CAP,
+  makeBreedEgg,
+  genEggPrefix,
   FORGE_SCRAP_COST,
   BOND_COST_MAX,
   fusionStoneCost,
@@ -299,12 +305,31 @@ assert(HYBRID_RECIPES.filter((r) => r.tier === "sub").length >= 4, "subs");
 
 assert(rollChildGeneration(0, 0) === 1, "0+0→1");
 assert(rollChildGeneration(1, 0) === 1, "1+0→1");
-assert(rollChildGeneration(2, 0) === 2, "2+0→2");
 assert(rollChildGeneration(3, 3) === 3, "3+3→3");
+/* 原生+高代：70%(G-1)/30%G，唔再 100% 高代 */
+let wild2hi = 0;
+for (let i = 0; i < 80; i++) {
+  if (rollChildGeneration(2, 0) === 2) wild2hi += 1;
+}
+assert(wild2hi > 10 && wild2hi < 50, "0+2 roughly 30% gen2");
+const odds02 = childGenerationOdds(0, 2);
+assert(odds02[0].gen === 1 && odds02[0].pct === 70 && odds02[1].gen === 2, "0+2 odds aligned with 1+2");
 
 const odds12 = childGenerationOdds(1, 2);
 assert(odds12[0].gen === 1 && odds12[0].pct === 70, "1+2 odds");
 assert(genLabel(0) === "原生" && genLabel(2) === "繁殖2代", "labels");
+assert(genEggPrefix(1) === "一代" && genEggPrefix(3) === "三代", "egg gen prefix");
+
+/* Gen mix cost：野生+2 唔平過／唔優過 1+2 */
+const cost02 = breedMatCost(0, 2);
+const cost12 = breedMatCost(1, 2);
+const cost00 = breedMatCost(0, 0);
+const cost11 = breedMatCost(1, 1);
+assert(cost00.coral_shard === 1 && cost00.abyss_ink === 0, "0+0 mats");
+assert(cost11.coral_shard === 2 && cost11.abyss_ink === 1, "1+1 mats");
+assert(cost12.coral_shard === 3 && cost12.abyss_ink === 2, "1+2 mats");
+assert(cost02.coral_shard === 3 && cost02.abyss_ink === 3, "0+2 costs more abyss than 1+2");
+assert(cost02.abyss_ink > cost12.abyss_ink, "wild+gen2 not cheaper abyss");
 
 const fox = buildPetStats({
   id: "a",
@@ -688,6 +713,9 @@ assert(
 );
 assert(upgradeMatCost(1).tide_dew >= 1, "upgrade mats");
 assert(breedMatCost(0, 0).coral_shard >= 1, "breed mats");
+assert(clampBreedBatchCount(0) === 1 && clampBreedBatchCount(99) === 10, "breed batch clamp");
+assert(BREED_BATCH_MIN === 1 && BREED_BATCH_MAX === 10, "breed batch 1-10");
+assert(EGG_CAP === 6, "egg cap");
 assert(DISPATCH_MISSIONS.length >= 11, "more dispatch");
 assert(DISPATCH_MISSIONS.some((m) => m.eggChance), "dispatch egg chance");
 assert(DISPATCH_MISSIONS.some((m) => m.id === "egg_shore"), "shore egg mission");
@@ -1468,6 +1496,9 @@ assert(uiSrc.includes("pet-grid"), "ui ranch 2-col grid");
 assert(uiSrc.includes('id: "breed"'), "ui breed party sub-tab");
 assert(uiSrc.includes("breed-cd-bar"), "ui breed cd bar");
 assert(uiSrc.includes("data-breed-claim"), "ui breed claim after CD");
+assert(uiSrc.includes("data-breed-slider"), "ui breed batch slider");
+assert(uiSrc.includes("領取蛋"), "ui claim egg label");
+assert(uiSrc.includes("patchBreedLive"), "ui breed live patch no scroll jump");
 assert(uiSrc.includes("data-dungeon-blocked"), "ui dungeon blocked reason");
 assert(BREED_QUEUE_MAX === 3, "breed queue max 3");
 assert(uiSrc.includes("panel-subnav-dock"), "ui subnav near bottom tabs");
@@ -1705,8 +1736,8 @@ const blockRealm = dungeonAttackBlockReason(
 );
 assert(blockRealm && blockRealm.includes("御靈"), "tide3 needs 御靈");
 
-/* Breed queue: start → gestate CD → claim (like dungeon summon) */
-function mkBreedPet(uid, species, element) {
+/* Breed queue: start → gestate CD → claim eggs → hatch (egg-first) */
+function mkBreedPet(uid, species, element, generation = 0) {
   return {
     ...buildPetStats({
       id: uid,
@@ -1716,19 +1747,22 @@ function mkBreedPet(uid, species, element) {
       cost: 0,
     }),
     uid,
-    generation: 0,
+    generation,
   };
 }
 const breedQSt = {
-  stones: 500,
-  materials: { coral_shard: 20 },
+  stones: 5000,
+  materials: { coral_shard: 80, abyss_ink: 40 },
   ranch: [
     mkBreedPet("bq-a", "reefox", "tide"),
     mkBreedPet("bq-b", "reefox", "tide"),
     mkBreedPet("bq-c", "glowfin", "tide"),
     mkBreedPet("bq-d", "glowfin", "tide"),
+    mkBreedPet("bq-e", "nightmoth", "gloom", 1),
+    mkBreedPet("bq-f", "nightmoth", "gloom", 2),
   ],
   pets: [],
+  eggs: [],
   breedJobs: [],
   breedReadyAt: 0,
   breedPair: null,
@@ -1739,12 +1773,16 @@ const breedQSt = {
   daily: { date: todayKey(), progress: {}, claimed: {} },
   breedGoals: { date: todayKey(), week: "w", progress: {}, claimed: {} },
   achievements: {},
+  realm: 0,
 };
 const ranchBefore = breedQSt.ranch.length;
+const eggsBefore = breedQSt.eggs.length;
 const start1 = tryBreed(breedQSt, "bq-a", "bq-b");
 assert(start1.ok && start1.started && start1.job?.id, "breed start enqueues job");
-assert(breedQSt.ranch.length === ranchBefore, "breed start does not birth yet");
+assert(breedQSt.ranch.length === ranchBefore, "breed start does not birth pet");
+assert(breedQSt.eggs.length === eggsBefore, "breed start does not grant egg yet");
 assert(breedQSt.breedJobs.length === 1, "one gestating job");
+assert(breedQSt.breedJobs[0].batch === 1, "default batch 1");
 const start2 = tryBreed(breedQSt, "bq-c", "bq-d");
 assert(start2.ok && breedQSt.breedJobs.length === 2, "second concurrent mating ok");
 const busyDup = tryBreed(breedQSt, "bq-a", "bq-c");
@@ -1754,14 +1792,115 @@ const early = claimBreed(breedQSt, start1.job.id);
 assert(!early.ok && String(early.msg).includes("孕育"), "cannot claim before CD");
 const bsMid = breedStatus(breedQSt);
 assert(bsMid.slotsUsed === 2 && bsMid.claimable.length === 0, "status shows gestating");
-breedQSt.breedJobs[0].readyAt = Date.now() - 1;
+const nowReady = Date.now() - 1;
+breedQSt.breedJobs[0].readyAt = nowReady;
+if (breedQSt.breedJobs[0].cycles?.[0]) breedQSt.breedJobs[0].cycles[0].readyAt = nowReady;
 const claim1 = claimBreed(breedQSt, start1.job.id);
-assert(claim1.ok && claim1.pet, "claim after ready births child");
-assert(breedQSt.ranch.length === ranchBefore + 1, "child added on claim");
+assert(claim1.ok && claim1.egg && !claim1.pet, "claim after ready grants egg not pet");
+assert(claim1.eggs?.length === 1, "claim returns eggs array");
+assert(breedQSt.eggs.length === eggsBefore + 1, "egg added on claim");
+assert(breedQSt.ranch.length === ranchBefore, "ranch unchanged until hatch");
 assert(breedQSt.breedJobs.length === 1, "claimed job removed");
+const breedEgg = breedQSt.eggs[breedQSt.eggs.length - 1];
+assert(breedEgg.source === "breed" && breedEgg.genes, "breed egg stores genes");
+assert(/代.蛋$/.test(breedEgg.name), "breed egg name like 一代獸蛋");
+assert(String(breedEgg.desc || "").includes("可以孵化出"), "breed egg desc");
+assert(breedEgg.generation >= 1, "egg generation locked at claim");
+assert(breedEgg.kind, "egg kind locked at claim");
+
+const hatchStart = startHatch(breedQSt, breedEgg.uid);
+assert(hatchStart.ok, "start hatch breed egg");
+breedEgg.readyAt = Date.now() - 1;
+/* 騰牧場位再領寵 */
+breedQSt.ranch.pop();
+const hatchClaim = claimHatch(breedQSt, breedEgg.uid);
+assert(hatchClaim.ok && hatchClaim.pet, "hatch breed egg to pet");
+assert(breedQSt.ranch.length === ranchBefore, "pet after hatch (pop+push)");
+assert(hatchClaim.pet.generation === breedEgg.generation, "hatched gen matches egg");
+assert(hatchClaim.pet.bornFrom?.length === 2, "hatched has parents");
+
 breedQSt.materials.breed_ticket = 1;
 const ticket = useBreedTicket(breedQSt);
 assert(ticket.ok && breedStatus(breedQSt).claimable.length === 1, "breed ticket readies job");
+const claimTicket = claimBreed(breedQSt, breedQSt.breedJobs[0].id);
+assert(claimTicket.ok && claimTicket.egg, "ticket claim yields egg");
+
+/* Batch ×10：時長×N、中途可領 */
+const batchSt = {
+  stones: 5000,
+  materials: { coral_shard: 99, abyss_ink: 99 },
+  ranch: [
+    mkBreedPet("bx-a", "reefox", "tide"),
+    mkBreedPet("bx-b", "reefox", "tide"),
+  ],
+  pets: [],
+  eggs: [],
+  breedJobs: [],
+  breedReadyAt: 0,
+  breedPair: null,
+  dispatches: [],
+  log: [],
+  stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+  bestiary: {},
+  daily: { date: todayKey(), progress: {}, claimed: {} },
+  breedGoals: { date: todayKey(), week: "w", progress: {}, claimed: {} },
+  achievements: {},
+  realm: 0,
+};
+const stonesBeforeBatch = batchSt.stones;
+const coralBeforeBatch = batchSt.materials.coral_shard;
+const start10 = tryBreed(batchSt, "bx-a", "bx-b", 10);
+assert(start10.ok && start10.batch === 10, "breed ×10 starts");
+assert(batchSt.breedJobs[0].batch === 10 && batchSt.breedJobs[0].cycles.length === 10, "10 cycles rolled");
+assert(batchSt.stones === stonesBeforeBatch - BREED_STONE_COST * 10, "stones ×10");
+assert(batchSt.materials.coral_shard === coralBeforeBatch - breedMatCost(0, 0).coral_shard * 10, "coral ×10");
+const t0 = batchSt.breedJobs[0].startedAt;
+assert(batchSt.breedJobs[0].readyAt === t0 + BREED_COOLDOWN_MS * 10, "10× duration 450s");
+const job10 = batchSt.breedJobs[0];
+const fakeNow = Date.now();
+job10.startedAt = fakeNow - 92_000;
+job10.readyAt = job10.startedAt + BREED_COOLDOWN_MS * 10;
+for (let i = 0; i < 10; i++) {
+  job10.cycles[i].readyAt = job10.startedAt + BREED_COOLDOWN_MS * (i + 1);
+}
+const bs92 = breedStatus(batchSt);
+const j92 = bs92.jobs[0];
+assert(j92.claimableCount === 2, "at ~92s claimable ×2");
+assert(j92.mating === true, "still mating while partial ready");
+const midClaim = claimBreed(batchSt, job10.id);
+assert(midClaim.ok && midClaim.claimedCount === 2, "midway claim ×2 eggs");
+assert(batchSt.eggs.length === 2, "2 eggs after midway");
+assert(batchSt.breedJobs.length === 1, "job remains after partial claim");
+assert(batchSt.breedJobs[0].claimedCycles === 2, "claimedCycles=2");
+job10.readyAt = Date.now() - 1;
+for (const c of job10.cycles) c.readyAt = Date.now() - 1;
+const restClaim = claimBreed(batchSt, job10.id);
+assert(restClaim.ok && restClaim.claimedCount === 4, "egg cap limits rest claim to 4 (6-2)");
+assert(batchSt.eggs.length === 6, "egg cap 6 filled");
+batchSt.eggs.pop();
+const moreClaim = claimBreed(batchSt, job10.id);
+assert(moreClaim.ok && moreClaim.claimedCount === 1, "claim one more after freeing slot");
+assert(batchSt.breedJobs[0].claimedCycles === 7, "7 cycles claimed");
+
+const sampleGenes = { species: "nightmoth", element: "gloom", personality: "sly", rarity: 0, generation: 1 };
+const namedEgg = makeBreedEgg({
+  genes: sampleGenes,
+  bornBonus: { atk: 1, hp: 2, spd: 0 },
+  parentUids: ["a", "b"],
+});
+assert(namedEgg.name === "一代蟲蛋", "egg name 一代蟲蛋");
+assert(namedEgg.desc === "可以孵化出一代蟲寵物", "egg desc");
+const hatchedFromNamed = hatchPetFromEgg(namedEgg);
+assert(hatchedFromNamed.kind === "蟲" && hatchedFromNamed.generation === 1, "hatch uses stored genes");
+
+const breedG1 = mkBreedPet("g1", "reefox", "tide", 1);
+const breedG2 = mkBreedPet("g2", "reefox", "tide", 2);
+const prev12 = breedPreview(breedG1, breedG2);
+assert(prev12.matCost.coral_shard === 3 && prev12.matCost.abyss_ink === 2, "preview 1+2 mats");
+const wildParent = mkBreedPet("w0", "reefox", "tide", 0);
+const prev02 = breedPreview(wildParent, breedG2);
+assert(prev02.matCost.abyss_ink === 3, "preview 0+2 more abyss");
+assert(prev02.genOdds[0].pct === 70 && prev02.genOdds[0].gen === 1, "preview 0+2 odds");
 
 /* Tide zones: mist tiers, depth yield, warden keys */
 assert(TRAIN_ZONE_CHAIN.length === TRAIN_SITES.length, "zone chain matches sites");

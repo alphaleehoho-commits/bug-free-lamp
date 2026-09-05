@@ -1472,7 +1472,17 @@ export const BREED_STONE_COST = 45;
 export const BREED_COOLDOWN_MS = 45_000;
 /** 同時進行中的交配欄位上限 */
 export const BREED_QUEUE_MAX = 3;
+/** 同對雙親可排程的交配次數（拖曳倍率，似秘境召喚） */
+export const BREED_BATCH_MIN = 1;
+export const BREED_BATCH_MAX = 10;
 export const BREED_ELEMENT_MUTATION_RATE = 0.1;
+/** 蛋欄容量（牧場外） */
+export const EGG_CAP = 6;
+
+export function clampBreedBatchCount(count) {
+  const n = Math.floor(Number(count) || BREED_BATCH_MIN);
+  return Math.max(BREED_BATCH_MIN, Math.min(BREED_BATCH_MAX, n));
+}
 
 /**
  * 稀有度（變異階）
@@ -1663,15 +1673,20 @@ export function petGeneration(pet) {
 }
 
 /**
- * 子代代數（按你嘅規則）
- * 0+0→1；0+G→G；G+G→G50%/G+1 50%；G<H→G70%/H30%
+ * 子代代數
+ * 0+0→1；0+1→1；
+ * 原生+高代（0+G, G≥2）：70%(G-1)／30%G —— 與「低代+高代」同形，避免野生掛高代必出高代且更平。
+ * G+G→G50%/G+1 50%；G<H→G70%/H30%
  */
 export function rollChildGeneration(genA, genB) {
   const a = Math.max(0, Math.min(GEN_MAX, genA | 0));
   const b = Math.max(0, Math.min(GEN_MAX, genB | 0));
   if (a === 0 && b === 0) return 1;
-  if (a === 0) return b;
-  if (b === 0) return a;
+  if (a === 0 || b === 0) {
+    const g = a || b;
+    if (g <= 1) return 1;
+    return Math.random() < 0.7 ? g - 1 : g;
+  }
   const lo = Math.min(a, b);
   const hi = Math.max(a, b);
   if (lo === hi) {
@@ -1686,8 +1701,14 @@ export function childGenerationOdds(genA, genB) {
   const a = Math.max(0, Math.min(GEN_MAX, genA | 0));
   const b = Math.max(0, Math.min(GEN_MAX, genB | 0));
   if (a === 0 && b === 0) return [{ gen: 1, pct: 100 }];
-  if (a === 0) return [{ gen: b, pct: 100 }];
-  if (b === 0) return [{ gen: a, pct: 100 }];
+  if (a === 0 || b === 0) {
+    const g = a || b;
+    if (g <= 1) return [{ gen: 1, pct: 100 }];
+    return [
+      { gen: g - 1, pct: 70 },
+      { gen: g, pct: 30 },
+    ];
+  }
   const lo = Math.min(a, b);
   const hi = Math.max(a, b);
   if (lo === hi) {
@@ -1706,6 +1727,12 @@ export function childGenerationOdds(genA, genB) {
 export function genLabel(gen) {
   const g = Math.max(0, gen | 0);
   return g <= 0 ? "原生" : `繁殖${g}代`;
+}
+
+/** 蛋名用短代數：一代／二代／三代 */
+export function genEggPrefix(gen) {
+  const g = Math.max(1, Math.min(GEN_MAX, gen | 0));
+  return ["", "一代", "二代", "三代"][g] || `${g}代`;
 }
 
 /** 後代愈高：雜交機率／稀有／繼承愈強（用雙親平均代） */
@@ -3301,6 +3328,36 @@ export function makeEgg(tier = "C", source = "unknown", now = Date.now()) {
   };
 }
 
+/**
+ * 交配產出蛋（先蛋後寵）：名／描述已鎖定種＋代；genes／天生加值在領蛋時寫入，孵化時還原。
+ * 例：一代蟲蛋 · 可以孵化出一代蟲寵物
+ */
+export function makeBreedEgg(outcome, now = Date.now()) {
+  const genes = outcome?.genes;
+  const generation = Math.max(1, Math.min(GEN_MAX, (genes?.generation ?? outcome?.generation ?? 1) | 0));
+  const sp = SPECIES[genes?.species];
+  const kind = sp?.kind || outcome?.kind || "獸";
+  const prefix = genEggPrefix(generation);
+  const uid = `egg-breed-${now}-${Math.floor(Math.random() * 99999)}`;
+  return {
+    uid,
+    tier: "C",
+    name: `${prefix}${kind}蛋`,
+    desc: `可以孵化出${prefix}${kind}寵物`,
+    source: "breed",
+    kind,
+    generation,
+    genes: genes ? { ...genes } : null,
+    bornBonus: outcome?.bornBonus ? { ...outcome.bornBonus } : { atk: 0, hp: 0, spd: 0 },
+    awakenSkillLevel: outcome?.awakenSkillLevel || null,
+    parentUids: outcome?.parentUids ? [...outcome.parentUids] : [],
+    parentNames: outcome?.parentNames ? [...outcome.parentNames] : [],
+    startedAt: null,
+    readyAt: null,
+    claimed: false,
+  };
+}
+
 /** 開局／教學蛋孵化時間（短於一般 C 蛋，避免空等） */
 export const STARTER_EGG_HATCH_MS = 20_000;
 export const TUTORIAL_EGG_HATCH_MS = STARTER_EGG_HATCH_MS;
@@ -3315,7 +3372,7 @@ export function makeStarterEgg(now = Date.now()) {
   return egg;
 }
 
-/** 孵化產出寵物（C 普通／B 略強／A 再強） */
+/** 孵化產出寵物（C 普通／B 略強／A 再強；交配蛋用預存 genes） */
 export function hatchPetFromEgg(egg, opts = {}) {
   const tier = egg?.tier || "C";
   const isStarter = egg?.source === "starter" || opts.starter;
@@ -3323,6 +3380,33 @@ export function hatchPetFromEgg(egg, opts = {}) {
     const pet = makeStarterPet();
     pet.fromEgg = egg?.uid || true;
     return pet;
+  }
+  if (egg?.source === "breed" && egg.genes) {
+    const genes = egg.genes;
+    const child = buildPetStats({
+      id: `breed-${egg.uid || Date.now()}`,
+      species: genes.species,
+      element: genes.element,
+      personality: genes.personality,
+      personality2: genes.personality2,
+      bloodmarks: genes.bloodmarks || [],
+      rarity: genes.rarity,
+      cost: 0,
+    });
+    const born = egg.bornBonus || { atk: 0, hp: 0, spd: 0 };
+    child.atk += born.atk || 0;
+    child.hp += born.hp || 0;
+    child.spd += born.spd || 0;
+    if (egg.awakenSkillLevel && (child.skillLevel ?? 1) < egg.awakenSkillLevel) {
+      child.skillLevel = egg.awakenSkillLevel;
+    }
+    child.uid = `${child.templateId || genes.species}-born-${Math.floor(Math.random() * 99999)}`;
+    child.bornFrom = egg.parentUids?.length ? [...egg.parentUids] : undefined;
+    child.generation = genes.generation ?? egg.generation ?? 1;
+    child.fromEgg = egg.uid || true;
+    child.eggTier = tier;
+    child.fromBreedEgg = true;
+    return child;
   }
   const wildIds = wildSpeciesIds(opts.realm || 0);
   const species = opts.species || wildIds[Math.floor(Math.random() * wildIds.length)] || "reefox";
@@ -4193,12 +4277,29 @@ export function upgradeMatCost(level) {
   };
 }
 
-/** 繁殖耗材料（代數愈高愈貴） */
+/**
+ * 繁殖耗材料（按雙親代數）
+ *
+ * 規則：以 max 代拉高珊瑚屑；深淵墨跟「代數參與度」走，原生掛高代要多付，
+ * 唔好再出現「野生+2代＝必出2代且比 1+2 更平」嘅倒掛。
+ * - coral_shard = 1 + max(genA, genB)
+ * - abyss_ink   = maxGen==0 → 0；否則 maxGen + (有原生親且 maxGen≥2 ? 1 : 0)
+ *   例：0+0→屑1墨0｜0+1→屑2墨1｜1+1→屑2墨1｜0+2→屑3墨3｜1+2→屑3墨2｜2+2→屑3墨2
+ */
 export function breedMatCost(genA, genB) {
-  const avg = (Math.max(0, genA | 0) + Math.max(0, genB | 0)) / 2;
+  const a = Math.max(0, genA | 0);
+  const b = Math.max(0, genB | 0);
+  const maxGen = Math.max(a, b);
+  const minGen = Math.min(a, b);
+  const coral = 1 + maxGen;
+  let abyss = 0;
+  if (maxGen >= 1) {
+    abyss = maxGen;
+    if (minGen === 0 && maxGen >= 2) abyss += 1;
+  }
   return {
-    coral_shard: 1 + Math.floor(avg),
-    abyss_ink: avg >= 1.5 ? 1 : 0,
+    coral_shard: coral,
+    abyss_ink: abyss,
   };
 }
 

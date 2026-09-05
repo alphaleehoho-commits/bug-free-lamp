@@ -26,6 +26,12 @@ import {
   BREED_STONE_COST,
   BREED_COOLDOWN_MS,
   BREED_QUEUE_MAX,
+  BREED_BATCH_MIN,
+  BREED_BATCH_MAX,
+  clampBreedBatchCount,
+  EGG_CAP,
+  makeBreedEgg,
+  genEggPrefix,
   BOND_FAIL_RATE_BONUS,
   BOND_FAIL_RATE_CAP,
   FORGE_SCRAP_COST,
@@ -505,7 +511,7 @@ function normalizeEggs(list) {
         const maxReady = startedAt + TUTORIAL_EGG_HATCH_MS;
         if (readyAt > maxReady) readyAt = maxReady;
       }
-      return {
+      const base = {
         uid: e.uid,
         tier: t.id,
         name: e.name || t.name,
@@ -515,6 +521,26 @@ function normalizeEggs(list) {
         readyAt,
         claimed: false,
       };
+      if (e.source === "breed" || e.genes) {
+        base.kind = e.kind;
+        base.generation = e.generation;
+        base.genes = e.genes ? { ...e.genes } : null;
+        base.bornBonus = e.bornBonus ? { ...e.bornBonus } : { atk: 0, hp: 0, spd: 0 };
+        base.awakenSkillLevel = e.awakenSkillLevel || null;
+        base.parentUids = Array.isArray(e.parentUids) ? [...e.parentUids] : [];
+        base.parentNames = Array.isArray(e.parentNames) ? [...e.parentNames] : [];
+        if (base.genes && (base.generation == null || !base.kind || !base.name)) {
+          const gen = Math.max(1, base.genes.generation | 0);
+          const sp = SPECIES[base.genes.species];
+          const kind = sp?.kind || base.kind || "獸";
+          const prefix = genEggPrefix(gen);
+          base.generation = gen;
+          base.kind = kind;
+          base.name = base.name || `${prefix}${kind}蛋`;
+          base.desc = base.desc || `可以孵化出${prefix}${kind}寵物`;
+        }
+      }
+      return base;
     });
 }
 
@@ -2053,7 +2079,7 @@ export function claimDailyAllClear(state) {
   state.daily.allClearClaimed = true;
   applyReward(state, DAILY_ALL_CLEAR_BONUS);
   if (!state.eggs) state.eggs = [];
-  const eggAdded = state.eggs.length < 6;
+  const eggAdded = state.eggs.length < EGG_CAP;
   if (eggAdded) {
     state.eggs.push(makeEgg("C", "daily_all_clear"));
   }
@@ -2520,7 +2546,7 @@ export function buyShopOffer(state, offerId) {
 
   if (offer.kind === "egg") {
     if (!state.eggs) state.eggs = [];
-    if (state.eggs.length >= 6) return { ok: false, msg: "蛋欄已滿（最多 6）。" };
+    if (state.eggs.length >= EGG_CAP) return { ok: false, msg: `蛋欄已滿（最多 ${EGG_CAP}）。` };
     state.stones -= payCost;
     offer.bought = true;
     const egg = makeEgg(
@@ -2851,7 +2877,7 @@ export function claimDispatch(state, dispatchId) {
   const chance = mission?.eggChance;
   if (chance?.tier && Math.random() < (chance.rate || 0)) {
     if (!state.eggs) state.eggs = [];
-    if (state.eggs.length < 6) {
+    if (state.eggs.length < EGG_CAP) {
       eggGot = makeEgg(chance.tier, `dispatch:${mission.id}`);
       state.eggs.push(eggGot);
     }
@@ -3103,11 +3129,18 @@ export function eggsView(state, now = Date.now()) {
     const t = eggTierInfo(e.tier);
     const hatching = e.startedAt != null;
     const left = hatching ? Math.max(0, (e.readyAt || 0) - now) : t.hatchMs;
+    const breedDesc =
+      e.source === "breed"
+        ? e.desc ||
+          (e.generation && e.kind
+            ? `可以孵化出${genEggPrefix(e.generation)}${e.kind}寵物`
+            : "")
+        : "";
     return {
       ...e,
       name: e.name || t.name,
-      label: t.label,
-      desc: t.desc,
+      label: e.source === "breed" ? genLabel(e.generation || 1) : t.label,
+      desc: breedDesc || e.desc || t.desc,
       hatchMs: t.hatchMs,
       hatching,
       ready: hatching && left <= 0,
@@ -3164,6 +3197,32 @@ export function claimHatch(state, eggUid) {
   if (!state.stats) state.stats = {};
   state.stats.eggsHatched = (state.stats.eggsHatched || 0) + 1;
   state.stats.bonds = (state.stats.bonds || 0) + 1;
+  if (egg.source === "breed" && egg.genes) {
+    /* 繁殖達標已在領蛋時計；孵出時補圖鑑／統計 */
+    const genes = egg.genes;
+    if (genes.hybrid) state.stats.hybrids = (state.stats.hybrids || 0) + 1;
+    if (genes.tertiary) state.stats.tertiaryBreeds = (state.stats.tertiaryBreeds || 0) + 1;
+    if (genes.rarity >= 3) state.stats.legendBreeds = (state.stats.legendBreeds || 0) + 1;
+    if (genes.hybrid && pet.speciesId) {
+      if (!state.stats.speciesBreeds) state.stats.speciesBreeds = {};
+      state.stats.speciesBreeds[pet.speciesId] =
+        (state.stats.speciesBreeds[pet.speciesId] || 0) + 1;
+    }
+    if (genes.generation >= 3) {
+      state.stats.gen3Breeds = (state.stats.gen3Breeds || 0) + 1;
+    }
+    /* 雜交圖鑑目標：孵出後刷新進度 */
+    ensureBreedGoalsState(state);
+    for (const g of BREED_GOALS) {
+      if (g.type === "hybrid_dex") {
+        const hybridDex = countHybridBestiary(state);
+        const cur = state.breedGoals.progress[g.id] || 0;
+        if (!state.breedGoals.claimed[g.id] && hybridDex > cur) {
+          state.breedGoals.progress[g.id] = Math.min(g.need, hybridDex);
+        }
+      }
+    }
+  }
   if (state.tutorial && !state.tutorial.done) {
     state.tutorial.flags.hatchClaimed = true;
     if (egg.source === "starter") state.tutorial.flags.starterHatched = true;
@@ -3173,6 +3232,7 @@ export function claimHatch(state, eggUid) {
   }
   pushLog(state, `【${egg.name || eggTierInfo(egg.tier).name}】孵出 ${pet.name}！`);
   const tut = advanceTutorialCascade(state);
+  checkAchievements(state);
   return {
     ok: true,
     msg: `孵出 ${pet.name}`,
@@ -4766,7 +4826,7 @@ export function forgeHint(_state) {
   return { ok: false, msg: "靈紋鍛造已廢止——秘境改掉落寵用素材。" };
 }
 
-/** 催生符：將最早孕育中的交配立即就緒（可領） */
+/** 催生符：將最早孕育中的交配立即就緒（可領全部剩餘蛋） */
 export function useBreedTicket(state) {
   if ((state.materials?.breed_ticket || 0) < 1) {
     return { ok: false, msg: "沒有催生符。" };
@@ -4780,9 +4840,15 @@ export function useBreedTicket(state) {
     return { ok: false, msg: "目前沒有孕育中的交配。" };
   }
   state.materials.breed_ticket -= 1;
-  gestating[0].readyAt = now;
-  pushLog(state, `使用催生符，【${gestating[0].names?.join("×") || "交配"}】提前就緒。`);
-  return { ok: true, msg: "交配已就緒，可領取子代" };
+  const job = gestating[0];
+  job.readyAt = now;
+  if (Array.isArray(job.cycles)) {
+    for (const c of job.cycles) {
+      if ((c.readyAt || 0) > now) c.readyAt = now;
+    }
+  }
+  pushLog(state, `使用催生符，【${job.names?.join("×") || "交配"}】提前就緒。`);
+  return { ok: true, msg: "交配已就緒，可領取蛋" };
 }
 
 /** 血統催化：縮短最早孕育中交配剩餘時間一半 */
@@ -4801,7 +4867,15 @@ export function useBloodCatalyst(state) {
   const job = gestating[0];
   const left = Math.max(0, (job.readyAt || 0) - now);
   state.materials.blood_catalyst -= 1;
-  job.readyAt = now + Math.floor(left / 2);
+  const newReady = now + Math.floor(left / 2);
+  job.readyAt = newReady;
+  if (Array.isArray(job.cycles)) {
+    for (const c of job.cycles) {
+      if ((c.readyAt || 0) > now) {
+        c.readyAt = now + Math.floor(Math.max(0, (c.readyAt || 0) - now) / 2);
+      }
+    }
+  }
   pushLog(state, `使用血統催化，【${job.names?.join("×") || "交配"}】孕育時間減半。`);
   return { ok: true, msg: "孕育時間減半" };
 }
@@ -4881,7 +4955,7 @@ export function claimLoginStreak(state, now = Date.now()) {
   applyReward(state, entry.reward);
   if (entry.reward.eggTier) {
     if (!state.eggs) state.eggs = [];
-    if (state.eggs.length < 6) {
+    if (state.eggs.length < EGG_CAP) {
       state.eggs.push(makeEgg(entry.reward.eggTier, "login_streak"));
     } else {
       state.stones = (state.stones || 0) + 50;
@@ -5112,43 +5186,59 @@ export function breedBusyUids(state) {
   return set;
 }
 
-function materializeBreedChild(state, job) {
+function scaleMatCost(mats, n) {
+  const out = {};
+  for (const [id, v] of Object.entries(mats || {})) {
+    if (!v) continue;
+    out[id] = (v | 0) * n;
+  }
+  return out;
+}
+
+/** 進行中交配尚待領取的蛋數（未領週期） */
+function breedPendingEggCount(state) {
+  ensureBreedJobs(state);
+  let n = 0;
+  for (const j of state.breedJobs) {
+    if (j.claimed || j.legacy) continue;
+    const batch = Math.max(1, j.batch || 1);
+    const claimed = Math.max(0, j.claimedCycles || 0);
+    n += Math.max(0, batch - claimed);
+  }
+  return n;
+}
+
+/**
+ * 單次交配結果：在領蛋當下用預存 genes 結算天生／覺醒，寫入蛋。
+ * （genes 於開始交配時已 roll，繼承／突變機率不變）
+ */
+function prepareBreedEggOutcome(state, job, genes) {
   const [uidA, uidB] = job.uids || [];
   const a = findOwnedPet(state, uidA)?.pet;
   const b = findOwnedPet(state, uidB)?.pet;
-  if (!a || !b) return { ok: false, msg: "雙親已不在，無法領取子代。" };
-  const genes = job.genes || rollBreedGenes(a, b);
-  const child = normalizePet(
-    buildPetStats({
-      id: `breed-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
-      species: genes.species,
-      element: genes.element,
-      personality: genes.personality,
-      personality2: genes.personality2,
-      bloodmarks: genes.bloodmarks || [],
-      rarity: genes.rarity,
-      cost: 0,
-    })
-  );
-  const born = breedStatInheritance(a, b, genes);
-  child.atk += born.atk;
-  child.hp += born.hp;
-  child.spd += born.spd;
-  const awaken = genAwakenBonus(genes.generation);
-  if (awaken) {
-    child.atk += awaken.atk;
-    child.hp += awaken.hp;
-    child.spd += awaken.spd;
-    if (awaken.skillLevel && (child.skillLevel ?? 1) < awaken.skillLevel) {
-      child.skillLevel = awaken.skillLevel;
-    }
-  }
-  child.uid = `${child.templateId}-born-${Math.floor(Math.random() * 99999)}`;
-  child.bornFrom = [a.uid, b.uid];
-  child.generation = genes.generation;
-  if (!state.ranch) state.ranch = [];
-  state.ranch.push(child);
+  if (!a || !b) return { ok: false, msg: "雙親已不在，無法領取蛋。" };
+  const g = genes || job.genes || rollBreedGenes(a, b);
+  const born = breedStatInheritance(a, b, g);
+  const awaken = genAwakenBonus(g.generation);
+  const bornBonus = {
+    atk: (born.atk || 0) + (awaken?.atk || 0),
+    hp: (born.hp || 0) + (awaken?.hp || 0),
+    spd: (born.spd || 0) + (awaken?.spd || 0),
+  };
+  return {
+    ok: true,
+    genes: g,
+    bornBonus,
+    awakenSkillLevel: awaken?.skillLevel || null,
+    awaken,
+    born,
+    parentUids: [a.uid, b.uid],
+    parentNames: [displayPetName(a), displayPetName(b)],
+    kind: SPECIES[g.species]?.kind || a.kind,
+  };
+}
 
+function applyBreedEggClaimStats(state, egg, genes, parents) {
   if (!state.stats) {
     state.stats = {
       bonds: 0,
@@ -5161,80 +5251,36 @@ function materializeBreedChild(state, job) {
     };
   }
   state.stats.breeds += 1;
-  if (genes.hybrid) state.stats.hybrids = (state.stats.hybrids || 0) + 1;
-  if (genes.tertiary) state.stats.tertiaryBreeds = (state.stats.tertiaryBreeds || 0) + 1;
-  if (genes.rarity >= 3) state.stats.legendBreeds = (state.stats.legendBreeds || 0) + 1;
-  if (genes.hybrid && child.speciesId) {
-    if (!state.stats.speciesBreeds) state.stats.speciesBreeds = {};
-    state.stats.speciesBreeds[child.speciesId] =
-      (state.stats.speciesBreeds[child.speciesId] || 0) + 1;
-  }
-  if (genes.generation >= 3) {
-    state.stats.gen3Breeds = (state.stats.gen3Breeds || 0) + 1;
-  }
-  registerBestiary(state, child);
-  if (a.kind !== b.kind) bumpBreedGoalProgress(state, "daily_hybrid", 1);
-  progressBreedGoalsFromChild(state, child, genes);
-  bumpDaily(state, "breed", 1);
-
-  const tags = [];
-  tags.push(genLabel(genes.generation));
-  if (genes.hybrid) tags.push("雜交新種！");
-  if (genes.tertiary) tags.push("三代種！");
-  if (genes.rarityUp) tags.push(`${child.rarityName}升階！`);
-  else if (genes.rarity > 0) tags.push(child.rarityName);
-  if (genes.mutated && !genes.hybrid) tags.push("元素變異");
-  if (genes.personality2) tags.push(`副性${PERSONALITIES[genes.personality2]?.name || ""}`);
-  if (awaken?.label) tags.push(awaken.label);
-  const tagNote = tags.length ? `（${tags.join("·")}）` : "";
-  const innNote =
-    born.atk || born.hp || born.spd
-      ? `｜天生 +${born.atk}攻/${born.hp}血/${born.spd}速`
-      : "";
-  pushLog(
-    state,
-    `交配誕生：${displayPetName(a)} × ${displayPetName(b)} → ${petLabel(child)}${tagNote}${innNote}。`
-  );
-  checkAchievements(state);
-  return {
-    ok: true,
-    pet: child,
-    genes,
-    awaken,
-    born,
-    tagNote,
-    innNote,
-    celebrate: !!(
-      genes.hybrid ||
-      genes.rarityUp ||
-      genes.rarity >= 2 ||
-      genes.generation >= 2 ||
-      awaken?.label
-    ),
+  const [a, b] = parents || [];
+  if (a && b && a.kind !== b.kind) bumpBreedGoalProgress(state, "daily_hybrid", 1);
+  const synthetic = {
+    speciesId: genes.species,
+    generation: genes.generation,
+    name: egg.name,
   };
+  progressBreedGoalsFromChild(state, synthetic, genes);
+  bumpDaily(state, "breed", 1);
 }
 
 /**
- * 開始交配（似秘境召喚）：扣費進佇列，孕育完才可領子代。
- * 可同時進行最多 BREED_QUEUE_MAX 欄。
+ * 開始交配（似秘境召喚）：扣費進佇列，孕育完領蛋（再孵化出寵）。
+ * count＝1–10 倍率：同對連產，時長×N、費用×N；可中途領已完成週期的蛋。
  */
-export function tryBreed(state, uidA, uidB) {
+export function tryBreed(state, uidA, uidB, count = 1) {
   if (!uidA || !uidB || uidA === uidB) {
     return { ok: false, msg: "請選擇兩隻不同的牧場靈寵。" };
   }
+  const batch = clampBreedBatchCount(count);
   ensureBreedJobs(state);
   const active = state.breedJobs.filter((j) => !j.claimed && !j.legacy);
   if (active.length >= BREED_QUEUE_MAX) {
-    return { ok: false, msg: `交配欄已滿（${BREED_QUEUE_MAX}）。先領取就緒子代或等孕育完成。` };
+    return { ok: false, msg: `交配欄已滿（${BREED_QUEUE_MAX}）。先領取就緒蛋或等孕育完成。` };
   }
   if (!state.ranch) state.ranch = [];
-  const cap = ranchCap(state);
-  const pendingBirths = active.length;
-  if (state.ranch.length + pendingBirths >= cap) {
-    return { ok: false, msg: `牧場將滿（${cap}），請先騰位再交配。` };
-  }
-  if (state.stones < BREED_STONE_COST) {
-    return { ok: false, msg: `靈石不足（需 ${BREED_STONE_COST}）。` };
+  if (!state.eggs) state.eggs = [];
+  const stoneCost = BREED_STONE_COST * batch;
+  if (state.stones < stoneCost) {
+    return { ok: false, msg: `靈石不足（需 ${stoneCost}）。` };
   }
 
   const a = state.ranch.find((p) => p.uid === uidA);
@@ -5248,7 +5294,8 @@ export function tryBreed(state, uidA, uidB) {
   if (matingBusy.has(uidA) || matingBusy.has(uidB)) {
     return { ok: false, msg: "雙親已在其他交配中。" };
   }
-  const matCost = breedMatCost(petGeneration(a), petGeneration(b));
+  const unitMat = breedMatCost(petGeneration(a), petGeneration(b));
+  const matCost = scaleMatCost(unitMat, batch);
   if (!spendMaterials(state, matCost)) {
     const sh = shortageHint(state, matCost);
     return {
@@ -5259,58 +5306,115 @@ export function tryBreed(state, uidA, uidB) {
   }
 
   const now = Date.now();
-  const genes = rollBreedGenes(a, b);
-  state.stones -= BREED_STONE_COST;
-  const readyAt = now + BREED_COOLDOWN_MS;
+  /** 每週期預 roll genes（領蛋時再結算天生寫入蛋） */
+  const cycles = [];
+  for (let i = 0; i < batch; i++) {
+    cycles.push({
+      genes: rollBreedGenes(a, b),
+      readyAt: now + BREED_COOLDOWN_MS * (i + 1),
+    });
+  }
+  state.stones -= stoneCost;
+  const readyAt = now + BREED_COOLDOWN_MS * batch;
   const job = {
     id: `breed-${now}-${Math.floor(Math.random() * 9999)}`,
     uids: [a.uid, b.uid],
     names: [displayPetName(a), displayPetName(b)],
     startedAt: now,
     readyAt,
-    genes,
+    batch,
+    claimedCycles: 0,
+    cycles,
+    genes: cycles[0]?.genes || null,
     claimed: false,
   };
   state.breedJobs.push(job);
-  // 相容舊欄位：顯示「最近一次」孕育
   state.breedReadyAt = readyAt;
   state.breedPair = { uids: job.uids, names: job.names, readyAt };
 
   const matNote = formatMats(matCost);
-  const sec = Math.ceil(BREED_COOLDOWN_MS / 1000);
+  const sec = Math.ceil((BREED_COOLDOWN_MS * batch) / 1000);
   pushLog(
     state,
-    `開始交配：${job.names[0]} × ${job.names[1]}（孕育約 ${sec}s｜耗 ${BREED_STONE_COST} 石${matNote ? `／${matNote}` : ""}）。`
+    `開始交配×${batch}：${job.names[0]} × ${job.names[1]}（孕育約 ${sec}s｜耗 ${stoneCost} 石${matNote ? `／${matNote}` : ""}）。`
   );
   return {
     ok: true,
-    msg: `交配開始 · ${sec}s 後可領子代（${active.length + 1}/${BREED_QUEUE_MAX}）`,
+    msg:
+      batch > 1
+        ? `交配×${batch} 開始 · 約 ${sec}s 全數就緒（可中途領蛋）（${active.length + 1}/${BREED_QUEUE_MAX}）`
+        : `交配開始 · ${sec}s 後可領蛋（${active.length + 1}/${BREED_QUEUE_MAX}）`,
     job,
     started: true,
+    batch,
   };
 }
 
-/** 領取就緒交配子代（似秘境凝聚完再開戰） */
+/** 領取已完成週期的交配蛋（可中途領；剩餘繼續孕育） */
 export function claimBreed(state, jobId) {
   ensureBreedJobs(state);
+  if (!state.eggs) state.eggs = [];
   const job = state.breedJobs.find((j) => j.id === jobId);
   if (!job) return { ok: false, msg: "找不到這次交配。" };
   if (job.claimed || job.legacy) return { ok: false, msg: "已領取過。" };
   const now = Date.now();
-  if ((job.readyAt || 0) > now) {
-    const sec = Math.ceil((job.readyAt - now) / 1000);
+  const batch = Math.max(1, job.batch || 1);
+  let claimedCycles = Math.max(0, job.claimedCycles || 0);
+  if (!Array.isArray(job.cycles) || job.cycles.length < batch) {
+    /* 舊存檔：單 genes → 補成一週期 */
+    const g = job.genes || null;
+    job.cycles = Array.from({ length: batch }, (_, i) => ({
+      genes: g,
+      readyAt: (job.startedAt || job.readyAt - BREED_COOLDOWN_MS) + BREED_COOLDOWN_MS * (i + 1),
+    }));
+  }
+  let completed = 0;
+  for (let i = claimedCycles; i < batch; i++) {
+    const c = job.cycles[i];
+    if ((c?.readyAt || job.readyAt || 0) <= now) completed += 1;
+    else break;
+  }
+  if (completed <= 0) {
+    const nextAt = job.cycles[claimedCycles]?.readyAt || job.readyAt || now;
+    const sec = Math.ceil((nextAt - now) / 1000);
     return { ok: false, msg: `仍在孕育（${sec}s）。` };
   }
-  if (!state.ranch) state.ranch = [];
-  const cap = ranchCap(state);
-  if (state.ranch.length >= cap) {
-    return { ok: false, msg: `牧場已滿（${cap}），先騰位再領取。` };
+  const freeSlots = Math.max(0, EGG_CAP - state.eggs.length);
+  if (freeSlots <= 0) {
+    return { ok: false, msg: `蛋欄已滿（${EGG_CAP}），先孵化或清理再領。` };
   }
-  const born = materializeBreedChild(state, job);
-  if (!born.ok) return born;
-  job.claimed = true;
-  // 清走已領，避免列表膨脹
-  state.breedJobs = state.breedJobs.filter((j) => !j.claimed && !j.legacy);
+  const take = Math.min(completed, freeSlots);
+  const [uidA, uidB] = job.uids || [];
+  const parentA = findOwnedPet(state, uidA)?.pet;
+  const parentB = findOwnedPet(state, uidB)?.pet;
+  const eggs = [];
+  let celebrate = false;
+  let lastGenes = null;
+  for (let i = 0; i < take; i++) {
+    const cycle = job.cycles[claimedCycles + i];
+    const prep = prepareBreedEggOutcome(state, job, cycle?.genes);
+    if (!prep.ok) return prep;
+    const egg = makeBreedEgg(prep, now + i);
+    state.eggs.push(egg);
+    eggs.push(egg);
+    applyBreedEggClaimStats(state, egg, prep.genes, [parentA, parentB]);
+    lastGenes = prep.genes;
+    if (
+      prep.genes.hybrid ||
+      prep.genes.rarityUp ||
+      prep.genes.rarity >= 2 ||
+      prep.genes.generation >= 2 ||
+      prep.awaken?.label
+    ) {
+      celebrate = true;
+    }
+  }
+  claimedCycles += take;
+  job.claimedCycles = claimedCycles;
+  if (claimedCycles >= batch) {
+    job.claimed = true;
+    state.breedJobs = state.breedJobs.filter((j) => !j.claimed && !j.legacy);
+  }
   const open = state.breedJobs.filter((j) => !j.claimed);
   if (!open.length) {
     state.breedReadyAt = 0;
@@ -5320,16 +5424,30 @@ export function claimBreed(state, jobId) {
     state.breedReadyAt = next.readyAt || 0;
     state.breedPair = { uids: next.uids, names: next.names, readyAt: next.readyAt };
   }
+  checkAchievements(state);
+  const names = eggs.map((e) => e.name).join("、");
+  const partialNote =
+    take < completed ? `（蛋欄僅餘 ${freeSlots}，尚有 ${completed - take} 枚可領）` : "";
+  const remain = batch - claimedCycles;
+  pushLog(
+    state,
+    `領取交配蛋×${take}：${job.names?.[0] || "？"} × ${job.names?.[1] || "？"} → ${names}${
+      remain > 0 ? `（尚餘 ${remain} 週期）` : ""
+    }。`
+  );
   return {
     ok: true,
-    msg: `誕生 ${born.pet.name}${born.tagNote || ""}${born.innNote || ""}`,
-    pet: born.pet,
-    celebrate: born.celebrate,
-    mutated: born.genes?.mutated,
-    hybrid: born.genes?.hybrid,
-    rarity: born.genes?.rarity,
-    rarityUp: born.genes?.rarityUp,
-    generation: born.genes?.generation,
+    msg: `領取蛋×${take}：${names}${partialNote}`,
+    eggs,
+    egg: eggs[0],
+    claimedCount: take,
+    remainCycles: remain,
+    celebrate,
+    mutated: lastGenes?.mutated,
+    hybrid: lastGenes?.hybrid,
+    rarity: lastGenes?.rarity,
+    rarityUp: lastGenes?.rarityUp,
+    generation: lastGenes?.generation,
   };
 }
 
@@ -5510,38 +5628,73 @@ export function breedPairHint(petA, petB) {
 export function breedStatus(state) {
   ensureBreedJobs(state);
   const now = Date.now();
-  const totalMs = BREED_COOLDOWN_MS;
+  const cycleMs = BREED_COOLDOWN_MS;
   const jobs = state.breedJobs
     .filter((j) => !j.claimed && !j.legacy)
     .map((j) => {
+      const batch = Math.max(1, j.batch || 1);
+      const claimedCycles = Math.max(0, j.claimedCycles || 0);
+      const totalMs = cycleMs * batch;
+      const startedAt = j.startedAt || (j.readyAt || now) - totalMs;
       const left = Math.max(0, (j.readyAt || 0) - now);
-      const elapsed = Math.max(0, totalMs - left);
+      const elapsed = Math.max(0, now - startedAt);
       const pct = Math.min(100, Math.round((elapsed / Math.max(1, totalMs)) * 100));
+      let completed = 0;
+      if (Array.isArray(j.cycles) && j.cycles.length) {
+        for (let i = claimedCycles; i < batch; i++) {
+          if ((j.cycles[i]?.readyAt || 0) <= now) completed += 1;
+          else break;
+        }
+      } else if ((j.readyAt || 0) <= now) {
+        completed = batch - claimedCycles;
+      } else {
+        completed = Math.max(
+          0,
+          Math.min(batch, Math.floor(elapsed / cycleMs)) - claimedCycles
+        );
+      }
+      const claimableCount = Math.max(0, completed);
+      const remainCycles = Math.max(0, batch - claimedCycles);
+      const fullyReady = claimedCycles + claimableCount >= batch && claimableCount > 0;
+      const mating = remainCycles > claimableCount;
       return {
         id: j.id,
         uids: j.uids || [],
         names: j.names || [],
         readyAt: j.readyAt || 0,
+        startedAt,
         leftMs: left,
         pct,
-        ready: left <= 0,
+        ready: claimableCount > 0 && !mating,
+        mating,
+        batch,
+        claimedCycles,
+        claimableCount,
+        remainCycles,
+        fullyReady,
+        cycleMs,
       };
     })
     .sort((a, b) => a.readyAt - b.readyAt);
-  const next = jobs.find((j) => !j.ready) || null;
-  const claimable = jobs.filter((j) => j.ready);
+  const next = jobs.find((j) => j.leftMs > 0) || null;
+  const claimable = jobs.filter((j) => j.claimableCount > 0);
   return {
     cost: BREED_STONE_COST,
     queueMax: BREED_QUEUE_MAX,
+    batchMin: BREED_BATCH_MIN,
+    batchMax: BREED_BATCH_MAX,
     slotsUsed: jobs.length,
     cooldownLeftMs: next?.leftMs || 0,
-    cooldownTotalMs: totalMs,
+    cooldownTotalMs: cycleMs,
     cooldownPct: next ? next.pct : 100,
     ready: jobs.length < BREED_QUEUE_MAX,
     pair: next ? { uids: next.uids, names: next.names, readyAt: next.readyAt } : null,
     jobs,
     claimable,
     busyUids: [...breedBusyUids(state)],
+    eggCap: EGG_CAP,
+    eggCount: state.eggs?.length || 0,
+    pendingEggs: breedPendingEggCount(state),
   };
 }
 
@@ -6015,7 +6168,7 @@ export function buyAbyssEgg(state, now = Date.now()) {
     return { ok: false, msg: `本週高階蛋已達上限（${ABYSS_EGG_WEEKLY_LIMIT}）。` };
   }
   if (!state.eggs) state.eggs = [];
-  if (state.eggs.length >= 6) return { ok: false, msg: "蛋庫已滿。" };
+  if (state.eggs.length >= EGG_CAP) return { ok: false, msg: "蛋庫已滿。" };
   if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_EGG_COST })) {
     return { ok: false, msg: `需要淵砂×${ABYSS_EGG_COST}。` };
   }
@@ -6052,6 +6205,12 @@ export {
   BREED_STONE_COST,
   BREED_COOLDOWN_MS,
   BREED_QUEUE_MAX,
+  BREED_BATCH_MIN,
+  BREED_BATCH_MAX,
+  clampBreedBatchCount,
+  EGG_CAP,
+  makeBreedEgg,
+  genEggPrefix,
   FORGE_SCRAP_COST,
   BOND_FAIL_RATE_BONUS,
   BOND_FAIL_RATE_CAP,

@@ -29,6 +29,12 @@ import {
   breedStatus,
   breedBusyUids,
   BREED_QUEUE_MAX,
+  BREED_BATCH_MIN,
+  BREED_BATCH_MAX,
+  clampBreedBatchCount,
+  EGG_CAP,
+  BREED_COOLDOWN_MS,
+  BREED_STONE_COST,
   breedPreview,
   petLineage,
   dungeonStatus,
@@ -65,7 +71,6 @@ import {
   SKILLS,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
-  BREED_STONE_COST,
   BOND_FEED_COST,
   BOND_FEED_BONUS,
   NICK_MAX_LEN,
@@ -209,6 +214,7 @@ let tab = "cultivate";
 let panelSub = { cultivate: "train", party: "fight", dungeon: "field", codex: "dex" };
 let dungeonIdx = 0;
 let summonCount = 1;
+let breedCount = 1;
 let sweepResult = null;
 let shellReady = false;
 /** @type {{ missionId: string, pick: string[] } | null} */
@@ -1286,6 +1292,79 @@ function patchEggLive() {
   return becameReady;
 }
 
+/** 繁殖頁倒數／中途領蛋：只 patch DOM，避免整頁重繪導致待命列表 scroll 跳頂 */
+function patchBreedLive() {
+  if (!(tab === "party" && panelSub.party === "breed" && petView.mode === "list")) {
+    return { needRender: false, flipped: false };
+  }
+  const bs = breedStatus(state);
+  let flipped = false;
+  const rows = document.querySelectorAll("[data-breed-job]");
+  if (!rows.length && (bs.jobs || []).length) {
+    return { needRender: true, flipped: false };
+  }
+  rows.forEach((row) => {
+    const id = row.dataset.breedJob;
+    const job = (bs.jobs || []).find((j) => j.id === id);
+    if (!job) {
+      flipped = true;
+      return;
+    }
+    const bar = row.querySelector("[data-breed-job-bar]");
+    const meta = row.querySelector("[data-breed-job-meta]");
+    const actions = row.querySelector("[data-breed-job-actions]");
+    const sec = Math.ceil((job.leftMs || 0) / 1000);
+    const claimN = job.claimableCount || 0;
+    const batchN = job.batch || 1;
+    const wasReady = row.classList.contains("is-ready");
+    const nowReady = claimN > 0 && !job.mating;
+    if (bar) bar.style.width = `${job.pct || 0}%`;
+    if (meta) {
+      if (nowReady) {
+        meta.textContent = `孕育完成 · 可領蛋×${claimN}${batchN > 1 ? `／${batchN}` : ""}`;
+      } else if (claimN > 0) {
+        meta.innerHTML = `交配中 · 剩餘 <strong data-breed-job-sec>${sec}</strong>s · 已可領×${claimN}`;
+      } else {
+        meta.innerHTML = `孕育中 · 剩餘 <strong data-breed-job-sec>${sec}</strong>s${
+          batchN > 1 ? ` · ×${batchN}` : ""
+        }`;
+      }
+    }
+    const wantBtn = claimN > 0;
+    const hasBtn = !!actions?.querySelector("[data-breed-claim]");
+    if (wantBtn && !hasBtn && actions) {
+      actions.innerHTML = `<button type="button" class="primary success" data-breed-claim="${escapeHtml(id)}">領取蛋×${claimN}</button>`;
+      actions.querySelector("[data-breed-claim]")?.addEventListener("click", () => {
+        const r = claimBreed(state, id);
+        saveState(state);
+        panelSub = { ...panelSub, party: "breed" };
+        render();
+        let tone = "";
+        if (r.ok && r.celebrate) {
+          if (r.hybrid) tone = "hybrid";
+          else if ((r.rarity ?? 0) >= 3) tone = "legend";
+          else tone = "celebrate";
+        }
+        if (r.ok) setFlash(r.msg, tone);
+        else flashResult(r);
+      });
+      flipped = true;
+    } else if (wantBtn && hasBtn) {
+      const btn = actions.querySelector("[data-breed-claim]");
+      const label = `領取蛋×${claimN}`;
+      if (btn && btn.textContent !== label) btn.textContent = label;
+    }
+    if (nowReady !== wasReady) {
+      row.classList.toggle("is-ready", nowReady);
+      flipped = true;
+    }
+  });
+  const domCount = rows.length;
+  const jobCount = (bs.jobs || []).length;
+  if (domCount !== jobCount) return { needRender: true, flipped: true };
+  return { needRender: false, flipped };
+}
+
 function patchTutorialHintLive() {
   if (!tutorialActive(state)) return;
   const hint = tutorialBannerHint(state);
@@ -2301,7 +2380,7 @@ function cultivatePanel(qiPct, next, m) {
 
   const shopOffers = shopView(state);
   const ranchFull = (state.ranch?.length || 0) + state.pets.length >= ranchCap(state);
-  const eggFull = (state.eggs?.length || 0) >= 6;
+  const eggFull = (state.eggs?.length || 0) >= EGG_CAP;
   const shopRows =
     shopOffers
       .filter((o) => {
@@ -2770,7 +2849,7 @@ function petsListView() {
     return wrapStage(
       nav,
       `<h2>靈寵 · 牧場</h2>
-      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 蛋 ${(state.eggs || []).length}/6 · 待命微產飼料／靈塵／潮霧令</p>
+      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 蛋 ${(state.eggs || []).length}/${EGG_CAP} · 待命微產飼料／靈塵／潮霧令</p>
       <h3>寵物蛋</h3>
       <ul class="list">${eggRows}</ul>
       <div class="ranch-sort" role="group" aria-label="牧場排序">${sortOpts}</div>
@@ -2892,28 +2971,42 @@ function petsBreedView() {
   const [ua, ub] = petView.breedParents || [];
   const pa = ranch.find((p) => p.uid === ua);
   const pb = ranch.find((p) => p.uid === ub);
+  const batch = clampBreedBatchCount(breedCount);
+  const cycleSec = Math.ceil((bs.cooldownTotalMs || BREED_COOLDOWN_MS || 45000) / 1000);
 
   const jobRows =
     (bs.jobs || [])
       .map((j) => {
         const sec = Math.ceil((j.leftMs || 0) / 1000);
-        if (j.ready) {
-          return `<li class="card-row breed-job is-ready">
+        const claimN = j.claimableCount || 0;
+        const batchN = j.batch || 1;
+        const claimBtn =
+          claimN > 0
+            ? `<button type="button" class="primary success" data-breed-claim="${escapeHtml(j.id)}">領取蛋×${claimN}</button>`
+            : "";
+        if (claimN > 0 && !j.mating) {
+          return `<li class="card-row breed-job is-ready" data-breed-job="${escapeHtml(j.id)}">
             <div>
               <strong>${escapeHtml(j.names?.[0] || "？")} × ${escapeHtml(j.names?.[1] || "？")}</strong>
-              <span class="muted">孕育完成 · 可領子代</span>
-              <div class="bar breed-cd-bar"><i style="width:100%"></i></div>
+              <span class="muted" data-breed-job-meta>孕育完成 · 可領蛋×${claimN}${batchN > 1 ? `／${batchN}` : ""}</span>
+              <div class="bar breed-cd-bar"><i data-breed-job-bar style="width:100%"></i></div>
             </div>
-            <button type="button" class="primary success" data-breed-claim="${escapeHtml(j.id)}">領取子代</button>
+            <div class="row-actions" data-breed-job-actions>${claimBtn}</div>
           </li>`;
         }
-        return `<li class="card-row breed-job">
+        return `<li class="card-row breed-job" data-breed-job="${escapeHtml(j.id)}" data-ready-at="${j.readyAt || 0}" data-started-at="${j.startedAt || 0}" data-batch="${batchN}" data-claimed-cycles="${j.claimedCycles || 0}" data-cycle-ms="${j.cycleMs || 45000}">
           <div>
             <strong>${escapeHtml(j.names?.[0] || "？")} × ${escapeHtml(j.names?.[1] || "？")}</strong>
-            <span class="muted">孕育中 · 剩餘 <strong>${sec}s</strong></span>
-            <div class="bar breed-cd-bar"><i style="width:${j.pct || 0}%"></i></div>
+            <span class="muted" data-breed-job-meta>${
+              claimN > 0
+                ? `交配中 · 剩餘 <strong data-breed-job-sec>${sec}</strong>s · 已可領×${claimN}`
+                : `孕育中 · 剩餘 <strong data-breed-job-sec>${sec}</strong>s${batchN > 1 ? ` · ×${batchN}` : ""}`
+            }</span>
+            <div class="bar breed-cd-bar"><i data-breed-job-bar style="width:${j.pct || 0}%"></i></div>
           </div>
-          <span class="pet-tag pet-tag-dispatch">交配中</span>
+          <div class="row-actions" data-breed-job-actions>${
+            claimBtn || `<span class="pet-tag pet-tag-dispatch">交配中</span>`
+          }</div>
         </li>`;
       })
       .join("") ||
@@ -2958,11 +3051,17 @@ function petsBreedView() {
       .join("") || `<li class="empty">牧場需要待命靈寵才能交配（派遣中不可用）。</li>`;
 
   const preview = pa && pb ? breedPreview(pa, pb) : null;
-  const bMat =
+  const unitMat =
     pa && pb
       ? breedMatCost(petGeneration(pa), petGeneration(pb))
       : { coral_shard: 1 };
+  const bMat = {};
+  for (const [id, n] of Object.entries(unitMat)) {
+    if (!n) continue;
+    bMat[id] = n * batch;
+  }
   const bMatHtml = matAffordHtml(bMat);
+  const stoneNeed = BREED_STONE_COST * batch;
   const canStart =
     selected.size === 2 &&
     bs.ready &&
@@ -2972,16 +3071,24 @@ function petsBreedView() {
     !matingBusy.has(pb.uid);
 
   const body = `<h2>靈寵 · 繁殖</h2>
-    <p class="lead">開始交配後進入孕育（約 ${Math.ceil((bs.cooldownTotalMs || 45000) / 1000)}s），就緒再領子代 · 欄位 ${bs.slotsUsed || 0}/${bs.queueMax || BREED_QUEUE_MAX} · ${BREED_STONE_COST} 石＋材料</p>
+    <p class="lead">交配產出<strong>蛋</strong>（再孵化）· 單次 ${cycleSec}s · 欄位 ${bs.slotsUsed || 0}/${bs.queueMax || BREED_QUEUE_MAX} · 蛋 ${(state.eggs || []).length}/${bs.eggCap || EGG_CAP}</p>
     <h3>孕育中／可領</h3>
     <ul class="list breed-job-list">${jobRows}</ul>
     <h3>新一輪交配</h3>
     <div class="breed-slots">${slotHtml(pa, 0)}${slotHtml(pb, 1)}</div>
     ${preview ? breedPreviewHtml(preview, bMatHtml) : `<p class="meta">選擇雙親後顯示預覽</p>`}
+    <div class="summon-controls breed-batch-controls">
+      <div class="summon-slider-row">
+        <span class="sweep-label">交配次數 <strong data-breed-count-label>${batch}</strong></span>
+        <input type="range" class="summon-slider" min="${BREED_BATCH_MIN}" max="${BREED_BATCH_MAX}" value="${batch}" data-breed-slider aria-label="交配次數" />
+        <span class="muted">${BREED_BATCH_MIN}–${BREED_BATCH_MAX}</span>
+      </div>
+      <p class="sweep-label">約 ${cycleSec * batch}s · ${stoneNeed} 石${batch > 1 ? ` · 可中途領蛋` : ""}</p>
+    </div>
     <h3>待命靈寵</h3>
-    <ul class="list">${list}</ul>`;
+    <ul class="list breed-pet-list">${list}</ul>`;
   const dock = `<div class="row">
-      <button type="button" class="primary${tutGlow({ type: "act", act: "start-breed" })}" data-breed-confirm ${canStart ? "" : "disabled"}>開始交配（${selected.size}/2）</button>
+      <button type="button" class="primary${tutGlow({ type: "act", act: "start-breed" })}" data-breed-confirm data-breed-count="${batch}" ${canStart ? "" : "disabled"}>開始交配×${batch}（${selected.size}/2）</button>
     </div>`;
   return { body, dock };
 }
@@ -4319,10 +4426,11 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const [a, b] = petView.breedParents || [];
-      const r = tryBreed(state, a, b);
+      const n = clampBreedBatchCount(btn.dataset.breedCount || breedCount);
+      const r = tryBreed(state, a, b, n);
       saveState(state);
       if (r.ok) {
-        // 開始交配＝進孕育欄（似秘境召喚），唔即出子代
+        // 開始交配＝進孕育欄（似秘境召喚），唔即出蛋
         petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
         panelSub = { ...panelSub, party: "breed" };
       }
@@ -4754,6 +4862,12 @@ function bind() {
       render();
     });
   });
+  app.querySelectorAll("[data-breed-slider]").forEach((input) => {
+    input.addEventListener("input", () => {
+      breedCount = clampBreedBatchCount(input.value);
+      render();
+    });
+  });
   app.querySelectorAll("[data-summon-slider]").forEach((input) => {
     input.addEventListener("input", () => {
       summonCount = clampDungeonSummonCount(input.value);
@@ -4873,13 +4987,20 @@ setInterval(() => {
     }
   }
   if (tab === "party" && panelSub.party === "breed" && petView.mode === "list") {
-    const bs = breedStatus(state);
-    const gestating = (bs.jobs || []).some((j) => !j.ready);
-    if (gestating || (bs.claimable || []).length) {
+    const breedPatch = patchBreedLive();
+    if (breedPatch.needRender) {
       saveState(state);
+      const scroller = document.querySelector(".stage-scroll");
+      const scrollTop = scroller?.scrollTop ?? 0;
       render();
+      requestAnimationFrame(() => {
+        const again = document.querySelector(".stage-scroll");
+        if (again) again.scrollTop = scrollTop;
+      });
       return;
     }
+    saveState(state);
+    return;
   }
   if (onTrainPanel) {
     const strip = document.querySelector("[data-live=train-idle]");
