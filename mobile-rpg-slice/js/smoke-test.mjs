@@ -1592,6 +1592,9 @@ assert(!claimBlocked.ok, "cannot claim next without clearReady");
 const idleSess = createTrainIdleSession(tzSt);
 assert(idleSess && idleSess.waveCount === TRAIN_MIST_WAVE_COUNT, "idle session 5 waves");
 assert(idleSess.foes?.length >= 1 && idleSess.allies?.length >= 1, "idle session units");
+assert(typeof idleSess.startedAt === "number", "idle session startedAt wall clock");
+// 回撥開始時間，驗證通關秒數用牆鐘而非出手步數
+idleSess.startedAt = Date.now() - 90_000;
 let idleSteps = 0;
 let idleWon = false;
 while (idleSteps < 500 && !idleWon) {
@@ -1602,6 +1605,11 @@ while (idleSteps < 500 && !idleWon) {
     const marked = markTrainIdleClearReady(tzSt, idleSess);
     assert(marked.ok && !marked.autoClaimed, "mark clear ready for mist1");
     assert(/首次通關：\d+s/.test(idleSess.resultLine || ""), "first clear time line");
+    assert(idleSess.clearSec >= 90, "clear sec uses wall clock not fight ticks");
+    assert(
+      idleSess.clearSec !== (idleSess.fightTicks | 0) || (idleSess.fightTicks | 0) >= 90,
+      "clear sec not equal to fight-tick count alone"
+    );
     break;
   }
   if (step.status === "restart") break;
@@ -1613,6 +1621,7 @@ assert(
   /首次通關：\d+s/.test(tzSt.trainMap.zones.shore.lastClear?.line || ""),
   "shore zone stores clear line"
 );
+assert(tzSt.trainMap.zones.shore.lastClear?.sec >= 90, "persisted clear sec wall clock");
 assert(ACTIVE_PET_MAX === 3, "party size stays 3 for formation slots");
 // per-zone clear line: ruins empty until cleared; shore keeps its own
 tzSt.trainMap.zones.ruins = tzSt.trainMap.zones.ruins || { tiersCleared: 0 };
@@ -1708,6 +1717,11 @@ assert(uiSrc2.includes("combat-formation"), "ui formation roster class");
 assert(uiSrc2.includes("formationAllyPlacement"), "ui uses ally placement helper");
 assert(uiSrc2.includes("FORMATION_SLOT_COUNT"), "ui 3-slot formation");
 assert(uiSrc2.includes("persistTrainIdleClearResult"), "ui persists zone lastClear");
+assert(uiSrc2.includes("idleCombatResultLine"), "ui gates clear line to ended session");
+assert(
+  !/trainIdleCombatView\(state\)\.lastClearLine\s*\|\|/.test(uiSrc2),
+  "ui no longer prefers lastClearLine for live hit footer"
+);
 assert(uiSrc2.includes("is-defender"), "ui defender highlight");
 assert(uiSrc2.includes("data-claim-tier"), "ui claim next mist tier");
 assert(uiSrc2.includes("去下一層"), "ui claim next label");

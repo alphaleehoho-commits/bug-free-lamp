@@ -1916,20 +1916,26 @@ function ensureIdleCombat() {
       canUnlockNext: !!view.canUnlockNext,
       session,
       logLine: view.logLine,
-      // 通關時間跟當前潮域，唔跨域帶舊結果
-      resultLine: view.lastClearLine || null,
+      // 只顯示本場結果；唔用上一場 lastClear 冒充未通關
+      resultLine: null,
       fx: emptyIdleFx(),
     };
   } else {
     idleCombat.logLine = view.logLine;
     idleCombat.clearReady = !!view.clearReady || !!idleCombat.clearReady;
     idleCombat.session.clearReady = idleCombat.clearReady;
-    // 同步當前域存檔結果（轉地後 view 已換）
-    if (!idleCombat.session.resultLine) {
-      idleCombat.resultLine = view.lastClearLine || null;
-    }
   }
   return idleCombat;
+}
+
+/** 掛機通關字：只喺本場已結束／暫停展示結果時顯示，進行中唔帶舊場 */
+function idleCombatResultLine(wrap) {
+  const s = wrap?.session;
+  if (!s) return "";
+  if (s.ended || s.phase === "pause") {
+    return s.resultLine || wrap.resultLine || "";
+  }
+  return "";
 }
 
 function patchIdleRosterFromSession(wrap) {
@@ -2007,9 +2013,8 @@ function tickIdleCombat() {
     session.clearReady = keepReady;
     wrap.session = session;
     wrap.petSig = idlePetSig(state);
-    // 重開後繼續顯示本域上次通關時間
-    wrap.resultLine =
-      trainIdleCombatView(state).lastClearLine || wrap.resultLine || null;
+    // 新一輪進行中唔顯示上一場通關時間
+    wrap.resultLine = null;
     wrap.fx = emptyIdleFx();
     patchIdleRosterFromSession(wrap);
     return;
@@ -2042,12 +2047,9 @@ function tickIdleCombat() {
     if (marked?.ok) {
       saveState(state);
       if (marked.autoClaimed) {
-        const keepResult = wrap.resultLine;
         idleCombat = null;
-        // 重建時 ensure 會讀本域 lastClear；先寫入再 render
         setFlash(marked.claim?.msg || "霧階全破 · 可挑戰域主", "unlock");
         render();
-        if (idleCombat && keepResult) idleCombat.resultLine = keepResult;
         return;
       }
       wrap.clearReady = true;
@@ -2109,11 +2111,7 @@ function trainIdleStripHtml() {
     wrap.clearReady && wrap.canUnlockNext && (s.tierIndex | 0) < TRAIN_TIER_COUNT - 1
       ? `<div class="row train-idle-claim"><button type="button" class="primary" data-claim-tier>去下一層</button></div>`
       : "";
-  const resultLine =
-    trainIdleCombatView(state).lastClearLine ||
-    wrap.resultLine ||
-    s.resultLine ||
-    "";
+  const resultLine = idleCombatResultLine(wrap);
   const resultCls =
     resultLine === "挑戰失敗" ? " is-fail" : resultLine ? " is-clear" : "";
   return `<div class="train-idle-strip" data-live="train-idle">
@@ -4499,11 +4497,7 @@ setInterval(() => {
         }
         const hitEl = strip.querySelector("[data-live=train-idle-hit]");
         if (hitEl) {
-          const resultLine =
-            trainIdleCombatView(state).lastClearLine ||
-            wrap.resultLine ||
-            s.resultLine ||
-            "";
+          const resultLine = idleCombatResultLine(wrap);
           hitEl.textContent = resultLine;
           hitEl.hidden = !resultLine;
           hitEl.classList.toggle("is-fail", resultLine === "挑戰失敗");
