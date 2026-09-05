@@ -74,6 +74,8 @@ import {
   gearSetBonus,
   GEAR_SETS,
   DISPATCH_MISSIONS,
+  DISPATCH_SLOT_MAX,
+  DISPATCH_BOARD_SIZE,
   tideSealCombatMult,
   tideSealGainForRealm,
   TIDE_SEAL_MIN_REALM,
@@ -102,6 +104,12 @@ import {
   BREED_STONE_COST,
   BREED_COOLDOWN_MS,
   BREED_QUEUE_MAX,
+  BREED_BATCH_MIN,
+  BREED_BATCH_MAX,
+  clampBreedBatchCount,
+  EGG_CAP,
+  makeBreedEgg,
+  genEggPrefix,
   FORGE_SCRAP_COST,
   BOND_COST_MAX,
   fusionStoneCost,
@@ -130,8 +138,17 @@ import {
   ACTIVE_PET_MAX,
   ABYSS_MUTATION_IDS,
   ABYSS_COSMETIC_IDS,
+  ABYSS_WIPE_KEEP_RATE,
   emptyAbyssDive,
   emptyMaterials,
+  OFFLINE_HINT_SEC,
+  OFFLINE_BANK_CAP_SEC,
+  elementExplain,
+  kindExplain,
+  personalityExplain,
+  skillTypeLabel,
+  ELEMENT_EXPLAIN,
+  KIND_EXPLAIN,
 } from "./data.js";
 import {
   affordMaterials,
@@ -158,6 +175,11 @@ import {
   tickCultivation,
   tickRanchIdle,
   claimDispatch,
+  startDispatch,
+  dispatchView,
+  ensureDispatchBoard,
+  petMatchesDispatchMission,
+  dispatchMissionReqLabel,
   upgradePet,
   isFusionUnlocked,
   dungeonAttackBlockReason,
@@ -173,6 +195,12 @@ import {
   stepTrainIdleSession,
   markTrainIdleClearReady,
   persistTrainIdleClearResult,
+  persistTrainIdleCombatState,
+  restoreTrainIdleCombatState,
+  clearTrainIdleCombatState,
+  claimOfflineBank,
+  offlineBankView,
+  clearOfflineHint,
   runTrainLayerCombat,
   challengeTrainWarden,
   setTrainSite,
@@ -277,12 +305,31 @@ assert(HYBRID_RECIPES.filter((r) => r.tier === "sub").length >= 4, "subs");
 
 assert(rollChildGeneration(0, 0) === 1, "0+0→1");
 assert(rollChildGeneration(1, 0) === 1, "1+0→1");
-assert(rollChildGeneration(2, 0) === 2, "2+0→2");
 assert(rollChildGeneration(3, 3) === 3, "3+3→3");
+/* 原生+高代：70%(G-1)/30%G，唔再 100% 高代 */
+let wild2hi = 0;
+for (let i = 0; i < 80; i++) {
+  if (rollChildGeneration(2, 0) === 2) wild2hi += 1;
+}
+assert(wild2hi > 10 && wild2hi < 50, "0+2 roughly 30% gen2");
+const odds02 = childGenerationOdds(0, 2);
+assert(odds02[0].gen === 1 && odds02[0].pct === 70 && odds02[1].gen === 2, "0+2 odds aligned with 1+2");
 
 const odds12 = childGenerationOdds(1, 2);
 assert(odds12[0].gen === 1 && odds12[0].pct === 70, "1+2 odds");
 assert(genLabel(0) === "原生" && genLabel(2) === "繁殖2代", "labels");
+assert(genEggPrefix(1) === "一代" && genEggPrefix(3) === "三代", "egg gen prefix");
+
+/* Gen mix cost：野生+2 唔平過／唔優過 1+2 */
+const cost02 = breedMatCost(0, 2);
+const cost12 = breedMatCost(1, 2);
+const cost00 = breedMatCost(0, 0);
+const cost11 = breedMatCost(1, 1);
+assert(cost00.coral_shard === 1 && cost00.abyss_ink === 0, "0+0 mats");
+assert(cost11.coral_shard === 2 && cost11.abyss_ink === 1, "1+1 mats");
+assert(cost12.coral_shard === 3 && cost12.abyss_ink === 2, "1+2 mats");
+assert(cost02.coral_shard === 3 && cost02.abyss_ink === 3, "0+2 costs more abyss than 1+2");
+assert(cost02.abyss_ink > cost12.abyss_ink, "wild+gen2 not cheaper abyss");
 
 const fox = buildPetStats({
   id: "a",
@@ -532,6 +579,28 @@ assert(stageAt(10).need > stageAt(6).need, "stage scaling");
 const br5 = breakthroughView({ ...fakeState, realm: 5, qi: 99999, stones: 9999, scrap: 99, dust: 99, feed: 99, combatsWon: 99, clearedDungeons: { tide_4: true }, pets: [{ generation: 3 }], ranch: [], stats: { bonds: 5, fusions: 5, breeds: 5 }, bestiary: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`k${i}`, true])), master: { equip: { weapon: "a", armor: "b", accessory: "c" } } });
 assert(!br5.maxed && br5.next.id === 6, "no stage cap");
 assert(breakthroughGateFor(6).checks.some((c) => c.dungeonId === "tide_4"), "stage6 needs t4");
+/* Advance checklist must surface every gate (incl. bestiary past the old 6-row truncate). */
+const br2gates = breakthroughView({
+  ...fakeState,
+  realm: 2,
+  qi: 99999,
+  stones: 9999,
+  scrap: 99,
+  dust: 99,
+  combatsWon: 99,
+  clearedDungeons: { tide_2: true },
+  pets: [makeStarterPet(), makeStarterPet()],
+  ranch: [],
+  stats: { breeds: 1 },
+  bestiary: { only: true },
+});
+assert(br2gates.items.length > 6, "realm2→3 breakthrough has >6 checklist rows");
+assert(br2gates.items.some((i) => i.label.includes("圖鑑") && !i.ok), "bestiary gate visible & unmet");
+assert(!br2gates.ready, "not ready when bestiary unmet even if earlier rows met");
+assert(
+  br2gates.items.slice(0, 6).every((i) => i.ok) && br2gates.items.slice(6).some((i) => !i.ok),
+  "old slice(0,6) would hide unmet gates past row 6"
+);
 assert(dungeonsForRealm(4).includes("tide_5"), "realm4 sees t5");
 assert(dungeonsForRealm(0).length === 4, "min 4 dungeons");
 const t5 = buildDungeonForTier(5);
@@ -610,6 +679,10 @@ assert(personalityCombatFor("blessed")?.atkMult >= 1, "blessed combat buff");
 assert(GEAR_SETS.tide && gearSetBonus(["tide_blade", "moss_vest"]).atk === 3, "set2");
 assert(gearSetBonus(["core_fang", "abyss_plate", "gloom_sigil"]).labels.some((l) => l.includes("三件")), "set3");
 assert(DISPATCH_MISSIONS.length >= 3, "dispatch missions");
+assert(DISPATCH_SLOT_MAX === 3, "dispatch concurrent slots 3");
+assert(DISPATCH_BOARD_SIZE === 3, "dispatch board size 3");
+assert(DISPATCH_MISSIONS.some((m) => m.needElement), "dispatch needElement");
+assert(DISPATCH_MISSIONS.some((m) => m.needKind), "dispatch needKind");
 assert(tideSealGainForRealm(5) >= 1 && tideSealGainForRealm(4) === 0, "seal gain");
 assert(tideSealCombatMult(5) === 1.1, "seal mult");
 assert(TIDE_SEAL_MIN_REALM === 5, "seal min realm");
@@ -640,6 +713,9 @@ assert(
 );
 assert(upgradeMatCost(1).tide_dew >= 1, "upgrade mats");
 assert(breedMatCost(0, 0).coral_shard >= 1, "breed mats");
+assert(clampBreedBatchCount(0) === 1 && clampBreedBatchCount(99) === 10, "breed batch clamp");
+assert(BREED_BATCH_MIN === 1 && BREED_BATCH_MAX === 10, "breed batch 1-10");
+assert(EGG_CAP === 6, "egg cap");
 assert(DISPATCH_MISSIONS.length >= 11, "more dispatch");
 assert(DISPATCH_MISSIONS.some((m) => m.eggChance), "dispatch egg chance");
 assert(DISPATCH_MISSIONS.some((m) => m.id === "egg_shore"), "shore egg mission");
@@ -997,6 +1073,86 @@ const tickMatSt = {
 tickCultivation(tickMatSt);
 assert(Math.floor(tickMatSt.materials.tide_dew) >= 1, "deterministic train mats over 40s");
 
+/* Offline bank: accrue without wallet credit until claim; accumulate up to cap */
+const offSt = {
+  realm: 0,
+  qi: 100,
+  stones: 0,
+  feed: 0,
+  dust: 0,
+  materials: { ...emptyMaterials(), tide_dew: 0 },
+  trainSite: "shore",
+  pets: [makeStarterPet()],
+  ranch: [],
+  lastTick: Date.now() - (OFFLINE_HINT_SEC + 120) * 1000,
+  daily: { date: todayKey(), idleSec: 0, progress: {}, claimed: {} },
+  achievements: {},
+  stats: {},
+  clearedDungeons: {},
+  master: { name: "t", equip: {}, skillIds: [] },
+  log: [],
+  offlineBank: null,
+  offlineHint: null,
+  tutorial: { done: true, step: null, flags: {} },
+};
+const qiBeforeOff = offSt.qi;
+const dewBeforeOff = Math.floor(offSt.materials.tide_dew || 0);
+tickCultivation(offSt);
+assert((offSt.qi | 0) === (qiBeforeOff | 0), "offline tick does not credit qi until claim");
+assert(Math.floor(offSt.materials.tide_dew || 0) === dewBeforeOff, "offline tick does not credit mats until claim");
+const bank1 = offlineBankView(offSt);
+assert(bank1.hasPending && bank1.sec >= OFFLINE_HINT_SEC, "offline bank has pending after gap");
+assert((bank1.qi | 0) > 0 || (bank1.feed | 0) > 0 || Object.keys(bank1.materials || {}).length > 0, "offline bank accrued gains");
+assert(offSt.offlineHint?.pending, "offline hint marks pending collect");
+const sec1 = bank1.sec;
+// second offline session accumulates
+offSt.lastTick = Date.now() - (OFFLINE_HINT_SEC + 60) * 1000;
+tickCultivation(offSt);
+const bank2 = offlineBankView(offSt);
+assert(bank2.sec > sec1, "uncollected offline bank keeps accumulating");
+clearOfflineHint(offSt);
+assert(offlineBankView(offSt).hasPending, "dismiss hint keeps bank");
+const claimOff = claimOfflineBank(offSt);
+assert(claimOff.ok, "claim offline bank ok");
+assert((offSt.qi | 0) > (qiBeforeOff | 0), "claim credits qi");
+assert(!offlineBankView(offSt).hasPending, "bank empty after claim");
+// cap: fill bank to cap then refuse more
+offSt.offlineBank = {
+  qi: 1,
+  feed: 0,
+  dust: 0,
+  materials: {},
+  sec: OFFLINE_BANK_CAP_SEC,
+  siteName: "潮岸",
+  capped: true,
+};
+offSt.lastTick = Date.now() - (OFFLINE_HINT_SEC + 300) * 1000;
+const qiAtCap = offSt.qi;
+tickCultivation(offSt);
+assert((offSt.offlineBank.sec | 0) === OFFLINE_BANK_CAP_SEC, "offline bank respects cap sec");
+assert((offSt.qi | 0) === (qiAtCap | 0), "capped offline does not leak to wallet");
+assert(offSt.offlineBank.capped, "offline bank marked capped");
+
+/* Persist / restore idle combat session startedAt across save */
+const persistWrap = {
+  zoneId: "shore",
+  tierIndex: 0,
+  petSig: "p",
+  formationId: "balanced",
+  clearReady: false,
+  canUnlockNext: true,
+  resultLine: null,
+  logLine: "test",
+  session: { startedAt: 1_700_000_000_000, waveIndex: 2, waveCount: 5, ended: false },
+};
+const persistSt = { trainIdleCombat: null };
+persistTrainIdleCombatState(persistSt, persistWrap);
+const restored = restoreTrainIdleCombatState(persistSt);
+assert(restored?.session?.startedAt === 1_700_000_000_000, "restore idle startedAt wall clock");
+assert(restored.session.waveIndex === 2, "restore idle wave progress");
+clearTrainIdleCombatState(persistSt);
+assert(!restoreTrainIdleCombatState(persistSt), "clear idle combat state");
+
 /* P13: egg-first tutorial flow */
 const tut = { done: false, step: "hatch_starter", flags: { starterHatched: true } };
 const tutPet = makeStarterPet();
@@ -1331,12 +1487,18 @@ const uiSrc = readFileSync(join(__dir, "ui.js"), "utf8");
 assert(uiSrc.includes("data-summon"), "ui summon bind");
 assert(uiSrc.includes("data-attack-preview"), "ui attack preview");
 assert(uiSrc.includes("data-open-dispatch"), "ui dispatch picker modal");
+assert(uiSrc.includes('party: "dispatch"'), "ui stay on dispatch after start");
+assert(!/confirm-dispatch[\s\S]{0,400}party:\s*"ranch"/.test(uiSrc), "ui not redirect ranch after dispatch");
+assert(uiSrc.includes("petMatchesDispatchMission"), "ui filters dispatch req pets");
 assert(uiSrc.includes("data-summon-slider"), "ui summon slider");
 assert(uiSrc.includes("data-ranch-sort"), "ui ranch sort");
 assert(uiSrc.includes("pet-grid"), "ui ranch 2-col grid");
 assert(uiSrc.includes('id: "breed"'), "ui breed party sub-tab");
 assert(uiSrc.includes("breed-cd-bar"), "ui breed cd bar");
 assert(uiSrc.includes("data-breed-claim"), "ui breed claim after CD");
+assert(uiSrc.includes("data-breed-slider"), "ui breed batch slider");
+assert(uiSrc.includes("領取蛋"), "ui claim egg label");
+assert(uiSrc.includes("patchBreedLive"), "ui breed live patch no scroll jump");
 assert(uiSrc.includes("data-dungeon-blocked"), "ui dungeon blocked reason");
 assert(BREED_QUEUE_MAX === 3, "breed queue max 3");
 assert(uiSrc.includes("panel-subnav-dock"), "ui subnav near bottom tabs");
@@ -1390,7 +1552,14 @@ const idleFightSt = {
 tickRanchIdle(idleFightSt, 100);
 assert(idleSt.feed > idleFightSt.feed, "diligent idle > fierce idle");
 
-const mission = DISPATCH_MISSIONS.find((m) => !m.needSite) || DISPATCH_MISSIONS[0];
+const mission = DISPATCH_MISSIONS.find((m) => m.id === "forage") || DISPATCH_MISSIONS.find((m) => !m.needSite);
+assert(mission?.needElement === "tide", "forage needs tide");
+assert(petMatchesDispatchMission({ elementId: "tide", kind: "獸" }, mission), "tide beast matches forage");
+assert(!petMatchesDispatchMission({ elementId: "flame", kind: "獸" }, mission), "flame fails forage");
+assert(dispatchMissionReqLabel(mission).includes("潮"), "req label tide");
+const kindMission = DISPATCH_MISSIONS.find((m) => m.needKind && !m.needElement);
+assert(kindMission && !petMatchesDispatchMission({ elementId: "tide", kind: "獸" }, kindMission), "kind gate rejects");
+assert(petMatchesDispatchMission({ elementId: "tide", kind: kindMission.needKind }, kindMission), "kind gate accepts");
 const gen3Pet = {
   ...buildPetStats({
     id: "d3",
@@ -1419,6 +1588,7 @@ const dispSt = {
       claimed: false,
     },
   ],
+  dispatchBoard: [],
   stats: {},
   daily: { date: todayKey(), progress: {}, claimed: {}, idleSec: 0 },
   log: [],
@@ -1430,6 +1600,104 @@ assert(claimR.ok, "claim dispatch ok");
 if (beforeStones) {
   assert(dispSt.stones >= Math.round(beforeStones * 1.25), "gen3 dispatch reward mult");
 }
+assert(dispSt.dispatchBoard.length >= 1, "claim refills dispatch board");
+assert(claimR.boardFilled, "claim returns boardFilled id");
+
+/* Dispatch board rotate + slot cap + restrictions */
+const dispTidePet = {
+  ...buildPetStats({
+    id: "dt",
+    species: "reefox",
+    element: "tide",
+    personality: "gentle",
+    cost: 0,
+  }),
+  uid: "disp-tide",
+};
+const dispScalePet = {
+  ...buildPetStats({
+    id: "ds",
+    species: "tidecarp",
+    element: "tide",
+    personality: "gentle",
+    cost: 0,
+  }),
+  uid: "disp-scale",
+};
+const boardSt = {
+  realm: 0,
+  clearedDungeons: {},
+  trainMap: {},
+  ranch: [dispTidePet, dispScalePet],
+  pets: [],
+  dispatches: [],
+  dispatchBoard: [],
+  eggs: [],
+  log: [],
+  stats: {},
+  daily: { date: todayKey(), progress: {}, claimed: {}, idleSec: 0 },
+  achievements: {},
+};
+ensureDispatchBoard(boardSt, () => 0);
+assert(boardSt.dispatchBoard.length === 2, "early board fills unlocked only (2)");
+assert(boardSt.dispatchBoard.every((id) => ["forage", "egg_shore"].includes(id)), "early board from shore pool");
+const dv0 = dispatchView(boardSt);
+assert(dv0.slotsMax === 3 && dv0.boardSize === 3, "view exposes slot/board caps");
+assert(dv0.missions.length === 2, "view shows board missions only");
+const wrongKind = startDispatch(boardSt, "egg_shore", ["disp-tide"]);
+assert(!wrongKind.ok && String(wrongKind.msg).includes("限制"), "kind restriction blocks");
+const okStart = startDispatch(boardSt, "forage", ["disp-tide"]);
+assert(okStart.ok, "tide pet starts forage");
+assert(!boardSt.dispatchBoard.includes("forage"), "started mission leaves board");
+assert(boardSt.dispatches.length === 1, "one active dispatch");
+const beforeBoard = [...boardSt.dispatchBoard];
+boardSt.dispatches[0].readyAt = Date.now() - 1;
+const claimBoard = claimDispatch(boardSt, boardSt.dispatches[0].dispatchId);
+assert(claimBoard.ok, "claim after ready");
+assert(boardSt.dispatchBoard.length === beforeBoard.length + 1, "board grew after claim");
+assert(claimBoard.boardFilled, "random mission pulled on claim");
+
+const nowCap = Date.now();
+const capSt = {
+  realm: 0,
+  ranch: [
+    { ...dispTidePet, uid: "c1" },
+    { ...dispScalePet, uid: "c2" },
+    { ...dispTidePet, uid: "c3" },
+    { ...dispScalePet, uid: "c4" },
+  ],
+  pets: [],
+  dispatches: [
+    {
+      dispatchId: "cap-a",
+      missionId: "forage",
+      petUids: ["c1"],
+      readyAt: nowCap + 60_000,
+      claimed: false,
+    },
+    {
+      dispatchId: "cap-b",
+      missionId: "egg_shore",
+      petUids: ["c2"],
+      readyAt: nowCap + 60_000,
+      claimed: false,
+    },
+    {
+      dispatchId: "cap-c",
+      missionId: "dust_hunt",
+      petUids: ["c3"],
+      readyAt: nowCap + 60_000,
+      claimed: false,
+    },
+  ],
+  dispatchBoard: ["forage"],
+  log: [],
+  stats: {},
+  daily: { date: todayKey(), progress: {}, claimed: {}, idleSec: 0 },
+  achievements: {},
+};
+const over = startDispatch(capSt, "forage", ["c4"]);
+assert(!over.ok && String(over.msg).includes("滿"), "4th concurrent blocked at 3");
 
 /* Feed upgrade deducts; fusion gated; dungeon realm block msg */
 const feedUpSt = {
@@ -1468,8 +1736,8 @@ const blockRealm = dungeonAttackBlockReason(
 );
 assert(blockRealm && blockRealm.includes("御靈"), "tide3 needs 御靈");
 
-/* Breed queue: start → gestate CD → claim (like dungeon summon) */
-function mkBreedPet(uid, species, element) {
+/* Breed queue: start → gestate CD → claim eggs → hatch (egg-first) */
+function mkBreedPet(uid, species, element, generation = 0) {
   return {
     ...buildPetStats({
       id: uid,
@@ -1479,19 +1747,22 @@ function mkBreedPet(uid, species, element) {
       cost: 0,
     }),
     uid,
-    generation: 0,
+    generation,
   };
 }
 const breedQSt = {
-  stones: 500,
-  materials: { coral_shard: 20 },
+  stones: 5000,
+  materials: { coral_shard: 80, abyss_ink: 40 },
   ranch: [
     mkBreedPet("bq-a", "reefox", "tide"),
     mkBreedPet("bq-b", "reefox", "tide"),
     mkBreedPet("bq-c", "glowfin", "tide"),
     mkBreedPet("bq-d", "glowfin", "tide"),
+    mkBreedPet("bq-e", "nightmoth", "gloom", 1),
+    mkBreedPet("bq-f", "nightmoth", "gloom", 2),
   ],
   pets: [],
+  eggs: [],
   breedJobs: [],
   breedReadyAt: 0,
   breedPair: null,
@@ -1502,12 +1773,16 @@ const breedQSt = {
   daily: { date: todayKey(), progress: {}, claimed: {} },
   breedGoals: { date: todayKey(), week: "w", progress: {}, claimed: {} },
   achievements: {},
+  realm: 0,
 };
 const ranchBefore = breedQSt.ranch.length;
+const eggsBefore = breedQSt.eggs.length;
 const start1 = tryBreed(breedQSt, "bq-a", "bq-b");
 assert(start1.ok && start1.started && start1.job?.id, "breed start enqueues job");
-assert(breedQSt.ranch.length === ranchBefore, "breed start does not birth yet");
+assert(breedQSt.ranch.length === ranchBefore, "breed start does not birth pet");
+assert(breedQSt.eggs.length === eggsBefore, "breed start does not grant egg yet");
 assert(breedQSt.breedJobs.length === 1, "one gestating job");
+assert(breedQSt.breedJobs[0].batch === 1, "default batch 1");
 const start2 = tryBreed(breedQSt, "bq-c", "bq-d");
 assert(start2.ok && breedQSt.breedJobs.length === 2, "second concurrent mating ok");
 const busyDup = tryBreed(breedQSt, "bq-a", "bq-c");
@@ -1517,14 +1792,115 @@ const early = claimBreed(breedQSt, start1.job.id);
 assert(!early.ok && String(early.msg).includes("孕育"), "cannot claim before CD");
 const bsMid = breedStatus(breedQSt);
 assert(bsMid.slotsUsed === 2 && bsMid.claimable.length === 0, "status shows gestating");
-breedQSt.breedJobs[0].readyAt = Date.now() - 1;
+const nowReady = Date.now() - 1;
+breedQSt.breedJobs[0].readyAt = nowReady;
+if (breedQSt.breedJobs[0].cycles?.[0]) breedQSt.breedJobs[0].cycles[0].readyAt = nowReady;
 const claim1 = claimBreed(breedQSt, start1.job.id);
-assert(claim1.ok && claim1.pet, "claim after ready births child");
-assert(breedQSt.ranch.length === ranchBefore + 1, "child added on claim");
+assert(claim1.ok && claim1.egg && !claim1.pet, "claim after ready grants egg not pet");
+assert(claim1.eggs?.length === 1, "claim returns eggs array");
+assert(breedQSt.eggs.length === eggsBefore + 1, "egg added on claim");
+assert(breedQSt.ranch.length === ranchBefore, "ranch unchanged until hatch");
 assert(breedQSt.breedJobs.length === 1, "claimed job removed");
+const breedEgg = breedQSt.eggs[breedQSt.eggs.length - 1];
+assert(breedEgg.source === "breed" && breedEgg.genes, "breed egg stores genes");
+assert(/代.蛋$/.test(breedEgg.name), "breed egg name like 一代獸蛋");
+assert(String(breedEgg.desc || "").includes("可以孵化出"), "breed egg desc");
+assert(breedEgg.generation >= 1, "egg generation locked at claim");
+assert(breedEgg.kind, "egg kind locked at claim");
+
+const hatchStart = startHatch(breedQSt, breedEgg.uid);
+assert(hatchStart.ok, "start hatch breed egg");
+breedEgg.readyAt = Date.now() - 1;
+/* 騰牧場位再領寵 */
+breedQSt.ranch.pop();
+const hatchClaim = claimHatch(breedQSt, breedEgg.uid);
+assert(hatchClaim.ok && hatchClaim.pet, "hatch breed egg to pet");
+assert(breedQSt.ranch.length === ranchBefore, "pet after hatch (pop+push)");
+assert(hatchClaim.pet.generation === breedEgg.generation, "hatched gen matches egg");
+assert(hatchClaim.pet.bornFrom?.length === 2, "hatched has parents");
+
 breedQSt.materials.breed_ticket = 1;
 const ticket = useBreedTicket(breedQSt);
 assert(ticket.ok && breedStatus(breedQSt).claimable.length === 1, "breed ticket readies job");
+const claimTicket = claimBreed(breedQSt, breedQSt.breedJobs[0].id);
+assert(claimTicket.ok && claimTicket.egg, "ticket claim yields egg");
+
+/* Batch ×10：時長×N、中途可領 */
+const batchSt = {
+  stones: 5000,
+  materials: { coral_shard: 99, abyss_ink: 99 },
+  ranch: [
+    mkBreedPet("bx-a", "reefox", "tide"),
+    mkBreedPet("bx-b", "reefox", "tide"),
+  ],
+  pets: [],
+  eggs: [],
+  breedJobs: [],
+  breedReadyAt: 0,
+  breedPair: null,
+  dispatches: [],
+  log: [],
+  stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+  bestiary: {},
+  daily: { date: todayKey(), progress: {}, claimed: {} },
+  breedGoals: { date: todayKey(), week: "w", progress: {}, claimed: {} },
+  achievements: {},
+  realm: 0,
+};
+const stonesBeforeBatch = batchSt.stones;
+const coralBeforeBatch = batchSt.materials.coral_shard;
+const start10 = tryBreed(batchSt, "bx-a", "bx-b", 10);
+assert(start10.ok && start10.batch === 10, "breed ×10 starts");
+assert(batchSt.breedJobs[0].batch === 10 && batchSt.breedJobs[0].cycles.length === 10, "10 cycles rolled");
+assert(batchSt.stones === stonesBeforeBatch - BREED_STONE_COST * 10, "stones ×10");
+assert(batchSt.materials.coral_shard === coralBeforeBatch - breedMatCost(0, 0).coral_shard * 10, "coral ×10");
+const t0 = batchSt.breedJobs[0].startedAt;
+assert(batchSt.breedJobs[0].readyAt === t0 + BREED_COOLDOWN_MS * 10, "10× duration 450s");
+const job10 = batchSt.breedJobs[0];
+const fakeNow = Date.now();
+job10.startedAt = fakeNow - 92_000;
+job10.readyAt = job10.startedAt + BREED_COOLDOWN_MS * 10;
+for (let i = 0; i < 10; i++) {
+  job10.cycles[i].readyAt = job10.startedAt + BREED_COOLDOWN_MS * (i + 1);
+}
+const bs92 = breedStatus(batchSt);
+const j92 = bs92.jobs[0];
+assert(j92.claimableCount === 2, "at ~92s claimable ×2");
+assert(j92.mating === true, "still mating while partial ready");
+const midClaim = claimBreed(batchSt, job10.id);
+assert(midClaim.ok && midClaim.claimedCount === 2, "midway claim ×2 eggs");
+assert(batchSt.eggs.length === 2, "2 eggs after midway");
+assert(batchSt.breedJobs.length === 1, "job remains after partial claim");
+assert(batchSt.breedJobs[0].claimedCycles === 2, "claimedCycles=2");
+job10.readyAt = Date.now() - 1;
+for (const c of job10.cycles) c.readyAt = Date.now() - 1;
+const restClaim = claimBreed(batchSt, job10.id);
+assert(restClaim.ok && restClaim.claimedCount === 4, "egg cap limits rest claim to 4 (6-2)");
+assert(batchSt.eggs.length === 6, "egg cap 6 filled");
+batchSt.eggs.pop();
+const moreClaim = claimBreed(batchSt, job10.id);
+assert(moreClaim.ok && moreClaim.claimedCount === 1, "claim one more after freeing slot");
+assert(batchSt.breedJobs[0].claimedCycles === 7, "7 cycles claimed");
+
+const sampleGenes = { species: "nightmoth", element: "gloom", personality: "sly", rarity: 0, generation: 1 };
+const namedEgg = makeBreedEgg({
+  genes: sampleGenes,
+  bornBonus: { atk: 1, hp: 2, spd: 0 },
+  parentUids: ["a", "b"],
+});
+assert(namedEgg.name === "一代蟲蛋", "egg name 一代蟲蛋");
+assert(namedEgg.desc === "可以孵化出一代蟲寵物", "egg desc");
+const hatchedFromNamed = hatchPetFromEgg(namedEgg);
+assert(hatchedFromNamed.kind === "蟲" && hatchedFromNamed.generation === 1, "hatch uses stored genes");
+
+const breedG1 = mkBreedPet("g1", "reefox", "tide", 1);
+const breedG2 = mkBreedPet("g2", "reefox", "tide", 2);
+const prev12 = breedPreview(breedG1, breedG2);
+assert(prev12.matCost.coral_shard === 3 && prev12.matCost.abyss_ink === 2, "preview 1+2 mats");
+const wildParent = mkBreedPet("w0", "reefox", "tide", 0);
+const prev02 = breedPreview(wildParent, breedG2);
+assert(prev02.matCost.abyss_ink === 3, "preview 0+2 more abyss");
+assert(prev02.genOdds[0].pct === 70 && prev02.genOdds[0].gen === 1, "preview 0+2 odds");
 
 /* Tide zones: mist tiers, depth yield, warden keys */
 assert(TRAIN_ZONE_CHAIN.length === TRAIN_SITES.length, "zone chain matches sites");
@@ -1728,11 +2104,23 @@ assert(uiSrc2.includes("去下一層"), "ui claim next label");
 assert(!uiSrc2.includes("data-advance-tier"), "ui no manual advance fight button");
 assert(!uiSrc2.includes("advanceCooldownAt"), "ui no advance cooldown");
 assert(uiSrc2.includes("createTrainIdleSession"), "ui idle wave session");
+assert(uiSrc2.includes("tickIdleCombat({ background"), "ui idle combat ticks in background");
+assert(uiSrc2.includes("persistTrainIdleCombatState"), "ui persists idle combat session");
+assert(uiSrc2.includes("restoreTrainIdleCombatState"), "ui restores idle combat session");
+assert(uiSrc2.includes("claim-offline"), "ui offline collect button");
+assert(uiSrc2.includes("claimOfflineBank"), "ui claims offline bank");
+assert(uiSrc2.includes("visibilitychange"), "ui catch-up on tab visible");
 assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
 assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
 assert(uiSrc2.includes('id: "mats"'), "ui materials sub-tab");
+assert(!uiSrc2.includes("br.items.slice(0, 6)"), "ui breakthrough checklist shows all gates");
+assert(!uiSrc2.includes("gateCompact"), "ui no truncated gateCompact list");
+assert(uiSrc2.includes("breakthrough-gates"), "ui breakthrough gates list class");
+assert(uiSrc2.includes("未齊·"), "ui break button hints first unmet");
+assert(uiSrc2.includes("breakthrough-miss-note"), "ui shows remaining gate count");
 const cssSrc = readFileSync(join(__dir, "../css/style.css"), "utf8");
+assert(cssSrc.includes("cond-list.is-compact"), "css compact breakthrough checklist");
 assert(cssSrc.includes("combat-formation-side"), "css formation side grid");
 assert(cssSrc.includes("is-empty-slot"), "css empty formation slots");
 assert(cssSrc.includes('data-lane="front"'), "css front lane columns");
@@ -1775,16 +2163,69 @@ assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
   assert(av.unlocked && av.freeLeft, "abyss unlocked free first");
   const s1 = startAbyssDive(abyssSt);
   assert(s1.ok && s1.won && s1.depth === 1 && s1.combatEvents?.length, "abyss floor 1 clear");
+  assert(s1.clearedDepth === 1 && s1.nextFloor?.depth === 2, "abyss settle cleared + next preview");
+  assert(String(s1.msg || "").includes("已通關第 1 層"), "abyss win copy means cleared");
+  assert(s1.combatKind === "abyss" && s1.gritGained > 0, "abyss grit on clear");
   assert(abyssSt.abyssDive.run?.pendingGrit > 0, "pending grit after floor");
   const s3 = advanceAbyssDive(abyssSt);
   assert(s3.ok, "abyss floor 2");
   const s4 = advanceAbyssDive(abyssSt);
   assert(s4.ok && (abyssSt.abyssDive.run?.mutationIds || []).length >= 1, "mutation by floor 3");
+  if (s4.won) {
+    assert(s4.nextFloor?.depth === 4, "next floor after clear 3");
+    assert(s4.mutations?.length >= 1, "settlement lists mutations");
+  }
   const before = Math.floor(abyssSt.materials.abyss_grit || 0);
   const ret = retreatAbyssDive(abyssSt);
   assert(ret.ok && ret.grit > 0, "retreat grants grit");
+  assert(String(ret.msg || "").includes("已通第"), "retreat copy cleared depth");
   assert(Math.floor(abyssSt.materials.abyss_grit) === before + ret.grit, "grit banked");
   assert(!abyssSt.abyssDive.run, "run cleared on retreat");
+  // wipe settlement fields
+  {
+    const wipeSt = {
+      realm: 1,
+      pets: [
+        {
+          uid: "aw1",
+          name: "弱測",
+          speciesId: "reefox",
+          elementId: "tide",
+          personalityId: "fierce",
+          kind: "獸",
+          atk: 1,
+          hp: 8,
+          spd: 1,
+          level: 1,
+          skillLevel: 1,
+          generation: 1,
+          bloodmarks: [],
+        },
+      ],
+      materials: { ...emptyMaterials(), mist_token: 5, abyss_grit: 0 },
+      clearedDungeons: { tide_1: true },
+      formation: "balanced",
+      tactics: "balanced",
+      eggs: [],
+      log: [],
+      abyssDive: {
+        ...emptyAbyssDive(),
+        run: {
+          seed: "wipe-test",
+          depth: 2,
+          pendingGrit: 20,
+          mutationIds: ["mut_no_heal"],
+          startedAt: Date.now(),
+        },
+      },
+    };
+    const wipe = advanceAbyssDive(wipeSt);
+    assert(wipe.ok && wipe.wiped && !wipe.won, "abyss wipe result");
+    assert(wipe.failedDepth === 3 && wipe.clearedDepth === 2, "wipe depth copy");
+    assert(wipe.gritKept === Math.floor(20 * ABYSS_WIPE_KEEP_RATE), "wipe keep rate");
+    assert(wipe.combatKind === "abyss" && wipe.combatEvents?.length, "wipe still has playback");
+    assert(!wipeSt.abyssDive.run, "wipe clears run");
+  }
   assert(buyAbyssInsurance(abyssSt).ok, "buy insurance");
   assert(buyAbyssCosmetic(abyssSt, "veil_mark").ok, "buy cosmetic");
   assert(abyssSt.abyssDive.cosmetics.veil_mark, "cosmetic owned");
@@ -1795,6 +2236,39 @@ assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
 assert(uiSrc2.includes("abyssDiveView"), "ui abyss view");
 assert(uiSrc2.includes("data-abyss-start"), "ui abyss start");
 assert(uiSrc2.includes("潮淵"), "ui abyss tab label");
+assert(uiSrc2.includes("isAbyssCombat"), "ui excludes abyss from farm skip");
+assert(uiSrc2.includes("abyssSettlementHtml"), "ui abyss settlement block");
+assert(uiSrc2.includes("abyss-continue-floor"), "ui continue next floor");
+assert(uiSrc2.includes("abyss-retreat-settle"), "ui retreat from combat settle");
+assert(uiSrc2.includes("已通關第"), "ui cleared-floor copy");
+assert(uiSrc2.includes("下一層預覽"), "ui next floor preview");
+assert(cssSrc.includes("combat-report-card--abyss-settle"), "css abyss settle enlarge");
+
+/* Pet detail explain tabs */
+{
+  const el = elementExplain("tide");
+  assert(el?.name === "潮" && el.beats === "焰" && el.beatenBy === "幽", "tide element explain");
+  assert(el.blurb.includes("潮"), "tide blurb");
+  const kd = kindExplain("獸");
+  assert(kd?.focus && kd.skillName === "撲襲", "kind 獸 explain");
+  const pe = personalityExplain("fierce");
+  assert(pe?.combatLabel.includes("攻擊") && pe.roleLabel === "戰鬥向", "fierce personality explain");
+  assert(skillTypeLabel("cleave") === "群體攻擊", "skill type label");
+  assert(Object.keys(ELEMENT_EXPLAIN).length === 5, "five element explains");
+  assert(Object.keys(KIND_EXPLAIN).length === KINDS.length, "kind explain covers KINDS");
+  for (const id of Object.keys(PERSONALITIES)) {
+    assert(personalityExplain(id)?.combatLabel, `personality explain ${id}`);
+  }
+}
+assert(uiSrc2.includes("data-pet-detail-tab"), "ui pet detail tabs");
+assert(uiSrc2.includes("petDetailStatsHtml"), "ui stats tab helper");
+assert(uiSrc2.includes("petDetailTemperHtml"), "ui temper tab helper");
+assert(uiSrc2.includes("petDetailSkillsHtml"), "ui skills tab helper");
+assert(uiSrc2.includes("戰鬥被動"), "ui personality combat copy");
+assert(uiSrc2.includes("相剋"), "ui element matchup copy");
+assert(uiSrc2.includes("data-upgrade-skill") && uiSrc2.includes("data-temper-oil"), "ui keep upgrade/temper");
+assert(cssSrc.includes("pet-detail-tabs"), "css pet detail tabs");
+assert(cssSrc.includes("pet-explain"), "css pet explain blocks");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

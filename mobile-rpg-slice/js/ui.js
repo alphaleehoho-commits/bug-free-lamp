@@ -29,6 +29,12 @@ import {
   breedStatus,
   breedBusyUids,
   BREED_QUEUE_MAX,
+  BREED_BATCH_MIN,
+  BREED_BATCH_MAX,
+  clampBreedBatchCount,
+  EGG_CAP,
+  BREED_COOLDOWN_MS,
+  BREED_STONE_COST,
   breedPreview,
   petLineage,
   dungeonStatus,
@@ -40,6 +46,11 @@ import {
   partySynergy,
   renamePet,
   clearOfflineHint,
+  claimOfflineBank,
+  offlineBankView,
+  persistTrainIdleCombatState,
+  clearTrainIdleCombatState,
+  restoreTrainIdleCombatState,
   claimDaily,
   claimAllDailies,
   claimDailyAllClear,
@@ -60,8 +71,6 @@ import {
   SKILLS,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
-  FUSION_MAX_STAGE,
-  BREED_STONE_COST,
   BOND_FEED_COST,
   BOND_FEED_BONUS,
   NICK_MAX_LEN,
@@ -77,6 +86,7 @@ import {
   dispatchView,
   startDispatch,
   claimDispatch,
+  petMatchesDispatchMission,
   tryTideSeal,
   tideSealView,
   setTrainSite,
@@ -128,7 +138,19 @@ import {
   buyAbyssCosmetic,
   buyAbyssEgg,
 } from "./engine.js";
-import { DUNGEON_SUMMON_MIN, DUNGEON_SUMMON_MAX, clampDungeonSummonCount, TRAIN_DEPTH_MULT, TRAIN_TIER_COUNT } from "./data.js";
+import {
+  DUNGEON_SUMMON_MIN,
+  DUNGEON_SUMMON_MAX,
+  clampDungeonSummonCount,
+  TRAIN_DEPTH_MULT,
+  TRAIN_TIER_COUNT,
+  elementExplain,
+  kindExplain,
+  personalityExplain,
+  skillTypeLabel,
+  skillPowerMult,
+  SECOND_SKILL_UNLOCK,
+} from "./data.js";
 import { petIconHtml, petIconFromPet } from "./pet-icons.js";
 import {
   tutorialActive,
@@ -192,6 +214,7 @@ let tab = "cultivate";
 let panelSub = { cultivate: "train", party: "fight", dungeon: "field", codex: "dex" };
 let dungeonIdx = 0;
 let summonCount = 1;
+let breedCount = 1;
 let sweepResult = null;
 let shellReady = false;
 /** @type {{ missionId: string, pick: string[] } | null} */
@@ -257,8 +280,13 @@ function saveCombatPrefs(prefs) {
 
 let combatPrefs = loadCombatPrefs();
 
+function isAbyssCombat(result) {
+  return result?.combatKind === "abyss";
+}
+
 function isFarmCombat(result) {
   if (result?.combatKind === "train") return false;
+  if (isAbyssCombat(result)) return false;
   if (!result?.won) return false;
   const fc = result.rewardBreakdown?.firstClear;
   return !(fc && (fc.stones || fc.scrap));
@@ -266,6 +294,7 @@ function isFarmCombat(result) {
 
 function combatSpeedMult(result) {
   if (tutorialActive(state)) return 1;
+  if (isAbyssCombat(result)) return 1;
   if (combatPrefs.fastMode && isFarmCombat(result)) return 0.12;
   return 1;
 }
@@ -384,7 +413,14 @@ function patchTutorialBanner() {
 }
 
 /** @type {{ mode: 'list' | 'detail' | 'fuse' | 'breed', uid: string | null, fuseBase: string | null, fuseMats: string[], breedParents: string[] }} */
-let petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+let petView = {
+  mode: "list",
+  uid: null,
+  fuseBase: null,
+  fuseMats: [],
+  breedParents: [],
+  detailTab: "stats",
+};
 
 function tutorialNavCtx() {
   return { tab, panelSub, petDetail: petView.mode === "detail" };
@@ -1256,6 +1292,79 @@ function patchEggLive() {
   return becameReady;
 }
 
+/** 繁殖頁倒數／中途領蛋：只 patch DOM，避免整頁重繪導致待命列表 scroll 跳頂 */
+function patchBreedLive() {
+  if (!(tab === "party" && panelSub.party === "breed" && petView.mode === "list")) {
+    return { needRender: false, flipped: false };
+  }
+  const bs = breedStatus(state);
+  let flipped = false;
+  const rows = document.querySelectorAll("[data-breed-job]");
+  if (!rows.length && (bs.jobs || []).length) {
+    return { needRender: true, flipped: false };
+  }
+  rows.forEach((row) => {
+    const id = row.dataset.breedJob;
+    const job = (bs.jobs || []).find((j) => j.id === id);
+    if (!job) {
+      flipped = true;
+      return;
+    }
+    const bar = row.querySelector("[data-breed-job-bar]");
+    const meta = row.querySelector("[data-breed-job-meta]");
+    const actions = row.querySelector("[data-breed-job-actions]");
+    const sec = Math.ceil((job.leftMs || 0) / 1000);
+    const claimN = job.claimableCount || 0;
+    const batchN = job.batch || 1;
+    const wasReady = row.classList.contains("is-ready");
+    const nowReady = claimN > 0 && !job.mating;
+    if (bar) bar.style.width = `${job.pct || 0}%`;
+    if (meta) {
+      if (nowReady) {
+        meta.textContent = `孕育完成 · 可領蛋×${claimN}${batchN > 1 ? `／${batchN}` : ""}`;
+      } else if (claimN > 0) {
+        meta.innerHTML = `交配中 · 剩餘 <strong data-breed-job-sec>${sec}</strong>s · 已可領×${claimN}`;
+      } else {
+        meta.innerHTML = `孕育中 · 剩餘 <strong data-breed-job-sec>${sec}</strong>s${
+          batchN > 1 ? ` · ×${batchN}` : ""
+        }`;
+      }
+    }
+    const wantBtn = claimN > 0;
+    const hasBtn = !!actions?.querySelector("[data-breed-claim]");
+    if (wantBtn && !hasBtn && actions) {
+      actions.innerHTML = `<button type="button" class="primary success" data-breed-claim="${escapeHtml(id)}">領取蛋×${claimN}</button>`;
+      actions.querySelector("[data-breed-claim]")?.addEventListener("click", () => {
+        const r = claimBreed(state, id);
+        saveState(state);
+        panelSub = { ...panelSub, party: "breed" };
+        render();
+        let tone = "";
+        if (r.ok && r.celebrate) {
+          if (r.hybrid) tone = "hybrid";
+          else if ((r.rarity ?? 0) >= 3) tone = "legend";
+          else tone = "celebrate";
+        }
+        if (r.ok) setFlash(r.msg, tone);
+        else flashResult(r);
+      });
+      flipped = true;
+    } else if (wantBtn && hasBtn) {
+      const btn = actions.querySelector("[data-breed-claim]");
+      const label = `領取蛋×${claimN}`;
+      if (btn && btn.textContent !== label) btn.textContent = label;
+    }
+    if (nowReady !== wasReady) {
+      row.classList.toggle("is-ready", nowReady);
+      flipped = true;
+    }
+  });
+  const domCount = rows.length;
+  const jobCount = (bs.jobs || []).length;
+  if (domCount !== jobCount) return { needRender: true, flipped: true };
+  return { needRender: false, flipped };
+}
+
 function patchTutorialHintLive() {
   if (!tutorialActive(state)) return;
   const hint = tutorialBannerHint(state);
@@ -1480,11 +1589,14 @@ function advancePlayback() {
 
 function clearCombatPlayback(opts = {}) {
   const goSetup = !!opts.goSetup;
+  const wasAbyss = isAbyssCombat(playback?.result);
   stopPlayback();
   rewardDetailsOpen = false;
   if (goSetup) {
     panelSub = { ...panelSub, dungeon: "setup" };
     markTutorialSubVisit("dungeon", "setup");
+  } else if (wasAbyss) {
+    panelSub = { ...panelSub, dungeon: "abyss" };
   }
   render();
 }
@@ -1520,7 +1632,7 @@ function finishPlayback() {
     setFlash(adv.unlockMsg, "unlock");
   } else if (unlocks.length) {
     setFlash(`解鎖練功地【${unlocks.join("】【")}】！ ${resultMsg}`, "unlock");
-  } else if (resultMsg) {
+  } else if (resultMsg && !isAbyssCombat(result)) {
     setFlash(resultMsg);
   }
 }
@@ -1528,6 +1640,9 @@ function finishPlayback() {
 function startPlayback(result) {
   stopPlayback();
   if (result?.combatKind !== "train") tab = "dungeon";
+  if (isAbyssCombat(result)) {
+    panelSub = { ...panelSub, dungeon: "abyss" };
+  }
   condSheetOpen = false;
   rewardDetailsOpen = false;
   const events =
@@ -1796,7 +1911,7 @@ function dailyHubHtml() {
     .map((d) => `<li>派遣 · ${escapeHtml(d.name)} · ${d.secLeft}s</li>`)
     .join("");
   const offlineLine = hub.offline
-    ? `<p class="hub-offline">離線 ${Math.round(hub.offline.sec / 60)} 分 · 靈契 +${fmtInt(hub.offline.qi)} · 飼料 +${fmtMatQty(hub.offline.feed)}${hub.offline.materials ? ` · ${escapeHtml(formatMatBits(hub.offline.materials))}` : ""}${hub.offline.dust ? ` · 靈塵 +${fmtMatQty(hub.offline.dust)}` : ""}</p>`
+    ? `<p class="hub-offline">待領離線 ${Math.round(hub.offline.sec / 60)} 分 · 靈契 +${fmtInt(hub.offline.qi)} · 飼料 +${fmtMatQty(hub.offline.feed)}${hub.offline.materials ? ` · ${escapeHtml(formatMatBits(hub.offline.materials))}` : ""}${hub.offline.dust ? ` · 靈塵 +${fmtMatQty(hub.offline.dust)}` : ""}${hub.offline.capped ? " · 已達上限" : ""}</p>`
     : "";
   const goalLine = hub.nextGoal
     ? `<p class="hub-goal">下一目標：<strong>${escapeHtml(hub.nextGoal.label)}</strong>（${escapeHtml(hub.nextGoal.progress)}）</p>`
@@ -1852,21 +1967,38 @@ function installBanner() {
     </div>`;
 }
 
+let offlineDismissedAtSec = -1;
+
 function offlineBanner() {
-  const h = state.offlineHint;
-  if (!h) return "";
-  const min = Math.max(1, Math.round(h.sec / 60));
-  const matLine = formatMatBits(h.materials);
-  const detail = `靈契 +${fmtInt(h.qi)} · 飼料 +${fmtMatQty(h.feed)} · 靈塵 +${fmtMatQty(h.dust)}${
+  const bank = offlineBankView(state);
+  const h = bank.hasPending ? bank : state.offlineHint;
+  if (!bank.hasPending && !h) return "";
+  const pending = bank.hasPending ? bank : h;
+  if (bank.hasPending && offlineDismissedAtSec === (bank.sec | 0)) return "";
+  if (
+    !(pending.qi | 0) &&
+    !(pending.feed | 0) &&
+    !(pending.dust | 0) &&
+    !formatMatBits(pending.materials) &&
+    !(pending.sec | 0)
+  ) {
+    return "";
+  }
+  const min = Math.max(1, Math.round((pending.sec || 0) / 60));
+  const matLine = formatMatBits(pending.materials);
+  const detail = `靈契 +${fmtInt(pending.qi)} · 飼料 +${fmtMatQty(pending.feed)} · 靈塵 +${fmtMatQty(pending.dust)}${
     matLine ? ` · ${matLine}` : ""
-  }${h.siteName ? `（${h.siteName}）` : ""}`;
+  }${pending.siteName ? `（${pending.siteName}）` : ""}${pending.capped ? " · 已達累積上限" : ""}`;
   return `
     <div class="chrome-toast offline-toast" data-live="offline">
       <div class="offline-body">
-        <strong>離線約 ${min} 分鐘</strong>
+        <strong>待領離線約 ${min} 分鐘</strong>
         <p class="offline-detail">${escapeHtml(detail)}</p>
       </div>
-      <button type="button" data-act="clear-offline">知道了</button>
+      <div class="row offline-acts">
+        <button type="button" class="primary" data-act="claim-offline">領取</button>
+        <button type="button" class="ghost" data-act="clear-offline">稍後</button>
+      </div>
     </div>`;
 }
 
@@ -1877,23 +2009,55 @@ function tabBtn(id, label, busy) {
   return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${glow}" data-tab="${id}" ${disabled}>${label}</button>`;
 }
 
-/** Live idle combat — real 5-wave session stepped each second */
+/** Live idle combat — real 5-wave session stepped each second (also in background) */
 let idleCombat = null;
 let idleAnimBusy = false;
 let idleAnimToken = null;
+let lastIdleStepAt = Date.now();
+let idleCombatBootstrapped = false;
 
 function idlePetSig(st) {
   return (st.pets || []).map((p) => `${p.uid}:${p.atk}:${p.hp}:${p.spd}`).join("|");
+}
+
+function cancelIdleAnim() {
+  if (idleAnimToken) {
+    idleAnimToken.cancelled = true;
+    for (const t of idleAnimToken.timers || []) clearTimeout(t);
+    idleAnimToken = null;
+  }
+  idleAnimBusy = false;
 }
 
 function ensureIdleCombat() {
   const view = trainIdleCombatView(state);
   if (!view.petCount) {
     idleCombat = null;
+    clearTrainIdleCombatState(state);
     return null;
   }
   const sig = idlePetSig(state);
   const formationId = currentFormationId();
+
+  // 首次：由存檔還原 session（保留 startedAt 牆鐘）
+  if (!idleCombatBootstrapped) {
+    idleCombatBootstrapped = true;
+    const saved = restoreTrainIdleCombatState(state);
+    if (
+      saved?.session &&
+      saved.zoneId === view.zoneId &&
+      saved.tierIndex === view.tierIndex &&
+      saved.petSig === sig &&
+      saved.formationId === formationId
+    ) {
+      idleCombat = { ...saved, fx: emptyIdleFx() };
+      idleCombat.logLine = view.logLine;
+      idleCombat.clearReady = !!view.clearReady || !!idleCombat.clearReady;
+      idleCombat.session.clearReady = idleCombat.clearReady;
+      return idleCombat;
+    }
+  }
+
   const needNew =
     !idleCombat ||
     !idleCombat.session ||
@@ -1905,6 +2069,7 @@ function ensureIdleCombat() {
     const session = createTrainIdleSession(state);
     if (!session) {
       idleCombat = null;
+      clearTrainIdleCombatState(state);
       return null;
     }
     idleCombat = {
@@ -1925,6 +2090,7 @@ function ensureIdleCombat() {
     idleCombat.clearReady = !!view.clearReady || !!idleCombat.clearReady;
     idleCombat.session.clearReady = idleCombat.clearReady;
   }
+  persistTrainIdleCombatState(state, idleCombat);
   return idleCombat;
 }
 
@@ -1997,63 +2163,103 @@ async function playIdleCombatEvents(events) {
   if (idleAnimToken === token) idleAnimToken = null;
 }
 
-function tickIdleCombat() {
+function tickIdleCombat({ background = false } = {}) {
+  // 離開練功頁／背景分頁：取消動畫鎖，繼續推進五波
+  if (background || (typeof document !== "undefined" && document.hidden)) {
+    cancelIdleAnim();
+  }
   if (idleAnimBusy) return;
   const wrap = ensureIdleCombat();
   if (!wrap?.session) return;
 
-  const result = stepTrainIdleSession(wrap.session);
-  if (result.status === "restart") {
-    const keepReady = wrap.clearReady;
-    const session = createTrainIdleSession(state);
-    if (!session) {
-      idleCombat = null;
-      return;
-    }
-    session.clearReady = keepReady;
-    wrap.session = session;
-    wrap.petSig = idlePetSig(state);
-    // 新一輪進行中唔顯示上一場通關時間
-    wrap.resultLine = null;
-    wrap.fx = emptyIdleFx();
-    patchIdleRosterFromSession(wrap);
-    return;
+  const now = Date.now();
+  const gapSec = Math.max(0, (now - lastIdleStepAt) / 1000);
+  lastIdleStepAt = now;
+  // 約 1 步／秒；背景或節流時用牆鐘追趕
+  let steps = 1;
+  if (background || (typeof document !== "undefined" && document.hidden) || gapSec > 1.5) {
+    steps = Math.min(120, Math.max(1, Math.floor(gapSec || 1)));
   }
-  if (result.status === "won" || result.status === "lost") {
-    if (wrap.session.resultLine) {
-      wrap.resultLine = wrap.session.resultLine;
-      persistTrainIdleClearResult(state, wrap.session);
-      saveState(state);
+
+  let lastResult = null;
+  let playEvents = null;
+  let needRosterPatch = false;
+  let autoClaimMsg = null;
+
+  for (let i = 0; i < steps; i++) {
+    if (!wrap.session) break;
+    const result = stepTrainIdleSession(wrap.session);
+    lastResult = result;
+
+    if (result.status === "restart") {
+      const keepReady = wrap.clearReady;
+      const session = createTrainIdleSession(state);
+      if (!session) {
+        idleCombat = null;
+        clearTrainIdleCombatState(state);
+        return;
+      }
+      session.clearReady = keepReady;
+      wrap.session = session;
+      wrap.petSig = idlePetSig(state);
+      wrap.resultLine = null;
+      wrap.fx = emptyIdleFx();
+      needRosterPatch = true;
+      continue;
+    }
+
+    if (result.status === "won" || result.status === "lost") {
+      if (wrap.session.resultLine) {
+        wrap.resultLine = wrap.session.resultLine;
+        persistTrainIdleClearResult(state, wrap.session);
+      }
+    }
+
+    if (result.status === "wave" || result.status === "round") {
+      needRosterPatch = true;
+    }
+
+    if (result.status === "won") {
+      const marked = markTrainIdleClearReady(state, wrap.session);
+      if (marked?.ok) {
+        if (marked.autoClaimed) {
+          autoClaimMsg = marked.claim?.msg || "霧階全破 · 可挑戰域主";
+          idleCombat = null;
+          clearTrainIdleCombatState(state);
+          break;
+        }
+        wrap.clearReady = true;
+      }
+    }
+
+    // 前景且單步：播攻擊動畫；追趕／背景則跳過
+    if (!background && steps === 1) {
+      const combatEvents = (result.events || []).filter(
+        (e) => e.type === "strike" || e.type === "heal"
+      );
+      if (combatEvents.length) playEvents = combatEvents;
     }
   }
 
-  const combatEvents = (result.events || []).filter(
-    (e) => e.type === "strike" || e.type === "heal"
-  );
-  if (combatEvents.length) {
+  persistTrainIdleCombatState(state, idleCombat);
+  saveState(state);
+
+  if (autoClaimMsg) {
+    setFlash(autoClaimMsg, "unlock");
+    if (!background) render();
+    return;
+  }
+
+  if (playEvents) {
     idleAnimBusy = true;
-    playIdleCombatEvents(combatEvents)
+    playIdleCombatEvents(playEvents)
       .catch(() => {})
       .finally(() => {
         idleAnimBusy = false;
         if (idleCombat?.session) patchIdleRosterFromSession(idleCombat);
       });
-  } else if (result.status === "wave" || result.status === "round") {
+  } else if (!background && (needRosterPatch || lastResult)) {
     patchIdleRosterFromSession(wrap);
-  }
-
-  if (result.status === "won") {
-    const marked = markTrainIdleClearReady(state, wrap.session);
-    if (marked?.ok) {
-      saveState(state);
-      if (marked.autoClaimed) {
-        idleCombat = null;
-        setFlash(marked.claim?.msg || "霧階全破 · 可挑戰域主", "unlock");
-        render();
-        return;
-      }
-      wrap.clearReady = true;
-    }
   }
 }
 
@@ -2174,7 +2380,7 @@ function cultivatePanel(qiPct, next, m) {
 
   const shopOffers = shopView(state);
   const ranchFull = (state.ranch?.length || 0) + state.pets.length >= ranchCap(state);
-  const eggFull = (state.eggs?.length || 0) >= 6;
+  const eggFull = (state.eggs?.length || 0) >= EGG_CAP;
   const shopRows =
     shopOffers
       .filter((o) => {
@@ -2199,9 +2405,12 @@ function cultivatePanel(qiPct, next, m) {
       .join("") || `<li class="empty">今日商肆無可購貨。</li>`;
 
   const ranchN = state.ranch?.length || 0;
+  const firstMiss = br.items.find((it) => !it.ok);
   const breakLabel = br.ready
     ? `突破至${br.next.name}${br.costLabel ? `（耗${br.costLabel}）` : ""}`
-    : "突破階段（條件未齊）";
+    : firstMiss
+      ? `突破階段（未齊·${firstMiss.label}）`
+      : "突破階段（條件未齊）";
 
   if (panelSub.cultivate === "gear") panelSub.cultivate = "train";
   const sub = panelSub.cultivate;
@@ -2231,8 +2440,8 @@ function cultivatePanel(qiPct, next, m) {
   }
 
   if (sub === "advance") {
-    const gateCompact = br.items.slice(0, 6);
-    const gateRowsCompact = gateCompact
+    /* Show every breakthrough gate (incl. bestiary) — do not slice; ready checks all items. */
+    const gateRows = br.items
       .map(
         (it) => `
       <li class="cond-item ${it.ok ? "is-met" : "is-miss"}">
@@ -2244,11 +2453,20 @@ function cultivatePanel(qiPct, next, m) {
       </li>`
       )
       .join("");
+    const missN = br.items.filter((it) => !it.ok).length;
+    const missNote =
+      !br.ready && missN > 0
+        ? `<p class="meta breakthrough-miss-note">尚欠 ${missN} 項${
+            firstMiss ? ` · 先做：${escapeHtml(firstMiss.label)}（${escapeHtml(firstMiss.progress)}）` : ""
+          }</p>`
+        : "";
+    const compactCls = br.items.length > 6 ? " is-compact" : "";
     return wrapStage(
       nav,
       `<h2>契壇修行 · 進階</h2>
       <p class="lead">→【${escapeHtml(br.next.name)}】潮印 ${seal.seals}/${seal.max} · 全隊 ×${seal.mult.toFixed(2)}</p>
-      <ul class="cond-list">${gateRowsCompact}</ul>`,
+      ${missNote}
+      <ul class="cond-list breakthrough-gates${compactCls}">${gateRows}</ul>`,
       `<div class="row">
         <button type="button" class="primary${tutGlow({ type: "act", act: "break" })}" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
         <button type="button" data-act="tide-seal" ${seal.canSeal ? "" : "disabled"}>鑄潮印${seal.canSeal ? `+${seal.nextGain}` : ""}</button>
@@ -2400,18 +2618,20 @@ function dispatchModalHtml() {
   const pick = new Set(dispatchModal.pick || []);
   const busy = new Set(dv.busyUids || []);
   const ranch = state.ranch || [];
+  const reqLabel = mission.reqLabel || "";
   const rows =
     ranch
       .filter((p) => !busy.has(p.uid))
       .map((p) => {
         const selected = pick.has(p.uid);
+        const match = petMatchesDispatchMission(p, mission);
         return `
         <li class="card-row">
           <div>
             <strong>${escapeHtml(displayPetName(p))}</strong>
-            <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · 攻${fmtInt(p.atk)} 血${fmtInt(p.hp)}</span>
+            <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · 攻${fmtInt(p.atk)} 血${fmtInt(p.hp)}${match ? "" : " · 唔符合限制"}</span>
           </div>
-          <button type="button" class="${selected ? "primary" : "secondary"}" data-dispatch-pick="${escapeHtml(p.uid)}">${selected ? "已選" : "選擇"}</button>
+          <button type="button" class="${selected ? "primary" : "secondary"}" data-dispatch-pick="${escapeHtml(p.uid)}" ${match ? "" : "disabled"}>${selected ? "已選" : match ? "選擇" : "不符"}</button>
         </li>`;
       })
       .join("") || `<li class="empty">牧場無可派遣靈寵（需撤回出戰或等派遣歸來）。</li>`;
@@ -2420,7 +2640,7 @@ function dispatchModalHtml() {
       <div class="sheet-card" role="dialog" aria-label="選擇派遣靈寵" data-sheet-card>
         <div class="sheet-handle" aria-hidden="true"></div>
         <h3>${escapeHtml(mission.name)}</h3>
-        <p class="meta">${escapeHtml(mission.desc)} · 需 ${need} 隻 · 已選 ${pick.size}/${need}</p>
+        <p class="meta">${escapeHtml(mission.desc)}${reqLabel ? ` · ${escapeHtml(reqLabel)}` : ""} · 需 ${need} 隻 · 已選 ${pick.size}/${need}</p>
         <ul class="list">${rows}</ul>
         <div class="row">
           <button type="button" class="secondary" data-act="close-dispatch-modal">取消</button>
@@ -2599,19 +2819,18 @@ function petsListView() {
       .join("") || `<li class="empty">尚無進行中派遣。</li>`;
 
   const missionRows = dv.missions
-    .filter((m) => !m.locked)
-    .slice(0, 6)
     .map((m) => {
       const slotsOk = dv.slotsUsed < dv.slotsMax;
       const matBits = dispatchMatBits(m);
       const eggNote = m.eggChance
         ? ` · 蛋${Math.round((m.eggChance.rate || 0) * 100)}%`
         : "";
+      const reqNote = m.reqLabel ? ` · ${escapeHtml(m.reqLabel)}` : "";
       return `
       <li class="card-row">
         <div>
           <strong>${escapeHtml(m.name)}</strong>
-          <span class="muted">${escapeHtml(m.desc)} · 需 ${m.needPets} 隻 · ${escapeHtml(rewardBitsHtml(m.reward))}${
+          <span class="muted">${escapeHtml(m.desc)}${reqNote} · 需 ${m.needPets} 隻 · ${escapeHtml(rewardBitsHtml(m.reward))}${
             matBits ? ` · ${matBits}` : ""
           }${eggNote}</span>
         </div>
@@ -2630,7 +2849,7 @@ function petsListView() {
     return wrapStage(
       nav,
       `<h2>靈寵 · 牧場</h2>
-      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 蛋 ${(state.eggs || []).length}/6 · 待命微產飼料／靈塵／潮霧令</p>
+      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 蛋 ${(state.eggs || []).length}/${EGG_CAP} · 待命微產飼料／靈塵／潮霧令</p>
       <h3>寵物蛋</h3>
       <ul class="list">${eggRows}</ul>
       <div class="ranch-sort" role="group" aria-label="牧場排序">${sortOpts}</div>
@@ -2645,7 +2864,7 @@ function petsListView() {
     return wrapStage(
       nav,
       `<h2>靈寵 · 派遣</h2>
-      <p class="lead">槽位 ${dv.slotsUsed}/${dv.slotsMax} · 撳「派出」選擇靈寵</p>
+      <p class="lead">進行 ${dv.slotsUsed}/${dv.slotsMax} · 可接 ${dv.missions.length}/${dv.boardSize} · 撳「派出」揀合限制嘅靈寵 · 領獎後隨機補任務</p>
       <ul class="list">${missionRows || `<li class="empty muted">尚無可接派遣（解鎖更多練功地後開放）。</li>`}</ul>
       <ul class="list">${activeDisp}</ul>`
     );
@@ -2752,28 +2971,42 @@ function petsBreedView() {
   const [ua, ub] = petView.breedParents || [];
   const pa = ranch.find((p) => p.uid === ua);
   const pb = ranch.find((p) => p.uid === ub);
+  const batch = clampBreedBatchCount(breedCount);
+  const cycleSec = Math.ceil((bs.cooldownTotalMs || BREED_COOLDOWN_MS || 45000) / 1000);
 
   const jobRows =
     (bs.jobs || [])
       .map((j) => {
         const sec = Math.ceil((j.leftMs || 0) / 1000);
-        if (j.ready) {
-          return `<li class="card-row breed-job is-ready">
+        const claimN = j.claimableCount || 0;
+        const batchN = j.batch || 1;
+        const claimBtn =
+          claimN > 0
+            ? `<button type="button" class="primary success" data-breed-claim="${escapeHtml(j.id)}">領取蛋×${claimN}</button>`
+            : "";
+        if (claimN > 0 && !j.mating) {
+          return `<li class="card-row breed-job is-ready" data-breed-job="${escapeHtml(j.id)}">
             <div>
               <strong>${escapeHtml(j.names?.[0] || "？")} × ${escapeHtml(j.names?.[1] || "？")}</strong>
-              <span class="muted">孕育完成 · 可領子代</span>
-              <div class="bar breed-cd-bar"><i style="width:100%"></i></div>
+              <span class="muted" data-breed-job-meta>孕育完成 · 可領蛋×${claimN}${batchN > 1 ? `／${batchN}` : ""}</span>
+              <div class="bar breed-cd-bar"><i data-breed-job-bar style="width:100%"></i></div>
             </div>
-            <button type="button" class="primary success" data-breed-claim="${escapeHtml(j.id)}">領取子代</button>
+            <div class="row-actions" data-breed-job-actions>${claimBtn}</div>
           </li>`;
         }
-        return `<li class="card-row breed-job">
+        return `<li class="card-row breed-job" data-breed-job="${escapeHtml(j.id)}" data-ready-at="${j.readyAt || 0}" data-started-at="${j.startedAt || 0}" data-batch="${batchN}" data-claimed-cycles="${j.claimedCycles || 0}" data-cycle-ms="${j.cycleMs || 45000}">
           <div>
             <strong>${escapeHtml(j.names?.[0] || "？")} × ${escapeHtml(j.names?.[1] || "？")}</strong>
-            <span class="muted">孕育中 · 剩餘 <strong>${sec}s</strong></span>
-            <div class="bar breed-cd-bar"><i style="width:${j.pct || 0}%"></i></div>
+            <span class="muted" data-breed-job-meta>${
+              claimN > 0
+                ? `交配中 · 剩餘 <strong data-breed-job-sec>${sec}</strong>s · 已可領×${claimN}`
+                : `孕育中 · 剩餘 <strong data-breed-job-sec>${sec}</strong>s${batchN > 1 ? ` · ×${batchN}` : ""}`
+            }</span>
+            <div class="bar breed-cd-bar"><i data-breed-job-bar style="width:${j.pct || 0}%"></i></div>
           </div>
-          <span class="pet-tag pet-tag-dispatch">交配中</span>
+          <div class="row-actions" data-breed-job-actions>${
+            claimBtn || `<span class="pet-tag pet-tag-dispatch">交配中</span>`
+          }</div>
         </li>`;
       })
       .join("") ||
@@ -2818,11 +3051,17 @@ function petsBreedView() {
       .join("") || `<li class="empty">牧場需要待命靈寵才能交配（派遣中不可用）。</li>`;
 
   const preview = pa && pb ? breedPreview(pa, pb) : null;
-  const bMat =
+  const unitMat =
     pa && pb
       ? breedMatCost(petGeneration(pa), petGeneration(pb))
       : { coral_shard: 1 };
+  const bMat = {};
+  for (const [id, n] of Object.entries(unitMat)) {
+    if (!n) continue;
+    bMat[id] = n * batch;
+  }
   const bMatHtml = matAffordHtml(bMat);
+  const stoneNeed = BREED_STONE_COST * batch;
   const canStart =
     selected.size === 2 &&
     bs.ready &&
@@ -2832,16 +3071,24 @@ function petsBreedView() {
     !matingBusy.has(pb.uid);
 
   const body = `<h2>靈寵 · 繁殖</h2>
-    <p class="lead">開始交配後進入孕育（約 ${Math.ceil((bs.cooldownTotalMs || 45000) / 1000)}s），就緒再領子代 · 欄位 ${bs.slotsUsed || 0}/${bs.queueMax || BREED_QUEUE_MAX} · ${BREED_STONE_COST} 石＋材料</p>
+    <p class="lead">交配產出<strong>蛋</strong>（再孵化）· 單次 ${cycleSec}s · 欄位 ${bs.slotsUsed || 0}/${bs.queueMax || BREED_QUEUE_MAX} · 蛋 ${(state.eggs || []).length}/${bs.eggCap || EGG_CAP}</p>
     <h3>孕育中／可領</h3>
     <ul class="list breed-job-list">${jobRows}</ul>
     <h3>新一輪交配</h3>
     <div class="breed-slots">${slotHtml(pa, 0)}${slotHtml(pb, 1)}</div>
     ${preview ? breedPreviewHtml(preview, bMatHtml) : `<p class="meta">選擇雙親後顯示預覽</p>`}
+    <div class="summon-controls breed-batch-controls">
+      <div class="summon-slider-row">
+        <span class="sweep-label">交配次數 <strong data-breed-count-label>${batch}</strong></span>
+        <input type="range" class="summon-slider" min="${BREED_BATCH_MIN}" max="${BREED_BATCH_MAX}" value="${batch}" data-breed-slider aria-label="交配次數" />
+        <span class="muted">${BREED_BATCH_MIN}–${BREED_BATCH_MAX}</span>
+      </div>
+      <p class="sweep-label">約 ${cycleSec * batch}s · ${stoneNeed} 石${batch > 1 ? ` · 可中途領蛋` : ""}</p>
+    </div>
     <h3>待命靈寵</h3>
-    <ul class="list">${list}</ul>`;
+    <ul class="list breed-pet-list">${list}</ul>`;
   const dock = `<div class="row">
-      <button type="button" class="primary${tutGlow({ type: "act", act: "start-breed" })}" data-breed-confirm ${canStart ? "" : "disabled"}>開始交配（${selected.size}/2）</button>
+      <button type="button" class="primary${tutGlow({ type: "act", act: "start-breed" })}" data-breed-confirm data-breed-count="${batch}" ${canStart ? "" : "disabled"}>開始交配×${batch}（${selected.size}/2）</button>
     </div>`;
   return { body, dock };
 }
@@ -2856,10 +3103,167 @@ function partyNavHtml() {
   ]);
 }
 
+function fmtGrowthMult(v) {
+  if (v == null || Number.isNaN(+v)) return "—";
+  const pct = Math.round((+v - 1) * 100);
+  if (pct === 0) return "±0%";
+  return pct > 0 ? `+${pct}%` : `${pct}%`;
+}
+
+function petDetailTabNav(active) {
+  const tabs = [
+    ["stats", "屬性"],
+    ["temper", "性格"],
+    ["skills", "技能"],
+  ];
+  return `<nav class="pet-detail-tabs" aria-label="靈寵詳情分頁">${tabs
+    .map(
+      ([id, label]) =>
+        `<button type="button" class="${active === id ? "on" : ""}" data-pet-detail-tab="${id}">${label}</button>`
+    )
+    .join("")}</nav>`;
+}
+
+function petDetailStatsHtml(pet, detail, rarity) {
+  const kindEx = kindExplain(pet.kind);
+  const elEx = elementExplain(pet.elementId);
+  const base = detail.baseline;
+  const bonus = detail.innateBonus || { atk: 0, hp: 0, spd: 0 };
+  const bonusLine = (n) => (n > 0 ? ` <span class="muted">（天生＋${n}）</span>` : "");
+  return `
+    <ul class="skill-list pet-detail-block">
+      <li><strong>戰力</strong> — 攻${pet.atk}${bonusLine(bonus.atk)} · 血${pet.hp}${bonusLine(bonus.hp)} · 速${pet.spd}${bonusLine(bonus.spd)}</li>
+      ${
+        base
+          ? `<li><strong>種族基準</strong> — 攻${base.atk} 血${base.hp} 速${base.spd}（未計等級／融階）</li>`
+          : ""
+      }
+      <li><strong>稀有</strong> — <span class="rarity rarity-${rarity.color}">${escapeHtml(rarity.name)}</span></li>
+    </ul>
+    <div class="pet-explain">
+      <h3>種類 · ${escapeHtml(pet.kind)}</h3>
+      <p class="meta">${escapeHtml(kindEx?.blurb || "種類決定主技能流派。")}${
+        kindEx?.focus ? ` <span class="muted">偏向：${escapeHtml(kindEx.focus)}</span>` : ""
+      }</p>
+      ${
+        kindEx?.skillName
+          ? `<p class="meta">種類主技【${escapeHtml(kindEx.skillName)}】</p>`
+          : ""
+      }
+    </div>
+    <div class="pet-explain">
+      <h3>元素 · ${escapeHtml(pet.elementName || elEx?.name || "—")}</h3>
+      <p class="meta">${escapeHtml(elEx?.blurb || "元素影響白板同相剋。")}${
+        elEx?.focus ? ` <span class="muted">偏向：${escapeHtml(elEx.focus)}</span>` : ""
+      }</p>
+      ${
+        elEx
+          ? `<p class="meta">白板倍率 攻${fmtGrowthMult(elEx.atk)} · 血${fmtGrowthMult(elEx.hp)} · 速${fmtGrowthMult(elEx.spd)}</p>
+      <p class="meta">相剋：克${escapeHtml(elEx.beats)}（×${elEx.advMult}）· 被${escapeHtml(elEx.beatenBy)}克（×${elEx.disMult}）</p>
+      <p class="meta muted">${escapeHtml(elEx.cycle)}</p>`
+          : ""
+      }
+    </div>`;
+}
+
+function petDetailTemperHtml(pet) {
+  const main = personalityExplain(pet.personalityId);
+  const sub = pet.personality2Id ? personalityExplain(pet.personality2Id) : null;
+  const blood =
+    pet.bloodlineName && pet.bloodlineName !== "無紋"
+      ? `<li><strong>血脈</strong> — ${escapeHtml(pet.bloodlineName)}</li>`
+      : "";
+  const block = (ex, tag) => {
+    if (!ex) return "";
+    return `
+      <div class="pet-explain">
+        <h3>${escapeHtml(tag)} · ${escapeHtml(ex.name)} <span class="muted">（${escapeHtml(ex.roleLabel)}）</span></h3>
+        <p class="meta"><strong>戰鬥被動</strong> — ${escapeHtml(ex.combatLabel)}</p>
+        <p class="meta">成長偏向 攻${fmtGrowthMult(ex.growthAtk)} · 血${fmtGrowthMult(ex.growthHp)} · 速${fmtGrowthMult(ex.growthSpd)}</p>
+        ${ex.sustainBias ? `<p class="meta muted">續航親和：治療／減傷技較易惠及此寵</p>` : ""}
+        <p class="meta muted">牧場產出 飼料×${(+ex.workFeed).toFixed(2)} · 靈塵×${(+ex.workDust).toFixed(2)} · 潮霧令×${(+ex.workToken).toFixed(2)}</p>
+      </div>`;
+  };
+  return `
+    <ul class="skill-list pet-detail-block">
+      <li><strong>主性格</strong> — ${escapeHtml(pet.personalityName || main?.name || "—")}</li>
+      ${
+        pet.personality2Name
+          ? `<li><strong>副性格</strong> — ${escapeHtml(pet.personality2Name)} <span class="muted">（戰鬥被動約三成比重）</span></li>`
+          : `<li><strong>副性格</strong> — <span class="muted">未覺醒</span></li>`
+      }
+      ${blood}
+    </ul>
+    ${block(main, "主性格")}
+    ${sub ? block(sub, "副性格") : ""}
+    <p class="meta">可用性格洗劑重抽主性格（唔改種族／元素）。</p>`;
+}
+
+function petSkillCardHtml(skill, { level, maxed, dustCost, skillMatHtml, title }) {
+  if (!skill) {
+    return `<div class="pet-explain"><h3>${escapeHtml(title)}</h3><p class="meta muted">暫無技能資料。</p></div>`;
+  }
+  const pow = skill.power != null ? (skill.power * skillPowerMult(level || 1)).toFixed(2) : null;
+  const lvBit =
+    level != null
+      ? `Lv.${level}${maxed ? "（滿）" : dustCost != null ? ` · 升需靈塵${dustCost}${skillMatHtml ? `＋${skillMatHtml}` : ""}` : ""}`
+      : "";
+  return `
+    <div class="pet-explain">
+      <h3>${escapeHtml(title)} · 【${escapeHtml(skill.name)}】</h3>
+      ${lvBit ? `<p class="meta">${lvBit}</p>` : ""}
+      <p class="meta">${escapeHtml(skill.desc || "效果未註明。")}</p>
+      <p class="meta muted">${escapeHtml(skillTypeLabel(skill.type))} · CD${skill.cd ?? "—"}${
+        pow != null ? ` · 威力約×${pow}` : ""
+      }</p>
+    </div>`;
+}
+
+function petDetailSkillsHtml(pet, detail) {
+  const {
+    skill,
+    skillLevel,
+    skillDustCost: dustCost,
+    skillMatCost: skillMatsNeed,
+    skillMaxed,
+    secondSkill,
+    secondUnlocked,
+  } = detail;
+  const skillMatHtml =
+    skillMatsNeed && Object.keys(skillMatsNeed).length ? matAffordHtml(skillMatsNeed) : "";
+  const unlockNeed = `融階≥${SECOND_SKILL_UNLOCK.fusionLevel} 或 Lv≥${SECOND_SKILL_UNLOCK.level}`;
+  const secondBlock = secondUnlocked
+    ? petSkillCardHtml(secondSkill, {
+        level: skillLevel,
+        maxed: skillMaxed,
+        dustCost: null,
+        skillMatHtml: "",
+        title: "第二技能",
+      })
+    : `<div class="pet-explain">
+        <h3>第二技能</h3>
+        <p class="meta muted">未解鎖（${escapeHtml(unlockNeed)}）</p>
+        ${
+          secondSkill
+            ? `<p class="meta">預覽【${escapeHtml(secondSkill.name)}】— ${escapeHtml(secondSkill.desc || "")}</p>`
+            : ""
+        }
+      </div>`;
+  return `
+    ${petSkillCardHtml(skill || { name: pet.skillName || "—", desc: "", type: "", cd: null, power: null }, {
+      level: skillLevel,
+      maxed: skillMaxed,
+      dustCost,
+      skillMatHtml,
+      title: "主技能",
+    })}
+    ${secondBlock}`;
+}
+
 function petsDetailView() {
   const detail = petDetail(state, petView.uid);
   if (!detail) {
-    petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+    petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [], detailTab: "stats" };
     return petsListView();
   }
   const {
@@ -2867,22 +3271,8 @@ function petsDetailView() {
     deployed,
     upgradeCost,
     upgradeFeedCost: feedCost,
-    fuseCostHint,
-    fuseMatCost: fuseMatsNeed,
-    skill,
     fuseMaxed,
-    fuseNeedLevel,
-    fuseTotalPets,
-    fuseMatNeed,
-    nextFusionStage,
-    skillLevel,
-    skillDustCost: dustCost,
-    skillMatCost: skillMatsNeed,
     skillMaxed,
-    secondSkill,
-    secondUnlocked,
-    baseline,
-    innateBonus,
   } = detail;
   const lv = pet.level ?? 1;
   const fus = pet.fusionLevel ?? 0;
@@ -2891,40 +3281,21 @@ function petsDetailView() {
   const busySet = new Set(dispatchView(state).busyUids || []);
   const onDispatch = !deployed && busySet.has(pet.uid);
   const loc = deployed ? "出戰中" : onDispatch ? "派遣中" : "牧場待命";
-  const fuseHint = fuseMaxed
-    ? `已達融階上限（${FUSION_MAX_STAGE}）`
-    : `下一融階 ${nextFusionStage}：主體≥Lv.${fuseNeedLevel}、共 ${fuseTotalPets} 隻（${fuseMatNeed} 素材）· ${fuseCostHint} 靈石${
-        fuseMatsNeed && Object.keys(fuseMatsNeed).length
-          ? `＋${matAffordHtml(fuseMatsNeed) || "融砂"}`
-          : ""
-      }`;
-
-  const secondLine = secondUnlocked
-    ? `【${escapeHtml(secondSkill?.name || "—")}】${secondSkill ? ` ${escapeHtml(secondSkill.desc)}（CD${secondSkill.cd}）` : ""}`
-    : `未解鎖（融階≥1 或 Lv≥15）`;
-
-  const matUp = upgradeMatCost(lv);
-  const matUpHtml = matAffordHtml(matUp);
-  const skillMatHtml =
-    skillMatsNeed && Object.keys(skillMatsNeed).length ? matAffordHtml(skillMatsNeed) : "";
+  const detailTab = petView.detailTab || "stats";
+  const tabBody =
+    detailTab === "temper"
+      ? petDetailTemperHtml(pet)
+      : detailTab === "skills"
+        ? petDetailSkillsHtml(pet, detail)
+        : petDetailStatsHtml(pet, detail, r);
   const lineage = petLineage(state, pet.uid);
   return wrapStage(
     "",
     `<h2>${escapeHtml(displayPetName(pet))}</h2>
     <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
-    <ul class="skill-list">
-      <li><strong>屬性</strong> — ${escapeHtml(pet.kind)}·${escapeHtml(pet.elementName)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span></li>
-      <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}${pet.personality2Name ? `／${escapeHtml(pet.personality2Name)}` : ""}${pet.bloodlineName && pet.bloodlineName !== "無紋" ? ` · 血脈${escapeHtml(pet.bloodlineName)}` : ""}</li>
-      <li><strong>戰力</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}</li>
-      <li><strong>技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】Lv.${skillLevel}${
-        skillMaxed
-          ? "（滿）"
-          : dustCost != null
-            ? ` · 升需靈塵${dustCost}${skillMatHtml ? `＋${skillMatHtml}` : ""}`
-            : ""
-      }</li>
-      <li><strong>升級</strong> — ${upgradeCostLine(upgradeCost, feedCost, lv)}</li>
-    </ul>
+    ${petDetailTabNav(detailTab)}
+    ${tabBody}
+    <p class="meta pet-detail-upgrade"><strong>升級</strong> — ${upgradeCostLine(upgradeCost, feedCost, lv)}</p>
     ${lineageHtml(lineage)}
     <div class="row gear-row">
       <label>暱稱<input type="text" maxlength="${NICK_MAX_LEN}" data-nick-input value="${escapeHtml(pet.nick || "")}" placeholder="${escapeHtml(pet.name)}" /></label>
@@ -3221,6 +3592,57 @@ function sweepModalHtml() {
     </div>`;
 }
 
+function abyssNextFloorNote(next) {
+  if (!next) return "";
+  if (next.willAddMutation) return "將加入 1 條新突變";
+  if (next.insuranceSkips) return "突變保險將略過新突變";
+  if (next.atMutationCap) return "突變已達上限，無新增";
+  if (next.mutationFloor) return "突變層（無新增）";
+  return "本層無新突變";
+}
+
+function abyssSettlementHtml(result) {
+  if (!isAbyssCombat(result)) return "";
+  const muts = result.mutations || [];
+  const mutLine = muts.length
+    ? muts.map((m) => `【${escapeHtml(m.name)}】${escapeHtml(m.desc || "")}`).join("<br/>")
+    : "尚無突變";
+  if (result.wiped || !result.won) {
+    const failed = result.failedDepth || result.depth || 0;
+    const cleared = result.clearedDepth | 0;
+    const kept = result.gritKept ?? result.gritGained ?? 0;
+    const pendingBefore = result.pendingBefore | 0;
+    return `
+      <div class="abyss-settle abyss-settle--wipe">
+        <p class="lead">第 <strong>${failed}</strong> 層挑戰失敗</p>
+        <p class="meta">此前已通第 ${cleared} 層 · 保底帶回淵砂 <strong>${kept}</strong>${
+          pendingBefore ? `（原待結算 ${pendingBefore}）` : ""
+        }</p>
+        <p class="meta">本趟突變：</p>
+        <p class="meta abyss-mut-list">${mutLine}</p>
+        <p class="meta muted">深潛已結束——請確認結算後返回。</p>
+      </div>`;
+  }
+  const next = result.nextFloor;
+  const nextNote = abyssNextFloorNote(next);
+  return `
+    <div class="abyss-settle">
+      <p class="lead">已通關第 <strong>${result.clearedDepth || result.depth}</strong> 層</p>
+      <div class="settle-summary-row abyss-grit-row">
+        <div>
+          <strong class="settle-total">淵砂 +${result.gritGained || 0}</strong>
+          <span class="muted">待結算累計 ${result.pendingGrit || 0}</span>
+        </div>
+      </div>
+      <p class="meta">活躍突變：</p>
+      <p class="meta abyss-mut-list">${mutLine}</p>
+      <div class="abyss-next-preview">
+        <strong>下一層預覽 · 第 ${next?.depth ?? (result.depth | 0) + 1} 層</strong>
+        <span class="muted">${escapeHtml(nextNote)}</span>
+      </div>
+    </div>`;
+}
+
 function combatModalHtml() {
   if (!playback) return "";
   const pct = Math.min(
@@ -3233,32 +3655,71 @@ function combatModalHtml() {
       return combatLogLineHtml(t, ev);
     })
     .join("");
-  const bd = playback.result?.rewardBreakdown;
-  const wonSettle = playback.done && bd && playback.result.won;
+  const result = playback.result;
+  const isAbyss = isAbyssCombat(result);
+  const bd = result?.rewardBreakdown;
+  const wonSettle = playback.done && bd && result.won && !isAbyss;
   const settleHead = wonSettle
     ? `<div class="settle-summary-row">
         <div>
           <strong class="settle-total">+${bd.totalStones} 靈石</strong>
-          <span class="muted">${bd.base?.scrap ? `基礎通碎片 +${bd.base.scrap}` : "通關結算"}</span>
+          <span class="muted">${bd.base?.scrap ? `普通碎片 +${bd.base.scrap}` : "通關結算"}</span>
         </div>
         <button type="button" class="ghost" data-act="toggle-reward-details">${rewardDetailsOpen ? "收起明細" : "獎勵明細"}</button>
       </div>
       ${rewardDetailsOpen ? combatRewardBreakdownHtml(bd) : ""}`
     : "";
+  const abyssSettle = playback.done && isAbyss ? abyssSettlementHtml(result) : "";
   const logBlock = playback.done
     ? ""
     : `<div class="combat-scroll combat-log-fixed" data-live="combat-scroll">
         <ul class="combat" data-live="combat-log">${lines}</ul>
       </div>`;
   const tacticsStep = tutorialActive(state) && state.tutorial.step === "tactics";
-  const isTrain = playback.result?.combatKind === "train";
-  const clearLabel = tacticsStep ? "前往戰術設定" : isTrain ? "返回練功" : "返回秘境";
+  const isTrain = result?.combatKind === "train";
+  const clearLabel = tacticsStep
+    ? "前往戰術設定"
+    : isTrain
+      ? "返回練功"
+      : isAbyss
+        ? "返回潮淵"
+        : "返回秘境";
   const clearAct = tacticsStep ? "clear-combat-setup" : "clear-combat";
+  const title = playback.done
+    ? isAbyss
+      ? result?.wiped || !result?.won
+        ? "潮淵結算 · 挑戰失敗"
+        : "潮淵結算 · 層通關"
+      : "結算"
+    : isAbyss
+      ? `戰報 · 第 ${result?.depth || "?"} 層`
+      : "戰報";
+  const cardClass = `combat-modal-card combat-report-card${
+    isAbyss ? " combat-report-card--abyss" : ""
+  }${playback.done && isAbyss ? " combat-report-card--abyss-settle" : ""}`;
+  let actions = "";
+  if (!playback.done) {
+    actions = `
+          <button type="button" data-act="skip-combat">跳過動畫</button>
+          <button type="button" class="primary" data-act="${clearAct}" disabled>${escapeHtml(clearLabel)}</button>`;
+  } else if (isAbyss && result?.won && !result?.wiped && result?.canContinue) {
+    actions = `
+          <button type="button" class="primary" data-act="abyss-continue-floor">繼續下一層</button>
+          <button type="button" class="secondary" data-act="abyss-retreat-settle">撤退結算</button>
+          <button type="button" data-act="${clearAct}">${escapeHtml(clearLabel)}</button>`;
+  } else if (isAbyss) {
+    actions = `
+          <button type="button" class="primary" data-act="${clearAct}">${escapeHtml(clearLabel)}</button>`;
+  } else {
+    actions = `
+          <button type="button" data-act="skip-combat" hidden>跳過動畫</button>
+          <button type="button" class="primary" data-act="${clearAct}">${escapeHtml(clearLabel)}</button>`;
+  }
   return `
-    <div class="combat-modal-overlay" data-live="combat-modal" role="dialog" aria-label="${playback.done ? "結算" : "戰報"}">
-      <div class="combat-modal-card combat-report-card">
+    <div class="combat-modal-overlay" data-live="combat-modal" role="dialog" aria-label="${escapeHtml(title)}">
+      <div class="${cardClass}">
         <div class="combat-modal-scroll">
-          <h2>${playback.done ? "結算" : "戰報"}${playback.isFarm && combatPrefs.fastMode ? `<span class="combat-fast-badge">快速</span>` : ""}</h2>
+          <h2>${escapeHtml(title)}${playback.isFarm && combatPrefs.fastMode ? `<span class="combat-fast-badge">快速</span>` : ""}</h2>
           ${playback.waveLabel && !playback.done ? `<p class="combat-wave-banner" data-live="combat-wave">${escapeHtml(playback.waveLabel)}</p>` : `<p class="combat-wave-banner" data-live="combat-wave" hidden></p>`}
           ${logBlock}
           <p class="lead combat-round-meta" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
@@ -3266,15 +3727,13 @@ function combatModalHtml() {
           ${renderCombatRoster(playback)}
           ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
           ${settleHead}
+          ${abyssSettle}
         </div>
-        <div class="combat-modal-actions row">
-          <button type="button" data-act="skip-combat" ${playback.done ? "hidden" : ""}>跳過動畫</button>
-          <button type="button" class="primary" data-act="${clearAct}" ${playback.done ? "" : "disabled"}>${escapeHtml(clearLabel)}</button>
+        <div class="combat-modal-actions row">${actions}
         </div>
       </div>
     </div>`;
 }
-
 function dungeonCondSheetHtml() {
   const dungeonIds = dungeonsForRealm(state.realm).filter((id) => resolveDungeon(state, id));
   const curId = dungeonIds[dungeonIdx];
@@ -3335,17 +3794,18 @@ function abyssPanelHtml() {
     : "尚無突變";
   const runBlock = run
     ? `<div class="abyss-run card-block">
-        <p class="lead">進行中 · 第 <strong>${run.depth}</strong> 層 · 待結算淵砂 <strong>${run.pendingGrit}</strong></p>
+        <p class="lead">進行中 · 已通第 <strong>${run.depth}</strong> 層 · 待結算淵砂 <strong>${run.pendingGrit}</strong></p>
+        <p class="meta">下一挑戰：第 <strong>${(run.depth | 0) + 1}</strong> 層</p>
         <p class="meta">突變：${mutLine}</p>
         <div class="row">
-          <button type="button" class="primary" data-abyss-advance>再潛一層</button>
+          <button type="button" class="primary" data-abyss-advance>挑戰第 ${(run.depth | 0) + 1} 層</button>
           <button type="button" class="secondary" data-abyss-retreat>撤退結算</button>
         </div>
       </div>`
     : `<div class="abyss-run card-block">
         <p class="lead">未開潛</p>
         <p class="meta">今日首趟免費 · 其後耗潮霧令 ×${v.entryCost || 1}（現有 ${v.tokenHave}）</p>
-        <button type="button" class="primary" data-abyss-start>開始深潛</button>
+        <button type="button" class="primary" data-abyss-start>開始深潛（第 1 層）</button>
       </div>`;
   const cosRows = (v.cosmeticList || [])
     .map((c) => {
@@ -3650,6 +4110,29 @@ function logPanel() {
   );
 }
 
+function playAbyssResult(r) {
+  saveState(state);
+  panelSub = { ...panelSub, dungeon: "abyss" };
+  if (!r.ok) {
+    setFlash(r.msg);
+    render();
+    return;
+  }
+  // 潮淵勝負都要進戰報／結算窗，唔好淨係 flash 返秘境
+  if (r.combatEvents?.length || r.combatKind === "abyss") {
+    if (!r.combatEvents?.length) {
+      r = {
+        ...r,
+        combatEvents: [{ type: "text", text: r.msg || "潮淵結算" }],
+      };
+    }
+    startPlayback(r);
+    return;
+  }
+  render();
+  setFlash(r.msg || "");
+}
+
 function bind() {
   app.querySelectorAll("[data-panel-sub]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -3741,9 +4224,16 @@ function bind() {
         render();
         setFlash(r.msg);
       } else if (act === "clear-offline") {
+        offlineDismissedAtSec = offlineBankView(state).sec | 0;
         clearOfflineHint(state);
         saveState(state);
         render();
+      } else if (act === "claim-offline") {
+        offlineDismissedAtSec = -1;
+        const r = claimOfflineBank(state);
+        saveState(state);
+        render();
+        setFlash(r.msg, r.ok ? "unlock" : "");
       } else if (act === "skip-tutorial") {
         const r = skipTutorial(state);
         saveState(state);
@@ -3770,7 +4260,9 @@ function bind() {
         }
         Notification.requestPermission().then((p) => {
           setFlash(p === "granted" ? "已開啟離線通知" : "未授權通知");
-          if (p === "granted" && state.offlineHint) maybeNotifyOffline(state.offlineHint);
+          if (p === "granted" && (state.offlineHint || offlineBankView(state).hasPending)) {
+            maybeNotifyOffline(state.offlineHint || offlineBankView(state));
+          }
         });
       } else if (act === "dismiss-hub") {
         dismissDailyHub(state);
@@ -3829,7 +4321,7 @@ function bind() {
         }
         const r = startDispatch(state, dispatchModal.missionId, dispatchModal.pick || []);
         dispatchModal = null;
-        if (r.ok) panelSub = { ...panelSub, party: "ranch" };
+        if (r.ok) panelSub = { ...panelSub, party: "dispatch" };
         saveState(state);
         render();
         setFlash(r.msg, r.ok ? "unlock" : "");
@@ -3848,6 +4340,21 @@ function bind() {
         clearCombatPlayback({ goSetup: true });
       } else if (act === "skip-combat") {
         skipPlayback();
+      } else if (act === "abyss-continue-floor") {
+        if (!playback?.done || !isAbyssCombat(playback.result)) return;
+        stopPlayback();
+        rewardDetailsOpen = false;
+        panelSub = { ...panelSub, dungeon: "abyss" };
+        playAbyssResult(advanceAbyssDive(state));
+      } else if (act === "abyss-retreat-settle") {
+        if (!playback?.done || !isAbyssCombat(playback.result)) return;
+        stopPlayback();
+        rewardDetailsOpen = false;
+        const r = retreatAbyssDive(state);
+        saveState(state);
+        panelSub = { ...panelSub, dungeon: "abyss" };
+        render();
+        setFlash(r.msg || "已撤退結算");
       } else if (act === "toggle-cond-sheet") {
         condSheetOpen = !condSheetOpen;
         render();
@@ -3919,10 +4426,11 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const [a, b] = petView.breedParents || [];
-      const r = tryBreed(state, a, b);
+      const n = clampBreedBatchCount(btn.dataset.breedCount || breedCount);
+      const r = tryBreed(state, a, b, n);
       saveState(state);
       if (r.ok) {
-        // 開始交配＝進孕育欄（似秘境召喚），唔即出子代
+        // 開始交配＝進孕育欄（似秘境召喚），唔即出蛋
         petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
         panelSub = { ...panelSub, party: "breed" };
       }
@@ -3976,6 +4484,7 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = upgradePetSkill(state, btn.dataset.upgradeSkill);
+      if (r.ok) petView = { ...petView, detailTab: "skills" };
       saveState(state);
       render();
       flashResult(r);
@@ -3985,6 +4494,7 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = useTemperOil(state, btn.dataset.temperOil);
+      if (r.ok) petView = { ...petView, detailTab: "temper" };
       saveState(state);
       render();
       setFlash(r.msg);
@@ -4057,11 +4567,8 @@ function bind() {
       const r = setTrainSite(state, btn.dataset.setTrain);
       // 轉地即時換通關時間／重建掛機戰場
       idleCombat = null;
-      idleAnimBusy = false;
-      if (idleAnimToken) {
-        idleAnimToken.cancelled = true;
-        idleAnimToken = null;
-      }
+      clearTrainIdleCombatState(state);
+      cancelIdleAnim();
       saveState(state);
       render();
       setFlash(r.msg);
@@ -4080,6 +4587,7 @@ function bind() {
       const r = claimTrainTierClear(state);
       if (r.ok) {
         idleCombat = null;
+        clearTrainIdleCombatState(state);
       }
       saveState(state);
       panelSub = { ...panelSub, cultivate: "train" };
@@ -4087,21 +4595,6 @@ function bind() {
       setFlash(r.msg, r.ok ? "unlock" : "");
     });
   });
-  const playAbyssResult = (r) => {
-    saveState(state);
-    if (!r.ok) {
-      setFlash(r.msg);
-      render();
-      return;
-    }
-    if (r.combatEvents?.length) {
-      setFlash(r.msg || "");
-      startPlayback(r);
-      return;
-    }
-    render();
-    setFlash(r.msg || "");
-  };
   app.querySelectorAll("[data-abyss-start]").forEach((btn) => {
     btn.addEventListener("click", () => playAbyssResult(startAbyssDive(state)));
   });
@@ -4169,11 +4662,16 @@ function bind() {
   });
   app.querySelectorAll("[data-dispatch-pick]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!dispatchModal) return;
+      if (!dispatchModal || btn.disabled) return;
       const mission = dispatchView(state).missions.find((m) => m.id === dispatchModal.missionId);
       if (!mission) return;
       const need = mission.needPets;
       const uid = btn.dataset.dispatchPick;
+      const pet = (state.ranch || []).find((p) => p.uid === uid);
+      if (pet && !petMatchesDispatchMission(pet, mission)) {
+        setFlash(mission.reqLabel ? `要揀${mission.reqLabel.replace(/^需/, "")}嘅靈寵。` : "呢隻唔符合任務限制。");
+        return;
+      }
       const set = new Set(dispatchModal.pick || []);
       if (set.has(uid)) set.delete(uid);
       else {
@@ -4190,7 +4688,8 @@ function bind() {
       const r = claimDispatch(state, btn.dataset.claimDispatch);
       saveState(state);
       render();
-      setFlash(r.msg);
+      if (r.ok && r.boardFilledName) setFlash(`${r.msg} · 新任務【${r.boardFilledName}】上板`);
+      else setFlash(r.msg);
     });
   });
   app.querySelectorAll("[data-deploy]").forEach((btn) => {
@@ -4250,11 +4749,26 @@ function bind() {
   });
   app.querySelectorAll("[data-pet-detail]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      petView = { mode: "detail", uid: btn.dataset.petDetail, fuseBase: null, fuseMats: [], breedParents: [] };
+      petView = {
+        mode: "detail",
+        uid: btn.dataset.petDetail,
+        fuseBase: null,
+        fuseMats: [],
+        breedParents: [],
+        detailTab: "stats",
+      };
       if (tutorialActive(state) && state.tutorial.step === "meet_pet") {
         const adv = markTutorialFlag(state, "petDetailVisited");
         if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
       }
+      render();
+    });
+  });
+  app.querySelectorAll("[data-pet-detail-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.petDetailTab;
+      if (!id || petView.detailTab === id) return;
+      petView = { ...petView, detailTab: id };
       render();
     });
   });
@@ -4319,7 +4833,7 @@ function bind() {
       const r = fusePets(state, baseUid, mats);
       saveState(state);
       if (r.ok) {
-        petView = { mode: "detail", uid: baseUid, fuseBase: null, fuseMats: [], breedParents: [] };
+        petView = { mode: "detail", uid: baseUid, fuseBase: null, fuseMats: [], breedParents: [], detailTab: "stats" };
       }
       render();
       flashResult(r);
@@ -4345,6 +4859,12 @@ function bind() {
   app.querySelectorAll("[data-pet-back]").forEach((btn) => {
     btn.addEventListener("click", () => {
       petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+      render();
+    });
+  });
+  app.querySelectorAll("[data-breed-slider]").forEach((input) => {
+    input.addEventListener("input", () => {
+      breedCount = clampBreedBatchCount(input.value);
       render();
     });
   });
@@ -4415,13 +4935,24 @@ if (lateBoot.started) {
   render();
   setFlash(lateBoot.msg, "unlock");
 }
-maybeNotifyOffline(state.offlineHint);
+maybeNotifyOffline(state.offlineHint || (offlineBankView(state).hasPending ? offlineBankView(state) : null));
 
 document.addEventListener("click", onTutorialMisclick, true);
 document.addEventListener("touchend", onTutorialMisclick, true);
 window.addEventListener("resize", () => {
   syncAppHeight();
   positionTutorialSpotlight(false);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    cancelIdleAnim();
+    return;
+  }
+  // 回到前景：用牆鐘追趕掛機戰鬥步數
+  const onTrainPanel = tab === "cultivate" && panelSub.cultivate === "train";
+  tickIdleCombat({ background: !onTrainPanel });
+  if (onTrainPanel) render();
 });
 
 window.addEventListener("beforeinstallprompt", (e) => {
@@ -4435,6 +4966,9 @@ setInterval(() => {
   const eggReadyNow = patchLive();
   const adv = advanceTutorialIfReady(state);
   const snap = tutorialLiveSnapshot(state);
+  const onTrainPanel = tab === "cultivate" && panelSub.cultivate === "train";
+  // 掛機五波：全局推進（離開練功頁／背景分頁仍繼續）
+  tickIdleCombat({ background: !onTrainPanel });
   let summonFlip = false;
   if (tab === "dungeon" && panelSub.dungeon === "field") {
     const ids = dungeonsForRealm(state.realm).filter((id) => resolveDungeon(state, id));
@@ -4453,16 +4987,22 @@ setInterval(() => {
     }
   }
   if (tab === "party" && panelSub.party === "breed" && petView.mode === "list") {
-    const bs = breedStatus(state);
-    const gestating = (bs.jobs || []).some((j) => !j.ready);
-    if (gestating || (bs.claimable || []).length) {
+    const breedPatch = patchBreedLive();
+    if (breedPatch.needRender) {
       saveState(state);
+      const scroller = document.querySelector(".stage-scroll");
+      const scrollTop = scroller?.scrollTop ?? 0;
       render();
+      requestAnimationFrame(() => {
+        const again = document.querySelector(".stage-scroll");
+        if (again) again.scrollTop = scrollTop;
+      });
       return;
     }
+    saveState(state);
+    return;
   }
-  if (tab === "cultivate" && panelSub.cultivate === "train") {
-    tickIdleCombat();
+  if (onTrainPanel) {
     const strip = document.querySelector("[data-live=train-idle]");
     if (strip) {
       const wrap = idleCombat;
@@ -4513,7 +5053,10 @@ setInterval(() => {
             strip.appendChild(claimRow);
             claimRow.querySelector("[data-claim-tier]")?.addEventListener("click", () => {
               const r = claimTrainTierClear(state);
-              if (r.ok) idleCombat = null;
+              if (r.ok) {
+                idleCombat = null;
+                clearTrainIdleCombatState(state);
+              }
               saveState(state);
               panelSub = { ...panelSub, cultivate: "train" };
               render();
@@ -4568,7 +5111,14 @@ function pushNotifyOnce(key, title, body) {
 
 function checkPushReminders() {
   const now = Date.now();
-  if (state.offlineHint && state.offlineHint.sec >= 3600 * 8 - 120) {
+  const bank = offlineBankView(state);
+  if (bank.hasPending && bank.sec >= 3600 * 8 - 120) {
+    pushNotifyOnce(
+      `offline-cap-${bank.sec}`,
+      "暗潮 · 離線上限",
+      "掛機收益即將達 8 小時上限，記得回來領取！"
+    );
+  } else if (state.offlineHint && state.offlineHint.sec >= 3600 * 8 - 120) {
     pushNotifyOnce(
       `offline-cap-${state.offlineHint.at}`,
       "暗潮 · 離線上限",

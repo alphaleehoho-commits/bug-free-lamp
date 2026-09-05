@@ -309,6 +309,30 @@ export const ELEMENT_BEATS = {
 export const ELEMENT_ADV = 1.25;
 export const ELEMENT_DIS = 0.8;
 
+/** 元素說明（詳情頁；粵語繁中） */
+export const ELEMENT_EXPLAIN = {
+  tide: {
+    blurb: "潮屬攻速均衡，擅長跟住節奏推壓。",
+    focus: "攻／速微升",
+  },
+  stone: {
+    blurb: "岩屬厚血慢腳，適合頂線同扛傷。",
+    focus: "血量↑ · 速度↓",
+  },
+  flame: {
+    blurb: "焰屬火力偏高，換血快但續航較薄。",
+    focus: "攻擊↑ · 血量↓",
+  },
+  gale: {
+    blurb: "嵐屬走位靈活，先手同追擊更穩。",
+    focus: "速度↑ · 血量微↓",
+  },
+  gloom: {
+    blurb: "幽屬攻擊偏強，屬性輪轉入位時殺傷突出。",
+    focus: "攻擊↑",
+  },
+};
+
 /** @returns {{ mult: number, tag: '' | '克制' | '被克' }} */
 export function elementMatchup(atkElementId, defElementId) {
   if (!atkElementId || !defElementId || atkElementId === defElementId) {
@@ -317,6 +341,31 @@ export function elementMatchup(atkElementId, defElementId) {
   if (ELEMENT_BEATS[atkElementId] === defElementId) return { mult: ELEMENT_ADV, tag: "克制" };
   if (ELEMENT_BEATS[defElementId] === atkElementId) return { mult: ELEMENT_DIS, tag: "被克" };
   return { mult: 1, tag: "" };
+}
+
+/** 元素詳情卡：白板倍率＋相剋文案 */
+export function elementExplain(elementId) {
+  const el = ELEMENTS[elementId];
+  const ex = ELEMENT_EXPLAIN[elementId];
+  if (!el) return null;
+  const beatsId = ELEMENT_BEATS[elementId];
+  const beatenById = Object.keys(ELEMENT_BEATS).find((id) => ELEMENT_BEATS[id] === elementId);
+  const beats = beatsId ? ELEMENTS[beatsId]?.name || beatsId : "—";
+  const beatenBy = beatenById ? ELEMENTS[beatenById]?.name || beatenById : "—";
+  return {
+    id: el.id,
+    name: el.name,
+    blurb: ex?.blurb || "",
+    focus: ex?.focus || "",
+    atk: el.atk,
+    hp: el.hp,
+    spd: el.spd,
+    beats,
+    beatenBy,
+    cycle: "潮克焰→嵐→岩→幽→潮",
+    advMult: ELEMENT_ADV,
+    disMult: ELEMENT_DIS,
+  };
 }
 
 /**
@@ -333,6 +382,44 @@ export const KIND_SKILLS = {
 };
 
 export const KINDS = ["獸", "鱗", "禽", "甲", "蟲", "光"];
+
+/** 種類說明（詳情頁；粵語繁中） */
+export const KIND_EXPLAIN = {
+  獸: { blurb: "獸類近戰猛，主技偏單體高傷。", focus: "單體爆發" },
+  鱗: { blurb: "鱗類潮勢擴散，主技偏濺射／群傷。", focus: "濺射群攻" },
+  禽: { blurb: "禽類凌空快打，主技兼顧速度判定。", focus: "高速單體" },
+  甲: { blurb: "甲類厚殼守線，主技偏減傷同回血。", focus: "減傷續航" },
+  蟲: { blurb: "蟲類蝕咬滲透，主技帶減益。", focus: "傷害＋減益" },
+  光: { blurb: "光類熒芒穿刺，主技乾淨單體斬擊。", focus: "精準單體" },
+};
+
+export function kindExplain(kind) {
+  const ex = KIND_EXPLAIN[kind];
+  if (!ex) return null;
+  const skillId = KIND_SKILLS[kind];
+  const skill = skillId ? SKILLS[skillId] : null;
+  return {
+    kind,
+    blurb: ex.blurb,
+    focus: ex.focus,
+    skillId: skillId || null,
+    skillName: skill?.name || null,
+  };
+}
+
+/** 技能類型標籤（詳情） */
+export const SKILL_TYPE_LABEL = {
+  strike: "單體攻擊",
+  cleave: "群體攻擊",
+  heal: "治療",
+  guard: "防禦",
+  debuff: "減益",
+  buff: "增益",
+};
+
+export function skillTypeLabel(type) {
+  return SKILL_TYPE_LABEL[type] || type || "技能";
+}
 
 export const SPECIES = {
   reefox: { id: "reefox", name: "礁狐", kind: "獸", base: { atk: 13, hp: 85, spd: 11 } },
@@ -1385,7 +1472,17 @@ export const BREED_STONE_COST = 45;
 export const BREED_COOLDOWN_MS = 45_000;
 /** 同時進行中的交配欄位上限 */
 export const BREED_QUEUE_MAX = 3;
+/** 同對雙親可排程的交配次數（拖曳倍率，似秘境召喚） */
+export const BREED_BATCH_MIN = 1;
+export const BREED_BATCH_MAX = 10;
 export const BREED_ELEMENT_MUTATION_RATE = 0.1;
+/** 蛋欄容量（牧場外） */
+export const EGG_CAP = 6;
+
+export function clampBreedBatchCount(count) {
+  const n = Math.floor(Number(count) || BREED_BATCH_MIN);
+  return Math.max(BREED_BATCH_MIN, Math.min(BREED_BATCH_MAX, n));
+}
 
 /**
  * 稀有度（變異階）
@@ -1576,15 +1673,20 @@ export function petGeneration(pet) {
 }
 
 /**
- * 子代代數（按你嘅規則）
- * 0+0→1；0+G→G；G+G→G50%/G+1 50%；G<H→G70%/H30%
+ * 子代代數
+ * 0+0→1；0+1→1；
+ * 原生+高代（0+G, G≥2）：70%(G-1)／30%G —— 與「低代+高代」同形，避免野生掛高代必出高代且更平。
+ * G+G→G50%/G+1 50%；G<H→G70%/H30%
  */
 export function rollChildGeneration(genA, genB) {
   const a = Math.max(0, Math.min(GEN_MAX, genA | 0));
   const b = Math.max(0, Math.min(GEN_MAX, genB | 0));
   if (a === 0 && b === 0) return 1;
-  if (a === 0) return b;
-  if (b === 0) return a;
+  if (a === 0 || b === 0) {
+    const g = a || b;
+    if (g <= 1) return 1;
+    return Math.random() < 0.7 ? g - 1 : g;
+  }
   const lo = Math.min(a, b);
   const hi = Math.max(a, b);
   if (lo === hi) {
@@ -1599,8 +1701,14 @@ export function childGenerationOdds(genA, genB) {
   const a = Math.max(0, Math.min(GEN_MAX, genA | 0));
   const b = Math.max(0, Math.min(GEN_MAX, genB | 0));
   if (a === 0 && b === 0) return [{ gen: 1, pct: 100 }];
-  if (a === 0) return [{ gen: b, pct: 100 }];
-  if (b === 0) return [{ gen: a, pct: 100 }];
+  if (a === 0 || b === 0) {
+    const g = a || b;
+    if (g <= 1) return [{ gen: 1, pct: 100 }];
+    return [
+      { gen: g - 1, pct: 70 },
+      { gen: g, pct: 30 },
+    ];
+  }
   const lo = Math.min(a, b);
   const hi = Math.max(a, b);
   if (lo === hi) {
@@ -1619,6 +1727,12 @@ export function childGenerationOdds(genA, genB) {
 export function genLabel(gen) {
   const g = Math.max(0, gen | 0);
   return g <= 0 ? "原生" : `繁殖${g}代`;
+}
+
+/** 蛋名用短代數：一代／二代／三代 */
+export function genEggPrefix(gen) {
+  const g = Math.max(1, Math.min(GEN_MAX, gen | 0));
+  return ["", "一代", "二代", "三代"][g] || `${g}代`;
 }
 
 /** 後代愈高：雜交機率／稀有／繼承愈強（用雙親平均代） */
@@ -3214,6 +3328,36 @@ export function makeEgg(tier = "C", source = "unknown", now = Date.now()) {
   };
 }
 
+/**
+ * 交配產出蛋（先蛋後寵）：名／描述已鎖定種＋代；genes／天生加值在領蛋時寫入，孵化時還原。
+ * 例：一代蟲蛋 · 可以孵化出一代蟲寵物
+ */
+export function makeBreedEgg(outcome, now = Date.now()) {
+  const genes = outcome?.genes;
+  const generation = Math.max(1, Math.min(GEN_MAX, (genes?.generation ?? outcome?.generation ?? 1) | 0));
+  const sp = SPECIES[genes?.species];
+  const kind = sp?.kind || outcome?.kind || "獸";
+  const prefix = genEggPrefix(generation);
+  const uid = `egg-breed-${now}-${Math.floor(Math.random() * 99999)}`;
+  return {
+    uid,
+    tier: "C",
+    name: `${prefix}${kind}蛋`,
+    desc: `可以孵化出${prefix}${kind}寵物`,
+    source: "breed",
+    kind,
+    generation,
+    genes: genes ? { ...genes } : null,
+    bornBonus: outcome?.bornBonus ? { ...outcome.bornBonus } : { atk: 0, hp: 0, spd: 0 },
+    awakenSkillLevel: outcome?.awakenSkillLevel || null,
+    parentUids: outcome?.parentUids ? [...outcome.parentUids] : [],
+    parentNames: outcome?.parentNames ? [...outcome.parentNames] : [],
+    startedAt: null,
+    readyAt: null,
+    claimed: false,
+  };
+}
+
 /** 開局／教學蛋孵化時間（短於一般 C 蛋，避免空等） */
 export const STARTER_EGG_HATCH_MS = 20_000;
 export const TUTORIAL_EGG_HATCH_MS = STARTER_EGG_HATCH_MS;
@@ -3228,7 +3372,7 @@ export function makeStarterEgg(now = Date.now()) {
   return egg;
 }
 
-/** 孵化產出寵物（C 普通／B 略強／A 再強） */
+/** 孵化產出寵物（C 普通／B 略強／A 再強；交配蛋用預存 genes） */
 export function hatchPetFromEgg(egg, opts = {}) {
   const tier = egg?.tier || "C";
   const isStarter = egg?.source === "starter" || opts.starter;
@@ -3236,6 +3380,33 @@ export function hatchPetFromEgg(egg, opts = {}) {
     const pet = makeStarterPet();
     pet.fromEgg = egg?.uid || true;
     return pet;
+  }
+  if (egg?.source === "breed" && egg.genes) {
+    const genes = egg.genes;
+    const child = buildPetStats({
+      id: `breed-${egg.uid || Date.now()}`,
+      species: genes.species,
+      element: genes.element,
+      personality: genes.personality,
+      personality2: genes.personality2,
+      bloodmarks: genes.bloodmarks || [],
+      rarity: genes.rarity,
+      cost: 0,
+    });
+    const born = egg.bornBonus || { atk: 0, hp: 0, spd: 0 };
+    child.atk += born.atk || 0;
+    child.hp += born.hp || 0;
+    child.spd += born.spd || 0;
+    if (egg.awakenSkillLevel && (child.skillLevel ?? 1) < egg.awakenSkillLevel) {
+      child.skillLevel = egg.awakenSkillLevel;
+    }
+    child.uid = `${child.templateId || genes.species}-born-${Math.floor(Math.random() * 99999)}`;
+    child.bornFrom = egg.parentUids?.length ? [...egg.parentUids] : undefined;
+    child.generation = genes.generation ?? egg.generation ?? 1;
+    child.fromEgg = egg.uid || true;
+    child.eggTier = tier;
+    child.fromBreedEgg = true;
+    return child;
   }
   const wildIds = wildSpeciesIds(opts.realm || 0);
   const species = opts.species || wildIds[Math.floor(Math.random() * wildIds.length)] || "reefox";
@@ -3536,6 +3707,10 @@ export function gearSetBonus(gearIds) {
 
 /* ─── P9：牧場派遣 ─── */
 
+/**
+ * 派遣任務。needElement／needKind 為派出限制（每隻派出寵都要符合）。
+ * 可接列表由 DISPATCH_BOARD_SIZE 控制，完成領獎後再從解鎖池隨機補位。
+ */
 export const DISPATCH_MISSIONS = [
   {
     id: "forage",
@@ -3543,9 +3718,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 90_000,
     needPets: 1,
     needSite: null,
+    needElement: "tide",
     reward: { feed: 10, stones: 12, materials: { tide_dew: 2 } },
     eggChance: { tier: "C", rate: 0.12 },
-    desc: "1 寵 · 約 1.5 分 → 飼料／潮露 · 低機率潮霧蛋",
+    desc: "1 寵 · 需潮屬 · 約 1.5 分 → 飼料／潮露 · 低機率潮霧蛋",
   },
   {
     id: "egg_shore",
@@ -3553,9 +3729,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 180_000,
     needPets: 1,
     needSite: null,
+    needKind: "鱗",
     reward: { stones: 8, feed: 4, materials: { tide_dew: 1 } },
     eggChance: { tier: "C", rate: 0.55 },
-    desc: "1 寵 · 約 3 分 → 高機率潮霧蛋",
+    desc: "1 寵 · 需鱗類 · 約 3 分 → 高機率潮霧蛋",
   },
   {
     id: "dust_hunt",
@@ -3563,9 +3740,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 150_000,
     needPets: 1,
     needSite: "ruins",
+    needElement: "gloom",
     reward: { dust: 12, stones: 10, materials: { coral_shard: 3 } },
     eggChance: { tier: "C", rate: 0.18 },
-    desc: "1 寵 · 需廢墟影堂 · 靈塵／珊瑚屑 · 偶得蛋",
+    desc: "1 寵 · 需幽屬 · 廢墟影堂 · 靈塵／珊瑚屑 · 偶得蛋",
   },
   {
     id: "egg_ruins",
@@ -3573,9 +3751,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 240_000,
     needPets: 1,
     needSite: "ruins",
+    needKind: "蟲",
     reward: { stones: 14, dust: 4, materials: { coral_shard: 2 } },
     eggChance: { tier: "B", rate: 0.35 },
-    desc: "1 寵 · 需廢墟影堂 · 機率暗潮蛋",
+    desc: "1 寵 · 需蟲類 · 廢墟影堂 · 機率暗潮蛋",
   },
   {
     id: "scrap_dive",
@@ -3583,9 +3762,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 240_000,
     needPets: 2,
     needSite: "deep",
+    needKind: "甲",
     reward: { scrap: 2, stones: 25, feed: 4, materials: { mist_silk: 2 } },
     eggChance: { tier: "B", rate: 0.15 },
-    desc: "2 寵 · 需深層祭壇 · 霧絲",
+    desc: "2 寵 · 需甲類 · 深層祭壇 · 霧絲",
   },
   {
     id: "egg_deep",
@@ -3593,9 +3773,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 300_000,
     needPets: 2,
     needSite: "deep",
+    needElement: "gale",
     reward: { stones: 20, materials: { mist_silk: 1 } },
     eggChance: { tier: "B", rate: 0.45 },
-    desc: "2 寵 · 需深層祭壇 · 高機率暗潮蛋",
+    desc: "2 寵 · 需嵐屬 · 深層祭壇 · 高機率暗潮蛋",
   },
   {
     id: "resin_gather",
@@ -3603,9 +3784,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 210_000,
     needPets: 1,
     needSite: "mistveil",
+    needKind: "禽",
     reward: { dust: 6, stones: 18, materials: { echo_resin: 3 } },
     eggChance: { tier: "B", rate: 0.12 },
-    desc: "1 寵 · 需霧帷練台 · 靈響脂",
+    desc: "1 寵 · 需禽類 · 霧帷練台 · 靈響脂",
   },
   {
     id: "ink_scout",
@@ -3613,9 +3795,11 @@ export const DISPATCH_MISSIONS = [
     durationMs: 300_000,
     needPets: 2,
     needSite: "core",
+    needElement: "gloom",
+    needKind: "光",
     reward: { dust: 8, stones: 30, materials: { abyss_ink: 3 } },
     eggChance: { tier: "B", rate: 0.2 },
-    desc: "2 寵 · 需心核道場 · 深淵墨",
+    desc: "2 寵 · 需幽屬光類 · 心核道場 · 深淵墨",
   },
   {
     id: "sand_haul",
@@ -3623,9 +3807,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 270_000,
     needPets: 2,
     needSite: "fusehall",
+    needElement: "stone",
     reward: { stones: 28, feed: 3, materials: { fuse_sand: 3 } },
     eggChance: { tier: "B", rate: 0.14 },
-    desc: "2 寵 · 需融砂坊 · 融砂",
+    desc: "2 寵 · 需岩屬 · 融砂坊 · 融砂",
   },
   {
     id: "ember_rite",
@@ -3633,9 +3818,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 360_000,
     needPets: 2,
     needSite: "abyss",
+    needElement: "flame",
     reward: { stones: 40, materials: { seal_ember: 3 } },
     eggChance: { tier: "A", rate: 0.1 },
-    desc: "2 寵 · 需暗潮心壇 · 契火 · 低機率心核蛋",
+    desc: "2 寵 · 需焰屬 · 暗潮心壇 · 契火 · 低機率心核蛋",
   },
   {
     id: "egg_abyss",
@@ -3643,13 +3829,18 @@ export const DISPATCH_MISSIONS = [
     durationMs: 420_000,
     needPets: 2,
     needSite: "abyss",
+    needKind: "獸",
     reward: { stones: 35, dust: 6, materials: { seal_ember: 1 } },
     eggChance: { tier: "A", rate: 0.28 },
-    desc: "2 寵 · 需暗潮心壇 · 機率心核蛋",
+    desc: "2 寵 · 需獸類 · 暗潮心壇 · 機率心核蛋",
   },
 ];
 
+/** 同時進行中的派遣上限 */
 export const DISPATCH_SLOT_MAX = 3;
+
+/** 可接任務板面額（解鎖池裡輪換；領獎後隨機補位） */
+export const DISPATCH_BOARD_SIZE = 3;
 
 /* ─── P9：潮印 soft prestige ─── */
 
@@ -3966,6 +4157,36 @@ export function personalityCombatForPet(pet) {
   };
 }
 
+/** 性格角色標籤（詳情） */
+export const PERSONALITY_ROLE_LABEL = {
+  fight: "戰鬥向",
+  work: "工作向",
+  balanced: "均衡",
+  blessed: "祥瑞",
+};
+
+/** 性格詳情：成長偏向＋戰鬥被動文案 */
+export function personalityExplain(personalityId) {
+  const pe = PERSONALITIES[personalityId];
+  if (!pe) return null;
+  const combat = personalityCombatFor(personalityId);
+  return {
+    id: pe.id,
+    name: pe.name,
+    role: pe.role,
+    roleLabel: PERSONALITY_ROLE_LABEL[pe.role] || pe.role || "—",
+    growthAtk: pe.atk,
+    growthHp: pe.hp,
+    growthSpd: pe.spd,
+    combatLabel: combat?.label || `${pe.name}：暫無額外戰鬥被動`,
+    combat: combat,
+    sustainBias: !!combat?.sustainBias,
+    workFeed: pe.workFeed,
+    workDust: pe.workDust,
+    workToken: pe.workToken,
+  };
+}
+
 /* ─── P10：材料／練功地點／主線解鎖 ─── */
 
 export const MATERIALS = {
@@ -4056,12 +4277,29 @@ export function upgradeMatCost(level) {
   };
 }
 
-/** 繁殖耗材料（代數愈高愈貴） */
+/**
+ * 繁殖耗材料（按雙親代數）
+ *
+ * 規則：以 max 代拉高珊瑚屑；深淵墨跟「代數參與度」走，原生掛高代要多付，
+ * 唔好再出現「野生+2代＝必出2代且比 1+2 更平」嘅倒掛。
+ * - coral_shard = 1 + max(genA, genB)
+ * - abyss_ink   = maxGen==0 → 0；否則 maxGen + (有原生親且 maxGen≥2 ? 1 : 0)
+ *   例：0+0→屑1墨0｜0+1→屑2墨1｜1+1→屑2墨1｜0+2→屑3墨3｜1+2→屑3墨2｜2+2→屑3墨2
+ */
 export function breedMatCost(genA, genB) {
-  const avg = (Math.max(0, genA | 0) + Math.max(0, genB | 0)) / 2;
+  const a = Math.max(0, genA | 0);
+  const b = Math.max(0, genB | 0);
+  const maxGen = Math.max(a, b);
+  const minGen = Math.min(a, b);
+  const coral = 1 + maxGen;
+  let abyss = 0;
+  if (maxGen >= 1) {
+    abyss = maxGen;
+    if (minGen === 0 && maxGen >= 2) abyss += 1;
+  }
   return {
-    coral_shard: 1 + Math.floor(avg),
-    abyss_ink: avg >= 1.5 ? 1 : 0,
+    coral_shard: coral,
+    abyss_ink: abyss,
   };
 }
 
@@ -5335,8 +5573,11 @@ export function weekKey(now = Date.now()) {
   return `${tmp.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
-/** 離線結算提示門檻（秒） */
+/** 離線結算提示門檻（秒）——達標後收益入離線庫而非即時入帳 */
 export const OFFLINE_HINT_SEC = 90;
+
+/** 離線／AFK 未領取收益累積上限（秒） */
+export const OFFLINE_BANK_CAP_SEC = 3600 * 8;
 
 /* ─── P3：繁殖目標／配方一覽／秘境試煉 ─── */
 
