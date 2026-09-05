@@ -1371,7 +1371,7 @@ export function createTrainIdleSession(state) {
     zoneId,
     tierIndex,
     canUnlockNext,
-    /** 本輪是否首次挑戰當前未通霧階（隱晦效率：通關秒數） */
+    /** 本輪是否首次挑戰當前未通霧階（首通文案用） */
     isFirstClear: canUnlockNext && !z.clearReady,
     clearReady: !!z.clearReady,
     petSig,
@@ -1389,7 +1389,9 @@ export function createTrainIdleSession(state) {
     pauseLeft: 0,
     ended: false,
     won: false,
+    /** 出手步數（內部）；通關秒數改用牆鐘 startedAt */
     fightTicks: 0,
+    startedAt: Date.now(),
     clearSec: null,
     resultLine: null,
     lastText: `—— 第 1 波・${waves[0].label} ——`,
@@ -1423,8 +1425,10 @@ export function stepTrainIdleSession(session) {
   const allies = session.allies;
   const foes = session.foes;
 
-  const finishIdleResult = (won) => {
-    const sec = Math.max(1, session.fightTicks | 0);
+  const finishIdleResult = (won, now = Date.now()) => {
+    // 牆鐘秒數（含攻擊動畫等待）；唔再用出手步數冒充秒
+    const started = session.startedAt || now;
+    const sec = Math.max(1, Math.round((now - started) / 1000));
     session.clearSec = sec;
     session.won = !!won;
     if (won) {
