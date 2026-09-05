@@ -1660,6 +1660,51 @@ button.ghost {
 }
 .skill-list strong { color: var(--jade-bright); font-family: var(--font-display); }
 
+.pet-detail-tabs {
+  display: flex;
+  gap: 0.28rem;
+  margin: 0.35rem 0 0.45rem;
+  flex-wrap: wrap;
+}
+.pet-detail-tabs button {
+  flex: 1 1 auto;
+  min-width: 4.2rem;
+  font-size: 0.72rem;
+  padding: 0.32rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--fog);
+}
+.pet-detail-tabs button.on {
+  border-color: rgba(126, 168, 160, 0.55);
+  color: var(--jade-bright);
+  background: rgba(40, 72, 68, 0.45);
+}
+.pet-explain {
+  margin: 0.35rem 0;
+  padding: 0.4rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid rgba(126, 168, 160, 0.18);
+  background: rgba(0, 0, 0, 0.18);
+}
+.pet-explain h3 {
+  margin: 0 0 0.2rem;
+  font-size: 0.78rem;
+  font-family: var(--font-display);
+  color: var(--jade-bright);
+  font-weight: 600;
+}
+.pet-explain .meta {
+  margin: 0.12rem 0;
+}
+.pet-detail-upgrade {
+  margin-top: 0.45rem;
+}
+.pet-detail-block {
+  margin-bottom: 0.2rem;
+}
+
 .card-row {
   display: flex;
   align-items: center;

@@ -65,7 +65,6 @@ import {
   SKILLS,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
-  FUSION_MAX_STAGE,
   BREED_STONE_COST,
   BOND_FEED_COST,
   BOND_FEED_BONUS,
@@ -133,7 +132,19 @@ import {
   buyAbyssCosmetic,
   buyAbyssEgg,
 } from "./engine.js";
-import { DUNGEON_SUMMON_MIN, DUNGEON_SUMMON_MAX, clampDungeonSummonCount, TRAIN_DEPTH_MULT, TRAIN_TIER_COUNT } from "./data.js";
+import {
+  DUNGEON_SUMMON_MIN,
+  DUNGEON_SUMMON_MAX,
+  clampDungeonSummonCount,
+  TRAIN_DEPTH_MULT,
+  TRAIN_TIER_COUNT,
+  elementExplain,
+  kindExplain,
+  personalityExplain,
+  skillTypeLabel,
+  skillPowerMult,
+  SECOND_SKILL_UNLOCK,
+} from "./data.js";
 import { petIconHtml, petIconFromPet } from "./pet-icons.js";
 import {
   tutorialActive,
@@ -395,7 +406,14 @@ function patchTutorialBanner() {
 }
 
 /** @type {{ mode: 'list' | 'detail' | 'fuse' | 'breed', uid: string | null, fuseBase: string | null, fuseMats: string[], breedParents: string[] }} */
-let petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+let petView = {
+  mode: "list",
+  uid: null,
+  fuseBase: null,
+  fuseMats: [],
+  breedParents: [],
+  detailTab: "stats",
+};
 
 function tutorialNavCtx() {
   return { tab, panelSub, petDetail: petView.mode === "detail" };
@@ -2976,10 +2994,167 @@ function partyNavHtml() {
   ]);
 }
 
+function fmtGrowthMult(v) {
+  if (v == null || Number.isNaN(+v)) return "—";
+  const pct = Math.round((+v - 1) * 100);
+  if (pct === 0) return "±0%";
+  return pct > 0 ? `+${pct}%` : `${pct}%`;
+}
+
+function petDetailTabNav(active) {
+  const tabs = [
+    ["stats", "屬性"],
+    ["temper", "性格"],
+    ["skills", "技能"],
+  ];
+  return `<nav class="pet-detail-tabs" aria-label="靈寵詳情分頁">${tabs
+    .map(
+      ([id, label]) =>
+        `<button type="button" class="${active === id ? "on" : ""}" data-pet-detail-tab="${id}">${label}</button>`
+    )
+    .join("")}</nav>`;
+}
+
+function petDetailStatsHtml(pet, detail, rarity) {
+  const kindEx = kindExplain(pet.kind);
+  const elEx = elementExplain(pet.elementId);
+  const base = detail.baseline;
+  const bonus = detail.innateBonus || { atk: 0, hp: 0, spd: 0 };
+  const bonusLine = (n) => (n > 0 ? ` <span class="muted">（天生＋${n}）</span>` : "");
+  return `
+    <ul class="skill-list pet-detail-block">
+      <li><strong>戰力</strong> — 攻${pet.atk}${bonusLine(bonus.atk)} · 血${pet.hp}${bonusLine(bonus.hp)} · 速${pet.spd}${bonusLine(bonus.spd)}</li>
+      ${
+        base
+          ? `<li><strong>種族基準</strong> — 攻${base.atk} 血${base.hp} 速${base.spd}（未計等級／融階）</li>`
+          : ""
+      }
+      <li><strong>稀有</strong> — <span class="rarity rarity-${rarity.color}">${escapeHtml(rarity.name)}</span></li>
+    </ul>
+    <div class="pet-explain">
+      <h3>種類 · ${escapeHtml(pet.kind)}</h3>
+      <p class="meta">${escapeHtml(kindEx?.blurb || "種類決定主技能流派。")}${
+        kindEx?.focus ? ` <span class="muted">偏向：${escapeHtml(kindEx.focus)}</span>` : ""
+      }</p>
+      ${
+        kindEx?.skillName
+          ? `<p class="meta">種類主技【${escapeHtml(kindEx.skillName)}】</p>`
+          : ""
+      }
+    </div>
+    <div class="pet-explain">
+      <h3>元素 · ${escapeHtml(pet.elementName || elEx?.name || "—")}</h3>
+      <p class="meta">${escapeHtml(elEx?.blurb || "元素影響白板同相剋。")}${
+        elEx?.focus ? ` <span class="muted">偏向：${escapeHtml(elEx.focus)}</span>` : ""
+      }</p>
+      ${
+        elEx
+          ? `<p class="meta">白板倍率 攻${fmtGrowthMult(elEx.atk)} · 血${fmtGrowthMult(elEx.hp)} · 速${fmtGrowthMult(elEx.spd)}</p>
+      <p class="meta">相剋：克${escapeHtml(elEx.beats)}（×${elEx.advMult}）· 被${escapeHtml(elEx.beatenBy)}克（×${elEx.disMult}）</p>
+      <p class="meta muted">${escapeHtml(elEx.cycle)}</p>`
+          : ""
+      }
+    </div>`;
+}
+
+function petDetailTemperHtml(pet) {
+  const main = personalityExplain(pet.personalityId);
+  const sub = pet.personality2Id ? personalityExplain(pet.personality2Id) : null;
+  const blood =
+    pet.bloodlineName && pet.bloodlineName !== "無紋"
+      ? `<li><strong>血脈</strong> — ${escapeHtml(pet.bloodlineName)}</li>`
+      : "";
+  const block = (ex, tag) => {
+    if (!ex) return "";
+    return `
+      <div class="pet-explain">
+        <h3>${escapeHtml(tag)} · ${escapeHtml(ex.name)} <span class="muted">（${escapeHtml(ex.roleLabel)}）</span></h3>
+        <p class="meta"><strong>戰鬥被動</strong> — ${escapeHtml(ex.combatLabel)}</p>
+        <p class="meta">成長偏向 攻${fmtGrowthMult(ex.growthAtk)} · 血${fmtGrowthMult(ex.growthHp)} · 速${fmtGrowthMult(ex.growthSpd)}</p>
+        ${ex.sustainBias ? `<p class="meta muted">續航親和：治療／減傷技較易惠及此寵</p>` : ""}
+        <p class="meta muted">牧場產出 飼料×${(+ex.workFeed).toFixed(2)} · 靈塵×${(+ex.workDust).toFixed(2)} · 潮霧令×${(+ex.workToken).toFixed(2)}</p>
+      </div>`;
+  };
+  return `
+    <ul class="skill-list pet-detail-block">
+      <li><strong>主性格</strong> — ${escapeHtml(pet.personalityName || main?.name || "—")}</li>
+      ${
+        pet.personality2Name
+          ? `<li><strong>副性格</strong> — ${escapeHtml(pet.personality2Name)} <span class="muted">（戰鬥被動約三成比重）</span></li>`
+          : `<li><strong>副性格</strong> — <span class="muted">未覺醒</span></li>`
+      }
+      ${blood}
+    </ul>
+    ${block(main, "主性格")}
+    ${sub ? block(sub, "副性格") : ""}
+    <p class="meta">可用性格洗劑重抽主性格（唔改種族／元素）。</p>`;
+}
+
+function petSkillCardHtml(skill, { level, maxed, dustCost, skillMatHtml, title }) {
+  if (!skill) {
+    return `<div class="pet-explain"><h3>${escapeHtml(title)}</h3><p class="meta muted">暫無技能資料。</p></div>`;
+  }
+  const pow = skill.power != null ? (skill.power * skillPowerMult(level || 1)).toFixed(2) : null;
+  const lvBit =
+    level != null
+      ? `Lv.${level}${maxed ? "（滿）" : dustCost != null ? ` · 升需靈塵${dustCost}${skillMatHtml ? `＋${skillMatHtml}` : ""}` : ""}`
+      : "";
+  return `
+    <div class="pet-explain">
+      <h3>${escapeHtml(title)} · 【${escapeHtml(skill.name)}】</h3>
+      ${lvBit ? `<p class="meta">${lvBit}</p>` : ""}
+      <p class="meta">${escapeHtml(skill.desc || "效果未註明。")}</p>
+      <p class="meta muted">${escapeHtml(skillTypeLabel(skill.type))} · CD${skill.cd ?? "—"}${
+        pow != null ? ` · 威力約×${pow}` : ""
+      }</p>
+    </div>`;
+}
+
+function petDetailSkillsHtml(pet, detail) {
+  const {
+    skill,
+    skillLevel,
+    skillDustCost: dustCost,
+    skillMatCost: skillMatsNeed,
+    skillMaxed,
+    secondSkill,
+    secondUnlocked,
+  } = detail;
+  const skillMatHtml =
+    skillMatsNeed && Object.keys(skillMatsNeed).length ? matAffordHtml(skillMatsNeed) : "";
+  const unlockNeed = `融階≥${SECOND_SKILL_UNLOCK.fusionLevel} 或 Lv≥${SECOND_SKILL_UNLOCK.level}`;
+  const secondBlock = secondUnlocked
+    ? petSkillCardHtml(secondSkill, {
+        level: skillLevel,
+        maxed: skillMaxed,
+        dustCost: null,
+        skillMatHtml: "",
+        title: "第二技能",
+      })
+    : `<div class="pet-explain">
+        <h3>第二技能</h3>
+        <p class="meta muted">未解鎖（${escapeHtml(unlockNeed)}）</p>
+        ${
+          secondSkill
+            ? `<p class="meta">預覽【${escapeHtml(secondSkill.name)}】— ${escapeHtml(secondSkill.desc || "")}</p>`
+            : ""
+        }
+      </div>`;
+  return `
+    ${petSkillCardHtml(skill || { name: pet.skillName || "—", desc: "", type: "", cd: null, power: null }, {
+      level: skillLevel,
+      maxed: skillMaxed,
+      dustCost,
+      skillMatHtml,
+      title: "主技能",
+    })}
+    ${secondBlock}`;
+}
+
 function petsDetailView() {
   const detail = petDetail(state, petView.uid);
   if (!detail) {
-    petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+    petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [], detailTab: "stats" };
     return petsListView();
   }
   const {
@@ -2987,22 +3162,8 @@ function petsDetailView() {
     deployed,
     upgradeCost,
     upgradeFeedCost: feedCost,
-    fuseCostHint,
-    fuseMatCost: fuseMatsNeed,
-    skill,
     fuseMaxed,
-    fuseNeedLevel,
-    fuseTotalPets,
-    fuseMatNeed,
-    nextFusionStage,
-    skillLevel,
-    skillDustCost: dustCost,
-    skillMatCost: skillMatsNeed,
     skillMaxed,
-    secondSkill,
-    secondUnlocked,
-    baseline,
-    innateBonus,
   } = detail;
   const lv = pet.level ?? 1;
   const fus = pet.fusionLevel ?? 0;
@@ -3011,40 +3172,21 @@ function petsDetailView() {
   const busySet = new Set(dispatchView(state).busyUids || []);
   const onDispatch = !deployed && busySet.has(pet.uid);
   const loc = deployed ? "出戰中" : onDispatch ? "派遣中" : "牧場待命";
-  const fuseHint = fuseMaxed
-    ? `已達融階上限（${FUSION_MAX_STAGE}）`
-    : `下一融階 ${nextFusionStage}：主體≥Lv.${fuseNeedLevel}、共 ${fuseTotalPets} 隻（${fuseMatNeed} 素材）· ${fuseCostHint} 靈石${
-        fuseMatsNeed && Object.keys(fuseMatsNeed).length
-          ? `＋${matAffordHtml(fuseMatsNeed) || "融砂"}`
-          : ""
-      }`;
-
-  const secondLine = secondUnlocked
-    ? `【${escapeHtml(secondSkill?.name || "—")}】${secondSkill ? ` ${escapeHtml(secondSkill.desc)}（CD${secondSkill.cd}）` : ""}`
-    : `未解鎖（融階≥1 或 Lv≥15）`;
-
-  const matUp = upgradeMatCost(lv);
-  const matUpHtml = matAffordHtml(matUp);
-  const skillMatHtml =
-    skillMatsNeed && Object.keys(skillMatsNeed).length ? matAffordHtml(skillMatsNeed) : "";
+  const detailTab = petView.detailTab || "stats";
+  const tabBody =
+    detailTab === "temper"
+      ? petDetailTemperHtml(pet)
+      : detailTab === "skills"
+        ? petDetailSkillsHtml(pet, detail)
+        : petDetailStatsHtml(pet, detail, r);
   const lineage = petLineage(state, pet.uid);
   return wrapStage(
     "",
     `<h2>${escapeHtml(displayPetName(pet))}</h2>
     <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
-    <ul class="skill-list">
-      <li><strong>屬性</strong> — ${escapeHtml(pet.kind)}·${escapeHtml(pet.elementName)} · <span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span></li>
-      <li><strong>性格</strong> — ${escapeHtml(pet.personalityName)}${pet.personality2Name ? `／${escapeHtml(pet.personality2Name)}` : ""}${pet.bloodlineName && pet.bloodlineName !== "無紋" ? ` · 血脈${escapeHtml(pet.bloodlineName)}` : ""}</li>
-      <li><strong>戰力</strong> — 攻${pet.atk} 血${pet.hp} 速${pet.spd}</li>
-      <li><strong>技能</strong> — 【${escapeHtml(pet.skillName || skill?.name || "—")}】Lv.${skillLevel}${
-        skillMaxed
-          ? "（滿）"
-          : dustCost != null
-            ? ` · 升需靈塵${dustCost}${skillMatHtml ? `＋${skillMatHtml}` : ""}`
-            : ""
-      }</li>
-      <li><strong>升級</strong> — ${upgradeCostLine(upgradeCost, feedCost, lv)}</li>
-    </ul>
+    ${petDetailTabNav(detailTab)}
+    ${tabBody}
+    <p class="meta pet-detail-upgrade"><strong>升級</strong> — ${upgradeCostLine(upgradeCost, feedCost, lv)}</p>
     ${lineageHtml(lineage)}
     <div class="row gear-row">
       <label>暱稱<input type="text" maxlength="${NICK_MAX_LEN}" data-nick-input value="${escapeHtml(pet.nick || "")}" placeholder="${escapeHtml(pet.name)}" /></label>
@@ -4232,6 +4374,7 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = upgradePetSkill(state, btn.dataset.upgradeSkill);
+      if (r.ok) petView = { ...petView, detailTab: "skills" };
       saveState(state);
       render();
       flashResult(r);
@@ -4241,6 +4384,7 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = useTemperOil(state, btn.dataset.temperOil);
+      if (r.ok) petView = { ...petView, detailTab: "temper" };
       saveState(state);
       render();
       setFlash(r.msg);
@@ -4489,11 +4633,26 @@ function bind() {
   });
   app.querySelectorAll("[data-pet-detail]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      petView = { mode: "detail", uid: btn.dataset.petDetail, fuseBase: null, fuseMats: [], breedParents: [] };
+      petView = {
+        mode: "detail",
+        uid: btn.dataset.petDetail,
+        fuseBase: null,
+        fuseMats: [],
+        breedParents: [],
+        detailTab: "stats",
+      };
       if (tutorialActive(state) && state.tutorial.step === "meet_pet") {
         const adv = markTutorialFlag(state, "petDetailVisited");
         if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
       }
+      render();
+    });
+  });
+  app.querySelectorAll("[data-pet-detail-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.petDetailTab;
+      if (!id || petView.detailTab === id) return;
+      petView = { ...petView, detailTab: id };
       render();
     });
   });
@@ -4558,7 +4717,7 @@ function bind() {
       const r = fusePets(state, baseUid, mats);
       saveState(state);
       if (r.ok) {
-        petView = { mode: "detail", uid: baseUid, fuseBase: null, fuseMats: [], breedParents: [] };
+        petView = { mode: "detail", uid: baseUid, fuseBase: null, fuseMats: [], breedParents: [], detailTab: "stats" };
       }
       render();
       flashResult(r);

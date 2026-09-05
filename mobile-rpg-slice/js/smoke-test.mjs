@@ -135,6 +135,12 @@ import {
   emptyMaterials,
   OFFLINE_HINT_SEC,
   OFFLINE_BANK_CAP_SEC,
+  elementExplain,
+  kindExplain,
+  personalityExplain,
+  skillTypeLabel,
+  ELEMENT_EXPLAIN,
+  KIND_EXPLAIN,
 } from "./data.js";
 import {
   affordMaterials,
@@ -1978,6 +1984,32 @@ assert(uiSrc2.includes("abyss-retreat-settle"), "ui retreat from combat settle")
 assert(uiSrc2.includes("已通關第"), "ui cleared-floor copy");
 assert(uiSrc2.includes("下一層預覽"), "ui next floor preview");
 assert(cssSrc.includes("combat-report-card--abyss-settle"), "css abyss settle enlarge");
+
+/* Pet detail explain tabs */
+{
+  const el = elementExplain("tide");
+  assert(el?.name === "潮" && el.beats === "焰" && el.beatenBy === "幽", "tide element explain");
+  assert(el.blurb.includes("潮"), "tide blurb");
+  const kd = kindExplain("獸");
+  assert(kd?.focus && kd.skillName === "撲襲", "kind 獸 explain");
+  const pe = personalityExplain("fierce");
+  assert(pe?.combatLabel.includes("攻擊") && pe.roleLabel === "戰鬥向", "fierce personality explain");
+  assert(skillTypeLabel("cleave") === "群體攻擊", "skill type label");
+  assert(Object.keys(ELEMENT_EXPLAIN).length === 5, "five element explains");
+  assert(Object.keys(KIND_EXPLAIN).length === KINDS.length, "kind explain covers KINDS");
+  for (const id of Object.keys(PERSONALITIES)) {
+    assert(personalityExplain(id)?.combatLabel, `personality explain ${id}`);
+  }
+}
+assert(uiSrc2.includes("data-pet-detail-tab"), "ui pet detail tabs");
+assert(uiSrc2.includes("petDetailStatsHtml"), "ui stats tab helper");
+assert(uiSrc2.includes("petDetailTemperHtml"), "ui temper tab helper");
+assert(uiSrc2.includes("petDetailSkillsHtml"), "ui skills tab helper");
+assert(uiSrc2.includes("戰鬥被動"), "ui personality combat copy");
+assert(uiSrc2.includes("相剋"), "ui element matchup copy");
+assert(uiSrc2.includes("data-upgrade-skill") && uiSrc2.includes("data-temper-oil"), "ui keep upgrade/temper");
+assert(cssSrc.includes("pet-detail-tabs"), "css pet detail tabs");
+assert(cssSrc.includes("pet-explain"), "css pet explain blocks");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

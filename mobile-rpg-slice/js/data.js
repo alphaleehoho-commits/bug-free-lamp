@@ -309,6 +309,30 @@ export const ELEMENT_BEATS = {
 export const ELEMENT_ADV = 1.25;
 export const ELEMENT_DIS = 0.8;
 
+/** 元素說明（詳情頁；粵語繁中） */
+export const ELEMENT_EXPLAIN = {
+  tide: {
+    blurb: "潮屬攻速均衡，擅長跟住節奏推壓。",
+    focus: "攻／速微升",
+  },
+  stone: {
+    blurb: "岩屬厚血慢腳，適合頂線同扛傷。",
+    focus: "血量↑ · 速度↓",
+  },
+  flame: {
+    blurb: "焰屬火力偏高，換血快但續航較薄。",
+    focus: "攻擊↑ · 血量↓",
+  },
+  gale: {
+    blurb: "嵐屬走位靈活，先手同追擊更穩。",
+    focus: "速度↑ · 血量微↓",
+  },
+  gloom: {
+    blurb: "幽屬攻擊偏強，屬性輪轉入位時殺傷突出。",
+    focus: "攻擊↑",
+  },
+};
+
 /** @returns {{ mult: number, tag: '' | '克制' | '被克' }} */
 export function elementMatchup(atkElementId, defElementId) {
   if (!atkElementId || !defElementId || atkElementId === defElementId) {
@@ -317,6 +341,31 @@ export function elementMatchup(atkElementId, defElementId) {
   if (ELEMENT_BEATS[atkElementId] === defElementId) return { mult: ELEMENT_ADV, tag: "克制" };
   if (ELEMENT_BEATS[defElementId] === atkElementId) return { mult: ELEMENT_DIS, tag: "被克" };
   return { mult: 1, tag: "" };
+}
+
+/** 元素詳情卡：白板倍率＋相剋文案 */
+export function elementExplain(elementId) {
+  const el = ELEMENTS[elementId];
+  const ex = ELEMENT_EXPLAIN[elementId];
+  if (!el) return null;
+  const beatsId = ELEMENT_BEATS[elementId];
+  const beatenById = Object.keys(ELEMENT_BEATS).find((id) => ELEMENT_BEATS[id] === elementId);
+  const beats = beatsId ? ELEMENTS[beatsId]?.name || beatsId : "—";
+  const beatenBy = beatenById ? ELEMENTS[beatenById]?.name || beatenById : "—";
+  return {
+    id: el.id,
+    name: el.name,
+    blurb: ex?.blurb || "",
+    focus: ex?.focus || "",
+    atk: el.atk,
+    hp: el.hp,
+    spd: el.spd,
+    beats,
+    beatenBy,
+    cycle: "潮克焰→嵐→岩→幽→潮",
+    advMult: ELEMENT_ADV,
+    disMult: ELEMENT_DIS,
+  };
 }
 
 /**
@@ -333,6 +382,44 @@ export const KIND_SKILLS = {
 };
 
 export const KINDS = ["獸", "鱗", "禽", "甲", "蟲", "光"];
+
+/** 種類說明（詳情頁；粵語繁中） */
+export const KIND_EXPLAIN = {
+  獸: { blurb: "獸類近戰猛，主技偏單體高傷。", focus: "單體爆發" },
+  鱗: { blurb: "鱗類潮勢擴散，主技偏濺射／群傷。", focus: "濺射群攻" },
+  禽: { blurb: "禽類凌空快打，主技兼顧速度判定。", focus: "高速單體" },
+  甲: { blurb: "甲類厚殼守線，主技偏減傷同回血。", focus: "減傷續航" },
+  蟲: { blurb: "蟲類蝕咬滲透，主技帶減益。", focus: "傷害＋減益" },
+  光: { blurb: "光類熒芒穿刺，主技乾淨單體斬擊。", focus: "精準單體" },
+};
+
+export function kindExplain(kind) {
+  const ex = KIND_EXPLAIN[kind];
+  if (!ex) return null;
+  const skillId = KIND_SKILLS[kind];
+  const skill = skillId ? SKILLS[skillId] : null;
+  return {
+    kind,
+    blurb: ex.blurb,
+    focus: ex.focus,
+    skillId: skillId || null,
+    skillName: skill?.name || null,
+  };
+}
+
+/** 技能類型標籤（詳情） */
+export const SKILL_TYPE_LABEL = {
+  strike: "單體攻擊",
+  cleave: "群體攻擊",
+  heal: "治療",
+  guard: "防禦",
+  debuff: "減益",
+  buff: "增益",
+};
+
+export function skillTypeLabel(type) {
+  return SKILL_TYPE_LABEL[type] || type || "技能";
+}
 
 export const SPECIES = {
   reefox: { id: "reefox", name: "礁狐", kind: "獸", base: { atk: 13, hp: 85, spd: 11 } },
@@ -3963,6 +4050,36 @@ export function personalityCombatForPet(pet) {
     hpMult: blend(a.hpMult, b.hpMult),
     spdMult: blend(a.spdMult, b.spdMult),
     sustainBias: !!(a.sustainBias || b.sustainBias),
+  };
+}
+
+/** 性格角色標籤（詳情） */
+export const PERSONALITY_ROLE_LABEL = {
+  fight: "戰鬥向",
+  work: "工作向",
+  balanced: "均衡",
+  blessed: "祥瑞",
+};
+
+/** 性格詳情：成長偏向＋戰鬥被動文案 */
+export function personalityExplain(personalityId) {
+  const pe = PERSONALITIES[personalityId];
+  if (!pe) return null;
+  const combat = personalityCombatFor(personalityId);
+  return {
+    id: pe.id,
+    name: pe.name,
+    role: pe.role,
+    roleLabel: PERSONALITY_ROLE_LABEL[pe.role] || pe.role || "—",
+    growthAtk: pe.atk,
+    growthHp: pe.hp,
+    growthSpd: pe.spd,
+    combatLabel: combat?.label || `${pe.name}：暫無額外戰鬥被動`,
+    combat: combat,
+    sustainBias: !!combat?.sustainBias,
+    workFeed: pe.workFeed,
+    workDust: pe.workDust,
+    workToken: pe.workToken,
   };
 }
 
