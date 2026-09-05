@@ -133,6 +133,8 @@ import {
   ABYSS_WIPE_KEEP_RATE,
   emptyAbyssDive,
   emptyMaterials,
+  OFFLINE_HINT_SEC,
+  OFFLINE_BANK_CAP_SEC,
 } from "./data.js";
 import {
   affordMaterials,
@@ -174,6 +176,12 @@ import {
   stepTrainIdleSession,
   markTrainIdleClearReady,
   persistTrainIdleClearResult,
+  persistTrainIdleCombatState,
+  restoreTrainIdleCombatState,
+  clearTrainIdleCombatState,
+  claimOfflineBank,
+  offlineBankView,
+  clearOfflineHint,
   runTrainLayerCombat,
   challengeTrainWarden,
   setTrainSite,
@@ -1020,6 +1028,86 @@ const tickMatSt = {
 tickCultivation(tickMatSt);
 assert(Math.floor(tickMatSt.materials.tide_dew) >= 1, "deterministic train mats over 40s");
 
+/* Offline bank: accrue without wallet credit until claim; accumulate up to cap */
+const offSt = {
+  realm: 0,
+  qi: 100,
+  stones: 0,
+  feed: 0,
+  dust: 0,
+  materials: { ...emptyMaterials(), tide_dew: 0 },
+  trainSite: "shore",
+  pets: [makeStarterPet()],
+  ranch: [],
+  lastTick: Date.now() - (OFFLINE_HINT_SEC + 120) * 1000,
+  daily: { date: todayKey(), idleSec: 0, progress: {}, claimed: {} },
+  achievements: {},
+  stats: {},
+  clearedDungeons: {},
+  master: { name: "t", equip: {}, skillIds: [] },
+  log: [],
+  offlineBank: null,
+  offlineHint: null,
+  tutorial: { done: true, step: null, flags: {} },
+};
+const qiBeforeOff = offSt.qi;
+const dewBeforeOff = Math.floor(offSt.materials.tide_dew || 0);
+tickCultivation(offSt);
+assert((offSt.qi | 0) === (qiBeforeOff | 0), "offline tick does not credit qi until claim");
+assert(Math.floor(offSt.materials.tide_dew || 0) === dewBeforeOff, "offline tick does not credit mats until claim");
+const bank1 = offlineBankView(offSt);
+assert(bank1.hasPending && bank1.sec >= OFFLINE_HINT_SEC, "offline bank has pending after gap");
+assert((bank1.qi | 0) > 0 || (bank1.feed | 0) > 0 || Object.keys(bank1.materials || {}).length > 0, "offline bank accrued gains");
+assert(offSt.offlineHint?.pending, "offline hint marks pending collect");
+const sec1 = bank1.sec;
+// second offline session accumulates
+offSt.lastTick = Date.now() - (OFFLINE_HINT_SEC + 60) * 1000;
+tickCultivation(offSt);
+const bank2 = offlineBankView(offSt);
+assert(bank2.sec > sec1, "uncollected offline bank keeps accumulating");
+clearOfflineHint(offSt);
+assert(offlineBankView(offSt).hasPending, "dismiss hint keeps bank");
+const claimOff = claimOfflineBank(offSt);
+assert(claimOff.ok, "claim offline bank ok");
+assert((offSt.qi | 0) > (qiBeforeOff | 0), "claim credits qi");
+assert(!offlineBankView(offSt).hasPending, "bank empty after claim");
+// cap: fill bank to cap then refuse more
+offSt.offlineBank = {
+  qi: 1,
+  feed: 0,
+  dust: 0,
+  materials: {},
+  sec: OFFLINE_BANK_CAP_SEC,
+  siteName: "潮岸",
+  capped: true,
+};
+offSt.lastTick = Date.now() - (OFFLINE_HINT_SEC + 300) * 1000;
+const qiAtCap = offSt.qi;
+tickCultivation(offSt);
+assert((offSt.offlineBank.sec | 0) === OFFLINE_BANK_CAP_SEC, "offline bank respects cap sec");
+assert((offSt.qi | 0) === (qiAtCap | 0), "capped offline does not leak to wallet");
+assert(offSt.offlineBank.capped, "offline bank marked capped");
+
+/* Persist / restore idle combat session startedAt across save */
+const persistWrap = {
+  zoneId: "shore",
+  tierIndex: 0,
+  petSig: "p",
+  formationId: "balanced",
+  clearReady: false,
+  canUnlockNext: true,
+  resultLine: null,
+  logLine: "test",
+  session: { startedAt: 1_700_000_000_000, waveIndex: 2, waveCount: 5, ended: false },
+};
+const persistSt = { trainIdleCombat: null };
+persistTrainIdleCombatState(persistSt, persistWrap);
+const restored = restoreTrainIdleCombatState(persistSt);
+assert(restored?.session?.startedAt === 1_700_000_000_000, "restore idle startedAt wall clock");
+assert(restored.session.waveIndex === 2, "restore idle wave progress");
+clearTrainIdleCombatState(persistSt);
+assert(!restoreTrainIdleCombatState(persistSt), "clear idle combat state");
+
 /* P13: egg-first tutorial flow */
 const tut = { done: false, step: "hatch_starter", flags: { starterHatched: true } };
 const tutPet = makeStarterPet();
@@ -1751,6 +1839,12 @@ assert(uiSrc2.includes("去下一層"), "ui claim next label");
 assert(!uiSrc2.includes("data-advance-tier"), "ui no manual advance fight button");
 assert(!uiSrc2.includes("advanceCooldownAt"), "ui no advance cooldown");
 assert(uiSrc2.includes("createTrainIdleSession"), "ui idle wave session");
+assert(uiSrc2.includes("tickIdleCombat({ background"), "ui idle combat ticks in background");
+assert(uiSrc2.includes("persistTrainIdleCombatState"), "ui persists idle combat session");
+assert(uiSrc2.includes("restoreTrainIdleCombatState"), "ui restores idle combat session");
+assert(uiSrc2.includes("claim-offline"), "ui offline collect button");
+assert(uiSrc2.includes("claimOfflineBank"), "ui claims offline bank");
+assert(uiSrc2.includes("visibilitychange"), "ui catch-up on tab visible");
 assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
 assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
