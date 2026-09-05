@@ -130,6 +130,7 @@ import {
   ACTIVE_PET_MAX,
   ABYSS_MUTATION_IDS,
   ABYSS_COSMETIC_IDS,
+  ABYSS_WIPE_KEEP_RATE,
   emptyAbyssDive,
   emptyMaterials,
 } from "./data.js";
@@ -1803,16 +1804,69 @@ assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
   assert(av.unlocked && av.freeLeft, "abyss unlocked free first");
   const s1 = startAbyssDive(abyssSt);
   assert(s1.ok && s1.won && s1.depth === 1 && s1.combatEvents?.length, "abyss floor 1 clear");
+  assert(s1.clearedDepth === 1 && s1.nextFloor?.depth === 2, "abyss settle cleared + next preview");
+  assert(String(s1.msg || "").includes("已通關第 1 層"), "abyss win copy means cleared");
+  assert(s1.combatKind === "abyss" && s1.gritGained > 0, "abyss grit on clear");
   assert(abyssSt.abyssDive.run?.pendingGrit > 0, "pending grit after floor");
   const s3 = advanceAbyssDive(abyssSt);
   assert(s3.ok, "abyss floor 2");
   const s4 = advanceAbyssDive(abyssSt);
   assert(s4.ok && (abyssSt.abyssDive.run?.mutationIds || []).length >= 1, "mutation by floor 3");
+  if (s4.won) {
+    assert(s4.nextFloor?.depth === 4, "next floor after clear 3");
+    assert(s4.mutations?.length >= 1, "settlement lists mutations");
+  }
   const before = Math.floor(abyssSt.materials.abyss_grit || 0);
   const ret = retreatAbyssDive(abyssSt);
   assert(ret.ok && ret.grit > 0, "retreat grants grit");
+  assert(String(ret.msg || "").includes("已通第"), "retreat copy cleared depth");
   assert(Math.floor(abyssSt.materials.abyss_grit) === before + ret.grit, "grit banked");
   assert(!abyssSt.abyssDive.run, "run cleared on retreat");
+  // wipe settlement fields
+  {
+    const wipeSt = {
+      realm: 1,
+      pets: [
+        {
+          uid: "aw1",
+          name: "弱測",
+          speciesId: "reefox",
+          elementId: "tide",
+          personalityId: "fierce",
+          kind: "獸",
+          atk: 1,
+          hp: 8,
+          spd: 1,
+          level: 1,
+          skillLevel: 1,
+          generation: 1,
+          bloodmarks: [],
+        },
+      ],
+      materials: { ...emptyMaterials(), mist_token: 5, abyss_grit: 0 },
+      clearedDungeons: { tide_1: true },
+      formation: "balanced",
+      tactics: "balanced",
+      eggs: [],
+      log: [],
+      abyssDive: {
+        ...emptyAbyssDive(),
+        run: {
+          seed: "wipe-test",
+          depth: 2,
+          pendingGrit: 20,
+          mutationIds: ["mut_no_heal"],
+          startedAt: Date.now(),
+        },
+      },
+    };
+    const wipe = advanceAbyssDive(wipeSt);
+    assert(wipe.ok && wipe.wiped && !wipe.won, "abyss wipe result");
+    assert(wipe.failedDepth === 3 && wipe.clearedDepth === 2, "wipe depth copy");
+    assert(wipe.gritKept === Math.floor(20 * ABYSS_WIPE_KEEP_RATE), "wipe keep rate");
+    assert(wipe.combatKind === "abyss" && wipe.combatEvents?.length, "wipe still has playback");
+    assert(!wipeSt.abyssDive.run, "wipe clears run");
+  }
   assert(buyAbyssInsurance(abyssSt).ok, "buy insurance");
   assert(buyAbyssCosmetic(abyssSt, "veil_mark").ok, "buy cosmetic");
   assert(abyssSt.abyssDive.cosmetics.veil_mark, "cosmetic owned");
@@ -1823,6 +1877,13 @@ assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
 assert(uiSrc2.includes("abyssDiveView"), "ui abyss view");
 assert(uiSrc2.includes("data-abyss-start"), "ui abyss start");
 assert(uiSrc2.includes("潮淵"), "ui abyss tab label");
+assert(uiSrc2.includes("isAbyssCombat"), "ui excludes abyss from farm skip");
+assert(uiSrc2.includes("abyssSettlementHtml"), "ui abyss settlement block");
+assert(uiSrc2.includes("abyss-continue-floor"), "ui continue next floor");
+assert(uiSrc2.includes("abyss-retreat-settle"), "ui retreat from combat settle");
+assert(uiSrc2.includes("已通關第"), "ui cleared-floor copy");
+assert(uiSrc2.includes("下一層預覽"), "ui next floor preview");
+assert(cssSrc.includes("combat-report-card--abyss-settle"), "css abyss settle enlarge");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

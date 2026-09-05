@@ -40,6 +40,11 @@ import {
   partySynergy,
   renamePet,
   clearOfflineHint,
+  claimOfflineBank,
+  offlineBankView,
+  persistTrainIdleCombatState,
+  clearTrainIdleCombatState,
+  restoreTrainIdleCombatState,
   claimDaily,
   claimAllDailies,
   claimDailyAllClear,
@@ -257,8 +262,13 @@ function saveCombatPrefs(prefs) {
 
 let combatPrefs = loadCombatPrefs();
 
+function isAbyssCombat(result) {
+  return result?.combatKind === "abyss";
+}
+
 function isFarmCombat(result) {
   if (result?.combatKind === "train") return false;
+  if (isAbyssCombat(result)) return false;
   if (!result?.won) return false;
   const fc = result.rewardBreakdown?.firstClear;
   return !(fc && (fc.stones || fc.scrap));
@@ -266,6 +276,7 @@ function isFarmCombat(result) {
 
 function combatSpeedMult(result) {
   if (tutorialActive(state)) return 1;
+  if (isAbyssCombat(result)) return 1;
   if (combatPrefs.fastMode && isFarmCombat(result)) return 0.12;
   return 1;
 }
@@ -1480,11 +1491,14 @@ function advancePlayback() {
 
 function clearCombatPlayback(opts = {}) {
   const goSetup = !!opts.goSetup;
+  const wasAbyss = isAbyssCombat(playback?.result);
   stopPlayback();
   rewardDetailsOpen = false;
   if (goSetup) {
     panelSub = { ...panelSub, dungeon: "setup" };
     markTutorialSubVisit("dungeon", "setup");
+  } else if (wasAbyss) {
+    panelSub = { ...panelSub, dungeon: "abyss" };
   }
   render();
 }
@@ -1520,7 +1534,7 @@ function finishPlayback() {
     setFlash(adv.unlockMsg, "unlock");
   } else if (unlocks.length) {
     setFlash(`解鎖練功地【${unlocks.join("】【")}】！ ${resultMsg}`, "unlock");
-  } else if (resultMsg) {
+  } else if (resultMsg && !isAbyssCombat(result)) {
     setFlash(resultMsg);
   }
 }
@@ -1528,6 +1542,9 @@ function finishPlayback() {
 function startPlayback(result) {
   stopPlayback();
   if (result?.combatKind !== "train") tab = "dungeon";
+  if (isAbyssCombat(result)) {
+    panelSub = { ...panelSub, dungeon: "abyss" };
+  }
   condSheetOpen = false;
   rewardDetailsOpen = false;
   const events =
@@ -1796,7 +1813,7 @@ function dailyHubHtml() {
     .map((d) => `<li>派遣 · ${escapeHtml(d.name)} · ${d.secLeft}s</li>`)
     .join("");
   const offlineLine = hub.offline
-    ? `<p class="hub-offline">離線 ${Math.round(hub.offline.sec / 60)} 分 · 靈契 +${fmtInt(hub.offline.qi)} · 飼料 +${fmtMatQty(hub.offline.feed)}${hub.offline.materials ? ` · ${escapeHtml(formatMatBits(hub.offline.materials))}` : ""}${hub.offline.dust ? ` · 靈塵 +${fmtMatQty(hub.offline.dust)}` : ""}</p>`
+    ? `<p class="hub-offline">待領離線 ${Math.round(hub.offline.sec / 60)} 分 · 靈契 +${fmtInt(hub.offline.qi)} · 飼料 +${fmtMatQty(hub.offline.feed)}${hub.offline.materials ? ` · ${escapeHtml(formatMatBits(hub.offline.materials))}` : ""}${hub.offline.dust ? ` · 靈塵 +${fmtMatQty(hub.offline.dust)}` : ""}${hub.offline.capped ? " · 已達上限" : ""}</p>`
     : "";
   const goalLine = hub.nextGoal
     ? `<p class="hub-goal">下一目標：<strong>${escapeHtml(hub.nextGoal.label)}</strong>（${escapeHtml(hub.nextGoal.progress)}）</p>`
@@ -1852,21 +1869,38 @@ function installBanner() {
     </div>`;
 }
 
+let offlineDismissedAtSec = -1;
+
 function offlineBanner() {
-  const h = state.offlineHint;
-  if (!h) return "";
-  const min = Math.max(1, Math.round(h.sec / 60));
-  const matLine = formatMatBits(h.materials);
-  const detail = `靈契 +${fmtInt(h.qi)} · 飼料 +${fmtMatQty(h.feed)} · 靈塵 +${fmtMatQty(h.dust)}${
+  const bank = offlineBankView(state);
+  const h = bank.hasPending ? bank : state.offlineHint;
+  if (!bank.hasPending && !h) return "";
+  const pending = bank.hasPending ? bank : h;
+  if (bank.hasPending && offlineDismissedAtSec === (bank.sec | 0)) return "";
+  if (
+    !(pending.qi | 0) &&
+    !(pending.feed | 0) &&
+    !(pending.dust | 0) &&
+    !formatMatBits(pending.materials) &&
+    !(pending.sec | 0)
+  ) {
+    return "";
+  }
+  const min = Math.max(1, Math.round((pending.sec || 0) / 60));
+  const matLine = formatMatBits(pending.materials);
+  const detail = `靈契 +${fmtInt(pending.qi)} · 飼料 +${fmtMatQty(pending.feed)} · 靈塵 +${fmtMatQty(pending.dust)}${
     matLine ? ` · ${matLine}` : ""
-  }${h.siteName ? `（${h.siteName}）` : ""}`;
+  }${pending.siteName ? `（${pending.siteName}）` : ""}${pending.capped ? " · 已達累積上限" : ""}`;
   return `
     <div class="chrome-toast offline-toast" data-live="offline">
       <div class="offline-body">
-        <strong>離線約 ${min} 分鐘</strong>
+        <strong>待領離線約 ${min} 分鐘</strong>
         <p class="offline-detail">${escapeHtml(detail)}</p>
       </div>
-      <button type="button" data-act="clear-offline">知道了</button>
+      <div class="row offline-acts">
+        <button type="button" class="primary" data-act="claim-offline">領取</button>
+        <button type="button" class="ghost" data-act="clear-offline">稍後</button>
+      </div>
     </div>`;
 }
 
@@ -1877,23 +1911,55 @@ function tabBtn(id, label, busy) {
   return `<button type="button" role="tab" class="${tab === id ? "on" : ""}${glow}" data-tab="${id}" ${disabled}>${label}</button>`;
 }
 
-/** Live idle combat — real 5-wave session stepped each second */
+/** Live idle combat — real 5-wave session stepped each second (also in background) */
 let idleCombat = null;
 let idleAnimBusy = false;
 let idleAnimToken = null;
+let lastIdleStepAt = Date.now();
+let idleCombatBootstrapped = false;
 
 function idlePetSig(st) {
   return (st.pets || []).map((p) => `${p.uid}:${p.atk}:${p.hp}:${p.spd}`).join("|");
+}
+
+function cancelIdleAnim() {
+  if (idleAnimToken) {
+    idleAnimToken.cancelled = true;
+    for (const t of idleAnimToken.timers || []) clearTimeout(t);
+    idleAnimToken = null;
+  }
+  idleAnimBusy = false;
 }
 
 function ensureIdleCombat() {
   const view = trainIdleCombatView(state);
   if (!view.petCount) {
     idleCombat = null;
+    clearTrainIdleCombatState(state);
     return null;
   }
   const sig = idlePetSig(state);
   const formationId = currentFormationId();
+
+  // 首次：由存檔還原 session（保留 startedAt 牆鐘）
+  if (!idleCombatBootstrapped) {
+    idleCombatBootstrapped = true;
+    const saved = restoreTrainIdleCombatState(state);
+    if (
+      saved?.session &&
+      saved.zoneId === view.zoneId &&
+      saved.tierIndex === view.tierIndex &&
+      saved.petSig === sig &&
+      saved.formationId === formationId
+    ) {
+      idleCombat = { ...saved, fx: emptyIdleFx() };
+      idleCombat.logLine = view.logLine;
+      idleCombat.clearReady = !!view.clearReady || !!idleCombat.clearReady;
+      idleCombat.session.clearReady = idleCombat.clearReady;
+      return idleCombat;
+    }
+  }
+
   const needNew =
     !idleCombat ||
     !idleCombat.session ||
@@ -1905,6 +1971,7 @@ function ensureIdleCombat() {
     const session = createTrainIdleSession(state);
     if (!session) {
       idleCombat = null;
+      clearTrainIdleCombatState(state);
       return null;
     }
     idleCombat = {
@@ -1925,6 +1992,7 @@ function ensureIdleCombat() {
     idleCombat.clearReady = !!view.clearReady || !!idleCombat.clearReady;
     idleCombat.session.clearReady = idleCombat.clearReady;
   }
+  persistTrainIdleCombatState(state, idleCombat);
   return idleCombat;
 }
 
@@ -1997,63 +2065,103 @@ async function playIdleCombatEvents(events) {
   if (idleAnimToken === token) idleAnimToken = null;
 }
 
-function tickIdleCombat() {
+function tickIdleCombat({ background = false } = {}) {
+  // 離開練功頁／背景分頁：取消動畫鎖，繼續推進五波
+  if (background || (typeof document !== "undefined" && document.hidden)) {
+    cancelIdleAnim();
+  }
   if (idleAnimBusy) return;
   const wrap = ensureIdleCombat();
   if (!wrap?.session) return;
 
-  const result = stepTrainIdleSession(wrap.session);
-  if (result.status === "restart") {
-    const keepReady = wrap.clearReady;
-    const session = createTrainIdleSession(state);
-    if (!session) {
-      idleCombat = null;
-      return;
-    }
-    session.clearReady = keepReady;
-    wrap.session = session;
-    wrap.petSig = idlePetSig(state);
-    // 新一輪進行中唔顯示上一場通關時間
-    wrap.resultLine = null;
-    wrap.fx = emptyIdleFx();
-    patchIdleRosterFromSession(wrap);
-    return;
+  const now = Date.now();
+  const gapSec = Math.max(0, (now - lastIdleStepAt) / 1000);
+  lastIdleStepAt = now;
+  // 約 1 步／秒；背景或節流時用牆鐘追趕
+  let steps = 1;
+  if (background || (typeof document !== "undefined" && document.hidden) || gapSec > 1.5) {
+    steps = Math.min(120, Math.max(1, Math.floor(gapSec || 1)));
   }
-  if (result.status === "won" || result.status === "lost") {
-    if (wrap.session.resultLine) {
-      wrap.resultLine = wrap.session.resultLine;
-      persistTrainIdleClearResult(state, wrap.session);
-      saveState(state);
+
+  let lastResult = null;
+  let playEvents = null;
+  let needRosterPatch = false;
+  let autoClaimMsg = null;
+
+  for (let i = 0; i < steps; i++) {
+    if (!wrap.session) break;
+    const result = stepTrainIdleSession(wrap.session);
+    lastResult = result;
+
+    if (result.status === "restart") {
+      const keepReady = wrap.clearReady;
+      const session = createTrainIdleSession(state);
+      if (!session) {
+        idleCombat = null;
+        clearTrainIdleCombatState(state);
+        return;
+      }
+      session.clearReady = keepReady;
+      wrap.session = session;
+      wrap.petSig = idlePetSig(state);
+      wrap.resultLine = null;
+      wrap.fx = emptyIdleFx();
+      needRosterPatch = true;
+      continue;
+    }
+
+    if (result.status === "won" || result.status === "lost") {
+      if (wrap.session.resultLine) {
+        wrap.resultLine = wrap.session.resultLine;
+        persistTrainIdleClearResult(state, wrap.session);
+      }
+    }
+
+    if (result.status === "wave" || result.status === "round") {
+      needRosterPatch = true;
+    }
+
+    if (result.status === "won") {
+      const marked = markTrainIdleClearReady(state, wrap.session);
+      if (marked?.ok) {
+        if (marked.autoClaimed) {
+          autoClaimMsg = marked.claim?.msg || "霧階全破 · 可挑戰域主";
+          idleCombat = null;
+          clearTrainIdleCombatState(state);
+          break;
+        }
+        wrap.clearReady = true;
+      }
+    }
+
+    // 前景且單步：播攻擊動畫；追趕／背景則跳過
+    if (!background && steps === 1) {
+      const combatEvents = (result.events || []).filter(
+        (e) => e.type === "strike" || e.type === "heal"
+      );
+      if (combatEvents.length) playEvents = combatEvents;
     }
   }
 
-  const combatEvents = (result.events || []).filter(
-    (e) => e.type === "strike" || e.type === "heal"
-  );
-  if (combatEvents.length) {
+  persistTrainIdleCombatState(state, idleCombat);
+  saveState(state);
+
+  if (autoClaimMsg) {
+    setFlash(autoClaimMsg, "unlock");
+    if (!background) render();
+    return;
+  }
+
+  if (playEvents) {
     idleAnimBusy = true;
-    playIdleCombatEvents(combatEvents)
+    playIdleCombatEvents(playEvents)
       .catch(() => {})
       .finally(() => {
         idleAnimBusy = false;
         if (idleCombat?.session) patchIdleRosterFromSession(idleCombat);
       });
-  } else if (result.status === "wave" || result.status === "round") {
+  } else if (!background && (needRosterPatch || lastResult)) {
     patchIdleRosterFromSession(wrap);
-  }
-
-  if (result.status === "won") {
-    const marked = markTrainIdleClearReady(state, wrap.session);
-    if (marked?.ok) {
-      saveState(state);
-      if (marked.autoClaimed) {
-        idleCombat = null;
-        setFlash(marked.claim?.msg || "霧階全破 · 可挑戰域主", "unlock");
-        render();
-        return;
-      }
-      wrap.clearReady = true;
-    }
   }
 }
 
@@ -3233,6 +3341,57 @@ function sweepModalHtml() {
     </div>`;
 }
 
+function abyssNextFloorNote(next) {
+  if (!next) return "";
+  if (next.willAddMutation) return "將加入 1 條新突變";
+  if (next.insuranceSkips) return "突變保險將略過新突變";
+  if (next.atMutationCap) return "突變已達上限，無新增";
+  if (next.mutationFloor) return "突變層（無新增）";
+  return "本層無新突變";
+}
+
+function abyssSettlementHtml(result) {
+  if (!isAbyssCombat(result)) return "";
+  const muts = result.mutations || [];
+  const mutLine = muts.length
+    ? muts.map((m) => `【${escapeHtml(m.name)}】${escapeHtml(m.desc || "")}`).join("<br/>")
+    : "尚無突變";
+  if (result.wiped || !result.won) {
+    const failed = result.failedDepth || result.depth || 0;
+    const cleared = result.clearedDepth | 0;
+    const kept = result.gritKept ?? result.gritGained ?? 0;
+    const pendingBefore = result.pendingBefore | 0;
+    return `
+      <div class="abyss-settle abyss-settle--wipe">
+        <p class="lead">第 <strong>${failed}</strong> 層挑戰失敗</p>
+        <p class="meta">此前已通第 ${cleared} 層 · 保底帶回淵砂 <strong>${kept}</strong>${
+          pendingBefore ? `（原待結算 ${pendingBefore}）` : ""
+        }</p>
+        <p class="meta">本趟突變：</p>
+        <p class="meta abyss-mut-list">${mutLine}</p>
+        <p class="meta muted">深潛已結束——請確認結算後返回。</p>
+      </div>`;
+  }
+  const next = result.nextFloor;
+  const nextNote = abyssNextFloorNote(next);
+  return `
+    <div class="abyss-settle">
+      <p class="lead">已通關第 <strong>${result.clearedDepth || result.depth}</strong> 層</p>
+      <div class="settle-summary-row abyss-grit-row">
+        <div>
+          <strong class="settle-total">淵砂 +${result.gritGained || 0}</strong>
+          <span class="muted">待結算累計 ${result.pendingGrit || 0}</span>
+        </div>
+      </div>
+      <p class="meta">活躍突變：</p>
+      <p class="meta abyss-mut-list">${mutLine}</p>
+      <div class="abyss-next-preview">
+        <strong>下一層預覽 · 第 ${next?.depth ?? (result.depth | 0) + 1} 層</strong>
+        <span class="muted">${escapeHtml(nextNote)}</span>
+      </div>
+    </div>`;
+}
+
 function combatModalHtml() {
   if (!playback) return "";
   const pct = Math.min(
@@ -3245,32 +3404,71 @@ function combatModalHtml() {
       return combatLogLineHtml(t, ev);
     })
     .join("");
-  const bd = playback.result?.rewardBreakdown;
-  const wonSettle = playback.done && bd && playback.result.won;
+  const result = playback.result;
+  const isAbyss = isAbyssCombat(result);
+  const bd = result?.rewardBreakdown;
+  const wonSettle = playback.done && bd && result.won && !isAbyss;
   const settleHead = wonSettle
     ? `<div class="settle-summary-row">
         <div>
           <strong class="settle-total">+${bd.totalStones} 靈石</strong>
-          <span class="muted">${bd.base?.scrap ? `基礎通碎片 +${bd.base.scrap}` : "通關結算"}</span>
+          <span class="muted">${bd.base?.scrap ? `普通碎片 +${bd.base.scrap}` : "通關結算"}</span>
         </div>
         <button type="button" class="ghost" data-act="toggle-reward-details">${rewardDetailsOpen ? "收起明細" : "獎勵明細"}</button>
       </div>
       ${rewardDetailsOpen ? combatRewardBreakdownHtml(bd) : ""}`
     : "";
+  const abyssSettle = playback.done && isAbyss ? abyssSettlementHtml(result) : "";
   const logBlock = playback.done
     ? ""
     : `<div class="combat-scroll combat-log-fixed" data-live="combat-scroll">
         <ul class="combat" data-live="combat-log">${lines}</ul>
       </div>`;
   const tacticsStep = tutorialActive(state) && state.tutorial.step === "tactics";
-  const isTrain = playback.result?.combatKind === "train";
-  const clearLabel = tacticsStep ? "前往戰術設定" : isTrain ? "返回練功" : "返回秘境";
+  const isTrain = result?.combatKind === "train";
+  const clearLabel = tacticsStep
+    ? "前往戰術設定"
+    : isTrain
+      ? "返回練功"
+      : isAbyss
+        ? "返回潮淵"
+        : "返回秘境";
   const clearAct = tacticsStep ? "clear-combat-setup" : "clear-combat";
+  const title = playback.done
+    ? isAbyss
+      ? result?.wiped || !result?.won
+        ? "潮淵結算 · 挑戰失敗"
+        : "潮淵結算 · 層通關"
+      : "結算"
+    : isAbyss
+      ? `戰報 · 第 ${result?.depth || "?"} 層`
+      : "戰報";
+  const cardClass = `combat-modal-card combat-report-card${
+    isAbyss ? " combat-report-card--abyss" : ""
+  }${playback.done && isAbyss ? " combat-report-card--abyss-settle" : ""}`;
+  let actions = "";
+  if (!playback.done) {
+    actions = `
+          <button type="button" data-act="skip-combat">跳過動畫</button>
+          <button type="button" class="primary" data-act="${clearAct}" disabled>${escapeHtml(clearLabel)}</button>`;
+  } else if (isAbyss && result?.won && !result?.wiped && result?.canContinue) {
+    actions = `
+          <button type="button" class="primary" data-act="abyss-continue-floor">繼續下一層</button>
+          <button type="button" class="secondary" data-act="abyss-retreat-settle">撤退結算</button>
+          <button type="button" data-act="${clearAct}">${escapeHtml(clearLabel)}</button>`;
+  } else if (isAbyss) {
+    actions = `
+          <button type="button" class="primary" data-act="${clearAct}">${escapeHtml(clearLabel)}</button>`;
+  } else {
+    actions = `
+          <button type="button" data-act="skip-combat" hidden>跳過動畫</button>
+          <button type="button" class="primary" data-act="${clearAct}">${escapeHtml(clearLabel)}</button>`;
+  }
   return `
-    <div class="combat-modal-overlay" data-live="combat-modal" role="dialog" aria-label="${playback.done ? "結算" : "戰報"}">
-      <div class="combat-modal-card combat-report-card">
+    <div class="combat-modal-overlay" data-live="combat-modal" role="dialog" aria-label="${escapeHtml(title)}">
+      <div class="${cardClass}">
         <div class="combat-modal-scroll">
-          <h2>${playback.done ? "結算" : "戰報"}${playback.isFarm && combatPrefs.fastMode ? `<span class="combat-fast-badge">快速</span>` : ""}</h2>
+          <h2>${escapeHtml(title)}${playback.isFarm && combatPrefs.fastMode ? `<span class="combat-fast-badge">快速</span>` : ""}</h2>
           ${playback.waveLabel && !playback.done ? `<p class="combat-wave-banner" data-live="combat-wave">${escapeHtml(playback.waveLabel)}</p>` : `<p class="combat-wave-banner" data-live="combat-wave" hidden></p>`}
           ${logBlock}
           <p class="lead combat-round-meta" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
@@ -3278,15 +3476,13 @@ function combatModalHtml() {
           ${renderCombatRoster(playback)}
           ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
           ${settleHead}
+          ${abyssSettle}
         </div>
-        <div class="combat-modal-actions row">
-          <button type="button" data-act="skip-combat" ${playback.done ? "hidden" : ""}>跳過動畫</button>
-          <button type="button" class="primary" data-act="${clearAct}" ${playback.done ? "" : "disabled"}>${escapeHtml(clearLabel)}</button>
+        <div class="combat-modal-actions row">${actions}
         </div>
       </div>
     </div>`;
 }
-
 function dungeonCondSheetHtml() {
   const dungeonIds = dungeonsForRealm(state.realm).filter((id) => resolveDungeon(state, id));
   const curId = dungeonIds[dungeonIdx];
@@ -3347,17 +3543,18 @@ function abyssPanelHtml() {
     : "尚無突變";
   const runBlock = run
     ? `<div class="abyss-run card-block">
-        <p class="lead">進行中 · 第 <strong>${run.depth}</strong> 層 · 待結算淵砂 <strong>${run.pendingGrit}</strong></p>
+        <p class="lead">進行中 · 已通第 <strong>${run.depth}</strong> 層 · 待結算淵砂 <strong>${run.pendingGrit}</strong></p>
+        <p class="meta">下一挑戰：第 <strong>${(run.depth | 0) + 1}</strong> 層</p>
         <p class="meta">突變：${mutLine}</p>
         <div class="row">
-          <button type="button" class="primary" data-abyss-advance>再潛一層</button>
+          <button type="button" class="primary" data-abyss-advance>挑戰第 ${(run.depth | 0) + 1} 層</button>
           <button type="button" class="secondary" data-abyss-retreat>撤退結算</button>
         </div>
       </div>`
     : `<div class="abyss-run card-block">
         <p class="lead">未開潛</p>
         <p class="meta">今日首趟免費 · 其後耗潮霧令 ×${v.entryCost || 1}（現有 ${v.tokenHave}）</p>
-        <button type="button" class="primary" data-abyss-start>開始深潛</button>
+        <button type="button" class="primary" data-abyss-start>開始深潛（第 1 層）</button>
       </div>`;
   const cosRows = (v.cosmeticList || [])
     .map((c) => {
@@ -3662,6 +3859,29 @@ function logPanel() {
   );
 }
 
+function playAbyssResult(r) {
+  saveState(state);
+  panelSub = { ...panelSub, dungeon: "abyss" };
+  if (!r.ok) {
+    setFlash(r.msg);
+    render();
+    return;
+  }
+  // 潮淵勝負都要進戰報／結算窗，唔好淨係 flash 返秘境
+  if (r.combatEvents?.length || r.combatKind === "abyss") {
+    if (!r.combatEvents?.length) {
+      r = {
+        ...r,
+        combatEvents: [{ type: "text", text: r.msg || "潮淵結算" }],
+      };
+    }
+    startPlayback(r);
+    return;
+  }
+  render();
+  setFlash(r.msg || "");
+}
+
 function bind() {
   app.querySelectorAll("[data-panel-sub]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -3753,9 +3973,16 @@ function bind() {
         render();
         setFlash(r.msg);
       } else if (act === "clear-offline") {
+        offlineDismissedAtSec = offlineBankView(state).sec | 0;
         clearOfflineHint(state);
         saveState(state);
         render();
+      } else if (act === "claim-offline") {
+        offlineDismissedAtSec = -1;
+        const r = claimOfflineBank(state);
+        saveState(state);
+        render();
+        setFlash(r.msg, r.ok ? "unlock" : "");
       } else if (act === "skip-tutorial") {
         const r = skipTutorial(state);
         saveState(state);
@@ -3782,7 +4009,9 @@ function bind() {
         }
         Notification.requestPermission().then((p) => {
           setFlash(p === "granted" ? "已開啟離線通知" : "未授權通知");
-          if (p === "granted" && state.offlineHint) maybeNotifyOffline(state.offlineHint);
+          if (p === "granted" && (state.offlineHint || offlineBankView(state).hasPending)) {
+            maybeNotifyOffline(state.offlineHint || offlineBankView(state));
+          }
         });
       } else if (act === "dismiss-hub") {
         dismissDailyHub(state);
@@ -3860,6 +4089,21 @@ function bind() {
         clearCombatPlayback({ goSetup: true });
       } else if (act === "skip-combat") {
         skipPlayback();
+      } else if (act === "abyss-continue-floor") {
+        if (!playback?.done || !isAbyssCombat(playback.result)) return;
+        stopPlayback();
+        rewardDetailsOpen = false;
+        panelSub = { ...panelSub, dungeon: "abyss" };
+        playAbyssResult(advanceAbyssDive(state));
+      } else if (act === "abyss-retreat-settle") {
+        if (!playback?.done || !isAbyssCombat(playback.result)) return;
+        stopPlayback();
+        rewardDetailsOpen = false;
+        const r = retreatAbyssDive(state);
+        saveState(state);
+        panelSub = { ...panelSub, dungeon: "abyss" };
+        render();
+        setFlash(r.msg || "已撤退結算");
       } else if (act === "toggle-cond-sheet") {
         condSheetOpen = !condSheetOpen;
         render();
@@ -4069,11 +4313,8 @@ function bind() {
       const r = setTrainSite(state, btn.dataset.setTrain);
       // 轉地即時換通關時間／重建掛機戰場
       idleCombat = null;
-      idleAnimBusy = false;
-      if (idleAnimToken) {
-        idleAnimToken.cancelled = true;
-        idleAnimToken = null;
-      }
+      clearTrainIdleCombatState(state);
+      cancelIdleAnim();
       saveState(state);
       render();
       setFlash(r.msg);
@@ -4092,6 +4333,7 @@ function bind() {
       const r = claimTrainTierClear(state);
       if (r.ok) {
         idleCombat = null;
+        clearTrainIdleCombatState(state);
       }
       saveState(state);
       panelSub = { ...panelSub, cultivate: "train" };
@@ -4099,21 +4341,6 @@ function bind() {
       setFlash(r.msg, r.ok ? "unlock" : "");
     });
   });
-  const playAbyssResult = (r) => {
-    saveState(state);
-    if (!r.ok) {
-      setFlash(r.msg);
-      render();
-      return;
-    }
-    if (r.combatEvents?.length) {
-      setFlash(r.msg || "");
-      startPlayback(r);
-      return;
-    }
-    render();
-    setFlash(r.msg || "");
-  };
   app.querySelectorAll("[data-abyss-start]").forEach((btn) => {
     btn.addEventListener("click", () => playAbyssResult(startAbyssDive(state)));
   });
@@ -4427,13 +4654,24 @@ if (lateBoot.started) {
   render();
   setFlash(lateBoot.msg, "unlock");
 }
-maybeNotifyOffline(state.offlineHint);
+maybeNotifyOffline(state.offlineHint || (offlineBankView(state).hasPending ? offlineBankView(state) : null));
 
 document.addEventListener("click", onTutorialMisclick, true);
 document.addEventListener("touchend", onTutorialMisclick, true);
 window.addEventListener("resize", () => {
   syncAppHeight();
   positionTutorialSpotlight(false);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    cancelIdleAnim();
+    return;
+  }
+  // 回到前景：用牆鐘追趕掛機戰鬥步數
+  const onTrainPanel = tab === "cultivate" && panelSub.cultivate === "train";
+  tickIdleCombat({ background: !onTrainPanel });
+  if (onTrainPanel) render();
 });
 
 window.addEventListener("beforeinstallprompt", (e) => {
@@ -4447,6 +4685,9 @@ setInterval(() => {
   const eggReadyNow = patchLive();
   const adv = advanceTutorialIfReady(state);
   const snap = tutorialLiveSnapshot(state);
+  const onTrainPanel = tab === "cultivate" && panelSub.cultivate === "train";
+  // 掛機五波：全局推進（離開練功頁／背景分頁仍繼續）
+  tickIdleCombat({ background: !onTrainPanel });
   let summonFlip = false;
   if (tab === "dungeon" && panelSub.dungeon === "field") {
     const ids = dungeonsForRealm(state.realm).filter((id) => resolveDungeon(state, id));
@@ -4473,8 +4714,7 @@ setInterval(() => {
       return;
     }
   }
-  if (tab === "cultivate" && panelSub.cultivate === "train") {
-    tickIdleCombat();
+  if (onTrainPanel) {
     const strip = document.querySelector("[data-live=train-idle]");
     if (strip) {
       const wrap = idleCombat;
@@ -4525,7 +4765,10 @@ setInterval(() => {
             strip.appendChild(claimRow);
             claimRow.querySelector("[data-claim-tier]")?.addEventListener("click", () => {
               const r = claimTrainTierClear(state);
-              if (r.ok) idleCombat = null;
+              if (r.ok) {
+                idleCombat = null;
+                clearTrainIdleCombatState(state);
+              }
               saveState(state);
               panelSub = { ...panelSub, cultivate: "train" };
               render();
@@ -4580,7 +4823,14 @@ function pushNotifyOnce(key, title, body) {
 
 function checkPushReminders() {
   const now = Date.now();
-  if (state.offlineHint && state.offlineHint.sec >= 3600 * 8 - 120) {
+  const bank = offlineBankView(state);
+  if (bank.hasPending && bank.sec >= 3600 * 8 - 120) {
+    pushNotifyOnce(
+      `offline-cap-${bank.sec}`,
+      "暗潮 · 離線上限",
+      "掛機收益即將達 8 小時上限，記得回來領取！"
+    );
+  } else if (state.offlineHint && state.offlineHint.sec >= 3600 * 8 - 120) {
     pushNotifyOnce(
       `offline-cap-${state.offlineHint.at}`,
       "暗潮 · 離線上限",

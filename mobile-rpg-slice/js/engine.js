@@ -72,6 +72,7 @@ import {
   todayKey,
   yesterdayKey,
   OFFLINE_HINT_SEC,
+  OFFLINE_BANK_CAP_SEC,
   LOGIN_STREAK_REWARDS,
   rarityInfo,
   RARITY_MAX,
@@ -416,6 +417,10 @@ function defaultState() {
     /** P3 繁殖目標進度 */
     breedGoals: emptyBreedGoals(),
     offlineHint: null,
+    /** 離線／AFK 待領收益庫（達上限前可累積） */
+    offlineBank: emptyOfflineBank(),
+    /** 掛機五波戰鬥 session（跨 tab／面板還原） */
+    trainIdleCombat: null,
     /** P6 */
     tactics: "balanced",
     shop: emptyShop(),
@@ -645,6 +650,8 @@ export function loadState() {
       },
       breedGoals: ensureBreedGoalsState(parsed.breedGoals),
       offlineHint: parsed.offlineHint || null,
+      offlineBank: normalizeOfflineBank(parsed.offlineBank),
+      trainIdleCombat: parsed.trainIdleCombat || null,
       tactics: TACTIC_IDS.includes(parsed.tactics) ? parsed.tactics : "balanced",
       formation: FORMATION_IDS.includes(parsed.formation) ? parsed.formation : "balanced",
       shop: parsed.shop || emptyShop(),
@@ -1625,15 +1632,173 @@ export function materialsView(state) {
   }));
 }
 
-export function tickCultivation(state, now = Date.now()) {
-  ensureDaily(state);
-  ensureLoginStreak(state, now);
-  const elapsed = Math.min(Math.max(0, now - state.lastTick) / 1000, 3600 * 8);
-  const qiBefore = state.qi;
-  const feedBefore = state.feed || 0;
-  const dustBefore = state.dust || 0;
-  const matsBefore = { ...(state.materials || emptyMaterials()) };
+function emptyOfflineBank() {
+  return {
+    qi: 0,
+    feed: 0,
+    dust: 0,
+    materials: {},
+    sec: 0,
+    siteName: null,
+    capped: false,
+  };
+}
 
+function normalizeOfflineBank(raw) {
+  const base = emptyOfflineBank();
+  if (!raw || typeof raw !== "object") return base;
+  const materials = {};
+  for (const id of MATERIAL_IDS) {
+    const n = Math.floor(raw.materials?.[id] || 0);
+    if (n > 0) materials[id] = n;
+  }
+  return {
+    qi: Math.max(0, Math.round(raw.qi || 0)),
+    feed: Math.max(0, Math.round(raw.feed || 0)),
+    dust: Math.max(0, Math.round(raw.dust || 0)),
+    materials,
+    sec: Math.max(0, Math.floor(raw.sec || 0)),
+    siteName: raw.siteName || null,
+    capped: !!(raw.capped || (raw.sec || 0) >= OFFLINE_BANK_CAP_SEC),
+  };
+}
+
+export function ensureOfflineBank(state) {
+  state.offlineBank = normalizeOfflineBank(state.offlineBank);
+  return state.offlineBank;
+}
+
+function snapshotIdleResources(state) {
+  return {
+    qi: state.qi || 0,
+    feed: state.feed || 0,
+    dust: state.dust || 0,
+    materials: { ...(state.materials || emptyMaterials()) },
+  };
+}
+
+function restoreIdleResources(state, snap) {
+  state.qi = snap.qi;
+  state.feed = snap.feed;
+  state.dust = snap.dust;
+  state.materials = { ...snap.materials };
+}
+
+function diffIdleResources(before, after) {
+  const materials = {};
+  for (const id of MATERIAL_IDS) {
+    const d = Math.floor(after.materials[id] || 0) - Math.floor(before.materials[id] || 0);
+    if (d > 0) materials[id] = d;
+  }
+  return {
+    qi: Math.round((after.qi || 0) - (before.qi || 0)),
+    feed: Math.round((after.feed || 0) - (before.feed || 0)),
+    dust: Math.round((after.dust || 0) - (before.dust || 0)),
+    materials,
+  };
+}
+
+/** 將一段掛機收益併入離線庫（受 OFFLINE_BANK_CAP_SEC 限制） */
+function mergeOfflineBank(state, delta, sec, siteName) {
+  const bank = ensureOfflineBank(state);
+  const room = Math.max(0, OFFLINE_BANK_CAP_SEC - (bank.sec || 0));
+  if (room <= 0) {
+    bank.capped = true;
+    return bank;
+  }
+  const use = Math.min(Math.max(0, sec), room);
+  const scale = sec > 0 ? use / sec : 0;
+  bank.qi = (bank.qi || 0) + Math.max(0, Math.round((delta.qi || 0) * scale));
+  bank.feed = (bank.feed || 0) + Math.max(0, Math.round((delta.feed || 0) * scale));
+  bank.dust = (bank.dust || 0) + Math.max(0, Math.round((delta.dust || 0) * scale));
+  if (!bank.materials) bank.materials = {};
+  for (const [id, n] of Object.entries(delta.materials || {})) {
+    const add = Math.max(0, Math.round((n || 0) * scale));
+    if (add > 0) bank.materials[id] = (bank.materials[id] || 0) + add;
+  }
+  bank.sec = (bank.sec || 0) + use;
+  bank.capped = bank.sec >= OFFLINE_BANK_CAP_SEC;
+  if (siteName) bank.siteName = siteName;
+  return bank;
+}
+
+function syncOfflineHintFromBank(state, now = Date.now()) {
+  const bank = ensureOfflineBank(state);
+  const has =
+    (bank.qi | 0) > 0 ||
+    (bank.feed | 0) > 0 ||
+    (bank.dust | 0) > 0 ||
+    Object.values(bank.materials || {}).some((n) => (n | 0) > 0);
+  if (!has) {
+    state.offlineHint = null;
+    return null;
+  }
+  state.offlineHint = {
+    sec: Math.floor(bank.sec || 0),
+    qi: bank.qi || 0,
+    feed: bank.feed || 0,
+    dust: bank.dust || 0,
+    materials: { ...(bank.materials || {}) },
+    siteName: bank.siteName || null,
+    capped: !!bank.capped,
+    at: now,
+    pending: true,
+  };
+  return state.offlineHint;
+}
+
+export function offlineBankView(state) {
+  const bank = ensureOfflineBank(state);
+  const has =
+    (bank.qi | 0) > 0 ||
+    (bank.feed | 0) > 0 ||
+    (bank.dust | 0) > 0 ||
+    Object.values(bank.materials || {}).some((n) => (n | 0) > 0);
+  return {
+    qi: bank.qi || 0,
+    feed: bank.feed || 0,
+    dust: bank.dust || 0,
+    materials: { ...(bank.materials || {}) },
+    sec: bank.sec || 0,
+    siteName: bank.siteName || null,
+    capped: !!bank.capped,
+    hasPending: has,
+    capSec: OFFLINE_BANK_CAP_SEC,
+    remainingSec: Math.max(0, OFFLINE_BANK_CAP_SEC - (bank.sec || 0)),
+  };
+}
+
+/** 領取離線庫收益入帳 */
+export function claimOfflineBank(state) {
+  const view = offlineBankView(state);
+  if (!view.hasPending) {
+    state.offlineHint = null;
+    return { ok: false, msg: "沒有可領取的離線收益。" };
+  }
+  const bank = ensureOfflineBank(state);
+  state.qi = (state.qi || 0) + (bank.qi || 0);
+  state.feed = (state.feed || 0) + (bank.feed || 0);
+  state.dust = (state.dust || 0) + (bank.dust || 0);
+  if (!state.materials) state.materials = emptyMaterials();
+  for (const [id, n] of Object.entries(bank.materials || {})) {
+    if ((n | 0) > 0) state.materials[id] = (state.materials[id] || 0) + n;
+  }
+  const claimed = {
+    qi: bank.qi || 0,
+    feed: bank.feed || 0,
+    dust: bank.dust || 0,
+    materials: { ...(bank.materials || {}) },
+    sec: bank.sec || 0,
+    siteName: bank.siteName || null,
+  };
+  state.offlineBank = emptyOfflineBank();
+  state.offlineHint = null;
+  const min = Math.max(1, Math.round((claimed.sec || 0) / 60));
+  pushLog(state, `領取離線約 ${min} 分鐘收益。`);
+  return { ok: true, msg: `已領取約 ${min} 分鐘離線收益`, claimed };
+}
+
+function applyOnlineIdleTick(state, elapsed) {
   const ranchBonus = (state.ranch?.length || 0) * 0.02;
   const bondBonus = 1 + state.pets.length * 0.18 + ranchBonus;
   const site = trainSiteById(state.trainSite);
@@ -1641,43 +1806,53 @@ export function tickCultivation(state, now = Date.now()) {
   const rate = realmInfo(state).rate * bondBonus * siteMult;
   state.qi += rate * elapsed;
   tickRanchIdle(state, elapsed);
-  const trainGain = tickTrainSite(state, elapsed);
+  return tickTrainSite(state, elapsed);
+}
 
-  // 每日：掛機累積
-  state.daily.idleSec = (state.daily.idleSec || 0) + elapsed;
-  if (state.daily.idleSec >= 180) {
-    bumpDaily(state, "idle", 1);
-  }
-  if (
-    state.tutorial &&
-    !state.tutorial.done &&
-    state.tutorial.step === "cultivate_qi" &&
-    (state.daily.idleSec || 0) >= TUTORIAL_QI_IDLE_SEC
-  ) {
-    state.tutorial.flags = state.tutorial.flags || {};
-    state.tutorial.flags.qiIdleDone = true;
-    advanceTutorialIfReady(state);
-  }
+export function tickCultivation(state, now = Date.now()) {
+  ensureDaily(state);
+  ensureLoginStreak(state, now);
+  ensureOfflineBank(state);
+  const elapsed = Math.min(Math.max(0, now - state.lastTick) / 1000, 3600 * 8);
+  const site = trainSiteById(state.trainSite);
 
   if (elapsed >= OFFLINE_HINT_SEC) {
-    const qiGain = state.qi - qiBefore;
-    const feedGain = (state.feed || 0) - feedBefore;
-    const dustGain = (state.dust || 0) - dustBefore;
-    const matBits = {};
-    for (const id of MATERIAL_IDS) {
-      const d = (state.materials?.[id] || 0) - (matsBefore[id] || 0);
-      const n = Math.round(d);
-      if (n > 0) matBits[id] = n;
+    // 離線時段：收益進庫，待「領取」才入帳；未領可繼續累積至上限
+    const room = Math.max(0, OFFLINE_BANK_CAP_SEC - (state.offlineBank.sec || 0));
+    const use = Math.min(elapsed, room);
+    if (use > 0) {
+      const snap = snapshotIdleResources(state);
+      const trainGain = applyOnlineIdleTick(state, use);
+      const after = snapshotIdleResources(state);
+      const delta = diffIdleResources(snap, after);
+      restoreIdleResources(state, snap);
+      mergeOfflineBank(state, delta, use, trainGain.site?.name || site.name);
+    } else {
+      state.offlineBank.capped = true;
     }
-    state.offlineHint = {
-      sec: Math.floor(elapsed),
-      qi: Math.round(qiGain),
-      feed: Math.round(feedGain),
-      dust: Math.round(dustGain),
-      materials: matBits,
-      siteName: trainGain.site?.name || site.name,
-      at: now,
-    };
+    syncOfflineHintFromBank(state, now);
+  } else if (elapsed > 0) {
+    applyOnlineIdleTick(state, elapsed);
+    // 線上短 tick 唔清庫；若仍有待領則保持提示
+    if (offlineBankView(state).hasPending) syncOfflineHintFromBank(state, now);
+  }
+
+  // 每日：掛機累積（離線／線上皆計）
+  if (elapsed > 0) {
+    state.daily.idleSec = (state.daily.idleSec || 0) + elapsed;
+    if (state.daily.idleSec >= 180) {
+      bumpDaily(state, "idle", 1);
+    }
+    if (
+      state.tutorial &&
+      !state.tutorial.done &&
+      state.tutorial.step === "cultivate_qi" &&
+      (state.daily.idleSec || 0) >= TUTORIAL_QI_IDLE_SEC
+    ) {
+      state.tutorial.flags = state.tutorial.flags || {};
+      state.tutorial.flags.qiIdleDone = true;
+      advanceTutorialIfReady(state);
+    }
   }
 
   state.lastTick = now;
@@ -1685,9 +1860,51 @@ export function tickCultivation(state, now = Date.now()) {
   return state;
 }
 
+/** 僅關閉提示條；唔清離線庫（未領取繼續累積） */
 export function clearOfflineHint(state) {
   state.offlineHint = null;
   return state;
+}
+
+/** 序列化掛機戰鬥（跨面板／重新整理還原牆鐘 startedAt） */
+export function persistTrainIdleCombatState(state, wrap) {
+  if (!wrap?.session) {
+    state.trainIdleCombat = null;
+    return null;
+  }
+  state.trainIdleCombat = {
+    zoneId: wrap.zoneId,
+    tierIndex: wrap.tierIndex,
+    petSig: wrap.petSig,
+    formationId: wrap.formationId,
+    clearReady: !!wrap.clearReady,
+    canUnlockNext: !!wrap.canUnlockNext,
+    resultLine: wrap.resultLine || null,
+    logLine: wrap.logLine || null,
+    session: wrap.session,
+  };
+  return state.trainIdleCombat;
+}
+
+export function clearTrainIdleCombatState(state) {
+  state.trainIdleCombat = null;
+  return state;
+}
+
+export function restoreTrainIdleCombatState(state) {
+  const saved = state.trainIdleCombat;
+  if (!saved?.session || typeof saved.session.startedAt !== "number") return null;
+  return {
+    zoneId: saved.zoneId,
+    tierIndex: saved.tierIndex,
+    petSig: saved.petSig,
+    formationId: saved.formationId,
+    clearReady: !!saved.clearReady,
+    canUnlockNext: !!saved.canUnlockNext,
+    resultLine: saved.resultLine || null,
+    logLine: saved.logLine || null,
+    session: saved.session,
+  };
 }
 
 function ensureDaily(dailyOrState, now = Date.now()) {
@@ -4648,7 +4865,18 @@ export function dailyHubView(state, now = Date.now()) {
   const spotlight = trainDailySpotlightView(todayKey(now));
   const streak = loginStreakView(state, now);
   const nextGoal = nextGoalView(state);
-  const offline = state.offlineHint;
+  const offline = offlineBankView(state).hasPending
+    ? {
+        sec: state.offlineBank.sec || 0,
+        qi: state.offlineBank.qi || 0,
+        feed: state.offlineBank.feed || 0,
+        dust: state.offlineBank.dust || 0,
+        materials: { ...(state.offlineBank.materials || {}) },
+        siteName: state.offlineBank.siteName || null,
+        capped: !!state.offlineBank.capped,
+        pending: true,
+      }
+    : state.offlineHint;
   const idleSec = state.daily?.idleSec || 0;
   const idleDailyCap = 180;
   const allClear = dailyAllClearView(state);
@@ -5310,6 +5538,27 @@ function applyAbyssMutationsToAllies(allies, mutationIds, formationId) {
   }
 }
 
+function mapAbyssMutations(ids) {
+  return (ids || []).map((id) => ABYSS_MUTATIONS[id]).filter(Boolean);
+}
+
+/** 已通關 depth 之後，下一層預覽（突變／保險） */
+function previewAbyssNextFloor(clearedDepth, mutationIds, insuranceCharges) {
+  const depth = (clearedDepth | 0) + 1;
+  const mutationFloor = depth % ABYSS_MUTATION_EVERY === 0;
+  const active = mutationIds || [];
+  const atCap = active.length >= ABYSS_MAX_ACTIVE_MUTATIONS;
+  const wouldRoll = mutationFloor && !atCap;
+  const insuranceSkips = wouldRoll && (insuranceCharges | 0) > 0;
+  return {
+    depth,
+    mutationFloor,
+    willAddMutation: wouldRoll && !insuranceSkips,
+    insuranceSkips,
+    atMutationCap: mutationFloor && atCap,
+  };
+}
+
 function runAbyssFloorCombat(state, { depth, seed, mutationIds }) {
   if (!(state.pets || []).length) {
     return { ok: false, msg: "請先派出至少一隻靈寵。" };
@@ -5439,6 +5688,7 @@ function runAbyssFloorCombat(state, { depth, seed, mutationIds }) {
     combatEvents: combatEvents.slice(0, 120),
     combatStart,
     mutationIds: [...(mutationIds || [])],
+    mutations: mapAbyssMutations(mutationIds),
   };
 }
 
@@ -5543,31 +5793,48 @@ export function advanceAbyssDive(state, now = Date.now()) {
     ad.run.pendingGrit = (ad.run.pendingGrit | 0) + gain;
     if (nextDepth > (ad.bestDepth | 0)) ad.bestDepth = nextDepth;
     if (nextDepth > (ad.weekBestDepth | 0)) ad.weekBestDepth = nextDepth;
+    const mutIds = [...(ad.run.mutationIds || [])];
     return {
       ...combat,
       ok: true,
       gritGained: gain,
       pendingGrit: ad.run.pendingGrit,
       depth: nextDepth,
+      clearedDepth: nextDepth,
       canContinue: true,
-      msg: `第 ${nextDepth} 層突破 · 累計淵砂 ${ad.run.pendingGrit}`,
+      wiped: false,
+      mutationIds: mutIds,
+      mutations: mapAbyssMutations(mutIds),
+      nextFloor: previewAbyssNextFloor(nextDepth, mutIds, ad.insuranceCharges | 0),
+      msg: `已通關第 ${nextDepth} 層 · 淵砂 +${gain}（待結算 ${ad.run.pendingGrit}）`,
     };
   }
 
   // 全滅保底
   const pending = ad.run.pendingGrit | 0;
+  const clearedBefore = ad.run.depth | 0;
+  const mutIds = [...(ad.run.mutationIds || [])];
   const keep = Math.floor(pending * ABYSS_WIPE_KEEP_RATE);
   if (keep > 0) addMaterials(state, { [ABYSS_GRIT_ID]: keep });
   ad.run = null;
-  pushLog(state, `潮淵全滅——帶回淵砂×${keep}（保底）。`);
+  pushLog(state, `潮淵第 ${nextDepth} 層挑戰失敗——帶回淵砂×${keep}（保底）。`);
   return {
     ...combat,
     ok: true,
     wiped: true,
     gritGained: keep,
+    gritKept: keep,
     pendingGrit: 0,
+    pendingBefore: pending,
+    depth: nextDepth,
+    failedDepth: nextDepth,
+    clearedDepth: clearedBefore,
     canContinue: false,
-    msg: keep ? `全滅 · 保底淵砂×${keep}` : "全滅 · 未帶出淵砂",
+    mutationIds: mutIds,
+    mutations: mapAbyssMutations(mutIds),
+    msg: keep
+      ? `第 ${nextDepth} 層挑戰失敗 · 保底淵砂×${keep}`
+      : `第 ${nextDepth} 層挑戰失敗 · 未帶出淵砂`,
   };
 }
 
@@ -5579,8 +5846,16 @@ export function retreatAbyssDive(state, now = Date.now()) {
   const depth = ad.run.depth | 0;
   if (grit > 0) addMaterials(state, { [ABYSS_GRIT_ID]: grit });
   ad.run = null;
-  pushLog(state, `撤出潮淵（最深 ${depth}）· 淵砂×${grit}。`);
-  return { ok: true, grit, depth, msg: `撤退成功 · 淵砂×${grit}` };
+  pushLog(state, `撤出潮淵（已通第 ${depth} 層）· 淵砂×${grit}。`);
+  return {
+    ok: true,
+    grit,
+    depth,
+    clearedDepth: depth,
+    msg: depth
+      ? `撤退結算 · 已通第 ${depth} 層 · 淵砂×${grit}`
+      : `撤退結算 · 淵砂×${grit}`,
+  };
 }
 
 export function buyAbyssInsurance(state, now = Date.now()) {

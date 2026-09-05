@@ -727,6 +727,11 @@ body {
   color: var(--fog);
   line-height: 1.3;
 }
+.offline-toast .offline-acts {
+  flex-shrink: 0;
+  gap: 0.25rem;
+  align-items: center;
+}
 .offline-toast button {
   flex-shrink: 0;
   padding: 0.3rem 0.45rem;
@@ -1482,6 +1487,61 @@ button.flash-act {
 }
 .combat-report-card .combat-roster {
   margin-top: 0.35rem;
+}
+.combat-report-card--abyss {
+  max-height: min(94vh, var(--app-h, 100dvh));
+}
+.combat-report-card--abyss-settle {
+  max-height: min(96vh, var(--app-h, 100dvh));
+}
+.combat-report-card--abyss-settle .combat-modal-actions {
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.combat-report-card--abyss-settle .combat-modal-actions button {
+  flex: 1 1 auto;
+  min-width: 5.5rem;
+}
+.abyss-settle {
+  margin: 0.45rem 0 0.2rem;
+  padding: 0.5rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid rgba(126, 168, 160, 0.28);
+  background: rgba(0, 28, 36, 0.45);
+}
+.abyss-settle--wipe {
+  border-color: rgba(180, 96, 96, 0.35);
+  background: rgba(48, 18, 22, 0.4);
+}
+.abyss-settle .lead {
+  margin: 0 0 0.35rem;
+}
+.abyss-settle .meta {
+  margin: 0.15rem 0;
+}
+.abyss-mut-list {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  opacity: 0.92;
+}
+.abyss-grit-row {
+  margin-top: 0.2rem;
+}
+.abyss-next-preview {
+  margin-top: 0.45rem;
+  padding: 0.4rem 0.45rem;
+  border-radius: 7px;
+  border: 1px dashed rgba(126, 168, 160, 0.35);
+  background: rgba(20, 48, 56, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.abyss-next-preview strong {
+  font-size: 0.82rem;
+}
+.abyss-next-preview .muted {
+  font-size: 0.68rem;
 }
 
 .tactics-row {

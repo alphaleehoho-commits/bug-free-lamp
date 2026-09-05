@@ -5335,8 +5335,11 @@ export function weekKey(now = Date.now()) {
   return `${tmp.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
-/** 離線結算提示門檻（秒） */
+/** 離線結算提示門檻（秒）——達標後收益入離線庫而非即時入帳 */
 export const OFFLINE_HINT_SEC = 90;
+
+/** 離線／AFK 未領取收益累積上限（秒） */
+export const OFFLINE_BANK_CAP_SEC = 3600 * 8;
 
 /* ─── P3：繁殖目標／配方一覽／秘境試煉 ─── */
 
