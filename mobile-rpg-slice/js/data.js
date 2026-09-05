@@ -3998,8 +3998,15 @@ export const MATERIALS = {
   mist_token: {
     id: "mist_token",
     name: "潮霧令",
-    desc: "已通關秘境入場／掃蕩消耗 · 練功、每日、升階產出",
+    desc: "已通關秘境入場／掃蕩消耗（唔用於潮淵）· 練功、每日、升階產出",
     tier: "gate",
+  },
+  /** 潮淵入場憑證：同潮霧令分開；練功／每日／撤退產出 */
+  abyss_token: {
+    id: "abyss_token",
+    name: "淵潮令",
+    desc: "潮淵深潛入場消耗（同秘境潮霧令分開）· 練功、每日、深潛撤退產出",
+    tier: "abyss",
   },
   /** 潮鑰：秘境高機率掉落；挑戰／複打域主消耗（唔進 AFK） */
   tide_key_1: {
@@ -4036,7 +4043,7 @@ export const MATERIALS = {
   abyss_grit: {
     id: "abyss_grit",
     name: "淵砂",
-    desc: "潮淵深潛結算所得 · 換突變保險、深潛外觀、高階寵物蛋",
+    desc: "潮淵深潛結算所得 · 喺「秘境→潮淵」頁下方兌換突變保險／外觀／高階蛋",
     tier: "abyss",
   },
 };
@@ -4099,6 +4106,7 @@ export const TRAIN_SITES = [
     drops: [
       { mat: "tide_dew", perSec: 0.034 },
       { mat: "mist_token", perSec: 0.0035 },
+      { mat: "abyss_token", perSec: 0.0019 },
       { feed: 0.038 },
       { dust: 0.0085 },
     ],
@@ -4114,6 +4122,7 @@ export const TRAIN_SITES = [
     drops: [
       { mat: "coral_shard", perSec: 0.031 },
       { mat: "mist_token", perSec: 0.0028 },
+      { mat: "abyss_token", perSec: 0.0015 },
       { feed: 0.017 },
       { dust: 0.013 },
     ],
@@ -4129,6 +4138,7 @@ export const TRAIN_SITES = [
     drops: [
       { mat: "mist_silk", perSec: 0.026 },
       { mat: "mist_token", perSec: 0.0032 },
+      { mat: "abyss_token", perSec: 0.0018 },
       { feed: 0.019 },
       { dust: 0.01 },
     ],
@@ -4144,6 +4154,7 @@ export const TRAIN_SITES = [
     drops: [
       { mat: "echo_resin", perSec: 0.017 },
       { mat: "mist_token", perSec: 0.0032 },
+      { mat: "abyss_token", perSec: 0.0018 },
       { dust: 0.03 },
       { feed: 0.01 },
     ],
@@ -4159,6 +4170,7 @@ export const TRAIN_SITES = [
     drops: [
       { mat: "abyss_ink", perSec: 0.025 },
       { mat: "mist_token", perSec: 0.0035 },
+      { mat: "abyss_token", perSec: 0.0019 },
       { dust: 0.015 },
     ],
   },
@@ -4173,6 +4185,7 @@ export const TRAIN_SITES = [
     drops: [
       { mat: "fuse_sand", perSec: 0.016 },
       { mat: "mist_token", perSec: 0.0035 },
+      { mat: "abyss_token", perSec: 0.0019 },
       { feed: 0.013 },
       { dust: 0.012 },
     ],
@@ -4188,6 +4201,7 @@ export const TRAIN_SITES = [
     drops: [
       { mat: "seal_ember", perSec: 0.015 },
       { mat: "mist_token", perSec: 0.0042 },
+      { mat: "abyss_token", perSec: 0.0023 },
       { dust: 0.017 },
     ],
   },
@@ -4434,18 +4448,21 @@ export const MATERIAL_USES = {
   blood_catalyst: "縮短繁殖冷卻",
   breed_ticket: "重置繁殖冷卻",
   mist_token: "秘境入場／掃蕩",
+  abyss_token: "潮淵入場",
   tide_key_1: "潮岸／廢墟域主",
   tide_key_2: "深層／霧帷域主",
   tide_key_3: "心核／融砂域主",
   tide_key_4: "暗潮域主",
   warden_echo: "域主複打殘響",
-  abyss_grit: "潮淵兌換",
+  abyss_grit: "秘境→潮淵頁兌換",
 };
 
 /* ─── 潮淵深潛（秘境旁路；唔改潮域產物表）─── */
 
 export const ABYSS_GRIT_ID = "abyss_grit";
-/** 每日首趟免費，其後每趟 */
+/** 潮淵入場令（同秘境 mist_token 分開） */
+export const ABYSS_ENTRY_MAT_ID = "abyss_token";
+/** 每日首趟免費，其後每趟耗淵潮令 */
 export const ABYSS_ENTRY_TOKEN_COST = 1;
 export const ABYSS_WIPE_KEEP_RATE = 0.4;
 export const ABYSS_MUTATION_EVERY = 3;
@@ -4603,6 +4620,8 @@ export function materialSourceLabel(matId) {
     return "秘境潮鑰／域主";
   }
   if (mat.tier === "gate") return "練功／每日／升階（秘境不掉）";
+  if (matId === "abyss_token") return "練功／每日／潮淵撤退（僅潮淵入場）";
+  if (mat.tier === "abyss") return "潮淵結算 · 秘境→潮淵頁兌換";
   const e = MATERIAL_SOURCE_INDEX[matId];
   if (!e) return mat.desc || "";
   const parts = [];
@@ -5303,13 +5322,13 @@ export const ACHIEVEMENTS = [
 
 /** 7 日登入連續獎勵（cycle） */
 export const LOGIN_STREAK_REWARDS = [
-  { day: 1, name: "初潮", reward: { stones: 30, feed: 5, materials: { mist_token: 2 } } },
+  { day: 1, name: "初潮", reward: { stones: 30, feed: 5, materials: { mist_token: 2, abyss_token: 1 } } },
   { day: 2, name: "雙契", reward: { stones: 35, feed: 8, materials: { mist_token: 2 } } },
-  { day: 3, name: "三潮", reward: { stones: 40, dust: 6, materials: { tide_dew: 2, mist_token: 3 } } },
+  { day: 3, name: "三潮", reward: { stones: 40, dust: 6, materials: { tide_dew: 2, mist_token: 3, abyss_token: 2 } } },
   { day: 4, name: "暗潮蛋", reward: { stones: 45, eggTier: "B", materials: { mist_token: 3 } } },
-  { day: 5, name: "五潮", reward: { stones: 50, scrap: 1, materials: { coral_shard: 2, mist_token: 3 } } },
+  { day: 5, name: "五潮", reward: { stones: 50, scrap: 1, materials: { coral_shard: 2, mist_token: 3, abyss_token: 2 } } },
   { day: 6, name: "血脈", reward: { stones: 55, materials: { breed_ticket: 1, blood_catalyst: 1, mist_token: 4 } } },
-  { day: 7, name: "心核", reward: { stones: 80, eggTier: "A", materials: { mist_silk: 2, mist_token: 5 } } },
+  { day: 7, name: "心核", reward: { stones: 80, eggTier: "A", materials: { mist_silk: 2, mist_token: 5, abyss_token: 3 } } },
 ];
 
 export function yesterdayKey(now = Date.now()) {
