@@ -121,6 +121,8 @@ import {
   gearSetBonus,
   DISPATCH_MISSIONS,
   DISPATCH_SLOT_MAX,
+  DISPATCH_BOARD_SIZE,
+  ELEMENTS,
   TIDE_SEAL_MAX,
   TIDE_SEAL_MIN_REALM,
   tideSealCombatMult,
@@ -429,6 +431,8 @@ function defaultState() {
     formation: "balanced",
     /** P9 */
     dispatches: [],
+    /** 可接派遣任務板（missionId[]，額度 DISPATCH_BOARD_SIZE） */
+    dispatchBoard: [],
     tideSeals: 0,
     tutorial: { done: false, step: "hatch_starter", flags: {} },
     loginStreak: emptyLoginStreak(now),
@@ -658,6 +662,7 @@ export function loadState() {
       dungeonDaily: parsed.dungeonDaily || null,
       winStreak: parsed.winStreak || 0,
       dispatches: Array.isArray(parsed.dispatches) ? parsed.dispatches : [],
+      dispatchBoard: Array.isArray(parsed.dispatchBoard) ? parsed.dispatchBoard : [],
       tideSeals: parsed.tideSeals || 0,
       loginStreak: parsed.loginStreak?.lastLoginDate
         ? { ...emptyLoginStreak(), ...parsed.loginStreak }
@@ -667,6 +672,7 @@ export function loadState() {
     };
     normalizeTutorial(merged);
     healTutorialProgress(merged);
+    ensureDispatchBoard(merged);
     return merged;
   } catch {
     return defaultState();
@@ -2614,8 +2620,99 @@ export function dispatchBusyUids(state) {
   return set;
 }
 
-export function dispatchView(state) {
+/** 任務限制文案（屬性／種類） */
+export function dispatchMissionReqLabel(mission) {
+  if (!mission) return "";
+  const bits = [];
+  if (mission.needElement) {
+    bits.push(`${ELEMENTS[mission.needElement]?.name || mission.needElement}屬`);
+  }
+  if (mission.needKind) bits.push(`${mission.needKind}類`);
+  return bits.length ? `需${bits.join("・")}` : "";
+}
+
+/** 寵物是否符合派遣任務限制 */
+export function petMatchesDispatchMission(pet, mission) {
+  if (!pet || !mission) return false;
+  if (mission.needElement && pet.elementId !== mission.needElement) return false;
+  if (mission.needKind && pet.kind !== mission.needKind) return false;
+  return true;
+}
+
+function dispatchMissionUnlocked(state, mission) {
+  if (!mission) return false;
+  if (mission.needSite && !isTrainSiteUnlocked(state, mission.needSite)) return false;
+  return true;
+}
+
+/** 進行中（未領）任務 id 集合 */
+function dispatchActiveMissionIds(state) {
+  const set = new Set();
+  for (const d of state.dispatches || []) {
+    if (d.claimed) continue;
+    if (d.missionId) set.add(d.missionId);
+  }
+  return set;
+}
+
+/**
+ * 從「已解鎖但未上板、且非進行中」池隨機抽一則任務。
+ * @returns {string | null} missionId
+ */
+export function pickDispatchBoardCandidate(state, rng = Math.random) {
+  ensureDispatchBoardShape(state);
+  const listed = new Set(state.dispatchBoard);
+  const active = dispatchActiveMissionIds(state);
+  const pool = DISPATCH_MISSIONS.filter(
+    (m) => dispatchMissionUnlocked(state, m) && !listed.has(m.id) && !active.has(m.id)
+  );
+  if (!pool.length) return null;
+  const idx = Math.floor(rng() * pool.length);
+  return pool[Math.max(0, Math.min(pool.length - 1, idx))].id;
+}
+
+function ensureDispatchBoardShape(state) {
+  if (!Array.isArray(state.dispatchBoard)) state.dispatchBoard = [];
   if (!state.dispatches) state.dispatches = [];
+}
+
+/**
+ * 補滿可接任務板：額度 DISPATCH_BOARD_SIZE，只放已解鎖且非進行中任務。
+ * 會清掉已鎖／無效 id。
+ */
+export function ensureDispatchBoard(state, rng = Math.random) {
+  ensureDispatchBoardShape(state);
+  const active = dispatchActiveMissionIds(state);
+  state.dispatchBoard = state.dispatchBoard.filter((id) => {
+    const m = DISPATCH_MISSIONS.find((x) => x.id === id);
+    return m && dispatchMissionUnlocked(state, m) && !active.has(id);
+  });
+  const seen = new Set();
+  state.dispatchBoard = state.dispatchBoard.filter((id) => {
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  while (state.dispatchBoard.length < DISPATCH_BOARD_SIZE) {
+    const next = pickDispatchBoardCandidate(state, rng);
+    if (!next) break;
+    state.dispatchBoard.push(next);
+  }
+  return state.dispatchBoard;
+}
+
+/** 領獎後：從解鎖未上板池隨機補一則進可接列表 */
+export function refillDispatchBoardAfterClaim(state, rng = Math.random) {
+  ensureDispatchBoard(state, rng);
+  if (state.dispatchBoard.length >= DISPATCH_BOARD_SIZE) return null;
+  const next = pickDispatchBoardCandidate(state, rng);
+  if (!next) return null;
+  state.dispatchBoard.push(next);
+  return next;
+}
+
+export function dispatchView(state) {
+  ensureDispatchBoard(state);
   const now = Date.now();
   const busy = dispatchBusyUids(state);
   const active = state.dispatches
@@ -2637,33 +2734,52 @@ export function dispatchView(state) {
           .join("、"),
       };
     });
-  const missions = DISPATCH_MISSIONS.map((m) => ({
-    ...m,
-    locked: !!(m.needSite && !isTrainSiteUnlocked(state, m.needSite)),
-    lockLabel: m.needSite ? trainSiteById(m.needSite).name : null,
+  const missions = state.dispatchBoard
+    .map((id) => DISPATCH_MISSIONS.find((m) => m.id === id))
+    .filter(Boolean)
+    .map((m) => ({
+      ...m,
+      locked: false,
+      lockLabel: null,
+      reqLabel: dispatchMissionReqLabel(m),
+      slotsUsed: active.length,
+      slotsMax: DISPATCH_SLOT_MAX,
+    }));
+  return {
+    active,
+    missions,
+    board: [...state.dispatchBoard],
+    busyUids: [...busy],
     slotsUsed: active.length,
     slotsMax: DISPATCH_SLOT_MAX,
-  }));
-  return { active, missions, busyUids: [...busy], slotsUsed: active.length, slotsMax: DISPATCH_SLOT_MAX };
+    boardSize: DISPATCH_BOARD_SIZE,
+  };
 }
 
 export function startDispatch(state, missionId, petUids) {
-  if (!state.dispatches) state.dispatches = [];
+  ensureDispatchBoard(state);
   const mission = DISPATCH_MISSIONS.find((m) => m.id === missionId);
   if (!mission) return { ok: false, msg: "任務不存在。" };
+  const active = state.dispatches.filter((d) => !d.claimed);
+  if (active.length >= DISPATCH_SLOT_MAX) {
+    return { ok: false, msg: `派遣欄已滿（${DISPATCH_SLOT_MAX}）。` };
+  }
+  if (!state.dispatchBoard.includes(missionId)) {
+    return { ok: false, msg: "此任務唔喺可接列表。" };
+  }
   if (mission.needSite && !isTrainSiteUnlocked(state, mission.needSite)) {
     const site = trainSiteById(mission.needSite);
     return { ok: false, msg: `需解鎖練功地【${site.name}】。` };
   }
-  const active = state.dispatches.filter((d) => !d.claimed);
-  if (active.length >= DISPATCH_SLOT_MAX) {
-    return { ok: false, msg: `派遣欄已滿（${DISPATCH_SLOT_MAX}）。` };
+  if (active.some((d) => d.missionId === missionId)) {
+    return { ok: false, msg: "此任務已在進行中。" };
   }
   const uids = Array.isArray(petUids) ? [...new Set(petUids)] : [];
   if (uids.length !== mission.needPets) {
     return { ok: false, msg: `需要派出 ${mission.needPets} 隻牧場靈寵。` };
   }
   const busy = dispatchBusyUids(state);
+  const reqLabel = dispatchMissionReqLabel(mission);
   for (const uid of uids) {
     if (busy.has(uid)) return { ok: false, msg: "有靈寵已在派遣中。" };
     if (state.pets.some((p) => p.uid === uid)) {
@@ -2671,6 +2787,9 @@ export function startDispatch(state, missionId, petUids) {
     }
     const hit = findOwnedPet(state, uid);
     if (!hit || hit.list !== "ranch") return { ok: false, msg: "只能派遣牧場待命靈寵。" };
+    if (!petMatchesDispatchMission(hit.pet, mission)) {
+      return { ok: false, msg: reqLabel ? `派出靈寵唔符合限制（${reqLabel}）。` : "派出靈寵唔符合限制。" };
+    }
   }
   const now = Date.now();
   let durationMs = mission.durationMs;
@@ -2681,7 +2800,7 @@ export function startDispatch(state, missionId, petUids) {
     if (!pe && !pe2) return 1;
     if (!pe2) return pe.dispatchTime ?? 1;
     if (!pe) return pe2.dispatchTime ?? 1;
-    return ((pe.dispatchTime ?? 1) * 0.7 + (pe2.dispatchTime ?? 1) * 0.3);
+    return (pe.dispatchTime ?? 1) * 0.7 + (pe2.dispatchTime ?? 1) * 0.3;
   });
   if (timeMults.length) {
     durationMs = Math.round(
@@ -2695,6 +2814,8 @@ export function startDispatch(state, missionId, petUids) {
     readyAt: now + Math.max(5000, durationMs),
     claimed: false,
   });
+  // 派出後移出可接板；領獎時再從解鎖池隨機補位
+  state.dispatchBoard = state.dispatchBoard.filter((id) => id !== missionId);
   const names = uids
     .map((uid) => displayPetName(findOwnedPet(state, uid).pet))
     .join("、");
@@ -2737,8 +2858,10 @@ export function claimDispatch(state, dispatchId) {
   }
   if (!state.stats) state.stats = {};
   state.stats.dispatches = (state.stats.dispatches || 0) + 1;
-  // 清走已領，避免列表膨脹
   state.dispatches = state.dispatches.filter((x) => !x.claimed);
+  const boardBefore = new Set(state.dispatchBoard || []);
+  ensureDispatchBoard(state);
+  const filledId = (state.dispatchBoard || []).find((id) => !boardBefore.has(id)) || null;
   const bits = [];
   if (scaled?.stones) bits.push(`${scaled.stones}石`);
   if (scaled?.feed) bits.push(`${scaled.feed}飼料`);
@@ -2754,10 +2877,13 @@ export function claimDispatch(state, dispatchId) {
   pushLog(state, `派遣【${mission?.name || d.missionId}】歸來${genNote}：${bits.join("／") || "無"}。`);
   bumpDaily(state, "dispatch", 1);
   checkAchievements(state);
+  const filled = filledId ? DISPATCH_MISSIONS.find((m) => m.id === filledId) : null;
   return {
     ok: true,
     msg: eggGot ? `領取 ${bits.join("／")}` : `領取 ${bits.join("／")}`,
     egg: eggGot,
+    boardFilled: filledId,
+    boardFilledName: filled?.name || null,
   };
 }
 

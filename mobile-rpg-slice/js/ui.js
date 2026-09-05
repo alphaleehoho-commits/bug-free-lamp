@@ -81,6 +81,7 @@ import {
   dispatchView,
   startDispatch,
   claimDispatch,
+  petMatchesDispatchMission,
   tryTideSeal,
   tideSealView,
   setTrainSite,
@@ -2538,18 +2539,20 @@ function dispatchModalHtml() {
   const pick = new Set(dispatchModal.pick || []);
   const busy = new Set(dv.busyUids || []);
   const ranch = state.ranch || [];
+  const reqLabel = mission.reqLabel || "";
   const rows =
     ranch
       .filter((p) => !busy.has(p.uid))
       .map((p) => {
         const selected = pick.has(p.uid);
+        const match = petMatchesDispatchMission(p, mission);
         return `
         <li class="card-row">
           <div>
             <strong>${escapeHtml(displayPetName(p))}</strong>
-            <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · 攻${fmtInt(p.atk)} 血${fmtInt(p.hp)}</span>
+            <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · 攻${fmtInt(p.atk)} 血${fmtInt(p.hp)}${match ? "" : " · 唔符合限制"}</span>
           </div>
-          <button type="button" class="${selected ? "primary" : "secondary"}" data-dispatch-pick="${escapeHtml(p.uid)}">${selected ? "已選" : "選擇"}</button>
+          <button type="button" class="${selected ? "primary" : "secondary"}" data-dispatch-pick="${escapeHtml(p.uid)}" ${match ? "" : "disabled"}>${selected ? "已選" : match ? "選擇" : "不符"}</button>
         </li>`;
       })
       .join("") || `<li class="empty">牧場無可派遣靈寵（需撤回出戰或等派遣歸來）。</li>`;
@@ -2558,7 +2561,7 @@ function dispatchModalHtml() {
       <div class="sheet-card" role="dialog" aria-label="選擇派遣靈寵" data-sheet-card>
         <div class="sheet-handle" aria-hidden="true"></div>
         <h3>${escapeHtml(mission.name)}</h3>
-        <p class="meta">${escapeHtml(mission.desc)} · 需 ${need} 隻 · 已選 ${pick.size}/${need}</p>
+        <p class="meta">${escapeHtml(mission.desc)}${reqLabel ? ` · ${escapeHtml(reqLabel)}` : ""} · 需 ${need} 隻 · 已選 ${pick.size}/${need}</p>
         <ul class="list">${rows}</ul>
         <div class="row">
           <button type="button" class="secondary" data-act="close-dispatch-modal">取消</button>
@@ -2737,19 +2740,18 @@ function petsListView() {
       .join("") || `<li class="empty">尚無進行中派遣。</li>`;
 
   const missionRows = dv.missions
-    .filter((m) => !m.locked)
-    .slice(0, 6)
     .map((m) => {
       const slotsOk = dv.slotsUsed < dv.slotsMax;
       const matBits = dispatchMatBits(m);
       const eggNote = m.eggChance
         ? ` · 蛋${Math.round((m.eggChance.rate || 0) * 100)}%`
         : "";
+      const reqNote = m.reqLabel ? ` · ${escapeHtml(m.reqLabel)}` : "";
       return `
       <li class="card-row">
         <div>
           <strong>${escapeHtml(m.name)}</strong>
-          <span class="muted">${escapeHtml(m.desc)} · 需 ${m.needPets} 隻 · ${escapeHtml(rewardBitsHtml(m.reward))}${
+          <span class="muted">${escapeHtml(m.desc)}${reqNote} · 需 ${m.needPets} 隻 · ${escapeHtml(rewardBitsHtml(m.reward))}${
             matBits ? ` · ${matBits}` : ""
           }${eggNote}</span>
         </div>
@@ -2783,7 +2785,7 @@ function petsListView() {
     return wrapStage(
       nav,
       `<h2>靈寵 · 派遣</h2>
-      <p class="lead">槽位 ${dv.slotsUsed}/${dv.slotsMax} · 撳「派出」選擇靈寵</p>
+      <p class="lead">進行 ${dv.slotsUsed}/${dv.slotsMax} · 可接 ${dv.missions.length}/${dv.boardSize} · 撳「派出」揀合限制嘅靈寵 · 領獎後隨機補任務</p>
       <ul class="list">${missionRows || `<li class="empty muted">尚無可接派遣（解鎖更多練功地後開放）。</li>`}</ul>
       <ul class="list">${activeDisp}</ul>`
     );
@@ -4212,7 +4214,7 @@ function bind() {
         }
         const r = startDispatch(state, dispatchModal.missionId, dispatchModal.pick || []);
         dispatchModal = null;
-        if (r.ok) panelSub = { ...panelSub, party: "ranch" };
+        if (r.ok) panelSub = { ...panelSub, party: "dispatch" };
         saveState(state);
         render();
         setFlash(r.msg, r.ok ? "unlock" : "");
@@ -4552,11 +4554,16 @@ function bind() {
   });
   app.querySelectorAll("[data-dispatch-pick]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!dispatchModal) return;
+      if (!dispatchModal || btn.disabled) return;
       const mission = dispatchView(state).missions.find((m) => m.id === dispatchModal.missionId);
       if (!mission) return;
       const need = mission.needPets;
       const uid = btn.dataset.dispatchPick;
+      const pet = (state.ranch || []).find((p) => p.uid === uid);
+      if (pet && !petMatchesDispatchMission(pet, mission)) {
+        setFlash(mission.reqLabel ? `要揀${mission.reqLabel.replace(/^需/, "")}嘅靈寵。` : "呢隻唔符合任務限制。");
+        return;
+      }
       const set = new Set(dispatchModal.pick || []);
       if (set.has(uid)) set.delete(uid);
       else {
@@ -4573,7 +4580,8 @@ function bind() {
       const r = claimDispatch(state, btn.dataset.claimDispatch);
       saveState(state);
       render();
-      setFlash(r.msg);
+      if (r.ok && r.boardFilledName) setFlash(`${r.msg} · 新任務【${r.boardFilledName}】上板`);
+      else setFlash(r.msg);
     });
   });
   app.querySelectorAll("[data-deploy]").forEach((btn) => {

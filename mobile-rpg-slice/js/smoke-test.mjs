@@ -74,6 +74,8 @@ import {
   gearSetBonus,
   GEAR_SETS,
   DISPATCH_MISSIONS,
+  DISPATCH_SLOT_MAX,
+  DISPATCH_BOARD_SIZE,
   tideSealCombatMult,
   tideSealGainForRealm,
   TIDE_SEAL_MIN_REALM,
@@ -167,6 +169,11 @@ import {
   tickCultivation,
   tickRanchIdle,
   claimDispatch,
+  startDispatch,
+  dispatchView,
+  ensureDispatchBoard,
+  petMatchesDispatchMission,
+  dispatchMissionReqLabel,
   upgradePet,
   isFusionUnlocked,
   dungeonAttackBlockReason,
@@ -647,6 +654,10 @@ assert(personalityCombatFor("blessed")?.atkMult >= 1, "blessed combat buff");
 assert(GEAR_SETS.tide && gearSetBonus(["tide_blade", "moss_vest"]).atk === 3, "set2");
 assert(gearSetBonus(["core_fang", "abyss_plate", "gloom_sigil"]).labels.some((l) => l.includes("三件")), "set3");
 assert(DISPATCH_MISSIONS.length >= 3, "dispatch missions");
+assert(DISPATCH_SLOT_MAX === 3, "dispatch concurrent slots 3");
+assert(DISPATCH_BOARD_SIZE === 3, "dispatch board size 3");
+assert(DISPATCH_MISSIONS.some((m) => m.needElement), "dispatch needElement");
+assert(DISPATCH_MISSIONS.some((m) => m.needKind), "dispatch needKind");
 assert(tideSealGainForRealm(5) >= 1 && tideSealGainForRealm(4) === 0, "seal gain");
 assert(tideSealCombatMult(5) === 1.1, "seal mult");
 assert(TIDE_SEAL_MIN_REALM === 5, "seal min realm");
@@ -1448,6 +1459,9 @@ const uiSrc = readFileSync(join(__dir, "ui.js"), "utf8");
 assert(uiSrc.includes("data-summon"), "ui summon bind");
 assert(uiSrc.includes("data-attack-preview"), "ui attack preview");
 assert(uiSrc.includes("data-open-dispatch"), "ui dispatch picker modal");
+assert(uiSrc.includes('party: "dispatch"'), "ui stay on dispatch after start");
+assert(!/confirm-dispatch[\s\S]{0,400}party:\s*"ranch"/.test(uiSrc), "ui not redirect ranch after dispatch");
+assert(uiSrc.includes("petMatchesDispatchMission"), "ui filters dispatch req pets");
 assert(uiSrc.includes("data-summon-slider"), "ui summon slider");
 assert(uiSrc.includes("data-ranch-sort"), "ui ranch sort");
 assert(uiSrc.includes("pet-grid"), "ui ranch 2-col grid");
@@ -1507,7 +1521,14 @@ const idleFightSt = {
 tickRanchIdle(idleFightSt, 100);
 assert(idleSt.feed > idleFightSt.feed, "diligent idle > fierce idle");
 
-const mission = DISPATCH_MISSIONS.find((m) => !m.needSite) || DISPATCH_MISSIONS[0];
+const mission = DISPATCH_MISSIONS.find((m) => m.id === "forage") || DISPATCH_MISSIONS.find((m) => !m.needSite);
+assert(mission?.needElement === "tide", "forage needs tide");
+assert(petMatchesDispatchMission({ elementId: "tide", kind: "獸" }, mission), "tide beast matches forage");
+assert(!petMatchesDispatchMission({ elementId: "flame", kind: "獸" }, mission), "flame fails forage");
+assert(dispatchMissionReqLabel(mission).includes("潮"), "req label tide");
+const kindMission = DISPATCH_MISSIONS.find((m) => m.needKind && !m.needElement);
+assert(kindMission && !petMatchesDispatchMission({ elementId: "tide", kind: "獸" }, kindMission), "kind gate rejects");
+assert(petMatchesDispatchMission({ elementId: "tide", kind: kindMission.needKind }, kindMission), "kind gate accepts");
 const gen3Pet = {
   ...buildPetStats({
     id: "d3",
@@ -1536,6 +1557,7 @@ const dispSt = {
       claimed: false,
     },
   ],
+  dispatchBoard: [],
   stats: {},
   daily: { date: todayKey(), progress: {}, claimed: {}, idleSec: 0 },
   log: [],
@@ -1547,6 +1569,104 @@ assert(claimR.ok, "claim dispatch ok");
 if (beforeStones) {
   assert(dispSt.stones >= Math.round(beforeStones * 1.25), "gen3 dispatch reward mult");
 }
+assert(dispSt.dispatchBoard.length >= 1, "claim refills dispatch board");
+assert(claimR.boardFilled, "claim returns boardFilled id");
+
+/* Dispatch board rotate + slot cap + restrictions */
+const dispTidePet = {
+  ...buildPetStats({
+    id: "dt",
+    species: "reefox",
+    element: "tide",
+    personality: "gentle",
+    cost: 0,
+  }),
+  uid: "disp-tide",
+};
+const dispScalePet = {
+  ...buildPetStats({
+    id: "ds",
+    species: "tidecarp",
+    element: "tide",
+    personality: "gentle",
+    cost: 0,
+  }),
+  uid: "disp-scale",
+};
+const boardSt = {
+  realm: 0,
+  clearedDungeons: {},
+  trainMap: {},
+  ranch: [dispTidePet, dispScalePet],
+  pets: [],
+  dispatches: [],
+  dispatchBoard: [],
+  eggs: [],
+  log: [],
+  stats: {},
+  daily: { date: todayKey(), progress: {}, claimed: {}, idleSec: 0 },
+  achievements: {},
+};
+ensureDispatchBoard(boardSt, () => 0);
+assert(boardSt.dispatchBoard.length === 2, "early board fills unlocked only (2)");
+assert(boardSt.dispatchBoard.every((id) => ["forage", "egg_shore"].includes(id)), "early board from shore pool");
+const dv0 = dispatchView(boardSt);
+assert(dv0.slotsMax === 3 && dv0.boardSize === 3, "view exposes slot/board caps");
+assert(dv0.missions.length === 2, "view shows board missions only");
+const wrongKind = startDispatch(boardSt, "egg_shore", ["disp-tide"]);
+assert(!wrongKind.ok && String(wrongKind.msg).includes("限制"), "kind restriction blocks");
+const okStart = startDispatch(boardSt, "forage", ["disp-tide"]);
+assert(okStart.ok, "tide pet starts forage");
+assert(!boardSt.dispatchBoard.includes("forage"), "started mission leaves board");
+assert(boardSt.dispatches.length === 1, "one active dispatch");
+const beforeBoard = [...boardSt.dispatchBoard];
+boardSt.dispatches[0].readyAt = Date.now() - 1;
+const claimBoard = claimDispatch(boardSt, boardSt.dispatches[0].dispatchId);
+assert(claimBoard.ok, "claim after ready");
+assert(boardSt.dispatchBoard.length === beforeBoard.length + 1, "board grew after claim");
+assert(claimBoard.boardFilled, "random mission pulled on claim");
+
+const nowCap = Date.now();
+const capSt = {
+  realm: 0,
+  ranch: [
+    { ...dispTidePet, uid: "c1" },
+    { ...dispScalePet, uid: "c2" },
+    { ...dispTidePet, uid: "c3" },
+    { ...dispScalePet, uid: "c4" },
+  ],
+  pets: [],
+  dispatches: [
+    {
+      dispatchId: "cap-a",
+      missionId: "forage",
+      petUids: ["c1"],
+      readyAt: nowCap + 60_000,
+      claimed: false,
+    },
+    {
+      dispatchId: "cap-b",
+      missionId: "egg_shore",
+      petUids: ["c2"],
+      readyAt: nowCap + 60_000,
+      claimed: false,
+    },
+    {
+      dispatchId: "cap-c",
+      missionId: "dust_hunt",
+      petUids: ["c3"],
+      readyAt: nowCap + 60_000,
+      claimed: false,
+    },
+  ],
+  dispatchBoard: ["forage"],
+  log: [],
+  stats: {},
+  daily: { date: todayKey(), progress: {}, claimed: {}, idleSec: 0 },
+  achievements: {},
+};
+const over = startDispatch(capSt, "forage", ["c4"]);
+assert(!over.ok && String(over.msg).includes("滿"), "4th concurrent blocked at 3");
 
 /* Feed upgrade deducts; fusion gated; dungeon realm block msg */
 const feedUpSt = {

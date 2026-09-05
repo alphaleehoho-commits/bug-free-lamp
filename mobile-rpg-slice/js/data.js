@@ -3623,6 +3623,10 @@ export function gearSetBonus(gearIds) {
 
 /* ─── P9：牧場派遣 ─── */
 
+/**
+ * 派遣任務。needElement／needKind 為派出限制（每隻派出寵都要符合）。
+ * 可接列表由 DISPATCH_BOARD_SIZE 控制，完成領獎後再從解鎖池隨機補位。
+ */
 export const DISPATCH_MISSIONS = [
   {
     id: "forage",
@@ -3630,9 +3634,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 90_000,
     needPets: 1,
     needSite: null,
+    needElement: "tide",
     reward: { feed: 10, stones: 12, materials: { tide_dew: 2 } },
     eggChance: { tier: "C", rate: 0.12 },
-    desc: "1 寵 · 約 1.5 分 → 飼料／潮露 · 低機率潮霧蛋",
+    desc: "1 寵 · 需潮屬 · 約 1.5 分 → 飼料／潮露 · 低機率潮霧蛋",
   },
   {
     id: "egg_shore",
@@ -3640,9 +3645,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 180_000,
     needPets: 1,
     needSite: null,
+    needKind: "鱗",
     reward: { stones: 8, feed: 4, materials: { tide_dew: 1 } },
     eggChance: { tier: "C", rate: 0.55 },
-    desc: "1 寵 · 約 3 分 → 高機率潮霧蛋",
+    desc: "1 寵 · 需鱗類 · 約 3 分 → 高機率潮霧蛋",
   },
   {
     id: "dust_hunt",
@@ -3650,9 +3656,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 150_000,
     needPets: 1,
     needSite: "ruins",
+    needElement: "gloom",
     reward: { dust: 12, stones: 10, materials: { coral_shard: 3 } },
     eggChance: { tier: "C", rate: 0.18 },
-    desc: "1 寵 · 需廢墟影堂 · 靈塵／珊瑚屑 · 偶得蛋",
+    desc: "1 寵 · 需幽屬 · 廢墟影堂 · 靈塵／珊瑚屑 · 偶得蛋",
   },
   {
     id: "egg_ruins",
@@ -3660,9 +3667,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 240_000,
     needPets: 1,
     needSite: "ruins",
+    needKind: "蟲",
     reward: { stones: 14, dust: 4, materials: { coral_shard: 2 } },
     eggChance: { tier: "B", rate: 0.35 },
-    desc: "1 寵 · 需廢墟影堂 · 機率暗潮蛋",
+    desc: "1 寵 · 需蟲類 · 廢墟影堂 · 機率暗潮蛋",
   },
   {
     id: "scrap_dive",
@@ -3670,9 +3678,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 240_000,
     needPets: 2,
     needSite: "deep",
+    needKind: "甲",
     reward: { scrap: 2, stones: 25, feed: 4, materials: { mist_silk: 2 } },
     eggChance: { tier: "B", rate: 0.15 },
-    desc: "2 寵 · 需深層祭壇 · 霧絲",
+    desc: "2 寵 · 需甲類 · 深層祭壇 · 霧絲",
   },
   {
     id: "egg_deep",
@@ -3680,9 +3689,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 300_000,
     needPets: 2,
     needSite: "deep",
+    needElement: "gale",
     reward: { stones: 20, materials: { mist_silk: 1 } },
     eggChance: { tier: "B", rate: 0.45 },
-    desc: "2 寵 · 需深層祭壇 · 高機率暗潮蛋",
+    desc: "2 寵 · 需嵐屬 · 深層祭壇 · 高機率暗潮蛋",
   },
   {
     id: "resin_gather",
@@ -3690,9 +3700,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 210_000,
     needPets: 1,
     needSite: "mistveil",
+    needKind: "禽",
     reward: { dust: 6, stones: 18, materials: { echo_resin: 3 } },
     eggChance: { tier: "B", rate: 0.12 },
-    desc: "1 寵 · 需霧帷練台 · 靈響脂",
+    desc: "1 寵 · 需禽類 · 霧帷練台 · 靈響脂",
   },
   {
     id: "ink_scout",
@@ -3700,9 +3711,11 @@ export const DISPATCH_MISSIONS = [
     durationMs: 300_000,
     needPets: 2,
     needSite: "core",
+    needElement: "gloom",
+    needKind: "光",
     reward: { dust: 8, stones: 30, materials: { abyss_ink: 3 } },
     eggChance: { tier: "B", rate: 0.2 },
-    desc: "2 寵 · 需心核道場 · 深淵墨",
+    desc: "2 寵 · 需幽屬光類 · 心核道場 · 深淵墨",
   },
   {
     id: "sand_haul",
@@ -3710,9 +3723,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 270_000,
     needPets: 2,
     needSite: "fusehall",
+    needElement: "stone",
     reward: { stones: 28, feed: 3, materials: { fuse_sand: 3 } },
     eggChance: { tier: "B", rate: 0.14 },
-    desc: "2 寵 · 需融砂坊 · 融砂",
+    desc: "2 寵 · 需岩屬 · 融砂坊 · 融砂",
   },
   {
     id: "ember_rite",
@@ -3720,9 +3734,10 @@ export const DISPATCH_MISSIONS = [
     durationMs: 360_000,
     needPets: 2,
     needSite: "abyss",
+    needElement: "flame",
     reward: { stones: 40, materials: { seal_ember: 3 } },
     eggChance: { tier: "A", rate: 0.1 },
-    desc: "2 寵 · 需暗潮心壇 · 契火 · 低機率心核蛋",
+    desc: "2 寵 · 需焰屬 · 暗潮心壇 · 契火 · 低機率心核蛋",
   },
   {
     id: "egg_abyss",
@@ -3730,13 +3745,18 @@ export const DISPATCH_MISSIONS = [
     durationMs: 420_000,
     needPets: 2,
     needSite: "abyss",
+    needKind: "獸",
     reward: { stones: 35, dust: 6, materials: { seal_ember: 1 } },
     eggChance: { tier: "A", rate: 0.28 },
-    desc: "2 寵 · 需暗潮心壇 · 機率心核蛋",
+    desc: "2 寵 · 需獸類 · 暗潮心壇 · 機率心核蛋",
   },
 ];
 
+/** 同時進行中的派遣上限 */
 export const DISPATCH_SLOT_MAX = 3;
+
+/** 可接任務板面額（解鎖池裡輪換；領獎後隨機補位） */
+export const DISPATCH_BOARD_SIZE = 3;
 
 /* ─── P9：潮印 soft prestige ─── */
 
