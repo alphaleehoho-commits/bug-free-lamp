@@ -1173,9 +1173,11 @@ function matHintListHtml() {
             )}</button>`
           : MATERIALS[m.id]?.tier === "dungeon"
             ? `<span class="mat-goto muted">秘境</span>`
-            : site
-              ? `<span class="mat-goto muted">未解鎖</span>`
-              : "";
+            : MATERIALS[m.id]?.tier === "abyss"
+              ? `<button type="button" class="linkish mat-goto" data-goto-abyss>去潮淵兌換</button>`
+              : site
+                ? `<span class="mat-goto muted">未解鎖</span>`
+                : "";
       return `
     <li class="mat-hint ${m.count <= 0 ? "is-empty" : ""}">
       <span class="mat-name">${escapeHtml(m.name)}</span>
@@ -3330,6 +3332,7 @@ function abyssPanelHtml() {
       <p class="meta">先通關秘境【潮汐一層】或達到通靈初期後解鎖。</p>`;
   }
   const run = v.run;
+  const entryName = escapeHtml(v.entryMatName || "淵潮令");
   const mutLine = run?.mutations?.length
     ? run.mutations.map((m) => `【${escapeHtml(m.name)}】${escapeHtml(m.desc)}`).join("<br/>")
     : "尚無突變";
@@ -3344,7 +3347,7 @@ function abyssPanelHtml() {
       </div>`
     : `<div class="abyss-run card-block">
         <p class="lead">未開潛</p>
-        <p class="meta">今日首趟免費 · 其後耗潮霧令 ×${v.entryCost || 1}（現有 ${v.tokenHave}）</p>
+        <p class="meta">今日首趟免費 · 其後耗${entryName} ×${v.entryCost || 1}（現有 ${v.tokenHave}）· 同秘境潮霧令分開</p>
         <button type="button" class="primary" data-abyss-start>開始深潛</button>
       </div>`;
   const cosRows = (v.cosmeticList || [])
@@ -3358,20 +3361,23 @@ function abyssPanelHtml() {
     .join("");
   return `<h2>潮淵深潛</h2>
     <p class="lead">無限層 · 突變 · 淵砂兌換</p>
-    <p class="meta">淵砂 <strong>${v.gritHave}</strong> · 最深 ${v.bestDepth} · 本週 ${v.weekBestDepth} · 保險 ${v.insuranceCharges}</p>
+    <p class="meta">淵砂 <strong>${v.gritHave}</strong> · ${entryName} <strong>${v.tokenHave}</strong> · 最深 ${v.bestDepth} · 本週 ${v.weekBestDepth} · 保險 ${v.insuranceCharges}</p>
     ${runBlock}
-    <h3>淵砂兌換</h3>
-    <ul class="list">
-      <li class="card-row">
-        <div><strong>突變保險</strong><span class="muted"> · 下場略過 1 條新突變</span></div>
-        <button type="button" class="secondary" data-abyss-insurance ${v.insuranceCharges >= 1 ? "disabled" : ""}>淵砂×${v.insuranceCost}</button>
-      </li>
-      <li class="card-row">
-        <div><strong>潮淵高階蛋</strong><span class="muted"> · 本週 ${v.eggsBoughtWeek}/${v.eggsWeeklyLimit} · 較易出稀有</span></div>
-        <button type="button" class="secondary" data-abyss-egg ${v.eggsBoughtWeek >= v.eggsWeeklyLimit ? "disabled" : ""}>淵砂×${v.eggCost}</button>
-      </li>
-      ${cosRows}
-    </ul>`;
+    <section class="abyss-exchange" id="abyss-grit-shop">
+      <h3>淵砂兌換</h3>
+      <p class="meta">深潛結算嘅淵砂喺呢度換獎勵（突變保險／外觀／高階蛋）。</p>
+      <ul class="list">
+        <li class="card-row">
+          <div><strong>突變保險</strong><span class="muted"> · 下場略過 1 條新突變</span></div>
+          <button type="button" class="secondary" data-abyss-insurance ${v.insuranceCharges >= 1 ? "disabled" : ""}>淵砂×${v.insuranceCost}</button>
+        </li>
+        <li class="card-row">
+          <div><strong>潮淵高階蛋</strong><span class="muted"> · 本週 ${v.eggsBoughtWeek}/${v.eggsWeeklyLimit} · 較易出稀有</span></div>
+          <button type="button" class="secondary" data-abyss-egg ${v.eggsBoughtWeek >= v.eggsWeeklyLimit ? "disabled" : ""}>淵砂×${v.eggCost}</button>
+        </li>
+        ${cosRows}
+      </ul>
+    </section>`;
 }
 
 function dungeonPanel() {
@@ -4246,6 +4252,17 @@ function bind() {
       saveState(state);
       render();
       setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-goto-abyss]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      tab = "dungeon";
+      panelSub.dungeon = "abyss";
+      render();
+      setFlash("淵砂兌換喺潮淵頁下方");
+      requestAnimationFrame(() => {
+        document.getElementById("abyss-grit-shop")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     });
   });
   app.querySelectorAll("[data-pet-detail]").forEach((btn) => {

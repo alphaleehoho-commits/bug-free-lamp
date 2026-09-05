@@ -130,6 +130,8 @@ import {
   ACTIVE_PET_MAX,
   ABYSS_MUTATION_IDS,
   ABYSS_COSMETIC_IDS,
+  ABYSS_ENTRY_MAT_ID,
+  ABYSS_ENTRY_TOKEN_COST,
   emptyAbyssDive,
   emptyMaterials,
 } from "./data.js";
@@ -678,19 +680,23 @@ const fakeMats = { materials: { tide_dew: 0, mist_silk: 2 } };
 const aff = affordMaterials(fakeMats, { tide_dew: 2, mist_silk: 1 });
 assert(!aff.ok && aff.items.find((i) => i.id === "tide_dew")?.short === 2, "afford short");
 
-/* P18: specialize — ruins primary is coral; mist_token is shared gate mat */
+/* P18: specialize — ruins primary is coral; mist_token is shared gate mat; abyss_token is abyss-only entry */
 const ruins = TRAIN_SITES.find((s) => s.id === "ruins");
 assert(
   ruins.focus === "繁殖" &&
     ruins.primaryMat === "coral_shard" &&
-    ruins.drops.every((d) => !d.mat || d.mat === "coral_shard" || d.mat === "mist_token"),
+    ruins.drops.every(
+      (d) => !d.mat || d.mat === "coral_shard" || d.mat === "mist_token" || d.mat === "abyss_token"
+    ),
   "ruins coral focus"
 );
 const abyssSite = TRAIN_SITES.find((s) => s.id === "abyss");
 assert(
   abyssSite.focus === "突破" &&
     abyssSite.primaryMat === "seal_ember" &&
-    abyssSite.drops.every((d) => !d.mat || d.mat === "seal_ember" || d.mat === "mist_token"),
+    abyssSite.drops.every(
+      (d) => !d.mat || d.mat === "seal_ember" || d.mat === "mist_token" || d.mat === "abyss_token"
+    ),
   "abyss ember focus"
 );
 assert(DUNGEON_MAT_DROPS.tide_4.weights.breed_ticket >= 2, "dungeon exclusive weight");
@@ -1741,8 +1747,18 @@ assert(!cssSrc.includes("is-lunge-east"), "css no legacy east lunge");
 
 /* Tide Abyss Dive */
 assert(MATERIALS.abyss_grit?.tier === "abyss", "abyss grit material");
+assert(MATERIALS.abyss_token?.tier === "abyss", "abyss entry token material");
+assert(ABYSS_ENTRY_MAT_ID === "abyss_token", "abyss entry mat id");
+assert(DUNGEON_ENTRY_MAT_ID === "mist_token", "dungeon entry stays mist_token");
+assert(ABYSS_ENTRY_MAT_ID !== DUNGEON_ENTRY_MAT_ID, "abyss and dungeon entry mats split");
 assert(ABYSS_MUTATION_IDS.length === 3, "three abyss mutations");
 assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
+assert(
+  TRAIN_SITES.every((s) => (s.drops || []).some((d) => d.mat === "abyss_token")),
+  "all sites drip abyss entry tokens"
+);
+assert(materialSourceLabel("abyss_token").includes("潮淵"), "abyss token source label");
+assert(materialSourceLabel("abyss_grit").includes("潮淵"), "abyss grit source label");
 {
   const abyssSt = {
     realm: 1,
@@ -1763,7 +1779,7 @@ assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
         bloodmarks: [],
       },
     ],
-    materials: { ...emptyMaterials(), mist_token: 5, abyss_grit: 200 },
+    materials: { ...emptyMaterials(), mist_token: 5, abyss_token: 3, abyss_grit: 200 },
     clearedDungeons: { tide_1: true },
     formation: "balanced",
     tactics: "balanced",
@@ -1773,18 +1789,33 @@ assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
   };
   const av = abyssDiveView(abyssSt);
   assert(av.unlocked && av.freeLeft, "abyss unlocked free first");
+  assert(av.entryMatId === "abyss_token", "view exposes abyss entry mat");
+  const mistBeforeFree = abyssSt.materials.mist_token;
   const s1 = startAbyssDive(abyssSt);
   assert(s1.ok && s1.won && s1.depth === 1 && s1.combatEvents?.length, "abyss floor 1 clear");
+  assert(abyssSt.materials.mist_token === mistBeforeFree, "free dive does not spend mist_token");
   assert(abyssSt.abyssDive.run?.pendingGrit > 0, "pending grit after floor");
   const s3 = advanceAbyssDive(abyssSt);
   assert(s3.ok, "abyss floor 2");
   const s4 = advanceAbyssDive(abyssSt);
   assert(s4.ok && (abyssSt.abyssDive.run?.mutationIds || []).length >= 1, "mutation by floor 3");
   const before = Math.floor(abyssSt.materials.abyss_grit || 0);
+  const tokenBefore = Math.floor(abyssSt.materials.abyss_token || 0);
   const ret = retreatAbyssDive(abyssSt);
   assert(ret.ok && ret.grit > 0, "retreat grants grit");
   assert(Math.floor(abyssSt.materials.abyss_grit) === before + ret.grit, "grit banked");
   assert(!abyssSt.abyssDive.run, "run cleared on retreat");
+  // paid second dive spends abyss_token, not mist_token
+  const mistBeforePaid = abyssSt.materials.mist_token;
+  const tokBeforePaid = Math.floor(abyssSt.materials.abyss_token || 0);
+  const s2 = startAbyssDive(abyssSt);
+  assert(s2.ok, "paid second abyss dive");
+  assert(abyssSt.materials.mist_token === mistBeforePaid, "paid dive does not spend mist_token");
+  assert(
+    Math.floor(abyssSt.materials.abyss_token || 0) === tokBeforePaid - ABYSS_ENTRY_TOKEN_COST,
+    "paid dive spends abyss_token"
+  );
+  retreatAbyssDive(abyssSt);
   assert(buyAbyssInsurance(abyssSt).ok, "buy insurance");
   assert(buyAbyssCosmetic(abyssSt, "veil_mark").ok, "buy cosmetic");
   assert(abyssSt.abyssDive.cosmetics.veil_mark, "cosmetic owned");
@@ -1795,6 +1826,9 @@ assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
 assert(uiSrc2.includes("abyssDiveView"), "ui abyss view");
 assert(uiSrc2.includes("data-abyss-start"), "ui abyss start");
 assert(uiSrc2.includes("潮淵"), "ui abyss tab label");
+assert(uiSrc2.includes("abyss-grit-shop"), "ui grit shop section");
+assert(uiSrc2.includes("data-goto-abyss"), "ui goto abyss exchange");
+assert(uiSrc2.includes("淵潮令") || uiSrc2.includes("entryMatName"), "ui shows abyss entry mat");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

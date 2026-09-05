@@ -178,6 +178,7 @@ import {
   rollTideKeyDrop,
   DUNGEON_TIDE_KEY,
   ABYSS_GRIT_ID,
+  ABYSS_ENTRY_MAT_ID,
   ABYSS_ENTRY_TOKEN_COST,
   ABYSS_WIPE_KEEP_RATE,
   ABYSS_MUTATION_EVERY,
@@ -5449,12 +5450,14 @@ export function abyssDiveView(state, now = Date.now()) {
   const freeLeft = ad.freeUsedDate !== today;
   const run = ad.run;
   const gritHave = Math.floor(state.materials?.[ABYSS_GRIT_ID] || 0);
-  const tokenHave = Math.floor(state.materials?.mist_token || 0);
+  const tokenHave = Math.floor(state.materials?.[ABYSS_ENTRY_MAT_ID] || 0);
   const unlocked = abyssUnlocked(state);
   return {
     unlocked,
     gritHave,
     tokenHave,
+    entryMatId: ABYSS_ENTRY_MAT_ID,
+    entryMatName: MATERIALS[ABYSS_ENTRY_MAT_ID]?.name || "淵潮令",
     freeLeft,
     entryCost: freeLeft ? 0 : ABYSS_ENTRY_TOKEN_COST,
     bestDepth: ad.bestDepth | 0,
@@ -5496,8 +5499,9 @@ export function startAbyssDive(state, now = Date.now()) {
   const today = todayKey(now);
   let spentToken = 0;
   if (ad.freeUsedDate === today) {
-    if (!spendMaterials(state, { mist_token: ABYSS_ENTRY_TOKEN_COST })) {
-      return { ok: false, msg: `需要潮霧令 ×${ABYSS_ENTRY_TOKEN_COST}。` };
+    if (!spendMaterials(state, { [ABYSS_ENTRY_MAT_ID]: ABYSS_ENTRY_TOKEN_COST })) {
+      const name = MATERIALS[ABYSS_ENTRY_MAT_ID]?.name || "淵潮令";
+      return { ok: false, msg: `需要${name} ×${ABYSS_ENTRY_TOKEN_COST}（同秘境潮霧令分開）。` };
     }
     spentToken = ABYSS_ENTRY_TOKEN_COST;
   } else {
@@ -5511,7 +5515,8 @@ export function startAbyssDive(state, now = Date.now()) {
     mutationIds: [],
     startedAt: now,
   };
-  pushLog(state, spentToken ? `踏入潮淵（耗潮霧令×${spentToken}）。` : "今日首潛潮淵（免費）。");
+  const entryName = MATERIALS[ABYSS_ENTRY_MAT_ID]?.name || "淵潮令";
+  pushLog(state, spentToken ? `踏入潮淵（耗${entryName}×${spentToken}）。` : "今日首潛潮淵（免費）。");
   return advanceAbyssDive(state, now);
 }
 
@@ -5577,10 +5582,20 @@ export function retreatAbyssDive(state, now = Date.now()) {
   if (!ad.run) return { ok: false, msg: "沒有進行中的深潛。" };
   const grit = ad.run.pendingGrit | 0;
   const depth = ad.run.depth | 0;
+  const tokenBonus = Math.floor(depth / 5);
   if (grit > 0) addMaterials(state, { [ABYSS_GRIT_ID]: grit });
+  if (tokenBonus > 0) addMaterials(state, { [ABYSS_ENTRY_MAT_ID]: tokenBonus });
   ad.run = null;
-  pushLog(state, `撤出潮淵（最深 ${depth}）· 淵砂×${grit}。`);
-  return { ok: true, grit, depth, msg: `撤退成功 · 淵砂×${grit}` };
+  const entryName = MATERIALS[ABYSS_ENTRY_MAT_ID]?.name || "淵潮令";
+  const bonusBit = tokenBonus ? ` · ${entryName}×${tokenBonus}` : "";
+  pushLog(state, `撤出潮淵（最深 ${depth}）· 淵砂×${grit}${bonusBit}。`);
+  return {
+    ok: true,
+    grit,
+    depth,
+    tokenBonus,
+    msg: `撤退成功 · 淵砂×${grit}${bonusBit}`,
+  };
 }
 
 export function buyAbyssInsurance(state, now = Date.now()) {
