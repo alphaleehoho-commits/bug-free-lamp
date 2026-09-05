@@ -5,6 +5,12 @@
 
 ---
 
+## 基層工序（永久）
+
+**任何需求先拆包分工，再寫 code。** 用戶唔使自己分區。詳見 `AGENTS.md` 同 `.cursor/rules/work-breakdown.mdc`。
+
+---
+
 ## 俾下一位 agent 嘅一句話
 
 **你只負責 Week A（3 個 gameplay 功能）。唔好做 Week B。**  
