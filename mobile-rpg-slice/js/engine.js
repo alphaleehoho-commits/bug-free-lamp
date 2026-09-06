@@ -69,6 +69,7 @@ import {
   bestiaryTotal,
   bestiaryEntries,
   bestiaryCombatBonus,
+  releaseSoulGain,
   releaseRefund,
   NICK_MAX_LEN,
   DAILY_QUESTS,
@@ -503,6 +504,8 @@ function normalizePet(p) {
   }
   // 寵物不再穿裝備
   if (next.equip) delete next.equip;
+  next.starred = !!next.starred;
+  next.locked = !!next.locked;
   return next;
 }
 
@@ -3439,23 +3442,103 @@ export function releasePet(state, uid) {
   if (!state.ranch) state.ranch = [];
   const found = findOwnedPet(state, uid);
   if (!found) return { ok: false, msg: "不在靈寵欄／牧場。" };
+  if (found.pet.locked) {
+    return { ok: false, msg: "已上鎖，唔可以放生。請先解鎖。" };
+  }
   const list = found.list === "pets" ? state.pets : state.ranch;
   const [gone] = list.splice(found.index, 1);
-  const refund = releaseRefund(gone);
-  state.stones += refund.stones;
-  state.feed = (state.feed || 0) + refund.feed;
-  state.dust = (state.dust || 0) + refund.dust;
+  const soul = releaseSoulGain(gone);
+  if (!state.materials) state.materials = emptyMaterials();
+  state.materials.soul_essence = (state.materials.soul_essence || 0) + soul;
   if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
   state.stats.releases += 1;
-  pushLog(
-    state,
-    `放歸 ${gone.nick || gone.name}，返還 ${refund.stones} 石／${refund.feed} 飼料／${refund.dust} 靈塵。`
-  );
+  const label = gone.nick || gone.name;
+  pushLog(state, `放生 ${label}，獲精魂 ${soul}。`);
   return {
     ok: true,
-    msg: `放歸返還 ${refund.stones}石 ${refund.feed}飼料 ${refund.dust}塵`,
-    refund,
+    msg: `放生 ${label}，獲精魂 ${soul}`,
+    soul,
+    refund: { soul, stones: 0, feed: 0, dust: 0 },
   };
+}
+
+/** 批量放生（遇鎖／缺失即中止，已成功嘅會保留） */
+export function releasePets(state, uids) {
+  const ids = Array.isArray(uids) ? uids.filter(Boolean) : [];
+  if (!ids.length) return { ok: false, msg: "未揀靈寵。", soul: 0, count: 0 };
+  let totalSoul = 0;
+  let count = 0;
+  const names = [];
+  for (const uid of ids) {
+    const r = releasePet(state, uid);
+    if (!r.ok) {
+      return {
+        ok: false,
+        msg: count ? `${r.msg}（已放生 ${count} 隻，精魂 +${totalSoul}）` : r.msg,
+        soul: totalSoul,
+        count,
+        partial: count > 0,
+      };
+    }
+    totalSoul += r.soul || 0;
+    count += 1;
+    names.push(r.msg);
+  }
+  return {
+    ok: true,
+    msg: count === 1 ? names[0] : `放生 ${count} 隻，共獲精魂 ${totalSoul}`,
+    soul: totalSoul,
+    count,
+  };
+}
+
+export function setPetStarred(state, uid, starred) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  found.pet.starred = !!starred;
+  const on = found.pet.starred;
+  pushLog(state, `${displayPetName(found.pet)} ${on ? "已星標" : "取消星標"}。`);
+  return { ok: true, msg: on ? "已星標" : "已取消星標", starred: on };
+}
+
+export function togglePetStarred(state, uid) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  return setPetStarred(state, uid, !found.pet.starred);
+}
+
+export function setPetLocked(state, uid, locked) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  found.pet.locked = !!locked;
+  const on = found.pet.locked;
+  pushLog(state, `${displayPetName(found.pet)} ${on ? "已上鎖" : "已解鎖"}。`);
+  return { ok: true, msg: on ? "已上鎖" : "已解鎖", locked: on };
+}
+
+export function togglePetLocked(state, uid) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  return setPetLocked(state, uid, !found.pet.locked);
+}
+
+/** 預覽放生精魂總額（唔改狀態） */
+export function previewReleaseSoul(state, uids) {
+  const ids = Array.isArray(uids) ? uids : [uids];
+  let soul = 0;
+  const pets = [];
+  for (const uid of ids) {
+    const found = findOwnedPet(state, uid);
+    if (!found) continue;
+    if (found.pet.locked) {
+      return { ok: false, msg: `${displayPetName(found.pet)} 已上鎖`, soul: 0, pets: [] };
+    }
+    const gain = releaseSoulGain(found.pet);
+    soul += gain;
+    pets.push({ uid: found.pet.uid, name: displayPetName(found.pet), soul: gain, pet: found.pet });
+  }
+  if (!pets.length) return { ok: false, msg: "找不到靈寵。", soul: 0, pets: [] };
+  return { ok: true, soul, pets };
 }
 
 /** 為靈寵命名（最多 NICK_MAX_LEN 字） */
@@ -6428,6 +6511,8 @@ export {
   petGeneration,
   hybridRecipeSummary,
   hybridRecipeMatrix,
+  releaseSoulGain,
+  releaseRefund,
   DUNGEON_TRIALS,
   KINDS,
   dungeonWaves,

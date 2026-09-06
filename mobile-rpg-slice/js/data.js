@@ -4260,6 +4260,13 @@ export const MATERIALS = {
     desc: "潮淵深潛結算所得 · 換突變保險、深潛外觀、高階寵物蛋",
     tier: "abyss",
   },
+  /** 放生所得：日後精魂商店用（Pack 後期） */
+  soul_essence: {
+    id: "soul_essence",
+    name: "精魂",
+    desc: "放生靈寵所得 · 凝聚靈寵殘念",
+    tier: "soul",
+  },
 };
 
 export const MATERIAL_IDS = Object.keys(MATERIALS);
@@ -4713,6 +4720,7 @@ export const MATERIAL_USES = {
   tide_key_4: "暗潮域主",
   warden_echo: "域主複打殘響",
   abyss_grit: "潮淵兌換",
+  soul_essence: "放生／精魂商店",
 };
 
 /* ─── 潮淵深潛（秘境旁路；唔改潮域產物表）─── */
@@ -4876,6 +4884,8 @@ export function materialSourceLabel(matId) {
     return "秘境潮鑰／域主";
   }
   if (mat.tier === "gate") return "練功／每日／升階（秘境不掉）";
+  if (mat.tier === "soul") return "放生靈寵所得";
+  if (mat.tier === "abyss") return "潮淵深潛";
   const e = MATERIAL_SOURCE_INDEX[matId];
   if (!e) return mat.desc || "";
   const parts = [];
@@ -5128,14 +5138,22 @@ export function bestiaryCombatBonus(discoveredCount) {
   };
 }
 
-/** 放生返還 */
+/**
+ * 放生精魂公式（只返還精魂，唔再退石／飼料／塵）：
+ * 基礎 4 ＋ 等級×2 ＋ 稀有×6 ＋ 融階×4 ＋（代數−1）×2
+ * 例：普 Lv1 → 6；稀有 Lv10 融1 二代 → 4+20+6+4+2 = 36
+ */
+export function releaseSoulGain(pet) {
+  const lv = Math.max(1, pet?.level ?? 1);
+  const fus = Math.max(0, pet?.fusionLevel ?? 0);
+  const rar = Math.max(0, Math.min(RARITY_MAX, pet?.rarity ?? 0));
+  const gen = Math.max(1, petGeneration(pet) || 1);
+  return Math.max(1, 4 + lv * 2 + rar * 6 + fus * 4 + (gen - 1) * 2);
+}
+
+/** @deprecated 舊放生石／飼料／塵；保留別名以便舊測試／註解對照 */
 export function releaseRefund(pet) {
-  const lv = pet.level ?? 1;
-  const fus = pet.fusionLevel ?? 0;
-  const stones = 8 + lv * 4 + fus * 12;
-  const feed = 2 + Math.floor(lv / 2) + fus;
-  const dust = fus > 0 ? fus * 3 : Math.floor(lv / 3);
-  return { stones, feed, dust };
+  return { soul: releaseSoulGain(pet), stones: 0, feed: 0, dust: 0 };
 }
 
 export const NICK_MAX_LEN = 8;

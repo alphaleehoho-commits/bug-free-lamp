@@ -150,6 +150,8 @@ import {
   HATCH_SLOT_BONUS_MAX,
   OFFLINE_HINT_SEC,
   OFFLINE_BANK_CAP_SEC,
+  releaseSoulGain,
+  releaseRefund,
   elementExplain,
   kindExplain,
   personalityExplain,
@@ -231,6 +233,15 @@ import {
   hatchSlotCap,
   useBagItem,
   itemsView,
+  releasePet,
+  releasePets,
+  previewReleaseSoul,
+  togglePetStarred,
+  togglePetLocked,
+  setPetStarred,
+  setPetLocked,
+  saveState,
+  loadState,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -2471,6 +2482,155 @@ assert(uiSrc2.includes("相剋"), "ui element matchup copy");
 assert(uiSrc2.includes("data-upgrade-skill") && uiSrc2.includes("data-temper-oil"), "ui keep upgrade/temper");
 assert(cssSrc.includes("pet-detail-tabs"), "css pet detail tabs");
 assert(cssSrc.includes("pet-explain"), "css pet explain blocks");
+
+/* Pack A: star / lock / release→soul / batch release */
+{
+  assert(MATERIALS.soul_essence?.name === "精魂", "soul_essence material");
+  assert(emptyMaterials().soul_essence === 0, "empty mats has soul");
+  const baseSoul = releaseSoulGain({ level: 1, rarity: 0, fusionLevel: 0, generation: 1 });
+  assert(baseSoul === 6, `lv1 common soul=6 got ${baseSoul}`);
+  const rareSoul = releaseSoulGain({ level: 10, rarity: 1, fusionLevel: 1, generation: 2 });
+  assert(rareSoul === 36, `rare formula got ${rareSoul}`);
+  const oldRef = releaseRefund({ level: 5, fusionLevel: 1 });
+  assert(oldRef.stones === 0 && oldRef.feed === 0 && oldRef.dust === 0 && oldRef.soul > 0, "legacy refund is soul-only");
+
+  const lockSt = {
+    pets: [],
+    ranch: [
+      { ...makeStarterPet(), uid: "lock-a", level: 3, rarity: 0, fusionLevel: 0, locked: false, starred: false },
+      { ...makeStarterPet(), uid: "lock-b", level: 2, rarity: 0, fusionLevel: 0, locked: true, starred: false },
+    ],
+    materials: { ...emptyMaterials() },
+    stones: 100,
+    feed: 10,
+    dust: 10,
+    stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+    log: [],
+  };
+  const stonesBefore = lockSt.stones;
+  const feedBefore = lockSt.feed;
+  const dustBefore = lockSt.dust;
+  const blocked = releasePet(lockSt, "lock-b");
+  assert(!blocked.ok && String(blocked.msg).includes("上鎖"), "lock blocks release");
+  assert(lockSt.ranch.some((p) => p.uid === "lock-b"), "locked pet remains");
+  assert(lockSt.stones === stonesBefore && lockSt.feed === feedBefore && lockSt.dust === dustBefore, "lock release no stone/feed/dust change");
+
+  const soulBefore = Math.floor(lockSt.materials.soul_essence || 0);
+  const expectSoul = releaseSoulGain(lockSt.ranch.find((p) => p.uid === "lock-a"));
+  const freed = releasePet(lockSt, "lock-a");
+  assert(freed.ok && freed.soul === expectSoul, "release grants soul");
+  assert(Math.floor(lockSt.materials.soul_essence) === soulBefore + expectSoul, "soul banked in materials");
+  assert(lockSt.stones === stonesBefore && lockSt.feed === feedBefore && lockSt.dust === dustBefore, "release no longer refunds stone/feed/dust");
+  assert(!lockSt.ranch.some((p) => p.uid === "lock-a"), "released pet removed");
+
+  const starSt = {
+    pets: [],
+    ranch: [{ ...makeStarterPet(), uid: "star-1", starred: false, locked: false }],
+    materials: { ...emptyMaterials() },
+    stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+    log: [],
+  };
+  const starOn = togglePetStarred(starSt, "star-1");
+  assert(starOn.ok && starSt.ranch[0].starred === true, "star toggle on");
+  const starOff = togglePetStarred(starSt, "star-1");
+  assert(starOff.ok && starSt.ranch[0].starred === false, "star toggle off");
+  setPetStarred(starSt, "star-1", true);
+  assert(starSt.ranch[0].starred, "star set true");
+
+  // star persist via save/load normalize
+  const mem = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+    setItem: (k, v) => mem.set(k, String(v)),
+    removeItem: (k) => mem.delete(k),
+  };
+  const persistSt = {
+    realm: 0,
+    qi: 0,
+    stones: 50,
+    scrap: 0,
+    feed: 0,
+    dust: 0,
+    materials: { ...emptyMaterials() },
+    items: { ...emptyItems() },
+    itemBonus: emptyItemBonus(),
+    pets: [],
+    ranch: [{ ...makeStarterPet(), uid: "persist-star", starred: true, locked: true, level: 4 }],
+    eggs: [],
+    pending: [],
+    log: ["t"],
+    lastTick: Date.now(),
+    combatsWon: 0,
+    winStreak: 0,
+    clearedDungeons: {},
+    dungeonReadyAt: {},
+    dungeonSummon: {},
+    breedReadyAt: 0,
+    breedPair: null,
+    breedJobs: [],
+    bestiary: {},
+    daily: { date: "", progress: {}, claimed: {} },
+    pathQuests: { claimed: {} },
+    achievements: {},
+    stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+    master: { skillIds: [], equip: { weapon: null, armor: null, accessory: null } },
+    trainSite: "shore",
+    inventory: [],
+  };
+  saveState(persistSt);
+  const loaded = loadState();
+  const lp = (loaded.ranch || []).find((p) => p.uid === "persist-star");
+  assert(lp?.starred === true && lp?.locked === true, "star+lock persist through save/load");
+
+  const batchSt = {
+    pets: [],
+    ranch: [
+      { ...makeStarterPet(), uid: "batch-1", level: 5, rarity: 0, fusionLevel: 0, locked: false },
+      { ...makeStarterPet(), uid: "batch-2", level: 8, rarity: 1, fusionLevel: 0, locked: false },
+      { ...makeStarterPet(), uid: "batch-3", level: 2, rarity: 0, fusionLevel: 0, locked: true },
+    ],
+    materials: { ...emptyMaterials() },
+    stones: 200,
+    feed: 20,
+    dust: 20,
+    stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+    log: [],
+  };
+  const prevBatch = previewReleaseSoul(batchSt, ["batch-1", "batch-3"]);
+  assert(!prevBatch.ok && String(prevBatch.msg).includes("上鎖"), "preview rejects locked in batch");
+  const okPrev = previewReleaseSoul(batchSt, ["batch-1", "batch-2"]);
+  assert(okPrev.ok && okPrev.pets.length === 2 && okPrev.soul > 0, "preview batch soul");
+  const soul0 = Math.floor(batchSt.materials.soul_essence || 0);
+  const batchR = releasePets(batchSt, ["batch-1", "batch-2"]);
+  assert(batchR.ok && batchR.count === 2 && batchR.soul === okPrev.soul, "batch release soul grant");
+  assert(Math.floor(batchSt.materials.soul_essence) === soul0 + okPrev.soul, "batch soul banked");
+  assert(batchSt.ranch.length === 1 && batchSt.ranch[0].uid === "batch-3", "batch left locked pet");
+  assert(batchSt.stats.releases === 2, "batch increments release stats");
+
+  const lockToggle = togglePetLocked(batchSt, "batch-3");
+  assert(lockToggle.ok && batchSt.ranch[0].locked === false, "unlock works");
+  setPetLocked(batchSt, "batch-3", true);
+  assert(batchSt.ranch[0].locked, "relock");
+}
+assert(uiSrc2.includes("releaseModalHtml"), "ui release modal");
+assert(uiSrc2.includes("confirm-release"), "ui confirm release act");
+assert(uiSrc2.includes("ranch-release-start"), "ui batch release start");
+assert(uiSrc2.includes("ranch-release-confirm"), "ui batch release confirm");
+assert(uiSrc2.includes("data-toggle-star"), "ui star toggle");
+assert(uiSrc2.includes("data-toggle-lock"), "ui lock toggle");
+assert(uiSrc2.includes("data-ranch-star-filter"), "ui star filter");
+assert(uiSrc2.includes("精魂"), "ui soul copy");
+assert(uiSrc2.includes("確認放生"), "ui confirm release copy");
+assert(uiSrc2.includes("批量放生"), "ui batch release copy");
+assert(uiSrc2.includes("上鎖"), "ui lock copy");
+assert(uiSrc2.includes("星標"), "ui star copy");
+assert(!uiSrc2.includes("確定放歸？將返還部分靈石"), "ui no browser confirm stone refund copy");
+assert(cssSrc.includes("release-modal"), "css release modal");
+assert(cssSrc.includes("pet-tag-star"), "css star tag");
+assert(cssSrc.includes("pet-tag-lock"), "css lock tag");
+const engineSrcPackA = readFileSync(join(__dir, "engine.js"), "utf8");
+assert(engineSrcPackA.includes("next.starred = !!next.starred"), "engine normalize starred");
+assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize locked");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

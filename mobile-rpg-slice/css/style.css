@@ -2480,6 +2480,57 @@ button.linkish strong { color: var(--jade); }
   border: 1px solid rgba(140, 170, 130, 0.4);
   color: #c5dbc0;
 }
+.pet-tag-star {
+  background: rgba(196, 160, 60, 0.22);
+  border: 1px solid rgba(220, 180, 80, 0.5);
+  color: #f0d888;
+  min-width: 1.1rem;
+  text-align: center;
+}
+.pet-tag-lock {
+  background: rgba(120, 130, 150, 0.25);
+  border: 1px solid rgba(160, 170, 190, 0.45);
+  color: #c8d0e0;
+}
+
+.pet-card.is-starred {
+  box-shadow: inset 0 0 0 1px rgba(220, 180, 80, 0.28);
+}
+.pet-card.is-manage.is-selected {
+  box-shadow: inset 0 0 0 1px rgba(110, 180, 150, 0.55);
+  background: rgba(40, 70, 58, 0.35);
+}
+.pet-card.is-manage.is-locked-pet {
+  opacity: 0.62;
+}
+.pet-quick-flag {
+  min-width: 2rem;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.72rem;
+}
+.pet-quick-flag.on {
+  color: #f0d888;
+  border-color: rgba(220, 180, 80, 0.55);
+}
+.pet-flag-row button.on {
+  border-color: rgba(220, 180, 80, 0.55);
+  color: #f0d888;
+}
+
+.ranch-manage-bar,
+.ranch-manage-entry {
+  margin: 0.35rem 0 0.5rem;
+}
+.ranch-manage-bar .meta {
+  margin-bottom: 0.35rem;
+}
+
+.release-modal-overlay .release-modal-card {
+  max-height: min(78vh, var(--app-h, 100vh) - 1rem);
+}
+.release-pet-row .muted {
+  display: block;
+}
 
 .ranch-sort {
   display: flex;

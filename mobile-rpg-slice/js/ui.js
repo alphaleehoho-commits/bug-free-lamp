@@ -5,7 +5,11 @@ import {
   tryBreakthrough,
   tryBondPending,
   dismissPending,
-  releasePet,
+  releasePets,
+  previewReleaseSoul,
+  releaseSoulGain,
+  togglePetStarred,
+  togglePetLocked,
   deployPet,
   undeployPet,
   eggsView,
@@ -247,8 +251,20 @@ let hatchClaimModal = null;
 let hatchEggFilter = "all";
 /** 背包內頁：材料 | 道具 */
 let bagInner = "mats";
-/** @type {"power" | "gen" | "rarity" | "element" | "status"} */
+/** @type {"power" | "gen" | "rarity" | "element" | "status" | "star"} */
 let ranchSort = "status";
+/** 牧場只顯示星標 */
+let ranchStarOnly = false;
+/**
+ * 批量放生：null | { phase: "select", selected: string[] } | { phase: "confirm", selected: string[] }
+ * @type {null | { phase: "select" | "confirm", selected: string[] }}
+ */
+let ranchRelease = null;
+/**
+ * 放生確認半屏（單隻／批量）
+ * @type {null | { uids: string[], fromDetail?: boolean }}
+ */
+let releaseModal = null;
 
 const UI_PREFS_KEY = "void-tide-ui-prefs";
 
@@ -265,7 +281,7 @@ function loadUiPrefs() {
 function saveUiPrefs() {
   sessionStorage.setItem(
     UI_PREFS_KEY,
-    JSON.stringify({ matSectionOpen, trainRatesOpen, ranchSort, bagInner })
+    JSON.stringify({ matSectionOpen, trainRatesOpen, ranchSort, ranchStarOnly, bagInner })
   );
 }
 
@@ -275,9 +291,10 @@ trainRatesOpen = !!uiPrefsBoot.trainRatesOpen;
 if (uiPrefsBoot.bagInner === "items" || uiPrefsBoot.bagInner === "mats") {
   bagInner = uiPrefsBoot.bagInner;
 }
-if (["power", "gen", "rarity", "element", "status"].includes(uiPrefsBoot.ranchSort)) {
+if (["power", "gen", "rarity", "element", "status", "star"].includes(uiPrefsBoot.ranchSort)) {
   ranchSort = uiPrefsBoot.ranchSort;
 }
+ranchStarOnly = !!uiPrefsBoot.ranchStarOnly;
 
 const COMBAT_PREFS_KEY = "void-tide-combat-prefs";
 
@@ -1899,6 +1916,7 @@ function render() {
     ${statsSheetOpen ? statsSheetHtml() : ""}
     ${offlineClaimOpen ? offlineClaimModalHtml() : ""}
     ${hatchClaimModal ? hatchClaimModalHtml() : ""}
+    ${releaseModal ? releaseModalHtml() : ""}
     ${dailyHubHtml()}
     ${inTutorial ? "" : installBanner()}
   `;
@@ -1971,6 +1989,7 @@ function statsSheetHtml() {
           <li><span>碎片</span><strong>${state.scrap}</strong></li>
           <li><span>飼料</span><strong>${Math.floor(state.feed || 0)}</strong></li>
           <li><span>靈塵</span><strong>${Math.floor(state.dust || 0)}</strong></li>
+          <li><span>精魂</span><strong>${Math.floor(state.materials?.soul_essence || 0)}</strong></li>
           <li><span>勝場</span><strong>${state.combatsWon}</strong></li>
           <li><span>牧場</span><strong>${ranchN}／${ranchCap(state)}</strong></li>
           <li><span>出戰</span><strong>${state.pets.length}／${ACTIVE_PET_MAX}</strong></li>
@@ -2163,6 +2182,47 @@ function offlineClaimModalHtml() {
         <div class="combat-modal-actions row">
           <button type="button" class="primary" data-act="claim-offline">收集</button>
           <button type="button" class="ghost" data-act="close-offline-claim">返回</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function releaseModalHtml() {
+  if (!releaseModal?.uids?.length) return "";
+  const prev = previewReleaseSoul(state, releaseModal.uids);
+  if (!prev.ok) {
+    return `
+    <div class="combat-modal-overlay release-modal-overlay" data-live="release-modal" role="dialog" aria-label="放生確認">
+      <div class="combat-modal-card release-modal-card">
+        <div class="combat-modal-scroll">
+          <h2>無法放生</h2>
+          <p class="lead">${escapeHtml(prev.msg || "請返回重試。")}</p>
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" class="primary" data-act="close-release-modal">返回</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  const multi = prev.pets.length > 1;
+  const rows = prev.pets
+    .map(
+      (row) =>
+        `<li class="card-row release-pet-row"><div><strong>${escapeHtml(row.name)}</strong><span class="muted">精魂 +${row.soul}</span></div></li>`
+    )
+    .join("");
+  return `
+    <div class="combat-modal-overlay release-modal-overlay" data-live="release-modal" role="dialog" aria-label="放生確認">
+      <div class="combat-modal-card release-modal-card">
+        <div class="combat-modal-scroll">
+          <h2>${multi ? "確認批量放生" : "確認放生"}</h2>
+          <p class="lead">${multi ? `共 ${prev.pets.length} 隻` : escapeHtml(prev.pets[0]?.name || "")} · 精魂 +${prev.soul}</p>
+          <p class="meta muted">放生只獲<strong>精魂</strong>，唔再退靈石／飼料／靈塵。此操作不可復原。</p>
+          <ul class="list">${rows}</ul>
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" class="ghost" data-act="close-release-modal">返回</button>
+          <button type="button" class="primary" data-act="confirm-release">確認放生</button>
         </div>
       </div>
     </div>`;
@@ -2699,6 +2759,13 @@ function petStatusTag(kind) {
   return map[kind] || "";
 }
 
+function petFlagTags(p) {
+  const bits = [];
+  if (p.starred) bits.push(`<span class="pet-tag pet-tag-star" title="星標">★</span>`);
+  if (p.locked) bits.push(`<span class="pet-tag pet-tag-lock" title="上鎖">鎖</span>`);
+  return bits.join("");
+}
+
 function petPowerScore(p) {
   return (p.atk || 0) * 2 + (p.hp || 0) + (p.spd || 0) + (p.level || 1) * 8 + (p.fusionLevel || 0) * 20;
 }
@@ -2710,6 +2777,12 @@ function sortRanchEntries(entries, sortKey) {
   list.sort((a, b) => {
     const pa = a.pet;
     const pb = b.pet;
+    // 星標永遠浮頂（除非專排星標時仍用星標優先）
+    const starDiff = (pb.starred ? 1 : 0) - (pa.starred ? 1 : 0);
+    if (starDiff) return starDiff;
+    if (sortKey === "star") {
+      return petPowerScore(pb) - petPowerScore(pa);
+    }
     if (sortKey === "gen") {
       const d = petGeneration(pb) - petGeneration(pa);
       if (d) return d;
@@ -2731,7 +2804,7 @@ function sortRanchEntries(entries, sortKey) {
   return list;
 }
 
-function petGridCard(p, extraBtn = "", tagHtml = "") {
+function petGridCard(p, extraBtn = "", tagHtml = "", opts = {}) {
   const uid = escapeHtml(p.uid || p.templateId);
   const lv = p.level ?? 1;
   const fus = p.fusionLevel ?? 0;
@@ -2739,20 +2812,52 @@ function petGridCard(p, extraBtn = "", tagHtml = "") {
   const r = rarityInfo(p.rarity ?? 0);
   const g = petGeneration(p);
   const detailGlow = tutGlow({ type: "pet-detail", uid: p.uid || p.templateId });
+  const managing = !!opts.managing;
+  const selected = !!opts.selected;
+  const selectable = !!opts.selectable;
+  const lockedBlock = !!p.locked && managing;
+  const selectCls = managing
+    ? ` is-manage${selected ? " is-selected" : ""}${lockedBlock ? " is-locked-pet" : ""}${
+        selectable ? " is-selectable" : ""
+      }`
+    : p.starred
+      ? " is-starred"
+      : "";
+  const selectBtn = managing
+    ? lockedBlock
+      ? `<button type="button" disabled>已上鎖</button>`
+      : selectable
+        ? `<button type="button" class="${selected ? "primary" : "secondary"}" data-ranch-pick="${uid}">${
+            selected ? "已選" : "選擇"
+          }</button>`
+        : `<button type="button" disabled>不可選</button>`
+    : "";
+  const quick =
+    managing || opts.hideQuick
+      ? ""
+      : `<button type="button" class="ghost pet-quick-flag${p.starred ? " on" : ""}" data-toggle-star="${uid}" aria-label="星標">${
+          p.starred ? "★" : "☆"
+        }</button>
+        <button type="button" class="ghost pet-quick-flag${p.locked ? " on" : ""}" data-toggle-lock="${uid}" aria-label="上鎖">${
+          p.locked ? "鎖" : "開"
+        }</button>`;
   return `
-    <li class="pet-card">
+    <li class="pet-card${selectCls}">
       <div class="pet-card-top">
         ${petIconFromPet(p, { size: 28 })}
         <div class="pet-card-title">
-          <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
-          ${tagHtml}
+          <button type="button" class="linkish" data-pet-detail="${uid}" ${managing ? "disabled" : ""}><strong>${escapeHtml(title)}</strong></button>
+          ${tagHtml}${petFlagTags(p)}
         </div>
       </div>
       <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""}</span>
       <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)} · 攻${fmtInt(p.atk)}</span>
       <div class="row-actions pet-card-actions">
-        <button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>
-        ${extraBtn}
+        ${
+          managing
+            ? selectBtn
+            : `<button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>${quick}${extraBtn}`
+        }
       </div>
     </li>`;
 }
@@ -2770,7 +2875,7 @@ function petRow(p, extraBtn = "", tagHtml = "") {
       ${petIconFromPet(p, { size: 34 })}
       <div>
         <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
-        ${tagHtml}
+        ${tagHtml}${petFlagTags(p)}
         <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
         <span class="muted">攻${fmtInt(p.atk)} 血${fmtInt(p.hp)} 速${fmtInt(p.spd)} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
@@ -2887,7 +2992,7 @@ function petsListView() {
 
   const deployedIds = new Set((state.pets || []).map((p) => p.uid));
   const ranchIdle = (ranch || []).filter((p) => !deployedIds.has(p.uid));
-  const ranchEntries = sortRanchEntries(
+  let ranchEntries = sortRanchEntries(
     [
       ...ranchIdle.filter((p) => busy.has(p.uid)).map((p) => ({ pet: p, kind: "dispatch" })),
       ...(state.pets || []).map((p) => ({ pet: p, kind: "fight" })),
@@ -2895,6 +3000,10 @@ function petsListView() {
     ],
     ranchSort
   );
+  if (ranchStarOnly) {
+    ranchEntries = ranchEntries.filter((e) => e.pet.starred);
+  }
+  const manageSelect = ranchRelease?.phase === "select" ? new Set(ranchRelease.selected || []) : null;
   const ranchList =
     ranchEntries
       .map(({ pet: p, kind }) => {
@@ -2910,13 +3019,21 @@ function petsListView() {
             : kind === "dispatch"
               ? ""
               : `<button type="button" class="primary${tutGlow({ type: "deploy" })}" data-deploy="${escapeHtml(p.uid)}">出戰</button>`;
-        return petGridCard(p, extra, tag);
+        const selectable = kind === "idle" && !p.locked;
+        return petGridCard(p, extra, tag, {
+          managing: !!manageSelect,
+          selected: manageSelect ? manageSelect.has(p.uid) : false,
+          selectable,
+        });
       })
       .join("") ||
-    `<li class="empty pet-grid-empty">牧場空。孵化／契約成功的靈寵會進入牧場（容量 ${cap}）。</li>`;
+    `<li class="empty pet-grid-empty">${
+      ranchStarOnly ? "冇星標靈寵。" : `牧場空。孵化／契約成功的靈寵會進入牧場（容量 ${cap}）。`
+    }</li>`;
 
   const sortOpts = [
     ["status", "狀態"],
+    ["star", "星標"],
     ["power", "戰力"],
     ["gen", "代數"],
     ["rarity", "稀有"],
@@ -2927,6 +3044,9 @@ function petsListView() {
         `<button type="button" class="sort-chip${ranchSort === id ? " on" : ""}" data-ranch-sort="${id}">${label}</button>`
     )
     .join("");
+  const starFilterChip = `<button type="button" class="sort-chip${ranchStarOnly ? " on" : ""}" data-ranch-star-filter aria-pressed="${
+    ranchStarOnly ? "true" : "false"
+  }">只睇星標</button>`;
 
   const idleEggs = eggsView(state).filter((e) => !e.hatching);
   const hatchBusy = activeHatchCount(state);
@@ -3010,12 +3130,54 @@ function petsListView() {
   const sub = panelSub.party;
 
   if (sub === "ranch") {
+    if (ranchRelease?.phase === "confirm") {
+      const prev = previewReleaseSoul(state, ranchRelease.selected || []);
+      const rows =
+        (prev.pets || [])
+          .map(
+            (row) =>
+              `<li class="card-row"><div><strong>${escapeHtml(row.name)}</strong><span class="muted">精魂 +${row.soul}</span></div></li>`
+          )
+          .join("") || `<li class="empty">未揀靈寵。</li>`;
+      return wrapStage(
+        nav,
+        `<h2>確認放生</h2>
+        <p class="lead">將放生 ${prev.pets?.length || 0} 隻 · 預計精魂 +${prev.soul || 0}</p>
+        <p class="meta muted">放生只獲精魂，唔再退靈石／飼料／靈塵。</p>
+        <ul class="list">${rows}</ul>`,
+        `<div class="row">
+          <button type="button" class="secondary" data-act="ranch-release-back">返回</button>
+          <button type="button" class="primary" data-act="ranch-release-confirm" ${
+            prev.ok && prev.pets?.length ? "" : "disabled"
+          }>確認放生</button>
+        </div>`
+      );
+    }
+    const selCount = ranchRelease?.phase === "select" ? (ranchRelease.selected || []).length : 0;
+    const selSoul =
+      ranchRelease?.phase === "select" && selCount
+        ? previewReleaseSoul(state, ranchRelease.selected).soul || 0
+        : 0;
+    const manageBar = ranchRelease?.phase === "select"
+      ? `<div class="ranch-manage-bar">
+          <p class="meta">已選 ${selCount} · 預計精魂 +${selSoul} · 上鎖／出戰／派遣不可選</p>
+          <div class="row">
+            <button type="button" class="secondary" data-act="ranch-release-cancel">取消</button>
+            <button type="button" class="primary" data-act="ranch-release-next" ${selCount ? "" : "disabled"}>下一步</button>
+          </div>
+        </div>`
+      : `<div class="row ranch-manage-entry">
+          <button type="button" class="secondary" data-act="ranch-release-start">批量放生</button>
+        </div>`;
     return wrapStage(
       nav,
       `<h2>靈寵 · 牧場</h2>
-      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 待命微產飼料／靈塵／潮霧令</p>
+      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 精魂 ${Math.floor(
+        state.materials?.soul_essence || 0
+      )} · 待命微產飼料／靈塵／潮霧令</p>
       ${eggBrief}
-      <div class="ranch-sort" role="group" aria-label="牧場排序">${sortOpts}</div>
+      <div class="ranch-sort" role="group" aria-label="牧場排序">${sortOpts}${starFilterChip}</div>
+      ${manageBar}
       <ul class="pet-grid">${ranchList}</ul>`
     );
   }
@@ -3593,9 +3755,12 @@ function petsDetailView() {
         ? petDetailSkillsHtml(pet, detail)
         : petDetailStatsHtml(pet, detail, r);
   const lineage = petLineage(state, pet.uid);
+  const soulGain = releaseSoulGain(pet);
+  const starOn = !!pet.starred;
+  const lockOn = !!pet.locked;
   return wrapStage(
     "",
-    `<h2>${escapeHtml(displayPetName(pet))}</h2>
+    `<h2>${escapeHtml(displayPetName(pet))}${petFlagTags(pet)}</h2>
     <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
     ${petDetailTabNav(detailTab)}
     ${tabBody}
@@ -3604,6 +3769,14 @@ function petsDetailView() {
     <div class="row gear-row">
       <label>暱稱<input type="text" maxlength="${NICK_MAX_LEN}" data-nick-input value="${escapeHtml(pet.nick || "")}" placeholder="${escapeHtml(pet.name)}" /></label>
       <button type="button" data-rename="${escapeHtml(pet.uid)}">命名</button>
+    </div>
+    <div class="row pet-flag-row">
+      <button type="button" class="secondary${starOn ? " on" : ""}" data-toggle-star="${escapeHtml(pet.uid)}">${
+        starOn ? "★ 已星標" : "☆ 星標"
+      }</button>
+      <button type="button" class="secondary${lockOn ? " on" : ""}" data-toggle-lock="${escapeHtml(pet.uid)}">${
+        lockOn ? "已上鎖" : "上鎖"
+      }</button>
     </div>`,
     `<div class="row">
       <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升級</button>
@@ -3622,7 +3795,9 @@ function petsDetailView() {
           ? `<button type="button" data-undeploy="${escapeHtml(pet.uid)}">撤回</button>`
           : `<button type="button" data-deploy="${escapeHtml(pet.uid)}">出戰</button>`
       }
-      <button type="button" data-release="${escapeHtml(pet.uid)}">放歸</button>
+      <button type="button" data-release="${escapeHtml(pet.uid)}" ${lockOn ? "disabled" : ""} title="${
+        lockOn ? "已上鎖，唔可以放生" : `放生獲精魂 ${soulGain}`
+      }">${lockOn ? "已上鎖" : `放生（精魂${soulGain}）`}</button>
       <button type="button" data-pet-back>返回</button>
     </div>`
   );
@@ -4452,6 +4627,7 @@ function bind() {
       }
       panelSub = { ...panelSub, [group]: id };
       if (group === "dungeon") condSheetOpen = false;
+      if (group === "party" && id !== "ranch") ranchRelease = null;
       markTutorialSubVisit(group, id);
       render();
     });
@@ -4480,11 +4656,51 @@ function bind() {
   app.querySelectorAll("[data-ranch-sort]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.ranchSort;
-      if (!["power", "gen", "rarity", "element", "status"].includes(id)) return;
+      if (!["power", "gen", "rarity", "element", "status", "star"].includes(id)) return;
       if (ranchSort === id) return;
       ranchSort = id;
       saveUiPrefs();
       render();
+    });
+  });
+  app.querySelectorAll("[data-ranch-star-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      ranchStarOnly = !ranchStarOnly;
+      saveUiPrefs();
+      render();
+    });
+  });
+  app.querySelectorAll("[data-ranch-pick]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled || ranchRelease?.phase !== "select") return;
+      const uid = btn.dataset.ranchPick;
+      if (!uid) return;
+      const found = (state.ranch || []).find((p) => p.uid === uid);
+      if (!found || found.locked) {
+        setFlash(found?.locked ? "已上鎖，唔可以揀。" : "找不到靈寵。");
+        return;
+      }
+      const selected = new Set(ranchRelease.selected || []);
+      if (selected.has(uid)) selected.delete(uid);
+      else selected.add(uid);
+      ranchRelease = { phase: "select", selected: [...selected] };
+      render();
+    });
+  });
+  app.querySelectorAll("[data-toggle-star]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = togglePetStarred(state, btn.dataset.toggleStar);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-toggle-lock]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = togglePetLocked(state, btn.dataset.toggleLock);
+      saveState(state);
+      render();
+      setFlash(r.msg);
     });
   });
   app.querySelectorAll("[data-dungeon-prev]").forEach((btn) => {
@@ -4561,6 +4777,52 @@ function bind() {
       } else if (act === "close-hatch-claim") {
         hatchClaimModal = null;
         render();
+      } else if (act === "close-release-modal") {
+        releaseModal = null;
+        render();
+      } else if (act === "confirm-release") {
+        if (!releaseModal?.uids?.length) return;
+        const fromDetail = !!releaseModal.fromDetail;
+        const r = releasePets(state, releaseModal.uids);
+        saveState(state);
+        releaseModal = null;
+        ranchRelease = null;
+        if (fromDetail || r.ok) {
+          petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [], detailTab: "stats" };
+        }
+        render();
+        setFlash(r.msg);
+      } else if (act === "ranch-release-start") {
+        ranchRelease = { phase: "select", selected: [] };
+        releaseModal = null;
+        render();
+      } else if (act === "ranch-release-cancel") {
+        ranchRelease = null;
+        render();
+      } else if (act === "ranch-release-next") {
+        if (ranchRelease?.phase !== "select" || !(ranchRelease.selected || []).length) return;
+        const prev = previewReleaseSoul(state, ranchRelease.selected);
+        if (!prev.ok) {
+          setFlash(prev.msg);
+          return;
+        }
+        ranchRelease = { phase: "confirm", selected: [...ranchRelease.selected] };
+        render();
+      } else if (act === "ranch-release-back") {
+        if (ranchRelease?.phase === "confirm") {
+          ranchRelease = { phase: "select", selected: [...(ranchRelease.selected || [])] };
+        } else {
+          ranchRelease = null;
+        }
+        render();
+      } else if (act === "ranch-release-confirm") {
+        if (ranchRelease?.phase !== "confirm" || !(ranchRelease.selected || []).length) return;
+        const r = releasePets(state, ranchRelease.selected);
+        saveState(state);
+        ranchRelease = null;
+        releaseModal = null;
+        render();
+        setFlash(r.msg);
       } else if (act === "claim-offline") {
         const r = claimOfflineBank(state);
         offlineClaimOpen = false;
@@ -4835,12 +5097,15 @@ function bind() {
   });
   app.querySelectorAll("[data-release]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!confirm("確定放歸？將返還部分靈石／飼料／靈塵。")) return;
-      const r = releasePet(state, btn.dataset.release);
-      saveState(state);
-      petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+      if (btn.disabled) return;
+      const uid = btn.dataset.release;
+      const prev = previewReleaseSoul(state, [uid]);
+      if (!prev.ok) {
+        setFlash(prev.msg);
+        return;
+      }
+      releaseModal = { uids: [uid], fromDetail: true };
       render();
-      setFlash(r.msg);
     });
   });
   app.querySelectorAll("[data-rename]").forEach((btn) => {
