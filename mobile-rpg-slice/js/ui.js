@@ -165,7 +165,7 @@ import {
   skillPowerMult,
   SECOND_SKILL_UNLOCK,
 } from "./data.js";
-import { petIconHtml, petIconFromPet } from "./pet-icons.js";
+import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
   tutorialActive,
   tutorialBannerHtml,
@@ -2966,7 +2966,7 @@ function petGridCard(p, extraBtn = "", tagHtml = "", opts = {}) {
     <li class="pet-card${selectCls}">
       ${badges}
       <div class="pet-card-top">
-        ${petIconFromPet(p, { size: 28 })}
+        ${petArtFromPet(p, { size: 28, generation: g })}
         <div class="pet-card-title">
           <button type="button" class="linkish" data-pet-detail="${uid}" ${managing ? "disabled" : ""}><strong>${escapeHtml(title)}</strong></button>
           ${tagHtml}
@@ -2994,7 +2994,7 @@ function petRow(p, extraBtn = "", tagHtml = "") {
   const detailGlow = tutGlow({ type: "pet-detail", uid: p.uid || p.templateId });
   return `
     <li class="card-row pet-row">
-      ${petIconFromPet(p, { size: 34 })}
+      ${petArtFromPet(p, { size: 34, generation: g })}
       <div>
         <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
         ${tagHtml}${petFlagTags(p)}
@@ -3022,7 +3022,7 @@ function petPickCard(p, opts = {}) {
     <li class="pet-pick-card${selected ? " is-selected" : ""}${disabled ? " is-disabled" : ""}${starCls}${lockCls}">
       ${petCornerBadges(p)}
       <div class="pet-pick-top">
-        ${petIconFromPet(p, { size: 24 })}
+        ${petArtFromPet(p, { size: 24, generation: petGeneration(p) })}
         <div class="pet-pick-title">
           <strong>${escapeHtml(displayPetName(p))}</strong>
         </div>
@@ -3492,7 +3492,7 @@ function petsBreedView() {
       return `<div class="breed-slot is-empty"><span class="muted">空位 ${idx + 1} · 下方加入</span></div>`;
     }
     return `<div class="breed-slot">
-      ${petIconFromPet(pet, { size: 36 })}
+      ${petArtFromPet(pet, { size: 36, generation: petGeneration(pet) })}
       <div>
         <strong>${escapeHtml(displayPetName(pet))}</strong>
         <span class="muted">${genTagHtml(petGeneration(pet))} · ${escapeHtml(pet.elementName)}·${escapeHtml(pet.personalityName)}</span>
@@ -3902,8 +3902,13 @@ function petsDetailView() {
   const lockOn = !!pet.locked;
   return wrapStage(
     "",
-    `<h2>${escapeHtml(displayPetName(pet))}${petFlagTags(pet)}</h2>
-    <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
+    `<div class="pet-detail-hero">
+      ${petArtFromPet(pet, { size: 52, generation: g, className: "pet-art--detail" })}
+      <div class="pet-detail-hero-text">
+        <h2>${escapeHtml(displayPetName(pet))}${petFlagTags(pet)}</h2>
+        <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
+      </div>
+    </div>
     ${petDetailTabNav(detailTab)}
     ${tabBody}
     <p class="meta pet-detail-upgrade"><strong>升級</strong> — ${upgradeCostLine(upgradeCost, feedCost, lv)}</p>
@@ -4009,7 +4014,7 @@ function codexPanel() {
       const pct = Math.min(100, Math.round((s.found / Math.max(1, s.total)) * 100));
       const unlocked = s.found > 0;
       return `<li class="card-row codex-row${unlocked ? " is-unlocked" : ""}">
-        <div class="codex-icon">${unlocked ? petIconHtml(s.speciesId, { size: 36 }) : `<span class="pet-icon pet-icon-unknown">?</span>`}</div>
+        <div class="codex-icon">${unlocked ? petArtHtml(s.speciesId, { size: 36 }) : `<span class="pet-art pet-art-unknown"><span class="pet-icon pet-icon-unknown">?</span></span>`}</div>
         <div>
           <strong>${escapeHtml(s.speciesName)}</strong>
           <span class="muted">${escapeHtml(s.kind)}${s.breedOnly ? "·雜交" : ""} · ${s.found}/${s.total}</span>

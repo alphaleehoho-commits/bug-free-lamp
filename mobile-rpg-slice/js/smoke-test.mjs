@@ -2911,6 +2911,34 @@ assert(/\.pet-pick-grid\s*\{[^}]*grid-template-columns:\s*1fr\s+1fr/s.test(cssSr
 assert(/\.pet-grid\s*\{[^}]*grid-template-columns:\s*1fr\s+1fr/s.test(cssSrc), "css ranch pet-grid 2-col");
 assert(/\.ranch-sort\s*\{[^}]*position:\s*sticky/s.test(cssSrc), "css ranch-sort sticky");
 assert(cssSrc.includes("pet-pick-sheet"), "css pet-pick-sheet");
+
+/* Pack D: pet visual differentiation (silhouettes + element tint + rarity frame) */
+{
+  const iconSrc = readFileSync(join(__dir, "pet-icons.js"), "utf8");
+  assert(iconSrc.includes("petArtFromPet"), "pet-icons exports petArtFromPet");
+  assert(iconSrc.includes("petArtHtml"), "pet-icons exports petArtHtml");
+  assert(iconSrc.includes("KIND_PATH_VARIANTS"), "pet-icons kind path variants");
+  assert(iconSrc.includes("ELEMENT_COLORS"), "pet-icons element colors");
+  assert(iconSrc.includes("RARITY_GLOW"), "pet-icons rarity glow");
+  assert(iconSrc.includes("pet-art-gen"), "pet-icons gen corner mark");
+  assert(iconSrc.includes("pet-icon--kind-"), "pet-icons kind class");
+  assert(iconSrc.includes("pet-icon--elem-"), "pet-icons elem class");
+  assert(iconSrc.includes("pet-icon--rarity-"), "pet-icons rarity class");
+  assert(iconSrc.includes("pet-art--rarity-"), "pet-icons pet-art rarity class");
+  assert(iconSrc.includes("pet-art--elem-"), "pet-icons pet-art elem class");
+  assert(uiSrc2.includes("petArtFromPet"), "ui uses petArtFromPet");
+  assert(uiSrc2.includes("petArtHtml"), "ui uses petArtHtml");
+  assert(uiSrc2.includes("pet-detail-hero"), "ui pet detail hero art");
+  assert(uiSrc2.includes("petCornerBadges"), "ui keeps Pack A corner badges");
+  assert(cssSrc.includes(".pet-art"), "css pet-art class");
+  assert(cssSrc.includes(".pet-icon"), "css pet-icon class");
+  assert(cssSrc.includes("pet-art--rarity-legendary"), "css legendary rarity frame");
+  assert(cssSrc.includes("pet-art-gen"), "css pet-art gen mark");
+  assert(cssSrc.includes("pet-art-elem-dot"), "css element accent dot");
+  assert(cssSrc.includes("pet-detail-hero"), "css pet detail hero");
+  assert(/\.pet-card-badges\s*\{[^}]*position:\s*absolute/s.test(cssSrc), "css Pack A badges still absolute");
+}
+
 const engineSrcPackA = readFileSync(join(__dir, "engine.js"), "utf8");
 assert(engineSrcPackA.includes("next.starred = !!next.starred"), "engine normalize starred");
 assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize locked");
