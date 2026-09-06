@@ -386,9 +386,12 @@ body {
 .panel-subnav button {
   flex: 1 0 auto;
   min-width: 3.4rem;
-  padding: 0.32rem 0.2rem;
-  font-size: 0.68rem;
+  min-height: 2.15rem;
+  padding: 0.4rem 0.35rem;
+  font-size: 0.7rem;
   border-radius: 999px;
+  touch-action: manipulation;
+  pointer-events: auto;
 }
 .panel-subnav button.on {
   color: var(--ink);
@@ -536,7 +539,7 @@ body {
   flex-shrink: 0;
   margin: 0;
   padding: 0.42rem 0 0.12rem;
-  padding-bottom: max(0.12rem, env(safe-area-inset-bottom, 0px));
+  /* 唔好喺呢度食 safe-area：真正底欄先至要，否則會壓縮子分頁觸控區 */
   border-top: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(18, 32, 44, 0.72) 0%, rgba(18, 32, 44, 0.98) 35%);
 }
@@ -557,15 +560,32 @@ body {
 }
 
 .panel-subnav-dock {
+  position: relative;
+  z-index: 30;
   flex-shrink: 0;
   margin: 0;
   padding: 0.28rem 0 0.08rem;
   border-top: 1px solid var(--line);
   background: rgba(12, 20, 28, 0.92);
+  pointer-events: auto;
+}
+.panel-subnav-dock--top {
+  border-top: none;
+  border-bottom: 1px solid var(--line);
+  padding: 0.08rem 0 0.28rem;
+  margin: 0 0 0.2rem;
+  background: rgba(12, 20, 28, 0.96);
 }
 .panel-subnav-dock .panel-subnav {
   margin: 0;
   padding: 0 0.05rem;
+  gap: 0.28rem;
+}
+.panel-subnav-dock .panel-subnav button {
+  min-height: 2.2rem;
+  padding: 0.42rem 0.55rem;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 .panel-body > .panel-subnav-dock {
   flex-shrink: 0;
