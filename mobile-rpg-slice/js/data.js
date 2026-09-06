@@ -1476,8 +1476,8 @@ export const BREED_QUEUE_MAX = 3;
 export const BREED_BATCH_MIN = 1;
 export const BREED_BATCH_MAX = 10;
 export const BREED_ELEMENT_MUTATION_RATE = 0.1;
-/** 蛋欄容量（牧場外） */
-export const EGG_CAP = 6;
+/** 蛋欄容量（牧場外）；Infinity = 無上限 */
+export const EGG_CAP = Number.POSITIVE_INFINITY;
 
 export function clampBreedBatchCount(count) {
   const n = Math.floor(Number(count) || BREED_BATCH_MIN);
@@ -4864,7 +4864,7 @@ export const ABYSS_EVENT_TYPES = {
   merchant: {
     id: "merchant",
     name: "行商",
-    desc: "花淵砂買本潛增益",
+    desc: "花淵砂買本潛增益，或隨機移除突變",
   },
   altar: {
     id: "altar",
@@ -4961,20 +4961,32 @@ export function rollAbyssFloorEvent(seed, depth) {
   const i1 = (h >>> 8) % pool.length;
   const second = pool[i1];
   const buffId = ABYSS_MERCHANT_BUFF_IDS[(h >>> 16) % ABYSS_MERCHANT_BUFF_IDS.length];
+  // 抽中行商 → 專屬 2 揀 1：買增益 或 突變保險（隨機移除 1 條突變）
+  if (first === "merchant" || second === "merchant") {
+    const buff = ABYSS_MERCHANT_BUFFS[buffId];
+    return {
+      depth: depth | 0,
+      options: [
+        {
+          type: "merchant",
+          name: "行商·增益",
+          desc: `【${buff.name}】${buff.desc}（淵砂×${buff.cost}）`,
+          buffId: buff.id,
+          cost: buff.cost,
+        },
+        {
+          type: "merchant_purge",
+          name: "行商·突變保險",
+          desc: `隨機移除 1 條現有突變（淵砂×${ABYSS_INSURANCE_COST}）`,
+          cost: ABYSS_INSURANCE_COST,
+        },
+      ],
+    };
+  }
   return {
     depth: depth | 0,
     options: [first, second].map((type) => {
       const base = ABYSS_EVENT_TYPES[type];
-      if (type === "merchant") {
-        const buff = ABYSS_MERCHANT_BUFFS[buffId];
-        return {
-          type,
-          name: base.name,
-          desc: `${base.desc}：【${buff.name}】${buff.desc}（淵砂×${buff.cost}）`,
-          buffId: buff.id,
-          cost: buff.cost,
-        };
-      }
       return { type, name: base.name, desc: base.desc };
     }),
   };
