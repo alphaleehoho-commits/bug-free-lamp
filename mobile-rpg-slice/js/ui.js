@@ -177,6 +177,7 @@ import {
   isCultivateSubLocked,
   isPartySubLocked,
   isDungeonSubLocked,
+  tutorialLockReason,
   areTrainSitesLocked,
   skipTutorial,
   tutorialQiReady,
@@ -1162,8 +1163,14 @@ function stopPlayback() {
 }
 
 function switchTab(id) {
-  if (playback && !playback.done) return;
-  if (isTabLocked(state, id)) return;
+  if (playback && !playback.done) {
+    setFlash("戰鬥中");
+    return;
+  }
+  if (isTabLocked(state, id)) {
+    setFlash(tutorialLockReason(state, "tab", id) || "教學中");
+    return;
+  }
   tab = id;
   condSheetOpen = false;
   statsSheetOpen = false;
@@ -1215,21 +1222,42 @@ function markTutorialSubVisit(group, id) {
   }
 }
 
+function panelSubLockKind(group) {
+  if (group === "cultivate") return "cultivateSub";
+  if (group === "party") return "partySub";
+  if (group === "dungeon") return "dungeonSub";
+  return "";
+}
+
+function panelSubIsLocked(group, id) {
+  if (group === "cultivate") return isCultivateSubLocked(state, id);
+  if (group === "party") return isPartySubLocked(state, id);
+  if (group === "dungeon") return isDungeonSubLocked(state, id);
+  return false;
+}
+
+/** 子分頁切換阻擋原因；空＝可切 */
+function panelSubSwitchBlockReason(group, id) {
+  if (playback && !playback.done) return "戰鬥中";
+  if (panelSubIsLocked(group, id)) {
+    return tutorialLockReason(state, panelSubLockKind(group), id) || "教學中";
+  }
+  return "";
+}
+
 function panelSubNav(group, items) {
-  const lockFn =
-    group === "cultivate"
-      ? isCultivateSubLocked
-      : group === "party"
-        ? isPartySubLocked
-        : group === "dungeon"
-          ? isDungeonSubLocked
-          : () => false;
-  const visible = items.filter(({ id }) => !lockFn(state, id));
-  if (!visible.length) return "";
-  return `<nav class="panel-subnav" aria-label="子分頁">${visible
+  if (!items.length) return "";
+  return `<nav class="panel-subnav" aria-label="子分頁">${items
     .map(({ id, label }) => {
+      const locked = panelSubIsLocked(group, id);
       const glow = tutGlow({ type: "panel-sub", group, id });
-      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${glow}" data-panel-sub="${group}:${id}">${label}</button>`;
+      const hint = locked
+        ? tutorialLockReason(state, panelSubLockKind(group), id) || "教學中"
+        : "";
+      const title = hint ? ` title="${escapeHtml(hint)}"` : "";
+      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${
+        locked ? " is-locked" : ""
+      }${glow}" data-panel-sub="${group}:${id}" data-sub-locked="${locked ? "1" : "0"}"${title}>${label}</button>`;
     })
     .join("")}</nav>`;
 }
@@ -4855,14 +4883,14 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const [group, id] = (btn.dataset.panelSub || "").split(":");
-      if (!group || !id || panelSub[group] === id) return;
-      if (group === "cultivate" && isCultivateSubLocked(state, id)) return;
-      if (group === "party" && isPartySubLocked(state, id)) return;
-      if (group === "dungeon" && isDungeonSubLocked(state, id)) return;
-      if (playback) {
-        if (!playback.done) return;
-        stopPlayback();
+      if (!group || !id) return;
+      if (panelSub[group] === id) return;
+      const block = panelSubSwitchBlockReason(group, id);
+      if (block) {
+        setFlash(block);
+        return;
       }
+      if (playback?.done) stopPlayback();
       panelSub = { ...panelSub, [group]: id };
       if (group === "dungeon") condSheetOpen = false;
       if (group === "party" && id !== "ranch") ranchRelease = null;

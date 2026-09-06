@@ -290,6 +290,7 @@ import {
   tutorialNeedsHatchSub,
   tutorialTargetSelector,
   isDungeonSubLocked,
+  tutorialLockReason,
   tutorialCoachDetailUid,
   LATE_TUTORIAL_STEPS,
   isPartySubLocked,
@@ -1553,11 +1554,63 @@ const tacticsSt = {
 normalizeTutorial(tacticsSt);
 assert(isDungeonSubLocked(tacticsSt, "field"), "tactics locks dungeon field");
 assert(!isDungeonSubLocked(tacticsSt, "setup"), "tactics allows setup");
+assert(!isDungeonSubLocked(tacticsSt, "abyss"), "tactics does not lock abyss");
+assert(tutorialLockReason(tacticsSt, "dungeonSub", "field") === "教學中", "field lock reason 教學中");
+assert(tutorialLockReason(tacticsSt, "dungeonSub", "abyss") === "", "abyss has no tutorial lock reason");
 const tacticsNav = syncTutorialNavigation(tacticsSt, {
   tab: "dungeon",
   panelSub: { dungeon: "field", party: "fight", cultivate: "train", codex: "dex" },
 });
-assert(tacticsNav.panelSub.dungeon === "setup", "tactics sync forces setup sub");
+assert(tacticsNav.panelSub.dungeon === "setup", "tactics sync forces setup sub from field");
+const tacticsAbyssNav = syncTutorialNavigation(tacticsSt, {
+  tab: "dungeon",
+  panelSub: { dungeon: "abyss", party: "fight", cultivate: "train", codex: "dex" },
+});
+assert(tacticsAbyssNav.panelSub.dungeon === "abyss", "tactics sync keeps abyss sub");
+const tacticsSetupNav = syncTutorialNavigation(tacticsSt, {
+  tab: "dungeon",
+  panelSub: { dungeon: "setup", party: "fight", cultivate: "train", codex: "dex" },
+});
+assert(tacticsSetupNav.panelSub.dungeon === "setup", "tactics sync keeps setup sub");
+
+/* Pack B: dungeon/abyss unlock + click path (logic) */
+{
+  const fightSt = {
+    realm: 0,
+    clearedDungeons: {},
+    tutorial: { done: false, step: "dungeon_fight", flags: {}, latePending: false },
+  };
+  normalizeTutorial(fightSt);
+  assert(!isTabLocked(fightSt, "dungeon"), "dungeon_fight unlocks dungeon tab");
+  assert(!isDungeonSubLocked(fightSt, "field"), "dungeon_fight allows field");
+  assert(!isDungeonSubLocked(fightSt, "abyss"), "dungeon_fight allows abyss click");
+  assert(isDungeonSubLocked(fightSt, "setup"), "dungeon_fight locks setup");
+  assert(tutorialLockReason(fightSt, "dungeonSub", "setup") === "教學中", "setup lock flashes 教學中");
+  const unlockedAbyss = abyssDiveView({
+    realm: 0,
+    clearedDungeons: { tide_1: true },
+    materials: {},
+    pets: [],
+    ranch: [],
+  });
+  assert(unlockedAbyss.unlocked, "tide_1 clears abyss unlock gate");
+  const lockedAbyss = abyssDiveView({
+    realm: 0,
+    clearedDungeons: {},
+    materials: {},
+    pets: [],
+    ranch: [],
+  });
+  assert(!lockedAbyss.unlocked, "abyss locked before tide_1 / realm");
+  const realmAbyss = abyssDiveView({
+    realm: 1,
+    clearedDungeons: {},
+    materials: {},
+    pets: [],
+    ranch: [],
+  });
+  assert(realmAbyss.unlocked, "realm >= 1 unlocks abyss");
+}
 
 /* Week A: dungeon sweep + daily all-clear */
 assert(DUNGEON_SUMMON_MIN === 1 && DUNGEON_SUMMON_MAX === 10, "summon range 1-10");
@@ -1775,6 +1828,14 @@ assert(uiSrc.includes("panel-subnav-dock"), "ui subnav near bottom tabs");
 assert(uiSrc.includes("function wrapStage"), "ui has wrapStage layout helper");
 assert(uiSrc.includes("tabs-bottom"), "ui has bottom tab bar");
 assert(uiSrc.includes("statsSheetHtml"), "ui has stats resource sheet");
+/* Pack B: abyss/dungeon subnav click path — no silent no-op */
+assert(uiSrc.includes("panelSubSwitchBlockReason"), "ui dungeon sub block reason helper");
+assert(uiSrc.includes('setFlash("戰鬥中")'), "ui flashes 戰鬥中 when combat busy");
+assert(uiSrc.includes("setFlash(block)"), "ui flashes block reason on locked sub click");
+assert(uiSrc.includes("data-sub-locked"), "ui shows locked dungeon subs clickable");
+assert(uiSrc.includes("is-locked"), "ui locked sub class");
+assert(uiSrc.includes("tutorialLockReason"), "ui uses tutorial lock reason");
+assert(!uiSrc.includes("items.filter(({ id }) => !lockFn"), "ui no longer hides locked subs");
 
 /* Ranch idle + dispatch gen mult */
 const idlePet = {

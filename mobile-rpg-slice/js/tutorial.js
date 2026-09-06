@@ -429,6 +429,17 @@ export function isDungeonSubLocked(state, subId) {
   return !!tutorialLocks(state).dungeonSub[subId];
 }
 
+/** 教學鎖定原因（供 UI flash／title）；空字串＝未鎖 */
+export function tutorialLockReason(state, kind, id) {
+  if (!tutorialActive(state) || !id) return "";
+  const locks = tutorialLocks(state);
+  if (kind === "tab" && locks.tabs[id]) return "教學中";
+  if (kind === "cultivateSub" && locks.cultivateSub[id]) return "教學中";
+  if (kind === "partySub" && locks.partySub[id]) return "教學中";
+  if (kind === "dungeonSub" && locks.dungeonSub[id]) return "教學中";
+  return "";
+}
+
 export function areTrainSitesLocked(state) {
   return !!tutorialLocks(state).trainSites;
 }
@@ -729,7 +740,13 @@ export function syncTutorialNavigation(state, nav) {
       break;
     case "tactics":
       next = clampTutorialTabs(nav, ["dungeon"]);
-      next.panelSub = { ...next.panelSub, dungeon: "setup" };
+      // 只趕走已鎖嘅 field；潮淵／戰術可停留（唔好每 frame 強制 setup 令潮淵無反應）
+      {
+        const dungSub = next.panelSub?.dungeon || "field";
+        if (dungSub === "field" || isDungeonSubLocked(state, dungSub)) {
+          next.panelSub = { ...next.panelSub, dungeon: "setup" };
+        }
+      }
       break;
     case "fuse_intro":
       next = clampTutorialTabs(nav, ["party"]);
