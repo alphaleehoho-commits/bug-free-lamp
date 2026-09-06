@@ -6861,6 +6861,8 @@ export function advanceAbyssDive(state, now = Date.now()) {
       wiped: false,
       mutationIds: mutIds,
       mutations: mapAbyssMutations(mutIds),
+      diveBuffs: [...(ad.run.diveBuffs || [])],
+      diveBuffList: (ad.run.diveBuffs || []).map((id) => ABYSS_MERCHANT_BUFFS[id]).filter(Boolean),
       nextFloor: previewAbyssNextFloor(nextDepth, mutIds, ad.insuranceCharges | 0),
       pendingEvent,
       roster: abyssSquadRosterView(state, ad.run),
@@ -6889,6 +6891,8 @@ export function advanceAbyssDive(state, now = Date.now()) {
     canContinue: false,
     mutationIds: mutIds,
     mutations: mapAbyssMutations(mutIds),
+    diveBuffs: [],
+    diveBuffList: [],
     msg: keep
       ? `第 ${nextDepth} 層挑戰失敗 · 保底淵砂×${keep}`
       : `第 ${nextDepth} 層挑戰失敗 · 未帶出淵砂`,
@@ -6976,6 +6980,38 @@ export function resolveAbyssEvent(state, optionType, opts = {}, now = Date.now()
       diveBuffs: [...ad.run.diveBuffs],
     };
   }
+
+  if (optionType === "merchant_purge") {
+    const mutIds = [...(ad.run.mutationIds || [])];
+    if (!mutIds.length) {
+      return { ok: false, msg: "目前冇突變可移除。" };
+    }
+    if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_INSURANCE_COST })) {
+      return { ok: false, msg: `淵砂不足（需×${ABYSS_INSURANCE_COST}）。` };
+    }
+    const seed = `${ad.run.seed}:purge${ad.run.depth}:${mutIds.length}`;
+    let h = 2166136261;
+    for (let i = 0; i < seed.length; i++) {
+      h ^= seed.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    const idx = (h >>> 0) % mutIds.length;
+    const removed = mutIds.splice(idx, 1)[0];
+    ad.run.mutationIds = mutIds;
+    ad.run.pendingEvent = null;
+    const mut = (typeof ABYSS_MUTATIONS !== "undefined" ? ABYSS_MUTATIONS[removed] : null)
+      || { name: removed };
+    pushLog(state, `行商突變保險——移除【${mut.name || removed}】。`);
+    return {
+      ok: true,
+      msg: `行商：移除突變【${mut.name || removed}】。`,
+      roster: abyssSquadRosterView(state, ad.run),
+      mutationIds: [...mutIds],
+      removedMutationId: removed,
+    };
+  }
+
+
 
   if (optionType === "altar") {
     const dead = (ad.run.squadUids || []).filter((uid) => (ad.run.hpByUid?.[uid]?.hp | 0) <= 0);

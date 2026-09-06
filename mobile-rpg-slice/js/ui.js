@@ -264,6 +264,8 @@ let hatchClaimModal = null;
 let hatchEggFilter = "all";
 /** 背包內頁：材料 | 道具 */
 let bagInner = "mats";
+/** 商肆內頁：stones | soul | grit */
+let shopInner = "stones";
 /** @type {"power" | "gen" | "rarity" | "element" | "status" | "star" | "level"} */
 let ranchSort = "status";
 /** 牧場只顯示星標 */
@@ -311,7 +313,7 @@ function loadUiPrefs() {
 function saveUiPrefs() {
   sessionStorage.setItem(
     UI_PREFS_KEY,
-    JSON.stringify({ matSectionOpen, trainRatesOpen, ranchSort, ranchStarOnly, bagInner })
+    JSON.stringify({ matSectionOpen, trainRatesOpen, ranchSort, ranchStarOnly, bagInner, shopInner })
   );
 }
 
@@ -320,6 +322,9 @@ matSectionOpen = !!uiPrefsBoot.matSectionOpen;
 trainRatesOpen = !!uiPrefsBoot.trainRatesOpen;
 if (uiPrefsBoot.bagInner === "items" || uiPrefsBoot.bagInner === "mats") {
   bagInner = uiPrefsBoot.bagInner;
+}
+if (uiPrefsBoot.shopInner === "stones" || uiPrefsBoot.shopInner === "soul" || uiPrefsBoot.shopInner === "grit") {
+  shopInner = uiPrefsBoot.shopInner;
 }
 if (["power", "gen", "rarity", "element", "status", "star", "level"].includes(uiPrefsBoot.ranchSort)) {
   ranchSort = uiPrefsBoot.ranchSort;
@@ -1395,13 +1400,13 @@ function panelSubNav(group, items) {
 }
 
 function wrapStage(subnavHtml, scrollHtml, dockHtml = "") {
-  // 子分頁置頂：唔好夾喺召喚 dock 同底欄中間（會被擋掣，潮淵撳唔到）
+  // 子分頁放返內容下方（貼近底欄之上）
   return `
-    ${subnavHtml ? `<div class="panel-subnav-dock panel-subnav-dock--top">${subnavHtml}</div>` : ""}
     <div class="panel-stage">
       <div class="stage-scroll">${scrollHtml}</div>
       ${dockHtml ? `<div class="stage-dock">${dockHtml}</div>` : ""}
-    </div>`;
+    </div>
+    ${subnavHtml ? `<div class="panel-subnav-dock">${subnavHtml}</div>` : ""}`;
 }
 
 function syncAppHeight() {
@@ -1531,6 +1536,15 @@ function bagInnerNavHtml() {
     <button type="button" class="${bagInner === "items" ? "on" : ""}" data-bag-inner="items">道具</button>
   </nav>`;
 }
+
+function shopInnerNavHtml() {
+  return `<nav class="bag-inner-nav" aria-label="商肆分類">
+    <button type="button" class="${shopInner === "stones" ? "on" : ""}" data-shop-inner="stones">靈石</button>
+    <button type="button" class="${shopInner === "soul" ? "on" : ""}" data-shop-inner="soul">精魂</button>
+    <button type="button" class="${shopInner === "grit" ? "on" : ""}" data-shop-inner="grit">淵砂</button>
+  </nav>`;
+}
+
 
 function materialsBlockHtml() {
   const owned = matOwnedCount();
@@ -2096,7 +2110,6 @@ function render() {
   app.className = `${enterClass}${inTutorial ? " is-tutorial" : ""}`;
   app.innerHTML = `
     <header class="top top-compact">
-      ${teamBondBarHtml()}
       <div class="brand-row">
         <p class="brand">暗潮</p>
         <p class="tag">靈寵修行 · <span data-live="wins">勝 ${state.combatsWon}</span></p>
@@ -2934,12 +2947,15 @@ function cultivatePanel(qiPct, next, m) {
 
   if (panelSub.cultivate === "gear") panelSub.cultivate = "train";
   if (panelSub.cultivate === "mats") panelSub.cultivate = "bag";
+  if (panelSub.cultivate === "soul") {
+    panelSub.cultivate = "shop";
+    shopInner = "soul";
+  }
   const sub = panelSub.cultivate;
   const nav = panelSubNav("cultivate", [
     { id: "train", label: "練功" },
     { id: "bag", label: "背包" },
     { id: "shop", label: "商肆" },
-    { id: "soul", label: "精魂" },
     { id: "advance", label: "進階" },
   ]);
 
@@ -2956,20 +2972,15 @@ function cultivatePanel(qiPct, next, m) {
   }
 
   if (sub === "shop") {
-    return wrapStage(
-      nav,
-      `<h2>商肆 · 今日</h2>
-      <p class="lead">靈石 ${Math.floor(state.stones)} · 牧場 ${ranchN}／${ranchCap(state)}</p>
-      <ul class="list">${shopRows}</ul>`
-    );
-  }
-
-  if (sub === "soul") {
+    const gritV = abyssDiveView(state);
     const soulN = Math.floor(state.materials?.soul_essence || 0);
-    const soulRows =
-      soulShopView(state)
-        .map((o) => {
-          return `
+    const gritHave = Math.floor(state.materials?.abyss_grit || gritV.gritHave || 0);
+    let shopBody;
+    if (shopInner === "soul") {
+      const soulRows =
+        soulShopView(state)
+          .map((o) => {
+            return `
         <li class="card-row">
           <div>
             <strong>${escapeHtml(o.name)}</strong>
@@ -2979,15 +2990,45 @@ function cultivatePanel(qiPct, next, m) {
             o.canAfford ? "" : "disabled"
           }>兌換</button>
         </li>`;
-        })
-        .join("") || `<li class="empty">暫無精魂貨物。</li>`;
-    return wrapStage(
-      nav,
-      `<h2>精魂商人</h2>
+          })
+          .join("") || `<li class="empty">暫無精魂貨物。</li>`;
+      shopBody = `<h2>商肆 · 精魂</h2>
       <p class="lead">精魂 ${soulN} · 放生所得兌換飼料／材料／道具</p>
-      <ul class="list">${soulRows}</ul>`
-    );
+      <ul class="list">${soulRows}</ul>`;
+    } else if (shopInner === "grit") {
+      const cosRows = (gritV.cosmeticList || gritV.cosmeticsList || [])
+        .map((c) => {
+          const owned = c.owned ? "已擁有" : `淵砂×${c.cost}`;
+          return `<li class="card-row">
+        <div><strong>${escapeHtml(c.name)}</strong><span class="muted"> · ${escapeHtml(c.desc)}</span></div>
+        <button type="button" class="secondary" data-abyss-cosmetic="${c.id}" ${c.owned ? "disabled" : ""}>${owned}</button>
+      </li>`;
+        })
+        .join("");
+      shopBody = `<h2>商肆 · 淵砂</h2>
+      <p class="lead">淵砂 ${gritHave} · 潮淵深潛結算兌換</p>
+      <ul class="list">
+      <li class="card-row">
+        <div><strong>潮淵高階蛋</strong><span class="muted"> · 本週 ${gritV.eggsBoughtWeek}/${gritV.eggsWeeklyLimit} · 較易出稀有</span></div>
+        <button type="button" class="secondary" data-abyss-egg ${gritV.eggsBoughtWeek >= gritV.eggsWeeklyLimit ? "disabled" : ""}>淵砂×${gritV.eggCost}</button>
+      </li>
+      <li class="card-row">
+        <div><strong>潮轉符</strong><span class="muted"> · 永久隨機轉屬 · 持有 ${gritV.tideShiftHave || 0}</span></div>
+        <div class="row-actions">
+          <button type="button" class="secondary" data-abyss-buy-shift>淵砂×${gritV.tideShiftCost}</button>
+          <button type="button" class="primary" data-act="open-tide-shift" ${(gritV.tideShiftHave || 0) < 1 ? "disabled" : ""}>使用</button>
+        </div>
+      </li>
+      ${cosRows}
+    </ul>`;
+    } else {
+      shopBody = `<h2>商肆 · 靈石</h2>
+      <p class="lead">靈石 ${Math.floor(state.stones)} · 牧場 ${ranchN}／${ranchCap(state)}</p>
+      <ul class="list">${shopRows}</ul>`;
+    }
+    return wrapStage(nav, `${shopInnerNavHtml()}${shopBody}`);
   }
+
 
   if (sub === "advance") {
     /* Show every breakthrough gate (incl. bestiary) — do not slice; ready checks all items. */
@@ -3048,10 +3089,8 @@ function cultivatePanel(qiPct, next, m) {
 
   return wrapStage(
     nav,
-    `<h2>契壇修行 · 潮域</h2>
-    <p class="lead">御靈師【${escapeHtml(m.name)}】· 牧場 ${ranchN}／${ranchCap(state)}</p>
-    <div class="bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
-    <p class="meta" data-live="qi-text">靈契 ${Math.floor(state.qi)} / ${next.need} · 【${escapeHtml(br.cur?.name || "")}】→【${escapeHtml(br.next.name)}】</p>
+        `<h2>契壇修行 · 潮域</h2>
+    <p class="lead">御靈師【${escapeHtml(m.name)}】</p>
     ${
       tutorialQiReady(state)
         ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
@@ -3767,7 +3806,7 @@ function petsBreedView() {
     !matingBusy.has(pb.uid);
 
   const body = `<h2>靈寵 · 繁殖</h2>
-    <p class="lead">交配產出<strong>蛋</strong>（再孵化）· 單次 ${cycleSec}s · 欄位 ${bs.slotsUsed || 0}/${bs.queueMax || BREED_QUEUE_MAX} · 蛋 ${(state.eggs || []).length}/${bs.eggCap || EGG_CAP}</p>
+    <p class="lead">交配產出<strong>蛋</strong>（再孵化）· 單次 ${cycleSec}s · 欄位 ${bs.slotsUsed || 0}/${bs.queueMax || BREED_QUEUE_MAX} · 蛋 ${ (state.eggs || []).length }</p>
     <h3>孕育中／可領</h3>
     <ul class="list breed-job-list">${jobRows}</ul>
     <h3>新一輪交配</h3>
@@ -4515,6 +4554,14 @@ function abyssSettlementHtml(result) {
   const mutLine = muts.length
     ? muts.map((m) => `【${escapeHtml(m.name)}】${escapeHtml(m.desc || "")}`).join("<br/>")
     : "尚無突變";
+  const buffs = result.diveBuffList || result.diveBuffs?.map?.((id) => null) || [];
+  const buffList = result.diveBuffList
+    || (Array.isArray(result.diveBuffs) ? result.diveBuffs.map((id) => (typeof id === "object" ? id : null)).filter(Boolean) : [])
+    || [];
+  const liveBuffs = abyssDiveView(state).run?.diveBuffList || buffList;
+  const buffLine = (liveBuffs || []).length
+    ? liveBuffs.map((b) => `【${escapeHtml(b.name)}】${escapeHtml(b.desc || "")}`).join("<br/>")
+    : "尚無本潛增益";
   if (result.wiped || !result.won) {
     const failed = result.failedDepth || result.depth || 0;
     const cleared = result.clearedDepth | 0;
@@ -4528,6 +4575,8 @@ function abyssSettlementHtml(result) {
         }</p>
         <p class="meta">本趟突變：</p>
         <p class="meta abyss-mut-list">${mutLine}</p>
+        <p class="meta">本潛增益：</p>
+        <p class="meta abyss-mut-list">${buffLine}</p>
         <p class="meta muted">深潛已結束——請確認結算後返回。</p>
       </div>`;
   }
@@ -4550,6 +4599,8 @@ function abyssSettlementHtml(result) {
       </div>
       <p class="meta">活躍突變：</p>
       <p class="meta abyss-mut-list">${mutLine}</p>
+      <p class="meta">本潛增益：</p>
+      <p class="meta abyss-mut-list">${buffLine}</p>
       ${rosterMini}
       ${eventBlock}
       ${rearrangeBlock}
@@ -4749,18 +4800,19 @@ function abyssPanelHtml() {
     const rows = cands
       .map((p) => {
         const on = pick.has(p.uid);
-        return `<li class="card-row">
-          <div><strong>${escapeHtml(p.name)}</strong><span class="muted"> Lv${p.level} · 攻${p.atk} 血${p.hp}</span></div>
-          <button type="button" class="${on ? "primary" : "secondary"}" data-abyss-squad-toggle="${escapeHtml(p.uid)}">${
-            on ? "已選" : "選擇"
-          }</button>
-        </li>`;
+        const r = rarityInfo(p.rarity ?? 0);
+        return petPickCard(p, {
+          selected: on,
+          btnLabel: on ? "已選" : "選擇",
+          btnAttr: `data-abyss-squad-toggle="${escapeHtml(p.uid)}"`,
+          meta: `<span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(p.elementName || "")} · Lv.${p.level ?? 1} · 攻${p.atk} 血${p.hp}`,
+        });
       })
-      .join("") || `<li class="empty">冇可用靈寵。</li>`;
+      .join("") || `<li class="empty pet-pick-empty">冇可用靈寵。</li>`;
     runBlock = `<div class="abyss-run card-block">
         <p class="lead">編組潮淵隊 · ${pick.size}/${v.squadSize}</p>
         <p class="meta">揀 ${v.squadSize} 隻（前 ${v.activeSize} 出戰，其餘替補）。層間唔回滿血。</p>
-        <ul class="list">${rows}</ul>
+        <ul class="pet-pick-grid">${rows}</ul>
         <div class="row">
           <button type="button" class="primary" data-abyss-start ${pick.size === v.squadSize ? "" : "disabled"}>確認開潛</button>
           <button type="button" data-act="abyss-squad-cancel">取消</button>
@@ -4776,38 +4828,10 @@ function abyssPanelHtml() {
         }>${v.canFormSquad ? "開始深潛（編隊）" : `靈寵不足（需 ${v.squadSize}）`}</button>
       </div>`;
   }
-  const cosRows = (v.cosmeticList || [])
-    .map((c) => {
-      const owned = c.owned ? "已擁有" : `淵砂×${c.cost}`;
-      return `<li class="card-row">
-        <div><strong>${escapeHtml(c.name)}</strong><span class="muted"> · ${escapeHtml(c.desc)}</span></div>
-        <button type="button" class="secondary" data-abyss-cosmetic="${c.id}" ${c.owned ? "disabled" : ""}>${owned}</button>
-      </li>`;
-    })
-    .join("");
   return `<h2>潮淵深潛</h2>
-    <p class="lead">無限層 · 突變 · 淵砂兌換</p>
-    <p class="meta">淵砂 <strong>${v.gritHave}</strong> · 最深 ${v.bestDepth} · 本週 ${v.weekBestDepth} · 保險 ${v.insuranceCharges}</p>
-    ${runBlock}
-    <h3>淵砂兌換</h3>
-    <ul class="list">
-      <li class="card-row">
-        <div><strong>突變保險</strong><span class="muted"> · 下場略過 1 條新突變</span></div>
-        <button type="button" class="secondary" data-abyss-insurance ${v.insuranceCharges >= 1 ? "disabled" : ""}>淵砂×${v.insuranceCost}</button>
-      </li>
-      <li class="card-row">
-        <div><strong>潮淵高階蛋</strong><span class="muted"> · 本週 ${v.eggsBoughtWeek}/${v.eggsWeeklyLimit} · 較易出稀有</span></div>
-        <button type="button" class="secondary" data-abyss-egg ${v.eggsBoughtWeek >= v.eggsWeeklyLimit ? "disabled" : ""}>淵砂×${v.eggCost}</button>
-      </li>
-      <li class="card-row">
-        <div><strong>潮轉符</strong><span class="muted"> · 永久隨機轉屬 · 持有 ${v.tideShiftHave || 0}</span></div>
-        <div class="row-actions">
-          <button type="button" class="secondary" data-abyss-buy-shift>淵砂×${v.tideShiftCost}</button>
-          <button type="button" class="primary" data-act="open-tide-shift" ${(v.tideShiftHave || 0) < 1 ? "disabled" : ""}>使用</button>
-        </div>
-      </li>
-      ${cosRows}
-    </ul>`;
+    <p class="lead">無限層 · 突變規則</p>
+    <p class="meta">淵砂 <strong>${v.gritHave}</strong> · 最深 ${v.bestDepth} · 本週 ${v.weekBestDepth}</p>
+    ${runBlock}`;
 }
 
 function dungeonPanel() {

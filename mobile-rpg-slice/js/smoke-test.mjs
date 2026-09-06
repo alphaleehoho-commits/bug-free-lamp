@@ -861,7 +861,7 @@ assert(upgradeMatCost(1).tide_dew >= 1, "upgrade mats");
 assert(breedMatCost(0, 0).coral_shard >= 1, "breed mats");
 assert(clampBreedBatchCount(0) === 1 && clampBreedBatchCount(99) === 10, "breed batch clamp");
 assert(BREED_BATCH_MIN === 1 && BREED_BATCH_MAX === 10, "breed batch 1-10");
-assert(EGG_CAP === 6, "egg cap");
+assert(!Number.isFinite(EGG_CAP), "egg cap removed (infinite)");
 assert(DISPATCH_MISSIONS.length >= 11, "more dispatch");
 assert(DISPATCH_MISSIONS.some((m) => m.eggChance), "dispatch egg chance");
 assert(DISPATCH_MISSIONS.some((m) => m.id === "egg_shore"), "shore egg mission");
@@ -1846,7 +1846,8 @@ assert(uiSrc.includes("renderPreservingStageScroll"), "ui stage-scroll preserve 
 assert(uiSrc.includes("data-dungeon-blocked"), "ui dungeon blocked reason");
 assert(BREED_QUEUE_MAX === 3, "breed queue max 3");
 assert(uiSrc.includes("panel-subnav-dock"), "ui has panel subnav dock");
-assert(uiSrc.includes("panel-subnav-dock--top"), "ui docks subnav at top to avoid bottom-tab hit steal");
+assert(uiSrc.includes("panel-subnav-dock"), "ui has panel subnav dock");
+assert(!uiSrc.includes("panel-subnav-dock--top"), "ui docks subnav at bottom again");
 assert(uiSrc.includes("function switchPanelSub"), "ui panel sub switch helper");
 assert(uiSrc.includes("let abyssSquadPick"), "ui declares abyssSquadPick");
 assert(uiSrc.includes("let abyssRearrangePick"), "ui declares abyssRearrangePick");
@@ -2355,12 +2356,8 @@ assert(batchSt.breedJobs[0].claimedCycles === 2, "claimedCycles=2");
 job10.readyAt = Date.now() - 1;
 for (const c of job10.cycles) c.readyAt = Date.now() - 1;
 const restClaim = claimBreed(batchSt, job10.id);
-assert(restClaim.ok && restClaim.claimedCount === 4, "egg cap limits rest claim to 4 (6-2)");
-assert(batchSt.eggs.length === 6, "egg cap 6 filled");
-batchSt.eggs.pop();
-const moreClaim = claimBreed(batchSt, job10.id);
-assert(moreClaim.ok && moreClaim.claimedCount === 1, "claim one more after freeing slot");
-assert(batchSt.breedJobs[0].claimedCycles === 7, "7 cycles claimed");
+assert(restClaim.ok && restClaim.claimedCount === 8, "no egg cap: rest claim takes remaining 8");
+assert(batchSt.eggs.length === 10, "all 10 eggs claimed without cap");
 
 const sampleGenes = { species: "nightmoth", element: "gloom", personality: "sly", rarity: 0, generation: 1 };
 const namedEgg = makeBreedEgg({
@@ -2590,7 +2587,8 @@ assert(uiSrc2.includes("restoreTrainIdleCombatState"), "ui restores idle combat 
 assert(uiSrc2.includes("claim-offline"), "ui offline collect button");
 assert(uiSrc2.includes("claimOfflineBank"), "ui claims offline bank");
 assert(uiSrc2.includes("offline-home-slot"), "ui fixed offline home slot");
-assert(uiSrc2.includes("teamBondBarHtml"), "ui team bond bar at top");
+assert(uiSrc2.includes("teamBondBarHtml"), "ui team bond bar helper kept");
+assert(!uiSrc2.includes("${teamBondBarHtml()}"), "ui hides team bond bar in header");
 assert(uiSrc2.includes("OFFLINE_CLAIM_MIN_SEC") || uiSrc2.includes("canClaim"), "ui offline claim gate");
 assert(uiSrc2.includes("fmtOfflineDuration"), "ui formats offline seconds");
 assert(uiSrc2.includes("bondSheetHtml"), "ui bond breakthrough sheet");
@@ -2637,7 +2635,7 @@ const cssSrc = readFileSync(join(__dir, "../css/style.css"), "utf8");
 assert(cssSrc.includes("cond-list.is-compact"), "css compact breakthrough checklist");
 assert(cssSrc.includes("offline-home-slot"), "css offline home slot");
 assert(cssSrc.includes("team-bond-bar"), "css team bond bar");
-assert(cssSrc.includes("panel-subnav-dock--top"), "css top subnav dock");
+assert(cssSrc.includes("panel-subnav-dock"), "css panel subnav dock");
 assert(!/stage-dock[\s\S]{0,180}safe-area-inset-bottom/.test(cssSrc), "css stage-dock no longer eats safe-area");
 assert(cssSrc.includes("offline-claim-card"), "css offline claim modal card");
 assert(cssSrc.includes("hatch-slots"), "css hatch slots grid");
@@ -2859,6 +2857,13 @@ assert(Object.keys(ABYSS_MERCHANT_BUFFS).length >= 3, "merchant buffs");
 }
 assert(uiSrc2.includes("abyssDiveView"), "ui abyss view");
 assert(uiSrc2.includes("data-abyss-start"), "ui abyss start");
+assert(uiSrc2.includes("shopInner") && uiSrc2.includes("data-shop-inner"), "shop inner tabs");
+assert(uiSrc2.includes('商肆 · 精魂') || uiSrc2.includes("精魂"), "soul inside shop");
+assert(!uiSrc2.includes("<h3>淵砂兌換</h3>") && !uiSrc2.includes("<h3>淵砂兌換</h3>"), "abyss page no grit exchange block");
+assert(uiSrc2.includes('商肆 · 淵砂') || uiSrc2.includes('data-shop-inner="grit"'), "grit shop tab");
+assert(dataSrcBag.includes("merchant_purge"), "merchant purge option in floor event");
+assert(uiSrc2.includes('本潛增益'), "settle shows dive buffs");
+
 assert(uiSrc2.includes("潮淵"), "ui abyss tab label");
 assert(uiSrc2.includes("isAbyssCombat"), "ui excludes abyss from farm skip");
 assert(uiSrc2.includes("abyssSettlementHtml"), "ui abyss settlement block");
@@ -3182,11 +3187,11 @@ assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize
   const buyNest = buySoulShopOffer(soulShopSt, "hatch_nest_token");
   assert(buyNest.ok && Math.floor(soulShopSt.items.hatch_nest_token) === nestBefore + 1, "nest token granted");
 }
-assert(uiSrc2.includes("精魂商人"), "ui soul merchant title");
-assert(uiSrc2.includes('id: "soul"') || uiSrc2.includes('label: "精魂"'), "ui soul cultivate tab");
+assert(uiSrc2.includes("data-shop-inner") && uiSrc2.includes("精魂"), "ui shop inner soul tab");
 assert(uiSrc2.includes("data-soul-shop-buy"), "ui soul buy buttons");
 assert(engineSrcPackA.includes("buySoulShopOffer"), "engine buySoulShopOffer");
 assert(engineSrcPackA.includes("soulShopView"), "engine soulShopView");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
+
