@@ -141,6 +141,13 @@ import {
   ABYSS_WIPE_KEEP_RATE,
   emptyAbyssDive,
   emptyMaterials,
+  emptyItems,
+  emptyItemBonus,
+  ITEMS,
+  ITEM_IDS,
+  RANCH_CAP_BONUS_MAX,
+  HATCH_SLOT_BASE,
+  HATCH_SLOT_BONUS_MAX,
   OFFLINE_HINT_SEC,
   OFFLINE_BANK_CAP_SEC,
   elementExplain,
@@ -217,6 +224,10 @@ import {
   buyAbyssInsurance,
   buyAbyssCosmetic,
   buyAbyssEgg,
+  ranchCap,
+  hatchSlotCap,
+  useBagItem,
+  itemsView,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -272,6 +283,39 @@ assert(Object.keys(SPECIES).length >= 40, "40+ species");
 assert(bestiaryTotal() === 2640, "bestiary 48×5×11");
 assert(Object.keys(PERSONALITIES).length === 20, "20 personalities");
 assert(ranchCapForStage(0) === 6 && ranchCapForStage(5) === 21, "ranch cap 6+stage*3");
+assert(ITEMS.ranch_fence?.name === "欄柵" && ITEMS.hatch_nest_token?.name === "暖巢箋", "bag items defined");
+assert(ITEM_IDS.length === 2, "two bag consumables");
+assert(HATCH_SLOT_BASE === 3 && HATCH_SLOT_BONUS_MAX === 3, "hatch slot base+bonus");
+assert(RANCH_CAP_BONUS_MAX === 12, "ranch fence bonus max");
+{
+  const bagSt = {
+    realm: 0,
+    items: { ...emptyItems(), ranch_fence: 2, hatch_nest_token: 2 },
+    itemBonus: emptyItemBonus(),
+    log: [],
+  };
+  assert(ranchCap(bagSt) === 6, "ranch cap no bonus");
+  assert(hatchSlotCap(bagSt) === HATCH_SLOT_BASE, "hatch slots base 3");
+  const f1 = useBagItem(bagSt, "ranch_fence");
+  assert(f1.ok && ranchCap(bagSt) === 7 && bagSt.items.ranch_fence === 1, "fence +1 ranch cap");
+  assert(bagSt.itemBonus.ranchCap === 1, "fence bonus tracked");
+  const n1 = useBagItem(bagSt, "hatch_nest_token");
+  assert(n1.ok && hatchSlotCap(bagSt) === 4 && bagSt.items.hatch_nest_token === 1, "nest +1 hatch slot");
+  bagSt.itemBonus.hatchSlots = HATCH_SLOT_BONUS_MAX;
+  bagSt.items.hatch_nest_token = 1;
+  assert(!useBagItem(bagSt, "hatch_nest_token").ok, "nest blocked at max bonus");
+  assert(hatchSlotCap(bagSt) === HATCH_SLOT_BASE + HATCH_SLOT_BONUS_MAX, "hatch cap 6 at max");
+  bagSt.itemBonus.ranchCap = RANCH_CAP_BONUS_MAX;
+  bagSt.items.ranch_fence = 1;
+  assert(!useBagItem(bagSt, "ranch_fence").ok, "fence blocked at max bonus");
+  assert(ranchCap(bagSt) === ranchCapForStage(0) + RANCH_CAP_BONUS_MAX, "ranch cap at max bonus");
+  const view = itemsView({
+    realm: 0,
+    items: { ...emptyItems(), ranch_fence: 1 },
+    itemBonus: { ranchCap: 0, hatchSlots: 0 },
+  });
+  assert(view.find((i) => i.id === "ranch_fence")?.canUse, "itemsView canUse fence");
+}
 assert(RANCH_IDLE_GLOBAL_MULT === 0.35, "idle global mult");
 assert(DISPATCH_GEN_REWARD_MULT[3] === 1.25, "gen3 dispatch mult");
 assert(IDLE_BY_PERSONALITY.diligent?.feed > IDLE_BY_PERSONALITY.fierce?.feed, "work>fight feed");
@@ -2113,7 +2157,15 @@ assert(uiSrc2.includes("visibilitychange"), "ui catch-up on tab visible");
 assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
 assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
-assert(uiSrc2.includes('id: "mats"'), "ui materials sub-tab");
+assert(uiSrc2.includes('id: "bag"'), "ui bag sub-tab");
+assert(uiSrc2.includes("data-bag-inner"), "ui bag inner mats/items tabs");
+assert(uiSrc2.includes("data-use-item"), "ui use bag item");
+assert(uiSrc2.includes("背包"), "ui bag label");
+assert(uiSrc2.includes("hatchSlotCap"), "ui exposes hatch slot cap");
+assert(!uiSrc2.includes('id: "mats"'), "ui materials tab renamed to bag");
+const dataSrcBag = readFileSync(join(__dir, "data.js"), "utf8");
+assert(dataSrcBag.includes("欄柵") && dataSrcBag.includes("暖巢箋"), "data bag item copy");
+assert(dataSrcBag.includes("ranch_fence") && dataSrcBag.includes("hatch_nest_token"), "data bag item ids");
 assert(!uiSrc2.includes("br.items.slice(0, 6)"), "ui breakthrough checklist shows all gates");
 assert(!uiSrc2.includes("gateCompact"), "ui no truncated gateCompact list");
 assert(uiSrc2.includes("breakthrough-gates"), "ui breakthrough gates list class");

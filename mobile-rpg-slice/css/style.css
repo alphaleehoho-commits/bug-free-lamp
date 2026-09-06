@@ -334,6 +334,39 @@ body {
   font-weight: 600;
 }
 
+.bag-inner-nav {
+  display: flex;
+  gap: 0.28rem;
+  margin: 0 0 0.45rem;
+}
+.bag-inner-nav button {
+  flex: 1;
+  padding: 0.34rem 0.25rem;
+  font-size: 0.72rem;
+  border-radius: 0.45rem;
+}
+.bag-inner-nav button.on {
+  color: var(--ink);
+  background: rgba(126, 168, 160, 0.75);
+  border-color: transparent;
+  font-weight: 600;
+}
+.bag-item-list .bag-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.bag-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+.bag-item.is-empty {
+  opacity: 0.72;
+}
+
 .panel > .tutorial-banner {
   flex-shrink: 0;
   margin: 0 0 0.35rem;

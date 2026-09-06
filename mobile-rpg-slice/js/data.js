@@ -4268,6 +4268,41 @@ export function emptyMaterials() {
   return Object.fromEntries(MATERIAL_IDS.map((id) => [id, 0]));
 }
 
+/* ─── 背包道具（消耗品；與 materials 分開）───
+ * 規則（永久加成，按「使用次數」而非持有量）：
+ * - 欄柵 ranch_fence：每次使用永久 +1 牧場待命上限；itemBonus.ranchCap 累加，上限 RANCH_CAP_BONUS_MAX（+12）。
+ * - 暖巢箋 hatch_nest_token：每次使用永久 +1 孵化欄；itemBonus.hatchSlots 累加，上限 HATCH_SLOT_BONUS_MAX（+3）。
+ *   基準欄位 HATCH_SLOT_BASE=3 → 理論上限 6（孵化 UI 見 pack B）。
+ */
+export const RANCH_CAP_BONUS_MAX = 12;
+export const HATCH_SLOT_BASE = 3;
+export const HATCH_SLOT_BONUS_MAX = 3;
+
+export const ITEMS = {
+  ranch_fence: {
+    id: "ranch_fence",
+    name: "欄柵",
+    desc: "加固牧場圍欄 · 使用後永久 +1 牧場容量（最多 +12）",
+    use: "擴牧場",
+  },
+  hatch_nest_token: {
+    id: "hatch_nest_token",
+    name: "暖巢箋",
+    desc: "溫暖孵巢符箋 · 使用後永久 +1 孵化欄（基準 3，最多 +3 至 6）",
+    use: "擴孵欄",
+  },
+};
+
+export const ITEM_IDS = Object.keys(ITEMS);
+
+export function emptyItems() {
+  return Object.fromEntries(ITEM_IDS.map((id) => [id, 0]));
+}
+
+export function emptyItemBonus() {
+  return { ranchCap: 0, hatchSlots: 0 };
+}
+
 /** 升級耗材料（隨等級） */
 export function upgradeMatCost(level) {
   const lv = Math.max(1, level | 0);

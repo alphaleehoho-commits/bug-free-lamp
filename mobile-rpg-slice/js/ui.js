@@ -43,6 +43,7 @@ import {
   realmInfo,
   nextRealm,
   ranchCap,
+  hatchSlotCap,
   partySynergy,
   renamePet,
   clearOfflineHint,
@@ -102,6 +103,8 @@ import {
   setTrainDepth,
   trainDailySpotlightView,
   materialHintsView,
+  itemsView,
+  useBagItem,
   dungeonDailyView,
   resolveDungeon,
   dungeonsForRealm,
@@ -233,6 +236,8 @@ let tutorialCollapsed = false;
 let matSectionOpen = false;
 let trainRatesOpen = false;
 let statsSheetOpen = false;
+/** 背包內頁：材料 | 道具 */
+let bagInner = "mats";
 /** @type {"power" | "gen" | "rarity" | "element" | "status"} */
 let ranchSort = "status";
 
@@ -251,13 +256,16 @@ function loadUiPrefs() {
 function saveUiPrefs() {
   sessionStorage.setItem(
     UI_PREFS_KEY,
-    JSON.stringify({ matSectionOpen, trainRatesOpen, ranchSort })
+    JSON.stringify({ matSectionOpen, trainRatesOpen, ranchSort, bagInner })
   );
 }
 
 const uiPrefsBoot = loadUiPrefs();
 matSectionOpen = !!uiPrefsBoot.matSectionOpen;
 trainRatesOpen = !!uiPrefsBoot.trainRatesOpen;
+if (uiPrefsBoot.bagInner === "items" || uiPrefsBoot.bagInner === "mats") {
+  bagInner = uiPrefsBoot.bagInner;
+}
 if (["power", "gen", "rarity", "element", "status"].includes(uiPrefsBoot.ranchSort)) {
   ranchSort = uiPrefsBoot.ranchSort;
 }
@@ -1225,6 +1233,34 @@ function matHintListHtml() {
 
 function matOwnedCount() {
   return materialHintsView(state).filter((m) => m.count > 0).length;
+}
+
+function bagItemsHtml() {
+  const rows = itemsView(state)
+    .map((it) => {
+      const empty = it.count <= 0;
+      const useBtn = it.canUse
+        ? `<button type="button" class="primary" data-use-item="${escapeHtml(it.id)}">使用</button>`
+        : `<button type="button" disabled>${it.atCap ? "已滿" : "使用"}</button>`;
+      return `
+    <li class="bag-item ${empty ? "is-empty" : ""}">
+      <div class="bag-item-body">
+        <strong>${escapeHtml(it.name)}</strong>
+        <span class="muted">${escapeHtml(it.desc)}</span>
+        <span class="meta">持有 ${it.count}${it.bonusNote ? ` · ${escapeHtml(it.bonusNote)}` : ""}</span>
+      </div>
+      <div class="row-actions">${useBtn}</div>
+    </li>`;
+    })
+    .join("");
+  return `<ul class="list bag-item-list">${rows || `<li class="empty">暫無道具。</li>`}</ul>`;
+}
+
+function bagInnerNavHtml() {
+  return `<nav class="bag-inner-nav" aria-label="背包分類">
+    <button type="button" class="${bagInner === "mats" ? "on" : ""}" data-bag-inner="mats">材料</button>
+    <button type="button" class="${bagInner === "items" ? "on" : ""}" data-bag-inner="items">道具</button>
+  </nav>`;
 }
 
 function materialsBlockHtml() {
@@ -2413,21 +2449,25 @@ function cultivatePanel(qiPct, next, m) {
       : "突破階段（條件未齊）";
 
   if (panelSub.cultivate === "gear") panelSub.cultivate = "train";
+  if (panelSub.cultivate === "mats") panelSub.cultivate = "bag";
   const sub = panelSub.cultivate;
   const nav = panelSubNav("cultivate", [
     { id: "train", label: "練功" },
-    { id: "mats", label: "材料" },
+    { id: "bag", label: "背包" },
     { id: "shop", label: "商肆" },
     { id: "advance", label: "進階" },
   ]);
 
-  if (sub === "mats") {
-    return wrapStage(
-      nav,
-      `<h2>材料一覽</h2>
+  if (sub === "bag") {
+    const inner =
+      bagInner === "items"
+        ? `<h2>背包 · 道具</h2>
+      <p class="lead">牧場 ${ranchCap(state)} 欄 · 孵化 ${hatchSlotCap(state)} 欄</p>
+      ${bagItemsHtml()}`
+        : `<h2>背包 · 材料</h2>
       <p class="lead">靈石 ${Math.floor(state.stones)} · 飼料 ${Math.floor(state.feed || 0)} · 靈塵 ${Math.floor(state.dust || 0)}</p>
-      ${matHintListHtml()}`
-    );
+      ${matHintListHtml()}`;
+    return wrapStage(nav, `${bagInnerNavHtml()}${inner}`);
   }
 
   if (sub === "shop") {
@@ -4150,6 +4190,27 @@ function bind() {
       if (group === "dungeon") condSheetOpen = false;
       markTutorialSubVisit(group, id);
       render();
+    });
+  });
+  app.querySelectorAll("[data-bag-inner]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.bagInner;
+      if (id !== "mats" && id !== "items") return;
+      if (bagInner === id) return;
+      bagInner = id;
+      saveUiPrefs();
+      render();
+    });
+  });
+  app.querySelectorAll("[data-use-item]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const id = btn.dataset.useItem;
+      if (!id) return;
+      const r = useBagItem(state, id);
+      saveState(state);
+      render();
+      setFlash(r.msg || "");
     });
   });
   app.querySelectorAll("[data-ranch-sort]").forEach((btn) => {
