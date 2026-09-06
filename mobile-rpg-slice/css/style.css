@@ -2797,7 +2797,8 @@ button.pet-badge {
   height: var(--icon-size, 32px);
   flex-shrink: 0;
 }
-.pet-icon svg { display: block; }
+.pet-icon svg,
+.pet-icon-svg { display: block; }
 .pet-icon.is-hybrid svg { filter: drop-shadow(0 0 4px rgba(183, 212, 204, 0.35)); }
 .pet-icon--rarity-rare svg { filter: drop-shadow(0 0 3px rgba(109, 179, 217, 0.45)); }
 .pet-icon--rarity-epic svg { filter: drop-shadow(0 0 4px rgba(201, 160, 232, 0.5)); }
@@ -2814,6 +2815,60 @@ button.pet-badge {
   font-size: 0.75rem;
   line-height: 32px;
   text-align: center;
+}
+
+/* Pack Y — creature silhouette parts (readable at ranch card ~28–34px) */
+.pet-icon--creature .pet-icon-creature {
+  transform-origin: 16px 18px;
+}
+.pet-icon-part {
+  vector-effect: non-scaling-stroke;
+}
+.pet-icon-part--body { opacity: 0.96; }
+.pet-icon-part--shell { opacity: 0.9; }
+.pet-icon-part--head { opacity: 1; }
+.pet-icon-part--ear,
+.pet-icon-part--wing,
+.pet-icon-part--fin,
+.pet-icon-part--tail,
+.pet-icon-part--antenna,
+.pet-icon-part--beak,
+.pet-icon-part--leg {
+  opacity: 0.88;
+}
+.pet-icon-part--eye {
+  opacity: 0.9;
+}
+.pet-icon-part--stroke {
+  pointer-events: none;
+}
+.pet-icon--kind-beast .pet-icon-part--ear {
+  opacity: 0.95;
+}
+.pet-icon--kind-avian .pet-icon-part--wing,
+.pet-icon--kind-avian .pet-icon-part--beak {
+  opacity: 0.95;
+}
+.pet-icon--kind-scale .pet-icon-part--fin,
+.pet-icon--kind-scale .pet-icon-part--tail {
+  opacity: 0.95;
+}
+.pet-icon--kind-shell .pet-icon-part--shell {
+  opacity: 0.92;
+}
+.pet-icon--kind-bug .pet-icon-part--wing,
+.pet-icon--kind-bug .pet-icon-part--antenna {
+  opacity: 0.9;
+}
+.pet-icon--kind-light .pet-icon-part--wing {
+  opacity: 0.72;
+}
+.pet-icon--kind-light .pet-icon-part--fin {
+  opacity: 0.95;
+}
+.pet-card .pet-icon--creature .pet-icon-creature,
+.pet-pick-card .pet-icon--creature .pet-icon-creature {
+  transform: scale(1.06);
 }
 
 /* Pack D — pet art frame (element wash + rarity edge + gen mark) */

@@ -3031,6 +3031,38 @@ assert(cssSrc.includes("pet-pick-sheet"), "css pet-pick-sheet");
   assert(/\.pet-card-badges\s*\{[^}]*position:\s*absolute/s.test(cssSrc), "css Pack A badges still absolute");
 }
 
+/* Pack Y: creature-like silhouettes (head/body/ears/wings/tail) — keep tint/frame/★鎖 */
+{
+  const iconSrcY = readFileSync(join(__dir, "pet-icons.js"), "utf8");
+  assert(iconSrcY.includes("CREATURE_PARTS"), "pet-icons CREATURE_PARTS export");
+  assert(iconSrcY.includes("pet-icon-part"), "pet-icons part class");
+  assert(iconSrcY.includes("pet-icon-part--body"), "pet-icons body part");
+  assert(iconSrcY.includes("pet-icon-part--head"), "pet-icons head part");
+  assert(iconSrcY.includes("pet-icon-part--ear"), "pet-icons ear part");
+  assert(iconSrcY.includes("pet-icon-part--wing"), "pet-icons wing part");
+  assert(iconSrcY.includes("pet-icon-part--tail"), "pet-icons tail part");
+  assert(iconSrcY.includes("pet-icon-part--fin"), "pet-icons fin part");
+  assert(iconSrcY.includes("pet-icon--creature"), "pet-icons creature class");
+  assert(iconSrcY.includes("pet-icon-creature"), "pet-icons creature group");
+  assert(iconSrcY.includes("renderCreaturePaths"), "pet-icons renderCreaturePaths");
+  assert(iconSrcY.includes("kindPartsForSpecies"), "pet-icons kindPartsForSpecies");
+  assert(iconSrcY.includes('pet-icon--kind-beast'), "kind slug beast path retained");
+  assert(iconSrcY.includes("ELEMENT_COLORS"), "Pack Y keeps element tint");
+  assert(iconSrcY.includes("RARITY_GLOW"), "Pack Y keeps rarity frame");
+  assert(uiSrc2.includes("petCornerBadges"), "Pack Y keeps ★/鎖 corner badges");
+  assert(!iconSrcY.includes("abyssOverlay") && !iconSrcY.includes("abyss-overlay"), "Pack Y does not touch abyss overlay");
+  assert(cssSrc.includes("pet-icon-part"), "css pet-icon-part");
+  assert(cssSrc.includes("pet-icon-part--body"), "css body part");
+  assert(cssSrc.includes("pet-icon-part--head"), "css head part");
+  assert(cssSrc.includes("pet-icon-part--ear"), "css ear part");
+  assert(cssSrc.includes("pet-icon-part--wing"), "css wing part");
+  assert(cssSrc.includes("pet-icon-part--tail"), "css tail part");
+  assert(cssSrc.includes("pet-icon--creature"), "css creature icon");
+  assert(cssSrc.includes("pet-icon--kind-beast"), "css kind-beast");
+  assert(cssSrc.includes("pet-icon--kind-avian"), "css kind-avian");
+  assert(cssSrc.includes("pet-icon--kind-scale"), "css kind-scale");
+}
+
 const engineSrcPackA = readFileSync(join(__dir, "engine.js"), "utf8");
 assert(engineSrcPackA.includes("next.starred = !!next.starred"), "engine normalize starred");
 assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize locked");
