@@ -4260,14 +4260,62 @@ export const MATERIALS = {
     desc: "潮淵深潛結算所得 · 換突變保險、深潛外觀、高階寵物蛋",
     tier: "abyss",
   },
-  /** 放生所得：日後精魂商店用（Pack 後期） */
+  /** 放生所得：精魂商人兌換 */
   soul_essence: {
     id: "soul_essence",
     name: "精魂",
-    desc: "放生靈寵所得 · 凝聚靈寵殘念",
+    desc: "放生靈寵所得 · 精魂商人兌換飼料／材料／道具",
     tier: "soul",
   },
 };
+
+/**
+ * 精魂商人固定目錄（佔位貨；耗精魂，唔轉靈石）
+ * grant: feed／materials／items 可並存
+ */
+export const SOUL_SHOP_OFFERS = [
+  {
+    id: "feed_pouch",
+    name: "飼料小包",
+    desc: "常用飼料一小包",
+    cost: 8,
+    grant: { feed: 25 },
+  },
+  {
+    id: "tide_dew_pack",
+    name: "潮露小瓶",
+    desc: "常用升級材料",
+    cost: 10,
+    grant: { materials: { tide_dew: 5 } },
+  },
+  {
+    id: "coral_shard_pack",
+    name: "珊瑚屑袋",
+    desc: "常用繁殖材料",
+    cost: 12,
+    grant: { materials: { coral_shard: 4 } },
+  },
+  {
+    id: "hatch_nest_token",
+    name: "暖巢箋",
+    desc: "永久擴孵欄 · 使用後 +1 孵化欄",
+    cost: 40,
+    grant: { items: { hatch_nest_token: 1 } },
+  },
+  {
+    id: "ranch_fence",
+    name: "欄柵",
+    desc: "永久擴牧場 · 使用後 +1 牧場容量",
+    cost: 35,
+    grant: { items: { ranch_fence: 1 } },
+  },
+];
+
+export const SOUL_SHOP_OFFER_IDS = SOUL_SHOP_OFFERS.map((o) => o.id);
+
+export function soulShopOfferById(offerId) {
+  return SOUL_SHOP_OFFERS.find((o) => o.id === offerId) || null;
+}
 
 export const MATERIAL_IDS = Object.keys(MATERIALS);
 

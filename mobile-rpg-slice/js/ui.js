@@ -86,6 +86,8 @@ import {
   breakthroughView,
   shopView,
   buyShopOffer,
+  soulShopView,
+  buySoulShopOffer,
   setTactics,
   tacticsView,
   setFormation,
@@ -2645,6 +2647,7 @@ function cultivatePanel(qiPct, next, m) {
     { id: "train", label: "練功" },
     { id: "bag", label: "背包" },
     { id: "shop", label: "商肆" },
+    { id: "soul", label: "精魂" },
     { id: "advance", label: "進階" },
   ]);
 
@@ -2666,6 +2669,31 @@ function cultivatePanel(qiPct, next, m) {
       `<h2>商肆 · 今日</h2>
       <p class="lead">靈石 ${Math.floor(state.stones)} · 牧場 ${ranchN}／${ranchCap(state)}</p>
       <ul class="list">${shopRows}</ul>`
+    );
+  }
+
+  if (sub === "soul") {
+    const soulN = Math.floor(state.materials?.soul_essence || 0);
+    const soulRows =
+      soulShopView(state)
+        .map((o) => {
+          return `
+        <li class="card-row">
+          <div>
+            <strong>${escapeHtml(o.name)}</strong>
+            <span class="muted">${escapeHtml(o.desc || "")} · 獲 ${escapeHtml(o.grantLabel)} · ${o.cost} 精魂</span>
+          </div>
+          <button type="button" class="primary" data-soul-shop-buy="${escapeHtml(o.id)}" ${
+            o.canAfford ? "" : "disabled"
+          }>兌換</button>
+        </li>`;
+        })
+        .join("") || `<li class="empty">暫無精魂貨物。</li>`;
+    return wrapStage(
+      nav,
+      `<h2>精魂商人</h2>
+      <p class="lead">精魂 ${soulN} · 放生所得兌換飼料／材料／道具</p>
+      <ul class="list">${soulRows}</ul>`
     );
   }
 
@@ -5130,6 +5158,15 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = buyShopOffer(state, btn.dataset.shopBuy);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-soul-shop-buy]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = buySoulShopOffer(state, btn.dataset.soulShopBuy);
       saveState(state);
       render();
       setFlash(r.msg);

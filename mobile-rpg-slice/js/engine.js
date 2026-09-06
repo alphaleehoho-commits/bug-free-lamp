@@ -142,6 +142,8 @@ import {
   emptyItemBonus,
   ITEMS,
   ITEM_IDS,
+  SOUL_SHOP_OFFERS,
+  soulShopOfferById,
   RANCH_CAP_BONUS_MAX,
   HATCH_SLOT_BASE,
   HATCH_SLOT_BONUS_MAX,
@@ -2655,6 +2657,75 @@ export function shopView(state) {
       tutorialDeal: tutDeal && isEgg && !o.bought,
     };
   });
+}
+
+/** 精魂商人目錄（固定佔位貨） */
+export function soulShopView(state) {
+  if (!state.materials) state.materials = emptyMaterials();
+  const soul = Math.floor(state.materials.soul_essence || 0);
+  return SOUL_SHOP_OFFERS.map((o) => {
+    const grantBits = [];
+    if (o.grant?.feed) grantBits.push(`飼料×${o.grant.feed}`);
+    if (o.grant?.materials) {
+      for (const [id, n] of Object.entries(o.grant.materials)) {
+        if (!n) continue;
+        grantBits.push(`${MATERIALS[id]?.name || id}×${n}`);
+      }
+    }
+    if (o.grant?.items) {
+      for (const [id, n] of Object.entries(o.grant.items)) {
+        if (!n) continue;
+        grantBits.push(`${ITEMS[id]?.name || id}×${n}`);
+      }
+    }
+    return {
+      ...o,
+      grantLabel: grantBits.join("／") || "—",
+      canAfford: soul >= o.cost,
+      soul,
+    };
+  });
+}
+
+/** 精魂商人購入（afford 精魂後發放飼料／材料／道具） */
+export function buySoulShopOffer(state, offerId) {
+  const offer = soulShopOfferById(offerId);
+  if (!offer) return { ok: false, msg: "商品不存在。" };
+  if (!state.materials) state.materials = emptyMaterials();
+  const have = Math.floor(state.materials.soul_essence || 0);
+  if (have < offer.cost) {
+    return { ok: false, msg: `精魂不足（需 ${offer.cost}，現有 ${have}）。` };
+  }
+  state.materials.soul_essence = have - offer.cost;
+  const granted = [];
+  if (offer.grant?.feed) {
+    state.feed = (state.feed || 0) + offer.grant.feed;
+    granted.push(`飼料×${offer.grant.feed}`);
+  }
+  if (offer.grant?.materials) {
+    addMaterials(state, offer.grant.materials);
+    for (const [id, n] of Object.entries(offer.grant.materials)) {
+      if (!n) continue;
+      granted.push(`${MATERIALS[id]?.name || id}×${n}`);
+    }
+  }
+  if (offer.grant?.items) {
+    if (!state.items) state.items = emptyItems();
+    for (const [id, n] of Object.entries(offer.grant.items)) {
+      if (!n) continue;
+      state.items[id] = (state.items[id] || 0) + n;
+      granted.push(`${ITEMS[id]?.name || id}×${n}`);
+    }
+  }
+  const grantTxt = granted.join("／") || "貨物";
+  pushLog(state, `精魂商人購入【${offer.name}】，耗精魂 ${offer.cost}，獲 ${grantTxt}。`);
+  return {
+    ok: true,
+    msg: `購入 ${offer.name}（耗精魂 ${offer.cost}）· ${grantTxt}`,
+    offerId: offer.id,
+    cost: offer.cost,
+    grant: offer.grant,
+  };
 }
 
 export function buyShopOffer(state, offerId) {

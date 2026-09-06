@@ -152,6 +152,8 @@ import {
   OFFLINE_BANK_CAP_SEC,
   releaseSoulGain,
   releaseRefund,
+  SOUL_SHOP_OFFERS,
+  soulShopOfferById,
   elementExplain,
   kindExplain,
   personalityExplain,
@@ -172,6 +174,8 @@ import {
   claimDailyAllClear,
   dailyAllClearView,
   buyShopOffer,
+  soulShopView,
+  buySoulShopOffer,
   tryBondPending,
   ensureShop,
   breedPreview,
@@ -2631,6 +2635,58 @@ assert(cssSrc.includes("pet-tag-lock"), "css lock tag");
 const engineSrcPackA = readFileSync(join(__dir, "engine.js"), "utf8");
 assert(engineSrcPackA.includes("next.starred = !!next.starred"), "engine normalize starred");
 assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize locked");
+
+/* Pack F: soul essence merchant */
+{
+  assert(SOUL_SHOP_OFFERS.length >= 3, "soul shop catalog size");
+  assert(soulShopOfferById("feed_pouch")?.name === "飼料小包", "feed pouch offer");
+  assert(soulShopOfferById("tide_dew_pack")?.grant?.materials?.tide_dew > 0, "tide dew offer");
+  assert(soulShopOfferById("coral_shard_pack")?.grant?.materials?.coral_shard > 0, "coral offer");
+  assert(
+    soulShopOfferById("hatch_nest_token")?.grant?.items?.hatch_nest_token === 1 ||
+      soulShopOfferById("ranch_fence")?.grant?.items?.ranch_fence === 1,
+    "item offer hatch/fence"
+  );
+  const soulShopSt = {
+    materials: { ...emptyMaterials(), soul_essence: 120 },
+    feed: 10,
+    items: { ...emptyItems() },
+    log: [],
+  };
+  const view = soulShopView(soulShopSt);
+  assert(view.length === SOUL_SHOP_OFFERS.length, "soulShopView length");
+  assert(view.every((o) => o.canAfford), "view afford flags with 120 soul");
+  const broke = buySoulShopOffer(
+    { materials: { ...emptyMaterials(), soul_essence: 1 }, feed: 0, items: emptyItems(), log: [] },
+    "feed_pouch"
+  );
+  assert(!broke.ok && String(broke.msg).includes("精魂不足"), "afford check blocks buy");
+  const missing = buySoulShopOffer(soulShopSt, "no_such_offer");
+  assert(!missing.ok, "unknown offer rejected");
+  const feedBefore = soulShopSt.feed;
+  const soulBefore = Math.floor(soulShopSt.materials.soul_essence);
+  const buyFeed = buySoulShopOffer(soulShopSt, "feed_pouch");
+  assert(buyFeed.ok, "buy feed pouch ok");
+  assert(soulShopSt.feed === feedBefore + 25, "feed granted");
+  assert(Math.floor(soulShopSt.materials.soul_essence) === soulBefore - 8, "soul spent for feed");
+  const dewBefore = Math.floor(soulShopSt.materials.tide_dew || 0);
+  const buyDew = buySoulShopOffer(soulShopSt, "tide_dew_pack");
+  assert(buyDew.ok && Math.floor(soulShopSt.materials.tide_dew) === dewBefore + 5, "tide dew granted");
+  const coralBefore = Math.floor(soulShopSt.materials.coral_shard || 0);
+  const buyCoral = buySoulShopOffer(soulShopSt, "coral_shard_pack");
+  assert(buyCoral.ok && Math.floor(soulShopSt.materials.coral_shard) === coralBefore + 4, "coral granted");
+  const fenceBefore = Math.floor(soulShopSt.items.ranch_fence || 0);
+  const buyFence = buySoulShopOffer(soulShopSt, "ranch_fence");
+  assert(buyFence.ok && Math.floor(soulShopSt.items.ranch_fence) === fenceBefore + 1, "fence item granted");
+  const nestBefore = Math.floor(soulShopSt.items.hatch_nest_token || 0);
+  const buyNest = buySoulShopOffer(soulShopSt, "hatch_nest_token");
+  assert(buyNest.ok && Math.floor(soulShopSt.items.hatch_nest_token) === nestBefore + 1, "nest token granted");
+}
+assert(uiSrc2.includes("精魂商人"), "ui soul merchant title");
+assert(uiSrc2.includes('id: "soul"') || uiSrc2.includes('label: "精魂"'), "ui soul cultivate tab");
+assert(uiSrc2.includes("data-soul-shop-buy"), "ui soul buy buttons");
+assert(engineSrcPackA.includes("buySoulShopOffer"), "engine buySoulShopOffer");
+assert(engineSrcPackA.includes("soulShopView"), "engine soulShopView");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");
