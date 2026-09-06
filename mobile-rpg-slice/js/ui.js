@@ -178,7 +178,6 @@ import {
   tutorialBannerHint,
   tutorialNeedsRanchSub,
   tutorialEggReady,
-  tutorialCoachDetailUid,
 } from "./tutorial.js";
 
 const app = document.querySelector("#app");
