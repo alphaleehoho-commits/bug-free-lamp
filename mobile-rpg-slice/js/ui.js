@@ -152,6 +152,8 @@ import {
   buyAbyssTideShiftCharm,
   useTideShiftCharm,
   abyssSquadCandidates,
+  rearrangeAbyssSquad,
+  resolveAbyssEvent,
 } from "./engine.js";
 import {
   DUNGEON_SUMMON_MIN,
@@ -281,6 +283,16 @@ let releaseModal = null;
  * @type {null | { source: "bag" | "abyss" }}
  */
 let tideShiftModal = null;
+/**
+ * 潮淵開潛編隊揀寵；null＝未喺編隊流程
+ * @type {null | string[]}
+ */
+let abyssSquadPick = null;
+/**
+ * 潮淵層間整理出戰；null＝未喺整理流程
+ * @type {null | string[]}
+ */
+let abyssRearrangePick = null;
 /** 今次 session 已關過每日儀表板 */
 let dailyHubDismissedSession = false;
 
@@ -5124,7 +5136,13 @@ function switchPanelSub(group, id) {
   panelSub = { ...panelSub, [group]: id };
   if (group === "party" && id !== "ranch") ranchRelease = null;
   markTutorialSubVisit(group, id);
-  render();
+  try {
+    render();
+  } catch (err) {
+    console.error("switchPanelSub render failed", group, id, err);
+    setFlash(`切換失敗：${err?.message || err}`);
+    return false;
+  }
   if (group === "dungeon" && id === "abyss") {
     if (recoverStuckPlayback()) render();
   }
