@@ -8,7 +8,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "hatch_starter",
     title: "孵化首寵",
-    hint: "潮霧蛋孵化中。可先「修行 → 練功」掛機；完成後打開「靈寵 → 牧場」領取。",
+    hint: "潮霧蛋孵化中。可先「修行 → 練功」掛機；完成後打開「靈寵 → 孵化」領取。",
   },
   {
     id: "meet_pet",
@@ -43,7 +43,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "hatch_second",
     title: "孵化擴隊",
-    hint: "第二枚蛋孵化中。等待期間可先「修行 → 練功」，完成後回牧場領取。",
+    hint: "第二枚蛋孵化中。等待期間可先「修行 → 練功」，完成後回「孵化」領取。",
   },
   {
     id: "cultivate_qi",
@@ -166,17 +166,19 @@ export function tutorialEggReady(state) {
   return (state.eggs || []).some((e) => e.startedAt != null && (e.readyAt || 0) <= Date.now());
 }
 
-/** 教學步驟需要牧場 sub 時 */
+/** 教學步驟需要牧場 sub 時（認寵／升級／出戰等） */
 export function tutorialNeedsRanchSub(step) {
   return (
-    step === "hatch_starter" ||
-    step === "hatch_second" ||
     step === "meet_pet" ||
     step === "deploy" ||
     step === "train_pet" ||
-    step === "breed_intro" ||
     step === "fuse_intro"
   );
+}
+
+/** 教學步驟需要孵化 sub 時 */
+export function tutorialNeedsHatchSub(step) {
+  return step === "hatch_starter" || step === "hatch_second";
 }
 
 /** 教學標示用：只挑一隻目標靈寵（唔好成欄發光） */
@@ -251,7 +253,7 @@ export function tutorialStepInfo(state) {
 
 function locksForStep(stepId) {
   const allCult = { advance: true, shop: true };
-  const allParty = { fight: true, ranch: true, breed: true, dispatch: true, bond: true };
+  const allParty = { fight: true, ranch: true, hatch: true, breed: true, dispatch: true, bond: true };
   const allDung = { setup: true };
 
   switch (stepId) {
@@ -259,7 +261,7 @@ function locksForStep(stepId) {
       return {
         tabs: { dungeon: true, codex: true, log: true },
         cultivateSub: { advance: true, shop: true },
-        partySub: { fight: true, breed: true, dispatch: true, bond: true },
+        partySub: { fight: true, ranch: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -267,7 +269,7 @@ function locksForStep(stepId) {
       return {
         tabs: { cultivate: true, dungeon: true, codex: true, log: true },
         cultivateSub: { ...allCult },
-        partySub: { fight: true, breed: true, dispatch: true, bond: true },
+        partySub: { fight: true, hatch: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: true,
       };
@@ -275,7 +277,7 @@ function locksForStep(stepId) {
       return {
         tabs: { dungeon: true, codex: true, log: true },
         cultivateSub: { advance: true, shop: true },
-        partySub: { fight: true, breed: true, dispatch: true, bond: true },
+        partySub: { fight: true, hatch: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -283,7 +285,7 @@ function locksForStep(stepId) {
       return {
         tabs: { cultivate: true, dungeon: true, codex: true, log: true },
         cultivateSub: { ...allCult },
-        partySub: { fight: true, breed: true, dispatch: true, bond: true },
+        partySub: { fight: true, hatch: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: true,
       };
@@ -292,7 +294,7 @@ function locksForStep(stepId) {
       return {
         tabs: { cultivate: true, codex: true, log: true },
         cultivateSub: { ...allCult },
-        partySub: { dispatch: true, bond: true },
+        partySub: { hatch: true, dispatch: true, bond: true },
         dungeonSub: { setup: true },
         trainSites: false,
       };
@@ -308,7 +310,7 @@ function locksForStep(stepId) {
       return {
         tabs: { dungeon: true, codex: true, log: true },
         cultivateSub: { advance: true, shop: true },
-        partySub: { fight: true, breed: true, dispatch: true, bond: true },
+        partySub: { fight: true, ranch: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -316,7 +318,7 @@ function locksForStep(stepId) {
       return {
         tabs: { party: true, dungeon: true, codex: true, log: true },
         cultivateSub: { ...allCult, advance: true },
-        partySub: { breed: true, dispatch: true, bond: true },
+        partySub: { hatch: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -324,7 +326,7 @@ function locksForStep(stepId) {
       return {
         tabs: { party: true, dungeon: true, codex: true, log: true },
         cultivateSub: { shop: true, advance: false },
-        partySub: { breed: true, dispatch: true, bond: true },
+        partySub: { hatch: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -332,7 +334,7 @@ function locksForStep(stepId) {
       return {
         tabs: { cultivate: true, dungeon: true, codex: true, log: true },
         cultivateSub: { ...allCult },
-        partySub: { fight: true, ranch: true, dispatch: true, bond: true },
+        partySub: { fight: true, ranch: true, hatch: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -340,7 +342,7 @@ function locksForStep(stepId) {
       return {
         tabs: { log: true },
         cultivateSub: { ...allCult },
-        partySub: { breed: true, dispatch: true },
+        partySub: { hatch: true, breed: true, dispatch: true },
         dungeonSub: { setup: true },
         trainSites: false,
       };
@@ -348,7 +350,7 @@ function locksForStep(stepId) {
       return {
         tabs: { log: true },
         cultivateSub: { ...allCult },
-        partySub: { fight: false, ranch: false, breed: false, bond: false, dispatch: false },
+        partySub: { fight: false, ranch: false, hatch: false, breed: false, bond: false, dispatch: false },
         dungeonSub: { setup: true },
         trainSites: false,
       };
@@ -364,7 +366,7 @@ function locksForStep(stepId) {
       return {
         tabs: { cultivate: true, dungeon: true, codex: true, log: true },
         cultivateSub: { ...allCult },
-        partySub: { dispatch: true, bond: true },
+        partySub: { hatch: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
       };
@@ -662,6 +664,9 @@ function ensurePartyRanchSub(nav, step) {
   if (next.tab === "party" && tutorialNeedsRanchSub(step)) {
     next.panelSub = { ...next.panelSub, party: "ranch" };
   }
+  if (next.tab === "party" && tutorialNeedsHatchSub(step)) {
+    next.panelSub = { ...next.panelSub, party: "hatch" };
+  }
   return next;
 }
 
@@ -681,7 +686,7 @@ export function syncTutorialNavigation(state, nav) {
       next = clampTutorialTabs(nav, ["party", "cultivate"], tutorialEggReady(state) ? "party" : "party");
       if (tutorialEggReady(state)) {
         next.tab = "party";
-        next.panelSub = { ...next.panelSub, party: "ranch" };
+        next.panelSub = { ...next.panelSub, party: "hatch" };
       }
       break;
     }
@@ -747,17 +752,17 @@ export function tutorialHighlights(state, nav = {}) {
   switch (step) {
     case "hatch_starter": {
       if (eggReady) {
-        if (tab === "party" && ps.party === "ranch") return [{ type: "claim-hatch" }];
-        if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
+        if (tab === "party" && ps.party === "hatch") return [{ type: "claim-hatch" }];
+        if (tab === "party") return [{ type: "panel-sub", group: "party", id: "hatch" }];
         return [{ type: "tab", id: "party" }];
       }
-      if (tab === "party" && ps.party === "ranch") {
+      if (tab === "party" && ps.party === "hatch") {
         if (eggIdle) return [{ type: "start-hatch" }];
         return [{ type: "tab", id: "cultivate" }];
       }
       if (tab === "cultivate" && ps.cultivate === "train") return [];
       if (tab === "cultivate") return [{ type: "panel-sub", group: "cultivate", id: "train" }];
-      if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
+      if (tab === "party") return [{ type: "panel-sub", group: "party", id: "hatch" }];
       return [{ type: "tab", id: "party" }];
     }
     case "meet_pet": {
@@ -802,17 +807,17 @@ export function tutorialHighlights(state, nav = {}) {
       return [{ type: "tab", id: "cultivate" }];
     case "hatch_second": {
       if (eggReady) {
-        if (tab === "party" && ps.party === "ranch") return [{ type: "claim-hatch" }];
-        if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
+        if (tab === "party" && ps.party === "hatch") return [{ type: "claim-hatch" }];
+        if (tab === "party") return [{ type: "panel-sub", group: "party", id: "hatch" }];
         return [{ type: "tab", id: "party" }];
       }
-      if (tab === "party" && ps.party === "ranch") {
+      if (tab === "party" && ps.party === "hatch") {
         if (eggIdle) return [{ type: "start-hatch" }];
         return [{ type: "tab", id: "cultivate" }];
       }
       if (tab === "cultivate" && ps.cultivate === "train") return [];
       if (tab === "cultivate") return [{ type: "panel-sub", group: "cultivate", id: "train" }];
-      if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
+      if (tab === "party") return [{ type: "panel-sub", group: "party", id: "hatch" }];
       return [{ type: "tab", id: "party" }];
     }
     case "cultivate_qi":
@@ -1034,7 +1039,7 @@ export function tutorialBannerHint(state) {
   if (info.stepId === "hatch_starter" || info.stepId === "hatch_second") {
     const eggs = state.eggs || [];
     const ready = eggs.find((e) => e.startedAt != null && (e.readyAt || 0) <= Date.now());
-    if (ready) return `【${ready.name || "蛋"}】已就緒！打開「靈寵 → 牧場」點「領取」。`;
+    if (ready) return `【${ready.name || "蛋"}】已就緒！打開「靈寵 → 孵化」點「領取」。`;
     const hatching = eggs.find((e) => e.startedAt != null);
     if (hatching) {
       const sec = Math.max(0, Math.ceil(((hatching.readyAt || 0) - Date.now()) / 1000));

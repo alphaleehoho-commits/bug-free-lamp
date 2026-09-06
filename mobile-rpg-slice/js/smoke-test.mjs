@@ -178,6 +178,9 @@ import {
   deployPet,
   claimHatch,
   startHatch,
+  claimAllReadyHatches,
+  hatchSlotsView,
+  activeHatchCount,
   eggsView,
   tickCultivation,
   tickRanchIdle,
@@ -256,6 +259,7 @@ import {
   tutorialBannerHint,
   tutorialEggReady,
   tutorialNeedsRanchSub,
+  tutorialNeedsHatchSub,
   tutorialTargetSelector,
   isDungeonSubLocked,
   tutorialCoachDetailUid,
@@ -1006,6 +1010,57 @@ const hatched = claimHatch(hatchSt, egg0.uid);
 assert(hatched.ok && hatchSt.ranch.length === 1 && hatchSt.eggs.length === 0, "claim hatch starter");
 assert(hatchSt.tutorial.step === "meet_pet" || hatchSt.tutorial.flags.starterHatched, "hatch advances");
 
+/* Pack B: hatch slot cap + claim-all */
+{
+  const now = Date.now();
+  const slotSt = {
+    realm: 0,
+    pets: [],
+    ranch: [],
+    eggs: [],
+    materials: {},
+    items: emptyItems(),
+    itemBonus: { ranchCap: 0, hatchSlots: 0 },
+    bestiary: {},
+    stats: {},
+    log: [],
+    tutorial: { done: true, step: "complete", flags: {} },
+  };
+  assert(hatchSlotCap(slotSt) === HATCH_SLOT_BASE, "pack B hatch cap base");
+  for (let i = 0; i < HATCH_SLOT_BASE; i++) {
+    const e = makeEgg("C", "shop", now);
+    e.uid = `slot-egg-${i}`;
+    slotSt.eggs.push(e);
+    assert(startHatch(slotSt, e.uid, now).ok, `start hatch slot ${i + 1}`);
+  }
+  assert(activeHatchCount(slotSt) === HATCH_SLOT_BASE, "3 concurrent hatches");
+  const overflow = makeEgg("C", "shop", now);
+  overflow.uid = "slot-egg-overflow";
+  slotSt.eggs.push(overflow);
+  const blocked = startHatch(slotSt, overflow.uid, now);
+  assert(!blocked.ok && String(blocked.msg).includes("孵化欄已滿"), "slot cap gates startHatch");
+  const hv = hatchSlotsView(slotSt, now);
+  assert(hv.cap === 3 && hv.used === 3 && hv.slots.length === 3, "hatchSlotsView fills 3");
+  assert(hv.slots.every((s) => !s.empty && s.hatching), "slots occupied hatching");
+
+  slotSt.itemBonus.hatchSlots = 1;
+  assert(hatchSlotCap(slotSt) === 4, "bonus opens 4th slot");
+  assert(startHatch(slotSt, overflow.uid, now).ok, "4th slot starts after nest bonus");
+  const hv4 = hatchSlotsView(slotSt, now);
+  assert(hv4.cap === 4 && hv4.slots.length === 4 && hv4.used === 4, "4-slot view");
+
+  /* claim one + claim-all */
+  for (const e of slotSt.eggs) {
+    if (e.startedAt != null) e.readyAt = now - 1000;
+  }
+  const oneUid = slotSt.eggs.find((e) => e.startedAt != null).uid;
+  const oneClaim = claimHatch(slotSt, oneUid);
+  assert(oneClaim.ok && oneClaim.pet && slotSt.ranch.length === 1, "claim one ready hatch");
+  const allRes = claimAllReadyHatches(slotSt, now);
+  assert(allRes.ok && allRes.pets.length === 3 && slotSt.eggs.every((e) => e.startedAt == null), "claimAllReadyHatches");
+  assert(slotSt.ranch.length === 4, "all claimed pets in ranch");
+}
+
 const hatchLockSt = { tutorial: { done: false, step: "hatch_starter", flags: {} } };
 assert(!isTabLocked(hatchLockSt, "cultivate"), "hatch_starter unlocks cultivate tab");
 assert(!isCultivateSubLocked(hatchLockSt, "train"), "hatch_starter unlocks train");
@@ -1097,7 +1152,11 @@ assert(tutorialEggReady(eggReadySt), "egg ready detect");
 const eggReadyHi = tutorialHighlights(eggReadySt, { tab: "cultivate", panelSub: { cultivate: "train" } });
 assert(eggReadyHi.some((h) => h.type === "tab" && h.id === "party"), "egg ready highlights party from cultivate");
 const eggReadyNav = syncTutorialNavigation(eggReadySt, { tab: "cultivate", panelSub: { cultivate: "train" } });
-assert(eggReadyNav.tab === "party" && eggReadyNav.panelSub.party === "ranch", "egg ready nav to ranch");
+assert(eggReadyNav.tab === "party" && eggReadyNav.panelSub.party === "hatch", "egg ready nav to hatch");
+assert(tutorialNeedsHatchSub("hatch_starter") && tutorialNeedsHatchSub("hatch_second"), "hatch steps need hatch sub");
+assert(!tutorialNeedsRanchSub("hatch_starter"), "hatch_starter no longer forces ranch");
+assert(!isPartySubLocked(hatchLockSt, "hatch"), "hatch_starter unlocks hatch sub");
+assert(isPartySubLocked(hatchLockSt, "ranch"), "hatch_starter locks ranch sub");
 
 const trainDetailHi = tutorialHighlights(
   { ...trainNavSt, ranch: [makeStarterPet()] },
@@ -2239,6 +2298,15 @@ assert(uiSrc2.includes("data-bag-inner"), "ui bag inner mats/items tabs");
 assert(uiSrc2.includes("data-use-item"), "ui use bag item");
 assert(uiSrc2.includes("背包"), "ui bag label");
 assert(uiSrc2.includes("hatchSlotCap"), "ui exposes hatch slot cap");
+assert(uiSrc2.includes('id: "hatch"'), "ui hatch party sub-tab");
+assert(uiSrc2.includes("data-hatch-panel"), "ui hatch panel marker");
+assert(uiSrc2.includes("data-claim-all-hatch"), "ui claim-all hatch");
+assert(uiSrc2.includes("claimAllReadyHatches"), "ui uses claimAllReadyHatches");
+assert(uiSrc2.includes("hatch-claim-overlay"), "ui hatch claim half-modal");
+assert(uiSrc2.includes("去孵化"), "ui ranch link to hatch");
+assert(uiSrc2.includes("data-hatch-filter"), "ui hatch egg filters");
+assert(uiSrc2.includes("hatchSlotsView"), "ui hatch slots view");
+assert(!uiSrc2.includes("<h3>寵物蛋</h3>"), "ui ranch no longer hosts full egg list");
 assert(!uiSrc2.includes('id: "mats"'), "ui materials tab renamed to bag");
 const dataSrcBag = readFileSync(join(__dir, "data.js"), "utf8");
 assert(dataSrcBag.includes("欄柵") && dataSrcBag.includes("暖巢箋"), "data bag item copy");
@@ -2252,6 +2320,8 @@ const cssSrc = readFileSync(join(__dir, "../css/style.css"), "utf8");
 assert(cssSrc.includes("cond-list.is-compact"), "css compact breakthrough checklist");
 assert(cssSrc.includes("offline-home-slot"), "css offline home slot");
 assert(cssSrc.includes("offline-claim-card"), "css offline claim modal card");
+assert(cssSrc.includes("hatch-slots"), "css hatch slots grid");
+assert(cssSrc.includes("hatch-claim-card"), "css hatch claim modal card");
 assert(!cssSrc.includes("offline-toast"), "css no floating offline toast");
 assert(cssSrc.includes("combat-formation-side"), "css formation side grid");
 assert(cssSrc.includes("is-empty-slot"), "css empty formation slots");

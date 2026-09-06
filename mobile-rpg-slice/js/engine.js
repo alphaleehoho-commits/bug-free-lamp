@@ -3268,12 +3268,42 @@ export function eggsView(state, now = Date.now()) {
   });
 }
 
+/** 進行中孵化（已開始、未領取；領取後會移出 eggs） */
+export function activeHatchCount(state) {
+  return (state.eggs || []).filter((e) => e.startedAt != null).length;
+}
+
+/** 孵化欄位視圖：容量 hatchSlotCap，佔用＝進行中蛋 */
+export function hatchSlotsView(state, now = Date.now()) {
+  const cap = hatchSlotCap(state);
+  const hatching = eggsView(state, now)
+    .filter((e) => e.hatching)
+    .sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
+  const slots = [];
+  for (let i = 0; i < cap; i++) {
+    const egg = hatching[i] || null;
+    slots.push({
+      index: i,
+      empty: !egg,
+      egg,
+      ready: !!(egg && egg.ready),
+      hatching: !!(egg && egg.hatching && !egg.ready),
+    });
+  }
+  return { cap, used: hatching.length, slots, readyCount: hatching.filter((e) => e.ready).length };
+}
+
 /** 開始孵化 */
 export function startHatch(state, eggUid, now = Date.now()) {
   if (!state.eggs) state.eggs = [];
   const egg = state.eggs.find((e) => e.uid === eggUid);
   if (!egg) return { ok: false, msg: "找不到這枚蛋。" };
   if (egg.startedAt != null) return { ok: false, msg: "已在孵化中。" };
+  const cap = hatchSlotCap(state);
+  const used = activeHatchCount(state);
+  if (used >= cap) {
+    return { ok: false, msg: `孵化欄已滿（${used}/${cap}）。可用暖巢箋擴欄，或等完成後領取。` };
+  }
   const t = eggTierInfo(egg.tier);
   const tutShort =
     egg.source === "starter" ||
@@ -3357,6 +3387,37 @@ export function claimHatch(state, eggUid) {
     pet,
     tutorialUnlock: tut.advanced ? tut.unlockMsg : null,
   };
+}
+
+/** 一鍵領取所有已完成孵化（牧場滿則停） */
+export function claimAllReadyHatches(state, now = Date.now()) {
+  if (!state.eggs) state.eggs = [];
+  const readyUids = state.eggs
+    .filter((e) => e.startedAt != null && (e.readyAt || 0) <= now)
+    .map((e) => e.uid);
+  if (!readyUids.length) return { ok: false, msg: "沒有可領取的孵化。", pets: [] };
+  const pets = [];
+  let tutorialUnlock = null;
+  let stopMsg = null;
+  for (const uid of readyUids) {
+    const r = claimHatch(state, uid);
+    if (r.ok && r.pet) {
+      pets.push(r.pet);
+      if (r.tutorialUnlock) tutorialUnlock = r.tutorialUnlock;
+    } else {
+      stopMsg = r.msg || "領取中斷。";
+      break;
+    }
+  }
+  if (!pets.length) return { ok: false, msg: stopMsg || "無法領取。", pets: [] };
+  const msg =
+    pets.length === 1
+      ? `孵出 ${pets[0].name}`
+      : `一鍵收取 ${pets.length} 隻：${pets.map((p) => p.name).join("、")}`;
+  if (stopMsg) {
+    return { ok: true, msg: `${msg}（其後：${stopMsg}）`, pets, tutorialUnlock, partial: true };
+  }
+  return { ok: true, msg, pets, tutorialUnlock };
 }
 
 /** 出戰 → 牧場 */
