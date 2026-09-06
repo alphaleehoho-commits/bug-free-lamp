@@ -256,7 +256,7 @@ let hatchClaimModal = null;
 let hatchEggFilter = "all";
 /** 背包內頁：材料 | 道具 */
 let bagInner = "mats";
-/** @type {"power" | "gen" | "rarity" | "element" | "status" | "star"} */
+/** @type {"power" | "gen" | "rarity" | "element" | "status" | "star" | "level"} */
 let ranchSort = "status";
 /** 牧場只顯示星標 */
 let ranchStarOnly = false;
@@ -301,7 +301,7 @@ trainRatesOpen = !!uiPrefsBoot.trainRatesOpen;
 if (uiPrefsBoot.bagInner === "items" || uiPrefsBoot.bagInner === "mats") {
   bagInner = uiPrefsBoot.bagInner;
 }
-if (["power", "gen", "rarity", "element", "status", "star"].includes(uiPrefsBoot.ranchSort)) {
+if (["power", "gen", "rarity", "element", "status", "star", "level"].includes(uiPrefsBoot.ranchSort)) {
   ranchSort = uiPrefsBoot.ranchSort;
 }
 ranchStarOnly = !!uiPrefsBoot.ranchStarOnly;
@@ -2836,6 +2836,34 @@ function petFlagTags(p) {
   return bits.join("");
 }
 
+/** 卡面右上角星標／上鎖徽章（牧場可撳；揀寵卡只顯示） */
+function petCornerBadges(p, opts = {}) {
+  const uid = escapeHtml(p.uid || p.templateId);
+  const star = p.starred ? "★" : "☆";
+  if (opts.interactive) {
+    return `<div class="pet-card-badges" aria-label="星標與上鎖">
+      <button type="button" class="pet-badge pet-badge-star${p.starred ? " on" : ""}" data-toggle-star="${uid}" aria-label="星標">${star}</button>
+      <button type="button" class="pet-badge pet-badge-lock${p.locked ? " on" : ""}" data-toggle-lock="${uid}" aria-label="上鎖">${
+        p.locked ? "🔒" : "🔓"
+      }</button>
+    </div>`;
+  }
+  const bits = [`<span class="pet-badge pet-badge-star${p.starred ? " on" : ""}" title="星標">${star}</span>`];
+  if (p.locked) bits.push(`<span class="pet-badge pet-badge-lock on" title="上鎖">🔒</span>`);
+  return `<div class="pet-card-badges">${bits.join("")}</div>`;
+}
+
+/** 全頁重繪時保留 .stage-scroll 位置（批量放生揀寵／繁殖·孵化 live patch） */
+function renderPreservingStageScroll() {
+  const scroller = document.querySelector(".stage-scroll");
+  const scrollTop = scroller?.scrollTop ?? 0;
+  render();
+  requestAnimationFrame(() => {
+    const again = document.querySelector(".stage-scroll");
+    if (again) again.scrollTop = scrollTop;
+  });
+}
+
 function petPowerScore(p) {
   return (p.atk || 0) * 2 + (p.hp || 0) + (p.spd || 0) + (p.level || 1) * 8 + (p.fusionLevel || 0) * 20;
 }
@@ -2864,6 +2892,9 @@ function sortRanchEntries(entries, sortKey) {
       if (d) return d;
     } else if (sortKey === "power") {
       const d = petPowerScore(pb) - petPowerScore(pa);
+      if (d) return d;
+    } else if (sortKey === "level") {
+      const d = (pb.level || 1) - (pa.level || 1);
       if (d) return d;
     } else {
       const d = (statusRank[a.kind] ?? 9) - (statusRank[b.kind] ?? 9);
@@ -2902,22 +2933,15 @@ function petGridCard(p, extraBtn = "", tagHtml = "", opts = {}) {
           }</button>`
         : `<button type="button" disabled>不可選</button>`
     : "";
-  const quick =
-    managing || opts.hideQuick
-      ? ""
-      : `<button type="button" class="ghost pet-quick-flag${p.starred ? " on" : ""}" data-toggle-star="${uid}" aria-label="星標">${
-          p.starred ? "★" : "☆"
-        }</button>
-        <button type="button" class="ghost pet-quick-flag${p.locked ? " on" : ""}" data-toggle-lock="${uid}" aria-label="上鎖">${
-          p.locked ? "鎖" : "開"
-        }</button>`;
+  const badges = managing || opts.hideQuick ? petCornerBadges(p) : petCornerBadges(p, { interactive: true });
   return `
     <li class="pet-card${selectCls}">
+      ${badges}
       <div class="pet-card-top">
         ${petIconFromPet(p, { size: 28 })}
         <div class="pet-card-title">
           <button type="button" class="linkish" data-pet-detail="${uid}" ${managing ? "disabled" : ""}><strong>${escapeHtml(title)}</strong></button>
-          ${tagHtml}${petFlagTags(p)}
+          ${tagHtml}
         </div>
       </div>
       <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""}</span>
@@ -2926,7 +2950,7 @@ function petGridCard(p, extraBtn = "", tagHtml = "", opts = {}) {
         ${
           managing
             ? selectBtn
-            : `<button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>${quick}${extraBtn}`
+            : `<button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>${extraBtn}`
         }
       </div>
     </li>`;
@@ -2968,10 +2992,11 @@ function petPickCard(p, opts = {}) {
   const lockCls = p.locked ? " is-locked-pet" : "";
   return `
     <li class="pet-pick-card${selected ? " is-selected" : ""}${disabled ? " is-disabled" : ""}${starCls}${lockCls}">
+      ${petCornerBadges(p)}
       <div class="pet-pick-top">
         ${petIconFromPet(p, { size: 24 })}
         <div class="pet-pick-title">
-          <strong>${escapeHtml(displayPetName(p))}</strong>${petFlagTags(p)}
+          <strong>${escapeHtml(displayPetName(p))}</strong>
         </div>
       </div>
       <span class="muted">${meta}</span>
@@ -3128,6 +3153,7 @@ function petsListView() {
     ["status", "狀態"],
     ["star", "星標"],
     ["power", "戰力"],
+    ["level", "Lv"],
     ["gen", "代數"],
     ["rarity", "稀有"],
     ["element", "屬性"],
@@ -4894,7 +4920,7 @@ function bind() {
   app.querySelectorAll("[data-ranch-sort]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.ranchSort;
-      if (!["power", "gen", "rarity", "element", "status", "star"].includes(id)) return;
+      if (!["power", "gen", "rarity", "element", "status", "star", "level"].includes(id)) return;
       if (ranchSort === id) return;
       ranchSort = id;
       saveUiPrefs();
@@ -4922,14 +4948,15 @@ function bind() {
       if (selected.has(uid)) selected.delete(uid);
       else selected.add(uid);
       ranchRelease = { phase: "select", selected: [...selected] };
-      render();
+      renderPreservingStageScroll();
     });
   });
   app.querySelectorAll("[data-toggle-star]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const r = togglePetStarred(state, btn.dataset.toggleStar);
       saveState(state);
-      render();
+      if (tab === "party" && panelSub.party === "ranch") renderPreservingStageScroll();
+      else render();
       setFlash(r.msg);
     });
   });
@@ -4937,7 +4964,8 @@ function bind() {
     btn.addEventListener("click", () => {
       const r = togglePetLocked(state, btn.dataset.toggleLock);
       saveState(state);
-      render();
+      if (tab === "party" && panelSub.party === "ranch") renderPreservingStageScroll();
+      else render();
       setFlash(r.msg);
     });
   });
@@ -5979,13 +6007,7 @@ setInterval(() => {
     const breedPatch = patchBreedLive();
     if (breedPatch.needRender) {
       saveState(state);
-      const scroller = document.querySelector(".stage-scroll");
-      const scrollTop = scroller?.scrollTop ?? 0;
-      render();
-      requestAnimationFrame(() => {
-        const again = document.querySelector(".stage-scroll");
-        if (again) again.scrollTop = scrollTop;
-      });
+      renderPreservingStageScroll();
       return;
     }
     saveState(state);
@@ -5993,14 +6015,8 @@ setInterval(() => {
   }
   if (tab === "party" && panelSub.party === "hatch" && eggReadyNow) {
     saveState(state);
-    const scroller = document.querySelector(".stage-scroll");
-    const scrollTop = scroller?.scrollTop ?? 0;
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
-    render();
-    requestAnimationFrame(() => {
-      const again = document.querySelector(".stage-scroll");
-      if (again) again.scrollTop = scrollTop;
-    });
+    renderPreservingStageScroll();
     tutorialSnapCache = snap;
     return;
   }
