@@ -537,8 +537,11 @@ body {
 
 .stage-dock {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
   margin: 0;
-  padding: 0.42rem 0 0.12rem;
+  padding: 0.42rem 0 0.18rem;
   /* 唔好喺呢度食 safe-area：真正底欄先至要，否則會壓縮子分頁觸控區 */
   border-top: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(18, 32, 44, 0.72) 0%, rgba(18, 32, 44, 0.98) 35%);

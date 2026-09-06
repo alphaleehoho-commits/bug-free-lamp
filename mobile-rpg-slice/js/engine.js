@@ -6740,7 +6740,12 @@ export function abyssSquadCandidates(state) {
   return abyssOwnedPets(state).map((p) => ({
     uid: p.uid,
     name: displayPetName(p),
+    speciesId: p.speciesId,
     elementId: p.elementId,
+    elementName: p.elementName,
+    rarity: p.rarity ?? 0,
+    starred: !!p.starred,
+    locked: !!p.locked,
     atk: p.atk | 0,
     hp: p.hp | 0,
     level: p.level | 0,

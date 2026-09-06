@@ -280,6 +280,8 @@ let ranchRelease = null;
  * @type {null | { uids: string[], fromDetail?: boolean }}
  */
 let releaseModal = null;
+/** 融合確認半屏（取代 browser confirm） */
+let fuseConfirmModal = null;
 /**
  * 潮轉符選寵半屏
  * @type {null | { source: "bag" | "abyss" }}
@@ -2150,6 +2152,7 @@ function render() {
     ${offlineClaimOpen ? offlineClaimModalHtml() : ""}
     ${hatchClaimModal ? hatchClaimModalHtml() : ""}
     ${releaseModal ? releaseModalHtml() : ""}
+    ${fuseConfirmModal ? fuseConfirmModalHtml() : ""}
     ${tideShiftModal ? tideShiftModalHtml() : ""}
     ${dailyHubHtml()}
     ${inTutorial ? "" : installBanner()}
@@ -2534,6 +2537,48 @@ function releaseModalHtml() {
       </div>
     </div>`;
 }
+
+function fuseConfirmModalHtml() {
+  if (!fuseConfirmModal) return "";
+  const d = petDetail(state, fuseConfirmModal.baseUid);
+  if (!d || d.fuseMaxed) {
+    return `
+    <div class="combat-modal-overlay release-modal-overlay" data-live="fuse-confirm-modal" role="dialog" aria-label="融合確認">
+      <div class="combat-modal-card release-modal-card">
+        <div class="combat-modal-scroll">
+          <h2>無法融合</h2>
+          <p class="lead">請返回重試。</p>
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" class="primary" data-act="close-fuse-confirm">返回</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  const mats = fuseConfirmModal.matUids || [];
+  const matCost =
+    d.fuseMatCost && Object.keys(d.fuseMatCost).length
+      ? `＋${Object.entries(d.fuseMatCost)
+          .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
+          .join("、")}`
+      : "";
+  return `
+    <div class="combat-modal-overlay release-modal-overlay" data-live="fuse-confirm-modal" role="dialog" aria-label="融合確認">
+      <div class="combat-modal-card release-modal-card">
+        <div class="combat-modal-scroll">
+          <h2>確認融合</h2>
+          <p class="lead">將 ${mats.length} 隻素材融入 <strong>${escapeHtml(d.pet.name)}</strong></p>
+          <p class="meta">目標融階 ${d.nextFusionStage} · 繼承 Lv.${d.level} · 耗 ${escapeHtml(String(d.fuseCostHint))} 靈石${escapeHtml(matCost)}</p>
+          <p class="meta muted">素材會被消耗，此操作不可復原。</p>
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" class="ghost" data-act="close-fuse-confirm">取消</button>
+          <button type="button" class="primary" data-act="confirm-fuse">確認融合</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 
 function tabBtn(id, label, busy) {
   if (isTabLocked(state, id)) return "";
@@ -5193,6 +5238,16 @@ function bind() {
       render();
     });
   });
+  app.querySelectorAll("[data-shop-inner]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.shopInner;
+      if (id !== "stones" && id !== "soul" && id !== "grit") return;
+      if (shopInner === id) return;
+      shopInner = id;
+      saveUiPrefs();
+      render();
+    });
+  });
   app.querySelectorAll("[data-use-item]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
@@ -5366,6 +5421,25 @@ function bind() {
       } else if (act === "close-release-modal") {
         releaseModal = null;
         render();
+      } else if (act === "close-fuse-confirm") {
+        fuseConfirmModal = null;
+        render();
+      } else if (act === "confirm-fuse") {
+        if (!fuseConfirmModal?.baseUid) return;
+        const baseUid = fuseConfirmModal.baseUid;
+        const mats = fuseConfirmModal.matUids || [];
+        const r = fusePets(state, baseUid, mats);
+        saveState(state);
+        fuseConfirmModal = null;
+        if (r.ok) {
+          petView = { mode: "detail", uid: baseUid, fuseBase: null, fuseMats: [], breedParents: [], detailTab: "stats" };
+          if (tutorialActive(state)) {
+            const adv = advanceTutorialIfReady(state);
+            if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+          }
+        }
+        render();
+        flashResult(r);
       } else if (act === "close-tide-shift-modal") {
         tideShiftModal = null;
         render();
@@ -6163,30 +6237,8 @@ function bind() {
         setFlash("無法融合。");
         return;
       }
-      if (
-        !confirm(
-          `將 ${mats.length} 隻素材融入 ${d.pet.name}？\n目標融階 ${d.nextFusionStage}｜繼承 Lv.${d.level}｜耗 ${d.fuseCostHint} 靈石${
-            d.fuseMatCost && Object.keys(d.fuseMatCost).length
-              ? `＋${Object.entries(d.fuseMatCost)
-                  .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
-                  .join("、")}`
-              : ""
-          }`
-        )
-      ) {
-        return;
-      }
-      const r = fusePets(state, baseUid, mats);
-      saveState(state);
-      if (r.ok) {
-        petView = { mode: "detail", uid: baseUid, fuseBase: null, fuseMats: [], breedParents: [], detailTab: "stats" };
-        if (tutorialActive(state)) {
-          const adv = advanceTutorialIfReady(state);
-          if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
-        }
-      }
+      fuseConfirmModal = { baseUid, matUids: [...mats] };
       render();
-      flashResult(r);
     });
   });
   
