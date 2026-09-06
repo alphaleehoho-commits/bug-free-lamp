@@ -1383,12 +1383,13 @@ function panelSubNav(group, items) {
 }
 
 function wrapStage(subnavHtml, scrollHtml, dockHtml = "") {
+  // 子分頁置頂：唔好夾喺召喚 dock 同底欄中間（會被擋掣，潮淵撳唔到）
   return `
+    ${subnavHtml ? `<div class="panel-subnav-dock panel-subnav-dock--top">${subnavHtml}</div>` : ""}
     <div class="panel-stage">
       <div class="stage-scroll">${scrollHtml}</div>
       ${dockHtml ? `<div class="stage-dock">${dockHtml}</div>` : ""}
-    </div>
-    ${subnavHtml ? `<div class="panel-subnav-dock">${subnavHtml}</div>` : ""}`;
+    </div>`;
 }
 
 function syncAppHeight() {
@@ -5096,43 +5097,48 @@ function playAbyssResult(r) {
   setFlash(r.msg || "");
 }
 
+function switchPanelSub(group, id) {
+  if (!group || !id) return false;
+  if (panelSub[group] === id) return false;
+  const block = panelSubSwitchBlockReason(group, id);
+  if (block) {
+    if (block.includes("卡住") && recoverStuckPlayback()) {
+      render();
+    } else {
+      setFlash(block);
+      return false;
+    }
+  }
+  const block2 = panelSubSwitchBlockReason(group, id);
+  if (block2) {
+    setFlash(block2);
+    return false;
+  }
+  if (playback?.done) stopPlayback();
+  // 切去潮淵：先清全屏遮罩，再改 sub（避免隱形層吞掉第一次點擊）
+  if (group === "dungeon" && id === "abyss") {
+    clearUiOverlays({ clearPlayback: false });
+  } else if (group === "dungeon") {
+    condSheetOpen = false;
+  }
+  panelSub = { ...panelSub, [group]: id };
+  if (group === "party" && id !== "ranch") ranchRelease = null;
+  markTutorialSubVisit(group, id);
+  render();
+  if (group === "dungeon" && id === "abyss") {
+    if (recoverStuckPlayback()) render();
+  }
+  return true;
+}
+
 function bind() {
   app.querySelectorAll("[data-panel-sub]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
       if (btn.disabled) return;
       const [group, id] = (btn.dataset.panelSub || "").split(":");
-      if (!group || !id) return;
-      if (panelSub[group] === id) return;
-      const block = panelSubSwitchBlockReason(group, id);
-      if (block) {
-        if (block.includes("卡住") && recoverStuckPlayback()) {
-          render();
-          // 解除後再試切頁
-        } else {
-          setFlash(block);
-          return;
-        }
-      }
-      const block2 = panelSubSwitchBlockReason(group, id);
-      if (block2) {
-        setFlash(block2);
-        return;
-      }
-      if (playback?.done) stopPlayback();
-      // 切去潮淵：清晒可能殘留嘅全屏遮罩，避免隱形擋掣
-      if (group === "dungeon" && id === "abyss") {
-        clearUiOverlays({ clearPlayback: false });
-      } else if (group === "dungeon") {
-        condSheetOpen = false;
-      }
-      panelSub = { ...panelSub, [group]: id };
-      if (group === "party" && id !== "ranch") ranchRelease = null;
-      markTutorialSubVisit(group, id);
-      render();
-      if (group === "dungeon" && id === "abyss") {
-        // 渲染後若仍有無 DOM 嘅 playback，即刻救回
-        if (recoverStuckPlayback()) render();
-      }
+      switchPanelSub(group, id);
     });
   });
   app.querySelectorAll("[data-bag-inner]").forEach((btn) => {
