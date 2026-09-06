@@ -1838,6 +1838,36 @@ assert(uiSrc.includes("is-locked"), "ui locked sub class");
 assert(uiSrc.includes("tutorialLockReason"), "ui uses tutorial lock reason");
 assert(!uiSrc.includes("items.filter(({ id }) => !lockFn"), "ui no longer hides locked subs");
 
+/* Pack X: abyss click must not leave invisible fullscreen blockers */
+assert(uiSrc.includes("function clearUiOverlays"), "ui clears overlay stack helper");
+assert(uiSrc.includes("function recoverStuckPlayback"), "ui recovers stuck playback without modal");
+assert(uiSrc.includes("function fullscreenOverlayBlockReason"), "ui overlay block reason for tabs");
+assert(uiSrc.includes("function dismissBlockingUi"), "ui dismiss blocking overlays helper");
+assert(uiSrc.includes('ev.key !== "Escape"') || uiSrc.includes('ev.key !== \'Escape\''), "ui Escape clears overlays");
+assert(uiSrc.includes("popstate"), "ui back/popstate clears overlays");
+assert(uiSrc.includes("tideShiftModal = null"), "ui can clear tideShiftModal");
+assert(
+  uiSrc.includes('group === "dungeon" && id === "abyss"') && uiSrc.includes("clearUiOverlays"),
+  "ui clears overlays when switching to abyss sub"
+);
+assert(
+  uiSrc.includes('panelSub.dungeon !== "abyss"') && uiSrc.includes('dungeon: "setup"'),
+  "ui switchTab tactics does not force setup when on abyss"
+);
+assert(
+  uiSrc.includes("combatModalInDom") && uiSrc.includes("data-live=combat-modal"),
+  "ui detects missing combat modal for stuck playback"
+);
+/* Pack X: switchTab("dungeon") must NOT force setup when current sub is abyss */
+{
+  const switchChunk = uiSrc.slice(uiSrc.indexOf("function switchTab"), uiSrc.indexOf("function markTutorialSubVisit"));
+  assert(switchChunk.includes('panelSub.dungeon !== "abyss"'), "switchTab guards abyss before forcing setup/field");
+  assert(
+    /step === "tactics"[\s\S]*panelSub\.dungeon !== "abyss"[\s\S]*dungeon: "setup"/.test(switchChunk),
+    "switchTab tactics only forces setup when not on abyss"
+  );
+}
+
 /* Ranch idle + dispatch gen mult */
 const idlePet = {
   ...buildPetStats({

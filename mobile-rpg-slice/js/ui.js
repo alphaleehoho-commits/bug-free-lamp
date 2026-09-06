@@ -276,6 +276,8 @@ let releaseModal = null;
  * @type {null | { source: "bag" | "abyss" }}
  */
 let tideShiftModal = null;
+/** 今次 session 已關過每日儀表板 */
+let dailyHubDismissedSession = false;
 
 const UI_PREFS_KEY = "void-tide-ui-prefs";
 
@@ -1162,10 +1164,113 @@ function stopPlayback() {
   playback = null;
 }
 
+/** DOM 上是否有戰報／結算全屏遮罩 */
+function combatModalInDom() {
+  return !!document.querySelector("[data-live=combat-modal]");
+}
+
+/** 目前會擋 pointer 嘅全屏／半屏狀態（唔計教學 spotlight） */
+function fullscreenOverlayBlockReason() {
+  if (playback && !playback.done) {
+    return combatModalInDom() ? "戰鬥中" : "戰鬥卡住";
+  }
+  if (playback?.done) {
+    return combatModalInDom() ? "戰報未關閉" : "戰報卡住";
+  }
+  if (tideShiftModal) return "潮轉符視窗";
+  if (dispatchModal) return "派遣視窗";
+  if (attackPreview) return "進攻預覽";
+  if (sweepResult) return "掃蕩結算";
+  if (offlineClaimOpen) return "離線收益";
+  if (hatchClaimModal) return "孵化領取";
+  if (releaseModal) return "放生確認";
+  if (condSheetOpen) return "敵情條件";
+  if (statsSheetOpen) return "資源詳情";
+  if (!tutorialActive(state) && !dailyHubDismissedSession) {
+    try {
+      if (dailyHubView(state)?.shouldShow) return "每日儀表板";
+    } catch {
+      /* ignore */
+    }
+  }
+  return "";
+}
+
+/** 清晒會擋 UI 嘅 sheet／modal（可選清 playback） */
+function clearUiOverlays(opts = {}) {
+  const clearPlayback = !!opts.clearPlayback;
+  const includeDonePlayback = opts.includeDonePlayback !== false;
+  tideShiftModal = null;
+  dispatchModal = null;
+  attackPreview = null;
+  sweepResult = null;
+  offlineClaimOpen = false;
+  hatchClaimModal = null;
+  releaseModal = null;
+  condSheetOpen = false;
+  statsSheetOpen = false;
+  rewardDetailsOpen = false;
+  if (!tutorialActive(state)) {
+    try {
+      if (dailyHubView(state)?.shouldShow) {
+        dismissDailyHub(state);
+        dailyHubDismissedSession = true;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (clearPlayback && playback) {
+    if (!playback.done || includeDonePlayback) stopPlayback();
+  }
+}
+
+/** playback 有狀態但戰報 DOM 唔見 → 視為卡住，清走並 flash */
+function recoverStuckPlayback(flashMsg = "已解除卡住戰報") {
+  if (!playback) return false;
+  if (combatModalInDom()) return false;
+  stopPlayback();
+  rewardDetailsOpen = false;
+  setFlash(flashMsg);
+  return true;
+}
+
+/** Escape／返回／點底欄時：有遮罩則清；卡住 playback 亦清 */
+function dismissBlockingUi(opts = {}) {
+  const fromUser = opts.fromUser !== false;
+  const reason = fullscreenOverlayBlockReason();
+  if (!reason) return false;
+  const stuck = reason.includes("卡住") || (playback && !combatModalInDom());
+  if (stuck || opts.force) {
+    clearUiOverlays({ clearPlayback: true, includeDonePlayback: true });
+    if (fromUser) setFlash(stuck ? "已解除卡住介面" : "已關閉視窗");
+    render();
+    return true;
+  }
+  if (fromUser) setFlash(reason);
+  return false;
+}
+
 function switchTab(id) {
   if (playback && !playback.done) {
-    setFlash("戰鬥中");
-    return;
+    if (recoverStuckPlayback("已解除卡住戰鬥")) {
+      render();
+    } else {
+      setFlash("戰鬥中");
+      return;
+    }
+  } else if (playback?.done && !combatModalInDom()) {
+    recoverStuckPlayback();
+  }
+  const overlayReason = fullscreenOverlayBlockReason();
+  if (overlayReason && overlayReason !== "戰報未關閉") {
+    // 戰報未關閉時允許喺秘境內操作；其他全屏遮罩擋底欄並 flash 原因
+    if (overlayReason.includes("卡住")) {
+      dismissBlockingUi({ force: true });
+    } else {
+      setFlash(overlayReason);
+      return;
+    }
   }
   if (isTabLocked(state, id)) {
     setFlash(tutorialLockReason(state, "tab", id) || "教學中");
@@ -1188,8 +1293,13 @@ function switchTab(id) {
         panelSub = { ...panelSub, cultivate: "train" };
       }
     } else if (id === "dungeon") {
-      if (step === "dungeon_fight" || step === "dungeon_win") panelSub = { ...panelSub, dungeon: "field" };
-      else if (step === "tactics") panelSub = { ...panelSub, dungeon: "setup" };
+      if (step === "dungeon_fight" || step === "dungeon_win") {
+        // 潮淵停留唔被教學強制踢去秘境 field
+        if (panelSub.dungeon !== "abyss") panelSub = { ...panelSub, dungeon: "field" };
+      } else if (step === "tactics") {
+        // Pack B mirror：潮淵 sub 唔好被 switchTab 強制 setup
+        if (panelSub.dungeon !== "abyss") panelSub = { ...panelSub, dungeon: "setup" };
+      }
     }
   }
   if (id === "codex" && tutorialActive(state) && state.tutorial.step === "codex") {
@@ -1238,7 +1348,10 @@ function panelSubIsLocked(group, id) {
 
 /** 子分頁切換阻擋原因；空＝可切 */
 function panelSubSwitchBlockReason(group, id) {
-  if (playback && !playback.done) return "戰鬥中";
+  if (playback && !playback.done) {
+    if (!combatModalInDom()) return "戰鬥卡住";
+    return "戰鬥中";
+  }
   if (panelSubIsLocked(group, id)) {
     return tutorialLockReason(state, panelSubLockKind(group), id) || "教學中";
   }
@@ -2005,11 +2118,17 @@ function render() {
     requestAnimationFrame(() => positionTutorialSpotlight(false));
   });
   if (playback) {
-    updatePlaybackDom();
-    requestAnimationFrame(() => {
-      const scroller = document.querySelector("[data-live=combat-scroll]");
-      if (scroller) scroller.scrollTop = scroller.scrollHeight;
-    });
+    // 有 playback 狀態但全屏戰報唔見 → 唔好留住隱形擋掣
+    if (!combatModalInDom()) {
+      stopPlayback();
+      rewardDetailsOpen = false;
+    } else {
+      updatePlaybackDom();
+      requestAnimationFrame(() => {
+        const scroller = document.querySelector("[data-live=combat-scroll]");
+        if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      });
+    }
   }
 }
 
@@ -2023,8 +2142,6 @@ function dispatchMatBits(mission) {
     })
     .join(" ");
 }
-
-let dailyHubDismissedSession = false;
 
 function statsStripHtml(stage) {
   return `<button type="button" class="stats stats-compact stats-tappable" data-act="toggle-stats-sheet" aria-label="查看資源詳情">
@@ -4896,15 +5013,34 @@ function bind() {
       if (panelSub[group] === id) return;
       const block = panelSubSwitchBlockReason(group, id);
       if (block) {
-        setFlash(block);
+        if (block.includes("卡住") && recoverStuckPlayback()) {
+          render();
+          // 解除後再試切頁
+        } else {
+          setFlash(block);
+          return;
+        }
+      }
+      const block2 = panelSubSwitchBlockReason(group, id);
+      if (block2) {
+        setFlash(block2);
         return;
       }
       if (playback?.done) stopPlayback();
+      // 切去潮淵：清晒可能殘留嘅全屏遮罩，避免隱形擋掣
+      if (group === "dungeon" && id === "abyss") {
+        clearUiOverlays({ clearPlayback: false });
+      } else if (group === "dungeon") {
+        condSheetOpen = false;
+      }
       panelSub = { ...panelSub, [group]: id };
-      if (group === "dungeon") condSheetOpen = false;
       if (group === "party" && id !== "ranch") ranchRelease = null;
       markTutorialSubVisit(group, id);
       render();
+      if (group === "dungeon" && id === "abyss") {
+        // 渲染後若仍有無 DOM 嘅 playback，即刻救回
+        if (recoverStuckPlayback()) render();
+      }
     });
   });
   app.querySelectorAll("[data-bag-inner]").forEach((btn) => {
@@ -5339,7 +5475,20 @@ function bind() {
       statsSheetOpen = false;
       dispatchModal = null;
       attackPreview = null;
+      tideShiftModal = null;
       render();
+    });
+  });
+  // 戰報遮罩：點暗位 → 已結算可關閉；卡住時由 Escape／底欄救回
+  app.querySelectorAll("[data-live=combat-modal]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      if (e.target !== el) return;
+      if (!playback) return;
+      if (!playback.done) {
+        setFlash("戰鬥中");
+        return;
+      }
+      clearCombatPlayback();
     });
   });
   app.querySelectorAll("[data-act=toggle-combat-fast]").forEach((input) => {
@@ -5996,6 +6145,19 @@ document.addEventListener("touchend", onTutorialMisclick, true);
 window.addEventListener("resize", () => {
   syncAppHeight();
   positionTutorialSpotlight(false);
+});
+
+/** Escape／瀏覽器返回：清遮罩；卡住 playback 一律清 */
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape") return;
+  if (!fullscreenOverlayBlockReason() && !playback) return;
+  ev.preventDefault();
+  dismissBlockingUi({ force: true });
+});
+window.addEventListener("popstate", () => {
+  if (fullscreenOverlayBlockReason() || playback) {
+    dismissBlockingUi({ force: true });
+  }
 });
 
 document.addEventListener("visibilitychange", () => {
