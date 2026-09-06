@@ -213,6 +213,7 @@ import {
   ABYSS_INSURANCE_COST,
   ABYSS_EGG_COST,
   ABYSS_EGG_WEEKLY_LIMIT,
+  ABYSS_TIDE_SHIFT_COST,
   emptyAbyssDive,
   abyssFloorGrit,
   abyssHash,
@@ -1734,12 +1735,15 @@ export function itemsView(state) {
     } else if (id === "hatch_nest_token") {
       atCap = bonus.hatchSlots >= HATCH_SLOT_BONUS_MAX;
       bonusNote = `已擴 +${bonus.hatchSlots}/${HATCH_SLOT_BONUS_MAX}（欄 ${hatchSlotCap(state)}）`;
+    } else if (id === "tide_shift_charm") {
+      bonusNote = "指定靈寵永久轉屬";
     }
     return {
       ...def,
       count,
       bonusNote,
       atCap,
+      needsTarget: !!def.needsTarget,
       canUse: count > 0 && !atCap,
     };
   });
@@ -1752,8 +1756,8 @@ function ensureItems(state) {
   else state.itemBonus = normalizeItemBonus(state.itemBonus);
 }
 
-/** 使用背包道具（欄柵／暖巢箋）；永久加成按使用次數計 */
-export function useBagItem(state, itemId) {
+/** 使用背包道具（欄柵／暖巢箋／潮轉符）；永久加成按使用次數計 */
+export function useBagItem(state, itemId, petUid = null) {
   ensureItems(state);
   const def = ITEMS[itemId];
   if (!def) return { ok: false, msg: "未知道具。" };
@@ -1790,7 +1794,67 @@ export function useBagItem(state, itemId) {
     };
   }
 
+  if (itemId === "tide_shift_charm") {
+    if (!petUid) return { ok: false, msg: "請先揀一隻靈寵使用潮轉符。", needsTarget: true };
+    return useTideShiftCharm(state, petUid);
+  }
+
   return { ok: false, msg: "呢件道具暫時唔用得。" };
+}
+
+/**
+ * 潮轉符：永久隨機轉換靈寵元素（唔可轉成同一屬）
+ * 白板按元素倍率比例重算；寫入 pet 記錄並登錄新屬性圖鑑。
+ */
+export function useTideShiftCharm(state, uid) {
+  ensureItems(state);
+  const have = Math.floor(state.items.tide_shift_charm || 0);
+  if (have < 1) return { ok: false, msg: "沒有潮轉符。" };
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  const pet = found.pet;
+  const oldId = pet.elementId;
+  const oldEl = ELEMENTS[oldId];
+  const others = Object.keys(ELEMENTS).filter((id) => id !== oldId);
+  if (!others.length) return { ok: false, msg: "無可替換屬性。" };
+  let newId = others[Math.floor(Math.random() * others.length)];
+  let guard = 0;
+  while (newId === oldId && guard < 8) {
+    newId = others[Math.floor(Math.random() * others.length)];
+    guard += 1;
+  }
+  if (newId === oldId) return { ok: false, msg: "轉屬失敗，請再試。" };
+  const newEl = ELEMENTS[newId];
+  if (!newEl) return { ok: false, msg: "屬性資料異常。" };
+
+  state.items.tide_shift_charm = have - 1;
+  if (oldEl && newEl) {
+    pet.atk = Math.max(1, Math.round((pet.atk / (oldEl.atk || 1)) * newEl.atk));
+    pet.hp = Math.max(1, Math.round((pet.hp / (oldEl.hp || 1)) * newEl.hp));
+    pet.spd = Math.max(1, Math.round((pet.spd / (oldEl.spd || 1)) * newEl.spd));
+  }
+  pet.elementId = newId;
+  pet.elementName = newEl.name;
+  const spName = pet.speciesName || SPECIES[pet.speciesId]?.name || "";
+  if (spName) pet.name = `${newEl.name}${spName}`;
+  else if (pet.name && oldEl?.name && pet.name.startsWith(oldEl.name)) {
+    pet.name = `${newEl.name}${pet.name.slice(oldEl.name.length)}`;
+  }
+  if (pet.genes) {
+    pet.genes = { ...pet.genes, element: newId };
+  }
+  registerBestiary(state, pet);
+  pushLog(
+    state,
+    `【${displayPetName(pet)}】使用潮轉符：${oldEl?.name || oldId} → ${newEl.name}（永久）。`
+  );
+  return {
+    ok: true,
+    msg: `${displayPetName(pet)} 屬性 → ${newEl.name}`,
+    fromElement: oldId,
+    toElement: newId,
+    petUid: pet.uid,
+  };
 }
 
 function emptyOfflineBank() {
@@ -6503,6 +6567,8 @@ export function abyssDiveView(state, now = Date.now()) {
     eggsWeeklyLimit: ABYSS_EGG_WEEKLY_LIMIT,
     insuranceCost: ABYSS_INSURANCE_COST,
     eggCost: ABYSS_EGG_COST,
+    tideShiftCost: ABYSS_TIDE_SHIFT_COST,
+    tideShiftHave: Math.floor(state.items?.tide_shift_charm || 0),
     squadSize: ABYSS_SQUAD_SIZE,
     activeSize: ABYSS_ACTIVE_SIZE,
     ownedCount,
@@ -6861,6 +6927,21 @@ export function buyAbyssEgg(state, now = Date.now()) {
   return { ok: true, egg, msg: "獲得潮淵高階蛋（A）。" };
 }
 
+/** 淵砂兌換潮轉符（入背包道具；永久轉屬） */
+export function buyAbyssTideShiftCharm(state, now = Date.now()) {
+  ensureAbyssDive(state, now);
+  ensureItems(state);
+  if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_TIDE_SHIFT_COST })) {
+    return { ok: false, msg: `需要淵砂×${ABYSS_TIDE_SHIFT_COST}。` };
+  }
+  state.items.tide_shift_charm = Math.floor(state.items.tide_shift_charm || 0) + 1;
+  pushLog(state, `淵砂兌換潮轉符×1（持有 ${state.items.tide_shift_charm}）。`);
+  return {
+    ok: true,
+    msg: `兌換潮轉符×1（持有 ${state.items.tide_shift_charm}）`,
+    have: state.items.tide_shift_charm,
+  };
+}
 
 function pushLog(state, line) {
   if (!state.log) state.log = [];

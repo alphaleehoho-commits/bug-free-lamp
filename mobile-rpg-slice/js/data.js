@@ -4294,6 +4294,13 @@ export const SOUL_SHOP_OFFERS = [
     cost: 35,
     grant: { items: { ranch_fence: 1 } },
   },
+  {
+    id: "tide_shift_charm",
+    name: "潮轉符",
+    desc: "永久隨機轉屬 · 對一隻靈寵使用",
+    cost: 45,
+    grant: { items: { tide_shift_charm: 1 } },
+  },
 ];
 
 export const SOUL_SHOP_OFFER_IDS = SOUL_SHOP_OFFERS.map((o) => o.id);
@@ -4313,6 +4320,7 @@ export function emptyMaterials() {
  * - 欄柵 ranch_fence：每次使用永久 +1 牧場待命上限；itemBonus.ranchCap 累加，上限 RANCH_CAP_BONUS_MAX（+12）。
  * - 暖巢箋 hatch_nest_token：每次使用永久 +1 孵化欄；itemBonus.hatchSlots 累加，上限 HATCH_SLOT_BONUS_MAX（+3）。
  *   基準欄位 HATCH_SLOT_BASE=3 → 理論上限 6（孵化 UI 見 pack B）。
+ * - 潮轉符 tide_shift_charm：指定靈寵永久隨機轉屬（唔可轉回同一屬；白板按元素倍率重算）。
  */
 export const RANCH_CAP_BONUS_MAX = 12;
 export const HATCH_SLOT_BASE = 3;
@@ -4330,6 +4338,13 @@ export const ITEMS = {
     name: "暖巢箋",
     desc: "溫暖孵巢符箋 · 使用後永久 +1 孵化欄（基準 3，最多 +3 至 6）",
     use: "擴孵欄",
+  },
+  tide_shift_charm: {
+    id: "tide_shift_charm",
+    name: "潮轉符",
+    desc: "潮淵轉屬符箋 · 對一隻靈寵永久隨機轉換元素（唔會轉成同一屬）",
+    use: "轉屬",
+    needsTarget: true,
   },
 };
 
@@ -4894,6 +4909,8 @@ export const ABYSS_COSMETIC_BONUS_CAP = 0.05;
 export const ABYSS_INSURANCE_COST = 25;
 export const ABYSS_EGG_COST = 90;
 export const ABYSS_EGG_WEEKLY_LIMIT = 2;
+/** 淵砂兌換潮轉符（永久轉屬道具） */
+export const ABYSS_TIDE_SHIFT_COST = 35;
 
 export function emptyAbyssDive(now = Date.now()) {
   return {

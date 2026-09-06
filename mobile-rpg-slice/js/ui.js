@@ -148,6 +148,9 @@ import {
   buyAbyssInsurance,
   buyAbyssCosmetic,
   buyAbyssEgg,
+  buyAbyssTideShiftCharm,
+  useTideShiftCharm,
+  abyssSquadCandidates,
 } from "./engine.js";
 import {
   DUNGEON_SUMMON_MIN,
@@ -267,6 +270,11 @@ let ranchRelease = null;
  * @type {null | { uids: string[], fromDetail?: boolean }}
  */
 let releaseModal = null;
+/**
+ * 潮轉符選寵半屏
+ * @type {null | { source: "bag" | "abyss" }}
+ */
+let tideShiftModal = null;
 
 const UI_PREFS_KEY = "void-tide-ui-prefs";
 
@@ -1306,8 +1314,9 @@ function bagItemsHtml() {
   const rows = itemsView(state)
     .map((it) => {
       const empty = it.count <= 0;
+      const useLabel = it.needsTarget ? "揀寵使用" : "使用";
       const useBtn = it.canUse
-        ? `<button type="button" class="primary" data-use-item="${escapeHtml(it.id)}">使用</button>`
+        ? `<button type="button" class="primary" data-use-item="${escapeHtml(it.id)}">${useLabel}</button>`
         : `<button type="button" disabled>${it.atCap ? "已滿" : "使用"}</button>`;
       return `
     <li class="bag-item ${empty ? "is-empty" : ""}">
@@ -1321,6 +1330,38 @@ function bagItemsHtml() {
     })
     .join("");
   return `<ul class="list bag-item-list">${rows || `<li class="empty">暫無道具。</li>`}</ul>`;
+}
+
+function tideShiftModalHtml() {
+  if (!tideShiftModal) return "";
+  const have = Math.floor(state.items?.tide_shift_charm || 0);
+  const party = (state.pets || []).map((p) => ({ pet: p, where: "出戰" }));
+  const ranch = (state.ranch || []).map((p) => ({ pet: p, where: "牧場" }));
+  const rows =
+    [...party, ...ranch]
+      .map(({ pet: p, where }) => {
+        return `
+        <li class="card-row">
+          <div>
+            <strong>${escapeHtml(displayPetName(p))}</strong>
+            <span class="muted">${escapeHtml(where)} · ${escapeHtml(p.elementName || "")}屬 · Lv.${p.level | 0}</span>
+          </div>
+          <button type="button" class="primary" data-tide-shift-pet="${escapeHtml(p.uid)}" ${have < 1 ? "disabled" : ""}>轉屬</button>
+        </li>`;
+      })
+      .join("") || `<li class="empty">冇可用靈寵。</li>`;
+  return `
+    <div class="sheet-overlay" role="presentation" data-live="tide-shift-modal">
+      <div class="sheet-card" role="dialog" aria-label="潮轉符選寵" data-sheet-card>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <h3>潮轉符 · 揀寵轉屬</h3>
+        <p class="meta">永久隨機轉換元素（唔會轉成同一屬）· 持有 ${have}</p>
+        <ul class="list">${rows}</ul>
+        <div class="row">
+          <button type="button" class="secondary" data-act="close-tide-shift-modal">取消</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 function bagInnerNavHtml() {
@@ -1919,6 +1960,7 @@ function render() {
     ${offlineClaimOpen ? offlineClaimModalHtml() : ""}
     ${hatchClaimModal ? hatchClaimModalHtml() : ""}
     ${releaseModal ? releaseModalHtml() : ""}
+    ${tideShiftModal ? tideShiftModalHtml() : ""}
     ${dailyHubHtml()}
     ${inTutorial ? "" : installBanner()}
   `;
@@ -4472,6 +4514,13 @@ function abyssPanelHtml() {
         <div><strong>潮淵高階蛋</strong><span class="muted"> · 本週 ${v.eggsBoughtWeek}/${v.eggsWeeklyLimit} · 較易出稀有</span></div>
         <button type="button" class="secondary" data-abyss-egg ${v.eggsBoughtWeek >= v.eggsWeeklyLimit ? "disabled" : ""}>淵砂×${v.eggCost}</button>
       </li>
+      <li class="card-row">
+        <div><strong>潮轉符</strong><span class="muted"> · 永久隨機轉屬 · 持有 ${v.tideShiftHave || 0}</span></div>
+        <div class="row-actions">
+          <button type="button" class="secondary" data-abyss-buy-shift>淵砂×${v.tideShiftCost}</button>
+          <button type="button" class="primary" data-act="open-tide-shift" ${(v.tideShiftHave || 0) < 1 ? "disabled" : ""}>使用</button>
+        </div>
+      </li>
       ${cosRows}
     </ul>`;
 }
@@ -4810,7 +4859,33 @@ function bind() {
       if (btn.disabled) return;
       const id = btn.dataset.useItem;
       if (!id) return;
+      if (id === "tide_shift_charm") {
+        tideShiftModal = { source: "bag" };
+        render();
+        return;
+      }
       const r = useBagItem(state, id);
+      saveState(state);
+      render();
+      setFlash(r.msg || "");
+    });
+  });
+  app.querySelectorAll("[data-tide-shift-pet]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const uid = btn.dataset.tideShiftPet;
+      if (!uid) return;
+      const r = useTideShiftCharm(state, uid);
+      if (r.ok) tideShiftModal = null;
+      saveState(state);
+      render();
+      setFlash(r.msg || "");
+    });
+  });
+  app.querySelectorAll("[data-abyss-buy-shift]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = buyAbyssTideShiftCharm(state);
       saveState(state);
       render();
       setFlash(r.msg || "");
@@ -4942,6 +5017,16 @@ function bind() {
         render();
       } else if (act === "close-release-modal") {
         releaseModal = null;
+        render();
+      } else if (act === "close-tide-shift-modal") {
+        tideShiftModal = null;
+        render();
+      } else if (act === "open-tide-shift") {
+        if (Math.floor(state.items?.tide_shift_charm || 0) < 1) {
+          setFlash("沒有潮轉符。");
+          return;
+        }
+        tideShiftModal = { source: "abyss" };
         render();
       } else if (act === "confirm-release") {
         if (!releaseModal?.uids?.length) return;

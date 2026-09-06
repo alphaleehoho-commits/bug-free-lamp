@@ -154,6 +154,8 @@ import {
   RANCH_CAP_BONUS_MAX,
   HATCH_SLOT_BASE,
   HATCH_SLOT_BONUS_MAX,
+  ABYSS_TIDE_SHIFT_COST,
+  ELEMENTS,
   OFFLINE_HINT_SEC,
   OFFLINE_BANK_CAP_SEC,
   releaseSoulGain,
@@ -242,6 +244,8 @@ import {
   buyAbyssInsurance,
   buyAbyssCosmetic,
   buyAbyssEgg,
+  buyAbyssTideShiftCharm,
+  useTideShiftCharm,
   ranchCap,
   hatchSlotCap,
   useBagItem,
@@ -315,9 +319,11 @@ assert(bestiaryTotal() === 2640, "bestiary 48×5×11");
 assert(Object.keys(PERSONALITIES).length === 20, "20 personalities");
 assert(ranchCapForStage(0) === 6 && ranchCapForStage(5) === 21, "ranch cap 6+stage*3");
 assert(ITEMS.ranch_fence?.name === "欄柵" && ITEMS.hatch_nest_token?.name === "暖巢箋", "bag items defined");
-assert(ITEM_IDS.length === 2, "two bag consumables");
+assert(ITEMS.tide_shift_charm?.name === "潮轉符" && ITEMS.tide_shift_charm?.needsTarget, "tide shift charm defined");
+assert(ITEM_IDS.length === 3, "three bag consumables");
 assert(HATCH_SLOT_BASE === 3 && HATCH_SLOT_BONUS_MAX === 3, "hatch slot base+bonus");
 assert(RANCH_CAP_BONUS_MAX === 12, "ranch fence bonus max");
+assert(ABYSS_TIDE_SHIFT_COST >= 1, "abyss tide shift grit cost");
 {
   const bagSt = {
     realm: 0,
@@ -346,6 +352,67 @@ assert(RANCH_CAP_BONUS_MAX === 12, "ranch fence bonus max");
     itemBonus: { ranchCap: 0, hatchSlots: 0 },
   });
   assert(view.find((i) => i.id === "ranch_fence")?.canUse, "itemsView canUse fence");
+}
+/* Pack E: 潮轉符 — permanent random element change */
+{
+  const pet = {
+    uid: "shift1",
+    name: "潮礁狐",
+    speciesId: "reefox",
+    speciesName: "礁狐",
+    elementId: "tide",
+    elementName: "潮",
+    personalityId: "fierce",
+    personalityName: "兇猛",
+    atk: 20,
+    hp: 100,
+    spd: 12,
+    level: 3,
+    genes: { species: "reefox", element: "tide", personality: "fierce" },
+  };
+  const ranchPet = {
+    ...pet,
+    uid: "shift2",
+    elementId: "flame",
+    elementName: "焰",
+    name: "焰礁狐",
+    genes: { species: "reefox", element: "flame", personality: "fierce" },
+  };
+  const shiftSt = {
+    pets: [pet],
+    ranch: [ranchPet],
+    items: { ...emptyItems(), tide_shift_charm: 2 },
+    materials: { ...emptyMaterials(), abyss_grit: ABYSS_TIDE_SHIFT_COST + 5 },
+    bestiary: {},
+    abyssDive: emptyAbyssDive(),
+    log: [],
+  };
+  assert(!useBagItem(shiftSt, "tide_shift_charm").ok, "tide shift needs target");
+  assert(useBagItem(shiftSt, "tide_shift_charm").needsTarget, "tide shift needsTarget flag");
+  const r1 = useTideShiftCharm(shiftSt, "shift1");
+  assert(r1.ok && r1.fromElement === "tide" && r1.toElement !== "tide", "party pet element changed");
+  assert(shiftSt.pets[0].elementId === r1.toElement, "pet record elementId persisted");
+  assert(shiftSt.pets[0].elementName === ELEMENTS[r1.toElement].name, "elementName updated");
+  assert(shiftSt.pets[0].genes.element === r1.toElement, "genes.element updated");
+  assert(shiftSt.items.tide_shift_charm === 1, "charm consumed");
+  assert(shiftSt.pets[0].name.startsWith(ELEMENTS[r1.toElement].name), "name prefix updated");
+  const beforeRanchEl = shiftSt.ranch[0].elementId;
+  const r2 = useBagItem(shiftSt, "tide_shift_charm", "shift2");
+  assert(r2.ok && shiftSt.ranch[0].elementId !== beforeRanchEl, "ranch pet via useBagItem");
+  assert(shiftSt.items.tide_shift_charm === 0, "second charm consumed");
+  assert(!useTideShiftCharm(shiftSt, "shift1").ok, "empty charm fails");
+  const buy = buyAbyssTideShiftCharm(shiftSt);
+  assert(buy.ok && shiftSt.items.tide_shift_charm === 1, "buy charm with grit");
+  assert(
+    Math.floor(shiftSt.materials.abyss_grit) === 5,
+    "grit spent for charm"
+  );
+  /* persist via save/load */
+  const saved = JSON.parse(JSON.stringify(shiftSt.pets[0]));
+  assert(saved.elementId === shiftSt.pets[0].elementId, "element survives serialize");
+  const iv = itemsView(shiftSt);
+  assert(iv.find((i) => i.id === "tide_shift_charm")?.needsTarget, "itemsView needsTarget");
+  assert(iv.find((i) => i.id === "tide_shift_charm")?.canUse, "itemsView canUse charm");
 }
 assert(RANCH_IDLE_GLOBAL_MULT === 0.35, "idle global mult");
 assert(DISPATCH_GEN_REWARD_MULT[3] === 1.25, "gen3 dispatch mult");
@@ -2323,6 +2390,10 @@ assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
 assert(uiSrc2.includes('id: "bag"'), "ui bag sub-tab");
 assert(uiSrc2.includes("data-bag-inner"), "ui bag inner mats/items tabs");
 assert(uiSrc2.includes("data-use-item"), "ui use bag item");
+assert(uiSrc2.includes("tideShiftModal"), "ui tide shift pet picker");
+assert(uiSrc2.includes("data-tide-shift-pet"), "ui tide shift target");
+assert(uiSrc2.includes("data-abyss-buy-shift"), "ui abyss buy tide shift");
+assert(uiSrc2.includes("潮轉符"), "ui tide shift copy");
 assert(uiSrc2.includes("背包"), "ui bag label");
 assert(uiSrc2.includes("hatchSlotCap"), "ui exposes hatch slot cap");
 assert(uiSrc2.includes('id: "hatch"'), "ui hatch party sub-tab");
@@ -2338,6 +2409,8 @@ assert(!uiSrc2.includes('id: "mats"'), "ui materials tab renamed to bag");
 const dataSrcBag = readFileSync(join(__dir, "data.js"), "utf8");
 assert(dataSrcBag.includes("欄柵") && dataSrcBag.includes("暖巢箋"), "data bag item copy");
 assert(dataSrcBag.includes("ranch_fence") && dataSrcBag.includes("hatch_nest_token"), "data bag item ids");
+assert(dataSrcBag.includes("tide_shift_charm") && dataSrcBag.includes("潮轉符"), "data tide shift charm");
+assert(dataSrcBag.includes("ABYSS_TIDE_SHIFT_COST"), "data abyss tide shift cost");
 assert(!uiSrc2.includes("br.items.slice(0, 6)"), "ui breakthrough checklist shows all gates");
 assert(!uiSrc2.includes("gateCompact"), "ui no truncated gateCompact list");
 assert(uiSrc2.includes("breakthrough-gates"), "ui breakthrough gates list class");
@@ -2558,6 +2631,10 @@ assert(Object.keys(ABYSS_MERCHANT_BUFFS).length >= 3, "merchant buffs");
   assert(abyssSt.abyssDive.cosmetics.veil_mark, "cosmetic owned");
   const eggR = buyAbyssEgg(abyssSt);
   assert(eggR.ok && eggR.egg?.source === "abyss_dive", "buy abyss egg");
+  const gritBeforeCharm = Math.floor(abyssSt.materials.abyss_grit || 0);
+  const charmBuy = buyAbyssTideShiftCharm(abyssSt);
+  assert(charmBuy.ok && abyssSt.items.tide_shift_charm >= 1, "buy tide shift charm in abyss shop");
+  assert(Math.floor(abyssSt.materials.abyss_grit) === gritBeforeCharm - ABYSS_TIDE_SHIFT_COST, "charm grit cost");
   assert(TRAIN_SITES.every((s) => !(s.drops || []).some((d) => d.mat === "abyss_grit")), "train drops no grit");
 }
 assert(uiSrc2.includes("abyssDiveView"), "ui abyss view");
@@ -2775,6 +2852,7 @@ assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize
       soulShopOfferById("ranch_fence")?.grant?.items?.ranch_fence === 1,
     "item offer hatch/fence"
   );
+  assert(soulShopOfferById("tide_shift_charm")?.grant?.items?.tide_shift_charm === 1, "soul shop tide shift");
   const soulShopSt = {
     materials: { ...emptyMaterials(), soul_essence: 120 },
     feed: 10,
