@@ -2914,6 +2914,29 @@ function petRow(p, extraBtn = "", tagHtml = "") {
     </li>`;
 }
 
+/** 密集揀寵卡（繁殖／派遣／融合）：兩欄緊湊＋星標／上鎖 */
+function petPickCard(p, opts = {}) {
+  const selected = !!opts.selected;
+  const disabled = !!opts.disabled;
+  const btnLabel = opts.btnLabel || (selected ? "已選" : "選擇");
+  const btnAttr = opts.btnAttr || "";
+  const meta = opts.meta || "";
+  const btnClass = opts.btnClass || (selected ? "primary" : "secondary");
+  const starCls = p.starred ? " is-starred" : "";
+  const lockCls = p.locked ? " is-locked-pet" : "";
+  return `
+    <li class="pet-pick-card${selected ? " is-selected" : ""}${disabled ? " is-disabled" : ""}${starCls}${lockCls}">
+      <div class="pet-pick-top">
+        ${petIconFromPet(p, { size: 24 })}
+        <div class="pet-pick-title">
+          <strong>${escapeHtml(displayPetName(p))}</strong>${petFlagTags(p)}
+        </div>
+      </div>
+      <span class="muted">${meta}</span>
+      <button type="button" class="${btnClass}" ${btnAttr} ${disabled ? "disabled" : ""}>${btnLabel}</button>
+    </li>`;
+}
+
 function dispatchModalHtml() {
   if (!dispatchModal) return "";
   const dv = dispatchView(state);
@@ -2930,24 +2953,24 @@ function dispatchModalHtml() {
       .map((p) => {
         const selected = pick.has(p.uid);
         const match = petMatchesDispatchMission(p, mission);
-        return `
-        <li class="card-row">
-          <div>
-            <strong>${escapeHtml(displayPetName(p))}</strong>
-            <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · 攻${fmtInt(p.atk)} 血${fmtInt(p.hp)}${match ? "" : " · 唔符合限制"}</span>
-          </div>
-          <button type="button" class="${selected ? "primary" : "secondary"}" data-dispatch-pick="${escapeHtml(p.uid)}" ${match ? "" : "disabled"}>${selected ? "已選" : match ? "選擇" : "不符"}</button>
-        </li>`;
+        const r = rarityInfo(p.rarity ?? 0);
+        return petPickCard(p, {
+          selected,
+          disabled: !match,
+          btnLabel: selected ? "已選" : match ? "選擇" : "不符",
+          btnAttr: `data-dispatch-pick="${escapeHtml(p.uid)}"`,
+          meta: `<span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(p.elementName)} · 攻${fmtInt(p.atk)}${match ? "" : " · 唔符合"}`,
+        });
       })
-      .join("") || `<li class="empty">牧場無可派遣靈寵（需撤回出戰或等派遣歸來）。</li>`;
+      .join("") || `<li class="empty pet-pick-empty">牧場無可派遣靈寵（需撤回出戰或等派遣歸來）。</li>`;
   return `
     <div class="sheet-overlay" role="presentation" data-live="dispatch-modal">
-      <div class="sheet-card" role="dialog" aria-label="選擇派遣靈寵" data-sheet-card>
+      <div class="sheet-card pet-pick-sheet" role="dialog" aria-label="選擇派遣靈寵" data-sheet-card>
         <div class="sheet-handle" aria-hidden="true"></div>
         <h3>${escapeHtml(mission.name)}</h3>
         <p class="meta">${escapeHtml(mission.desc)}${reqLabel ? ` · ${escapeHtml(reqLabel)}` : ""} · 需 ${need} 隻 · 已選 ${pick.size}/${need}</p>
-        <ul class="list">${rows}</ul>
-        <div class="row">
+        <ul class="pet-pick-grid">${rows}</ul>
+        <div class="row pet-pick-actions">
           <button type="button" class="secondary" data-act="close-dispatch-modal">取消</button>
           <button type="button" class="primary" data-act="confirm-dispatch" ${pick.size === need ? "" : "disabled"}>派出</button>
         </div>
@@ -3389,22 +3412,17 @@ function petsBreedView() {
         const on = selected.has(p.uid);
         const mating = matingBusy.has(p.uid);
         const r = rarityInfo(p.rarity ?? 0);
-        return `
-        <li class="card-row">
-          <div>
-            <strong>${escapeHtml(displayPetName(p))}</strong>
-            <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
-              petGeneration(p)
-            )} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}${
-              mating ? " · 交配中" : ""
-            }</span>
-          </div>
-          <button type="button" class="${on ? "primary" : "secondary"}" data-breed-toggle="${escapeHtml(p.uid)}" ${
-            mating && !on ? "disabled" : ""
-          }>${mating ? "交配中" : on ? "已選" : "加入交配"}</button>
-        </li>`;
+        return petPickCard(p, {
+          selected: on,
+          disabled: mating && !on,
+          btnLabel: mating ? "交配中" : on ? "已選" : "加入交配",
+          btnAttr: `data-breed-toggle="${escapeHtml(p.uid)}"`,
+          meta: `<span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
+            petGeneration(p)
+          )} · ${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}${mating ? " · 交配中" : ""}`,
+        });
       })
-      .join("") || `<li class="empty">牧場需要待命靈寵才能交配（派遣中不可用）。</li>`;
+      .join("") || `<li class="empty pet-pick-empty">牧場需要待命靈寵才能交配（派遣中不可用）。</li>`;
 
   const preview = pa && pb ? breedPreview(pa, pb) : null;
   const unitMat =
@@ -3442,7 +3460,7 @@ function petsBreedView() {
       <p class="sweep-label">約 ${cycleSec * batch}s · ${stoneNeed} 石${batch > 1 ? ` · 可中途領蛋` : ""}</p>
     </div>
     <h3>待命靈寵</h3>
-    <ul class="list breed-pet-list">${list}</ul>`;
+    <ul class="pet-pick-grid breed-pet-list">${list}</ul>`;
   const dock = `<div class="row">
       <button type="button" class="primary${tutGlow({ type: "act", act: "start-breed" })}" data-breed-confirm data-breed-count="${batch}" ${canStart ? "" : "disabled"}>開始交配×${batch}（${selected.size}/2）</button>
     </div>`;
@@ -3854,24 +3872,24 @@ function petsFuseView() {
     owned
       .map((p) => {
         const on = selected.has(p.uid);
-        return `
-        <li class="card-row">
-          <div>
-            <strong>${escapeHtml(p.name)}</strong>
-            <span class="muted">素材（等級不計）· 融${p.fusionLevel ?? 0} · 攻${p.atk} 血${p.hp} 速${p.spd}</span>
-          </div>
-          <button type="button" class="${on ? "primary" : ""}" data-fuse-toggle="${escapeHtml(p.uid)}">${on ? "已選" : "選擇"}</button>
-        </li>`;
+        const r = rarityInfo(p.rarity ?? 0);
+        return petPickCard(p, {
+          selected: on,
+          btnLabel: on ? "已選" : "選擇",
+          btnClass: on ? "primary" : "secondary",
+          btnAttr: `data-fuse-toggle="${escapeHtml(p.uid)}"`,
+          meta: `<span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · 素材 · 融${p.fusionLevel ?? 0} · 攻${fmtInt(p.atk)}`,
+        });
       })
       .join("") ||
-    `<li class="empty">沒有同種族（${escapeHtml(base.speciesName)}）可作素材。</li>`;
+    `<li class="empty pet-pick-empty">沒有同種族（${escapeHtml(base.speciesName)}）可作素材。</li>`;
 
   const ready = lvOk && selected.size === needMats;
   return wrapStage(
     "",
     `<h2>融合 · 融階 ${target}</h2>
     <p class="lead">主體 ${escapeHtml(base.name)} Lv.${baseLv}${lvOk ? "" : `（需 ≥${needLv}）`} · 已選素材 ${selected.size}/${needMats} · 耗 ${cost} 靈石 · 結果繼承主體等級</p>
-    <ul class="list">${mats}</ul>`,
+    <ul class="pet-pick-grid fuse-mat-list">${mats}</ul>`,
     `<div class="row">
       <button type="button" class="primary" data-fuse-confirm ${ready ? "" : "disabled"}>確認融合</button>
       <button type="button" data-pet-detail="${escapeHtml(base.uid)}">返回詳情</button>

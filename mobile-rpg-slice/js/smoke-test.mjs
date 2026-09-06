@@ -2746,6 +2746,20 @@ assert(!uiSrc2.includes("確定放歸？將返還部分靈石"), "ui no browser 
 assert(cssSrc.includes("release-modal"), "css release modal");
 assert(cssSrc.includes("pet-tag-star"), "css star tag");
 assert(cssSrc.includes("pet-tag-lock"), "css lock tag");
+
+/* Pack B: dense pet pickers (~30) — 2-col grids + sticky ranch filters */
+assert(uiSrc2.includes("petPickCard"), "ui petPickCard helper");
+assert(uiSrc2.includes("pet-pick-grid"), "ui pet-pick-grid class");
+assert(uiSrc2.includes("pet-pick-sheet"), "ui dispatch pick sheet");
+assert(uiSrc2.includes("breed-pet-list"), "ui breed standby list");
+assert(uiSrc2.includes("fuse-mat-list"), "ui fuse material list");
+assert(uiSrc2.includes("petFlagTags(p)"), "ui pickers show star/lock tags");
+assert(cssSrc.includes(".pet-pick-grid"), "css pet-pick-grid");
+assert(cssSrc.includes(".pet-pick-card"), "css pet-pick-card");
+assert(/\.pet-pick-grid\s*\{[^}]*grid-template-columns:\s*1fr\s+1fr/s.test(cssSrc), "css pet-pick 2-col");
+assert(/\.pet-grid\s*\{[^}]*grid-template-columns:\s*1fr\s+1fr/s.test(cssSrc), "css ranch pet-grid 2-col");
+assert(/\.ranch-sort\s*\{[^}]*position:\s*sticky/s.test(cssSrc), "css ranch-sort sticky");
+assert(cssSrc.includes("pet-pick-sheet"), "css pet-pick-sheet");
 const engineSrcPackA = readFileSync(join(__dir, "engine.js"), "utf8");
 assert(engineSrcPackA.includes("next.starred = !!next.starred"), "engine normalize starred");
 assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize locked");
