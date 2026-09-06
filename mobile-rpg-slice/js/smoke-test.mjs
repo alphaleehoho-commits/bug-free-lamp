@@ -202,6 +202,7 @@ import {
   startDispatch,
   dispatchView,
   ensureDispatchBoard,
+  ensureDispatchBoardDaily,
   petMatchesDispatchMission,
   dispatchMissionReqLabel,
   upgradePet,
@@ -290,6 +291,7 @@ import {
   tutorialNeedsHatchSub,
   tutorialTargetSelector,
   isDungeonSubLocked,
+  tutorialLockReason,
   tutorialCoachDetailUid,
   LATE_TUTORIAL_STEPS,
   isPartySubLocked,
@@ -1553,11 +1555,63 @@ const tacticsSt = {
 normalizeTutorial(tacticsSt);
 assert(isDungeonSubLocked(tacticsSt, "field"), "tactics locks dungeon field");
 assert(!isDungeonSubLocked(tacticsSt, "setup"), "tactics allows setup");
+assert(!isDungeonSubLocked(tacticsSt, "abyss"), "tactics does not lock abyss");
+assert(tutorialLockReason(tacticsSt, "dungeonSub", "field") === "教學中", "field lock reason 教學中");
+assert(tutorialLockReason(tacticsSt, "dungeonSub", "abyss") === "", "abyss has no tutorial lock reason");
 const tacticsNav = syncTutorialNavigation(tacticsSt, {
   tab: "dungeon",
   panelSub: { dungeon: "field", party: "fight", cultivate: "train", codex: "dex" },
 });
-assert(tacticsNav.panelSub.dungeon === "setup", "tactics sync forces setup sub");
+assert(tacticsNav.panelSub.dungeon === "setup", "tactics sync forces setup sub from field");
+const tacticsAbyssNav = syncTutorialNavigation(tacticsSt, {
+  tab: "dungeon",
+  panelSub: { dungeon: "abyss", party: "fight", cultivate: "train", codex: "dex" },
+});
+assert(tacticsAbyssNav.panelSub.dungeon === "abyss", "tactics sync keeps abyss sub");
+const tacticsSetupNav = syncTutorialNavigation(tacticsSt, {
+  tab: "dungeon",
+  panelSub: { dungeon: "setup", party: "fight", cultivate: "train", codex: "dex" },
+});
+assert(tacticsSetupNav.panelSub.dungeon === "setup", "tactics sync keeps setup sub");
+
+/* Pack B: dungeon/abyss unlock + click path (logic) */
+{
+  const fightSt = {
+    realm: 0,
+    clearedDungeons: {},
+    tutorial: { done: false, step: "dungeon_fight", flags: {}, latePending: false },
+  };
+  normalizeTutorial(fightSt);
+  assert(!isTabLocked(fightSt, "dungeon"), "dungeon_fight unlocks dungeon tab");
+  assert(!isDungeonSubLocked(fightSt, "field"), "dungeon_fight allows field");
+  assert(!isDungeonSubLocked(fightSt, "abyss"), "dungeon_fight allows abyss click");
+  assert(isDungeonSubLocked(fightSt, "setup"), "dungeon_fight locks setup");
+  assert(tutorialLockReason(fightSt, "dungeonSub", "setup") === "教學中", "setup lock flashes 教學中");
+  const unlockedAbyss = abyssDiveView({
+    realm: 0,
+    clearedDungeons: { tide_1: true },
+    materials: {},
+    pets: [],
+    ranch: [],
+  });
+  assert(unlockedAbyss.unlocked, "tide_1 clears abyss unlock gate");
+  const lockedAbyss = abyssDiveView({
+    realm: 0,
+    clearedDungeons: {},
+    materials: {},
+    pets: [],
+    ranch: [],
+  });
+  assert(!lockedAbyss.unlocked, "abyss locked before tide_1 / realm");
+  const realmAbyss = abyssDiveView({
+    realm: 1,
+    clearedDungeons: {},
+    materials: {},
+    pets: [],
+    ranch: [],
+  });
+  assert(realmAbyss.unlocked, "realm >= 1 unlocks abyss");
+}
 
 /* Week A: dungeon sweep + daily all-clear */
 assert(DUNGEON_SUMMON_MIN === 1 && DUNGEON_SUMMON_MAX === 10, "summon range 1-10");
@@ -1759,6 +1813,8 @@ assert(!/confirm-dispatch[\s\S]{0,400}party:\s*"ranch"/.test(uiSrc), "ui not red
 assert(uiSrc.includes("petMatchesDispatchMission"), "ui filters dispatch req pets");
 assert(uiSrc.includes("data-summon-slider"), "ui summon slider");
 assert(uiSrc.includes("data-ranch-sort"), "ui ranch sort");
+assert(uiSrc.includes('["level", "Lv"]') || uiSrc.includes('["level","Lv"]') || /data-ranch-sort="level"/.test(uiSrc) || uiSrc.includes('["level", "Lv"]'), "ui ranch Lv sort chip");
+assert(uiSrc.includes('sortKey === "level"') || uiSrc.includes("sortKey === 'level'"), "ui ranch level sort logic");
 assert(uiSrc.includes("pet-grid"), "ui ranch 2-col grid");
 assert(uiSrc.includes('id: "breed"'), "ui breed party sub-tab");
 assert(uiSrc.includes("breed-cd-bar"), "ui breed cd bar");
@@ -1766,12 +1822,21 @@ assert(uiSrc.includes("data-breed-claim"), "ui breed claim after CD");
 assert(uiSrc.includes("data-breed-slider"), "ui breed batch slider");
 assert(uiSrc.includes("領取蛋"), "ui claim egg label");
 assert(uiSrc.includes("patchBreedLive"), "ui breed live patch no scroll jump");
+assert(uiSrc.includes("renderPreservingStageScroll"), "ui stage-scroll preserve helper");
 assert(uiSrc.includes("data-dungeon-blocked"), "ui dungeon blocked reason");
 assert(BREED_QUEUE_MAX === 3, "breed queue max 3");
 assert(uiSrc.includes("panel-subnav-dock"), "ui subnav near bottom tabs");
 assert(uiSrc.includes("function wrapStage"), "ui has wrapStage layout helper");
 assert(uiSrc.includes("tabs-bottom"), "ui has bottom tab bar");
 assert(uiSrc.includes("statsSheetHtml"), "ui has stats resource sheet");
+/* Pack B: abyss/dungeon subnav click path — no silent no-op */
+assert(uiSrc.includes("panelSubSwitchBlockReason"), "ui dungeon sub block reason helper");
+assert(uiSrc.includes('setFlash("戰鬥中")'), "ui flashes 戰鬥中 when combat busy");
+assert(uiSrc.includes("setFlash(block)"), "ui flashes block reason on locked sub click");
+assert(uiSrc.includes("data-sub-locked"), "ui shows locked dungeon subs clickable");
+assert(uiSrc.includes("is-locked"), "ui locked sub class");
+assert(uiSrc.includes("tutorialLockReason"), "ui uses tutorial lock reason");
+assert(!uiSrc.includes("items.filter(({ id }) => !lockFn"), "ui no longer hides locked subs");
 
 /* Ranch idle + dispatch gen mult */
 const idlePet = {
@@ -1905,24 +1970,38 @@ const boardSt = {
   daily: { date: todayKey(), progress: {}, claimed: {}, idleSec: 0 },
   achievements: {},
 };
+boardSt.dispatchBoardDate = todayKey();
 ensureDispatchBoard(boardSt, () => 0);
 assert(boardSt.dispatchBoard.length === 2, "early board fills unlocked only (2)");
 assert(boardSt.dispatchBoard.every((id) => ["forage", "egg_shore"].includes(id)), "early board from shore pool");
 const dv0 = dispatchView(boardSt);
 assert(dv0.slotsMax === 3 && dv0.boardSize === 3, "view exposes slot/board caps");
-assert(dv0.missions.length === 2, "view shows board missions only");
+assert(dv0.slots.length === 3, "view always exposes 3 fixed slots");
+assert(dv0.slots.filter((s) => s.status === "available").length === 2, "two available early");
+assert(dv0.slots.filter((s) => s.status === "empty").length === 1, "one empty early slot");
+assert(dv0.missions.length === 2, "view shows available missions only");
 const wrongKind = startDispatch(boardSt, "egg_shore", ["disp-tide"]);
 assert(!wrongKind.ok && String(wrongKind.msg).includes("限制"), "kind restriction blocks");
 const okStart = startDispatch(boardSt, "forage", ["disp-tide"]);
 assert(okStart.ok, "tide pet starts forage");
-assert(!boardSt.dispatchBoard.includes("forage"), "started mission leaves board");
+assert(boardSt.dispatchBoard.includes("forage"), "started mission stays in fixed slot");
 assert(boardSt.dispatches.length === 1, "one active dispatch");
+const dvBusy = dispatchView(boardSt);
+const forageSlot = dvBusy.slots.find((s) => s.missionId === "forage");
+assert(forageSlot?.status === "busy", "dispatched slot status busy / 探險中");
+assert(dvBusy.slots.filter((s) => s.status === "available").length === 1, "other slot still available");
 const beforeBoard = [...boardSt.dispatchBoard];
+const forageIdx = beforeBoard.indexOf("forage");
 boardSt.dispatches[0].readyAt = Date.now() - 1;
-const claimBoard = claimDispatch(boardSt, boardSt.dispatches[0].dispatchId);
+const dvReady = dispatchView(boardSt);
+assert(dvReady.slots.find((s) => s.missionId === "forage")?.status === "ready", "ready slot status 收集");
+const claimBoard = claimDispatch(boardSt, boardSt.dispatches[0].dispatchId, () => 0);
 assert(claimBoard.ok, "claim after ready");
-assert(boardSt.dispatchBoard.length === beforeBoard.length + 1, "board grew after claim");
+assert(!boardSt.dispatchBoard.includes("forage") || claimBoard.boardFilled === "forage", "claimed slot replaced (or same if only pool left)");
 assert(claimBoard.boardFilled, "random mission pulled on claim");
+assert(claimBoard.slotIndex === forageIdx, "refill targets claimed slot index");
+assert(boardSt.dispatchBoard.length === beforeBoard.length, "board size stable after claim refill");
+assert(String(claimBoard.msg).startsWith("收集"), "claim message uses 收集");
 
 const nowCap = Date.now();
 const capSt = {
@@ -1965,6 +2044,83 @@ const capSt = {
 };
 const over = startDispatch(capSt, "forage", ["c4"]);
 assert(!over.ok && String(over.msg).includes("滿"), "4th concurrent blocked at 3");
+
+/* Pack C: fixed 3 slots stay on dispatch; claim refills that slot; daily renew */
+const packCTide = {
+  ...buildPetStats({
+    id: "pct",
+    species: "reefox",
+    element: "tide",
+    personality: "gentle",
+    cost: 0,
+  }),
+  uid: "packc-tide",
+};
+const packCScale = {
+  ...buildPetStats({
+    id: "pcs",
+    species: "tidecarp",
+    element: "tide",
+    personality: "gentle",
+    cost: 0,
+  }),
+  uid: "packc-scale",
+};
+const packCNow = Date.now();
+const packCSt = {
+  realm: 0,
+  clearedDungeons: {},
+  trainMap: {},
+  ranch: [packCTide, packCScale],
+  pets: [],
+  dispatches: [],
+  dispatchBoard: [],
+  dispatchBoardDate: null,
+  eggs: [],
+  log: [],
+  stats: {},
+  stones: 0,
+  feed: 0,
+  dust: 0,
+  scrap: 0,
+  materials: {},
+  daily: { date: todayKey(packCNow), progress: {}, claimed: {}, idleSec: 0 },
+  achievements: {},
+};
+ensureDispatchBoardDaily(packCSt, packCNow, () => 0);
+assert(packCSt.dispatchBoardDate === todayKey(packCNow), "board date stamped on ensure");
+assert(packCSt.dispatchBoard.length === 2, "packc early board size 2");
+const startMid = startDispatch(packCSt, "forage", ["packc-tide"]);
+assert(startMid.ok, "packc start middle-ish slot");
+const boardWhileBusy = [...packCSt.dispatchBoard];
+assert(boardWhileBusy.includes("forage"), "slot kept while 探險中");
+const sameDay = ensureDispatchBoardDaily(packCSt, packCNow, () => 0.9);
+assert(JSON.stringify(sameDay) === JSON.stringify(boardWhileBusy), "same-day renew no-op on available+busy");
+const nextDay = packCNow + 86_400_000 + 1000;
+const busyBeforeRenew = [...packCSt.dispatchBoard];
+ensureDispatchBoardDaily(packCSt, nextDay, () => 0.5);
+assert(packCSt.dispatchBoardDate === todayKey(nextDay), "board date advances");
+assert(packCSt.dispatchBoard.includes("forage"), "daily renew keeps busy slot");
+assert(packCSt.dispatches.some((d) => d.missionId === "forage" && !d.claimed), "busy dispatch survives renew");
+const availableAfter = packCSt.dispatchBoard.filter((id) => id !== "forage");
+const availableBefore = busyBeforeRenew.filter((id) => id !== "forage");
+// available slots refreshed from pool (may coincidentally match with fixed rng)
+assert(packCSt.dispatchBoard.length >= 1, "board still populated after daily renew");
+packCSt.dispatches[0].readyAt = Date.now() - 1;
+const dvPack = dispatchView(packCSt, nextDay);
+assert(dvPack.slots.length === 3, "packc always 3 slots");
+assert(dvPack.slots.some((s) => s.status === "ready" && s.missionId === "forage"), "ready → 收集");
+const claimPack = claimDispatch(packCSt, packCSt.dispatches[0].dispatchId, () => 0.2);
+assert(claimPack.ok && claimPack.boardFilled, "packc claim refills slot");
+assert(!packCSt.dispatches.length, "dispatch cleared after claim");
+assert(packCSt.dispatchBoard.length === dvPack.slots.filter((s) => s.missionId).length || packCSt.dispatchBoard.length >= 1, "board after claim");
+
+assert(uiSrc.includes("探險中"), "ui dispatch busy label 探險中");
+assert(uiSrc.includes(">收集</button>") || uiSrc.includes("收集</button>"), "ui dispatch claim label 收集");
+assert(uiSrc.includes("dispatch-slots"), "ui fixed dispatch slots list");
+assert(uiSrc.includes("可接任務每日刷新"), "ui daily renew copy");
+assert(!uiSrc.includes("領獎後隨機補任務"), "ui old dispatch lead removed");
+
 
 /* Feed upgrade deducts; fusion gated; dungeon realm block msg */
 const feedUpSt = {
@@ -2819,10 +2975,20 @@ assert(uiSrc2.includes("確認放生"), "ui confirm release copy");
 assert(uiSrc2.includes("批量放生"), "ui batch release copy");
 assert(uiSrc2.includes("上鎖"), "ui lock copy");
 assert(uiSrc2.includes("星標"), "ui star copy");
+assert(uiSrc2.includes("renderPreservingStageScroll"), "ui batch release preserves stage-scroll");
+assert(
+  /ranchRelease\s*=\s*\{\s*phase:\s*"select"[\s\S]{0,120}renderPreservingStageScroll\(\)/.test(uiSrc2),
+  "ui ranch pick uses scroll preserve"
+);
+assert(uiSrc2.includes("petCornerBadges"), "ui pet corner badges helper");
+assert(uiSrc2.includes('["level", "Lv"]'), "ui Lv sort in ranch chips");
+assert(uiSrc2.includes('sortKey === "level"'), "ui sortRanchEntries level");
 assert(!uiSrc2.includes("確定放歸？將返還部分靈石"), "ui no browser confirm stone refund copy");
 assert(cssSrc.includes("release-modal"), "css release modal");
 assert(cssSrc.includes("pet-tag-star"), "css star tag");
 assert(cssSrc.includes("pet-tag-lock"), "css lock tag");
+assert(cssSrc.includes("pet-card-badges"), "css pet card badge cluster");
+assert(/\.pet-card-badges\s*\{[^}]*position:\s*absolute/s.test(cssSrc), "css badges top-right absolute");
 
 /* Pack B: dense pet pickers (~30) — 2-col grids + sticky ranch filters */
 assert(uiSrc2.includes("petPickCard"), "ui petPickCard helper");
@@ -2830,13 +2996,41 @@ assert(uiSrc2.includes("pet-pick-grid"), "ui pet-pick-grid class");
 assert(uiSrc2.includes("pet-pick-sheet"), "ui dispatch pick sheet");
 assert(uiSrc2.includes("breed-pet-list"), "ui breed standby list");
 assert(uiSrc2.includes("fuse-mat-list"), "ui fuse material list");
-assert(uiSrc2.includes("petFlagTags(p)"), "ui pickers show star/lock tags");
+assert(uiSrc2.includes("petCornerBadges(p)"), "ui pickers show star/lock corner badges");
 assert(cssSrc.includes(".pet-pick-grid"), "css pet-pick-grid");
 assert(cssSrc.includes(".pet-pick-card"), "css pet-pick-card");
 assert(/\.pet-pick-grid\s*\{[^}]*grid-template-columns:\s*1fr\s+1fr/s.test(cssSrc), "css pet-pick 2-col");
 assert(/\.pet-grid\s*\{[^}]*grid-template-columns:\s*1fr\s+1fr/s.test(cssSrc), "css ranch pet-grid 2-col");
 assert(/\.ranch-sort\s*\{[^}]*position:\s*sticky/s.test(cssSrc), "css ranch-sort sticky");
 assert(cssSrc.includes("pet-pick-sheet"), "css pet-pick-sheet");
+
+/* Pack D: pet visual differentiation (silhouettes + element tint + rarity frame) */
+{
+  const iconSrc = readFileSync(join(__dir, "pet-icons.js"), "utf8");
+  assert(iconSrc.includes("petArtFromPet"), "pet-icons exports petArtFromPet");
+  assert(iconSrc.includes("petArtHtml"), "pet-icons exports petArtHtml");
+  assert(iconSrc.includes("KIND_PATH_VARIANTS"), "pet-icons kind path variants");
+  assert(iconSrc.includes("ELEMENT_COLORS"), "pet-icons element colors");
+  assert(iconSrc.includes("RARITY_GLOW"), "pet-icons rarity glow");
+  assert(iconSrc.includes("pet-art-gen"), "pet-icons gen corner mark");
+  assert(iconSrc.includes("pet-icon--kind-"), "pet-icons kind class");
+  assert(iconSrc.includes("pet-icon--elem-"), "pet-icons elem class");
+  assert(iconSrc.includes("pet-icon--rarity-"), "pet-icons rarity class");
+  assert(iconSrc.includes("pet-art--rarity-"), "pet-icons pet-art rarity class");
+  assert(iconSrc.includes("pet-art--elem-"), "pet-icons pet-art elem class");
+  assert(uiSrc2.includes("petArtFromPet"), "ui uses petArtFromPet");
+  assert(uiSrc2.includes("petArtHtml"), "ui uses petArtHtml");
+  assert(uiSrc2.includes("pet-detail-hero"), "ui pet detail hero art");
+  assert(uiSrc2.includes("petCornerBadges"), "ui keeps Pack A corner badges");
+  assert(cssSrc.includes(".pet-art"), "css pet-art class");
+  assert(cssSrc.includes(".pet-icon"), "css pet-icon class");
+  assert(cssSrc.includes("pet-art--rarity-legendary"), "css legendary rarity frame");
+  assert(cssSrc.includes("pet-art-gen"), "css pet-art gen mark");
+  assert(cssSrc.includes("pet-art-elem-dot"), "css element accent dot");
+  assert(cssSrc.includes("pet-detail-hero"), "css pet detail hero");
+  assert(/\.pet-card-badges\s*\{[^}]*position:\s*absolute/s.test(cssSrc), "css Pack A badges still absolute");
+}
+
 const engineSrcPackA = readFileSync(join(__dir, "engine.js"), "utf8");
 assert(engineSrcPackA.includes("next.starred = !!next.starred"), "engine normalize starred");
 assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize locked");

@@ -3694,7 +3694,8 @@ export function gearSetBonus(gearIds) {
 
 /**
  * 派遣任務。needElement／needKind 為派出限制（每隻派出寵都要符合）。
- * 可接列表由 DISPATCH_BOARD_SIZE 控制，完成領獎後再從解鎖池隨機補位。
+ * 固定 DISPATCH_BOARD_SIZE 個槽位：派出後槽位保留（探險中→收集），收集後先換該槽任務；
+ * 可接槽每日刷新。
  */
 export const DISPATCH_MISSIONS = [
   {
@@ -3821,10 +3822,10 @@ export const DISPATCH_MISSIONS = [
   },
 ];
 
-/** 同時進行中的派遣上限 */
+/** 同時進行中的派遣上限（＝固定槽位數） */
 export const DISPATCH_SLOT_MAX = 3;
 
-/** 可接任務板面額（解鎖池裡輪換；領獎後隨機補位） */
+/** 固定派遣槽位數（派出後佔槽；收集後換該槽；可接槽每日刷新） */
 export const DISPATCH_BOARD_SIZE = 3;
 
 /* ─── P9：潮印 soft prestige ─── */

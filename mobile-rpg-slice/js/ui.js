@@ -165,7 +165,7 @@ import {
   skillPowerMult,
   SECOND_SKILL_UNLOCK,
 } from "./data.js";
-import { petIconHtml, petIconFromPet } from "./pet-icons.js";
+import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
   tutorialActive,
   tutorialBannerHtml,
@@ -177,6 +177,7 @@ import {
   isCultivateSubLocked,
   isPartySubLocked,
   isDungeonSubLocked,
+  tutorialLockReason,
   areTrainSitesLocked,
   skipTutorial,
   tutorialQiReady,
@@ -256,7 +257,7 @@ let hatchClaimModal = null;
 let hatchEggFilter = "all";
 /** 背包內頁：材料 | 道具 */
 let bagInner = "mats";
-/** @type {"power" | "gen" | "rarity" | "element" | "status" | "star"} */
+/** @type {"power" | "gen" | "rarity" | "element" | "status" | "star" | "level"} */
 let ranchSort = "status";
 /** 牧場只顯示星標 */
 let ranchStarOnly = false;
@@ -301,7 +302,7 @@ trainRatesOpen = !!uiPrefsBoot.trainRatesOpen;
 if (uiPrefsBoot.bagInner === "items" || uiPrefsBoot.bagInner === "mats") {
   bagInner = uiPrefsBoot.bagInner;
 }
-if (["power", "gen", "rarity", "element", "status", "star"].includes(uiPrefsBoot.ranchSort)) {
+if (["power", "gen", "rarity", "element", "status", "star", "level"].includes(uiPrefsBoot.ranchSort)) {
   ranchSort = uiPrefsBoot.ranchSort;
 }
 ranchStarOnly = !!uiPrefsBoot.ranchStarOnly;
@@ -1162,8 +1163,14 @@ function stopPlayback() {
 }
 
 function switchTab(id) {
-  if (playback && !playback.done) return;
-  if (isTabLocked(state, id)) return;
+  if (playback && !playback.done) {
+    setFlash("戰鬥中");
+    return;
+  }
+  if (isTabLocked(state, id)) {
+    setFlash(tutorialLockReason(state, "tab", id) || "教學中");
+    return;
+  }
   tab = id;
   condSheetOpen = false;
   statsSheetOpen = false;
@@ -1215,21 +1222,42 @@ function markTutorialSubVisit(group, id) {
   }
 }
 
+function panelSubLockKind(group) {
+  if (group === "cultivate") return "cultivateSub";
+  if (group === "party") return "partySub";
+  if (group === "dungeon") return "dungeonSub";
+  return "";
+}
+
+function panelSubIsLocked(group, id) {
+  if (group === "cultivate") return isCultivateSubLocked(state, id);
+  if (group === "party") return isPartySubLocked(state, id);
+  if (group === "dungeon") return isDungeonSubLocked(state, id);
+  return false;
+}
+
+/** 子分頁切換阻擋原因；空＝可切 */
+function panelSubSwitchBlockReason(group, id) {
+  if (playback && !playback.done) return "戰鬥中";
+  if (panelSubIsLocked(group, id)) {
+    return tutorialLockReason(state, panelSubLockKind(group), id) || "教學中";
+  }
+  return "";
+}
+
 function panelSubNav(group, items) {
-  const lockFn =
-    group === "cultivate"
-      ? isCultivateSubLocked
-      : group === "party"
-        ? isPartySubLocked
-        : group === "dungeon"
-          ? isDungeonSubLocked
-          : () => false;
-  const visible = items.filter(({ id }) => !lockFn(state, id));
-  if (!visible.length) return "";
-  return `<nav class="panel-subnav" aria-label="子分頁">${visible
+  if (!items.length) return "";
+  return `<nav class="panel-subnav" aria-label="子分頁">${items
     .map(({ id, label }) => {
+      const locked = panelSubIsLocked(group, id);
       const glow = tutGlow({ type: "panel-sub", group, id });
-      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${glow}" data-panel-sub="${group}:${id}">${label}</button>`;
+      const hint = locked
+        ? tutorialLockReason(state, panelSubLockKind(group), id) || "教學中"
+        : "";
+      const title = hint ? ` title="${escapeHtml(hint)}"` : "";
+      return `<button type="button" class="${panelSub[group] === id ? "on" : ""}${
+        locked ? " is-locked" : ""
+      }${glow}" data-panel-sub="${group}:${id}" data-sub-locked="${locked ? "1" : "0"}"${title}>${label}</button>`;
     })
     .join("")}</nav>`;
 }
@@ -2836,6 +2864,34 @@ function petFlagTags(p) {
   return bits.join("");
 }
 
+/** 卡面右上角星標／上鎖徽章（牧場可撳；揀寵卡只顯示） */
+function petCornerBadges(p, opts = {}) {
+  const uid = escapeHtml(p.uid || p.templateId);
+  const star = p.starred ? "★" : "☆";
+  if (opts.interactive) {
+    return `<div class="pet-card-badges" aria-label="星標與上鎖">
+      <button type="button" class="pet-badge pet-badge-star${p.starred ? " on" : ""}" data-toggle-star="${uid}" aria-label="星標">${star}</button>
+      <button type="button" class="pet-badge pet-badge-lock${p.locked ? " on" : ""}" data-toggle-lock="${uid}" aria-label="上鎖">${
+        p.locked ? "🔒" : "🔓"
+      }</button>
+    </div>`;
+  }
+  const bits = [`<span class="pet-badge pet-badge-star${p.starred ? " on" : ""}" title="星標">${star}</span>`];
+  if (p.locked) bits.push(`<span class="pet-badge pet-badge-lock on" title="上鎖">🔒</span>`);
+  return `<div class="pet-card-badges">${bits.join("")}</div>`;
+}
+
+/** 全頁重繪時保留 .stage-scroll 位置（批量放生揀寵／繁殖·孵化 live patch） */
+function renderPreservingStageScroll() {
+  const scroller = document.querySelector(".stage-scroll");
+  const scrollTop = scroller?.scrollTop ?? 0;
+  render();
+  requestAnimationFrame(() => {
+    const again = document.querySelector(".stage-scroll");
+    if (again) again.scrollTop = scrollTop;
+  });
+}
+
 function petPowerScore(p) {
   return (p.atk || 0) * 2 + (p.hp || 0) + (p.spd || 0) + (p.level || 1) * 8 + (p.fusionLevel || 0) * 20;
 }
@@ -2864,6 +2920,9 @@ function sortRanchEntries(entries, sortKey) {
       if (d) return d;
     } else if (sortKey === "power") {
       const d = petPowerScore(pb) - petPowerScore(pa);
+      if (d) return d;
+    } else if (sortKey === "level") {
+      const d = (pb.level || 1) - (pa.level || 1);
       if (d) return d;
     } else {
       const d = (statusRank[a.kind] ?? 9) - (statusRank[b.kind] ?? 9);
@@ -2902,22 +2961,15 @@ function petGridCard(p, extraBtn = "", tagHtml = "", opts = {}) {
           }</button>`
         : `<button type="button" disabled>不可選</button>`
     : "";
-  const quick =
-    managing || opts.hideQuick
-      ? ""
-      : `<button type="button" class="ghost pet-quick-flag${p.starred ? " on" : ""}" data-toggle-star="${uid}" aria-label="星標">${
-          p.starred ? "★" : "☆"
-        }</button>
-        <button type="button" class="ghost pet-quick-flag${p.locked ? " on" : ""}" data-toggle-lock="${uid}" aria-label="上鎖">${
-          p.locked ? "鎖" : "開"
-        }</button>`;
+  const badges = managing || opts.hideQuick ? petCornerBadges(p) : petCornerBadges(p, { interactive: true });
   return `
     <li class="pet-card${selectCls}">
+      ${badges}
       <div class="pet-card-top">
-        ${petIconFromPet(p, { size: 28 })}
+        ${petArtFromPet(p, { size: 28, generation: g })}
         <div class="pet-card-title">
           <button type="button" class="linkish" data-pet-detail="${uid}" ${managing ? "disabled" : ""}><strong>${escapeHtml(title)}</strong></button>
-          ${tagHtml}${petFlagTags(p)}
+          ${tagHtml}
         </div>
       </div>
       <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""}</span>
@@ -2926,7 +2978,7 @@ function petGridCard(p, extraBtn = "", tagHtml = "", opts = {}) {
         ${
           managing
             ? selectBtn
-            : `<button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>${quick}${extraBtn}`
+            : `<button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>${extraBtn}`
         }
       </div>
     </li>`;
@@ -2942,7 +2994,7 @@ function petRow(p, extraBtn = "", tagHtml = "") {
   const detailGlow = tutGlow({ type: "pet-detail", uid: p.uid || p.templateId });
   return `
     <li class="card-row pet-row">
-      ${petIconFromPet(p, { size: 34 })}
+      ${petArtFromPet(p, { size: 34, generation: g })}
       <div>
         <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
         ${tagHtml}${petFlagTags(p)}
@@ -2968,10 +3020,11 @@ function petPickCard(p, opts = {}) {
   const lockCls = p.locked ? " is-locked-pet" : "";
   return `
     <li class="pet-pick-card${selected ? " is-selected" : ""}${disabled ? " is-disabled" : ""}${starCls}${lockCls}">
+      ${petCornerBadges(p)}
       <div class="pet-pick-top">
-        ${petIconFromPet(p, { size: 24 })}
+        ${petArtFromPet(p, { size: 24, generation: petGeneration(p) })}
         <div class="pet-pick-title">
-          <strong>${escapeHtml(displayPetName(p))}</strong>${petFlagTags(p)}
+          <strong>${escapeHtml(displayPetName(p))}</strong>
         </div>
       </div>
       <span class="muted">${meta}</span>
@@ -3128,6 +3181,7 @@ function petsListView() {
     ["status", "狀態"],
     ["star", "星標"],
     ["power", "戰力"],
+    ["level", "Lv"],
     ["gen", "代數"],
     ["rarity", "稀有"],
     ["element", "屬性"],
@@ -3171,47 +3225,52 @@ function petsListView() {
     .join("") ||
     `<li class="empty">尚無待契約靈寵。去秘境打本，隨機遇見後會出現喺呢度（最多 ${PENDING_BOND_MAX} 隻）。</li>`;
 
-  const activeDisp =
-    dv.active
-      .map((d) => {
-        if (!d.ready) {
-          const left = Math.ceil((d.leftMs || 0) / 1000);
-          return `
-        <li class="card-row">
-          <div>
-            <strong>${escapeHtml(d.missionName)}</strong>
-            <span class="muted">${escapeHtml(d.petNames)} · 剩餘 ${left}s</span>
-          </div>
-        </li>`;
-        }
+  const slotRows = (dv.slots || [])
+    .map((s) => {
+      if (s.status === "empty" || !s.mission) {
         return `
-        <li class="card-row">
-          <div>
-            <strong>${escapeHtml(d.missionName)}</strong>
-            <span class="muted">${escapeHtml(d.petNames)} · 已歸來</span>
-          </div>
-          <button type="button" class="success" data-claim-dispatch="${escapeHtml(d.dispatchId)}">領獎</button>
-        </li>`;
-      })
-      .join("") || `<li class="empty">尚無進行中派遣。</li>`;
-
-  const missionRows = dv.missions
-    .map((m) => {
-      const slotsOk = dv.slotsUsed < dv.slotsMax;
-      const matBits = dispatchMatBits(m);
-      const eggNote = m.eggChance
-        ? ` · 蛋${Math.round((m.eggChance.rate || 0) * 100)}%`
-        : "";
-      const reqNote = m.reqLabel ? ` · ${escapeHtml(m.reqLabel)}` : "";
-      return `
-      <li class="card-row">
+      <li class="card-row dispatch-slot">
         <div>
-          <strong>${escapeHtml(m.name)}</strong>
-          <span class="muted">${escapeHtml(m.desc)}${reqNote} · 需 ${m.needPets} 隻 · ${escapeHtml(rewardBitsHtml(m.reward))}${
-            matBits ? ` · ${matBits}` : ""
-          }${eggNote}</span>
+          <strong class="muted">空槽</strong>
+          <span class="muted">解鎖更多練功地後開放新任務</span>
         </div>
-        <button type="button" class="primary" data-open-dispatch="${m.id}" ${slotsOk ? "" : "disabled"}>派出</button>
+        <button type="button" class="secondary" disabled>未開放</button>
+      </li>`;
+      }
+      const matBits = dispatchMatBits(s.mission);
+      const eggNote = s.eggChance
+        ? ` · 蛋${Math.round((s.eggChance.rate || 0) * 100)}%`
+        : "";
+      const reqNote = s.reqLabel ? ` · ${escapeHtml(s.reqLabel)}` : "";
+      const rewardNote = `${escapeHtml(rewardBitsHtml(s.reward))}${matBits ? ` · ${matBits}` : ""}${eggNote}`;
+      if (s.status === "busy") {
+        const left = Math.ceil((s.leftMs || 0) / 1000);
+        return `
+      <li class="card-row dispatch-slot">
+        <div>
+          <strong>${escapeHtml(s.name)}</strong>
+          <span class="muted">${escapeHtml(s.petNames)} · 剩餘 ${left}s${reqNote}</span>
+        </div>
+        <button type="button" class="secondary" disabled>探險中</button>
+      </li>`;
+      }
+      if (s.status === "ready") {
+        return `
+      <li class="card-row dispatch-slot">
+        <div>
+          <strong>${escapeHtml(s.name)}</strong>
+          <span class="muted">${escapeHtml(s.petNames)} · 已歸來 · ${rewardNote}</span>
+        </div>
+        <button type="button" class="success" data-claim-dispatch="${escapeHtml(s.dispatchId)}">收集</button>
+      </li>`;
+      }
+      return `
+      <li class="card-row dispatch-slot">
+        <div>
+          <strong>${escapeHtml(s.name)}</strong>
+          <span class="muted">${escapeHtml(s.desc)}${reqNote} · 需 ${s.needPets} 隻 · ${rewardNote}</span>
+        </div>
+        <button type="button" class="primary" data-open-dispatch="${s.missionId}">派出</button>
       </li>`;
     })
     .join("");
@@ -3285,9 +3344,8 @@ function petsListView() {
     return wrapStage(
       nav,
       `<h2>靈寵 · 派遣</h2>
-      <p class="lead">進行 ${dv.slotsUsed}/${dv.slotsMax} · 可接 ${dv.missions.length}/${dv.boardSize} · 撳「派出」揀合限制嘅靈寵 · 領獎後隨機補任務</p>
-      <ul class="list">${missionRows || `<li class="empty muted">尚無可接派遣（解鎖更多練功地後開放）。</li>`}</ul>
-      <ul class="list">${activeDisp}</ul>`
+      <p class="lead">固定 ${dv.boardSize} 槽 · 進行 ${dv.slotsUsed}/${dv.slotsMax} · 派出後槽位變「探險中」· 完成撳「收集」先換新任務 · 可接任務每日刷新</p>
+      <ul class="list dispatch-slots">${slotRows}</ul>`
     );
   }
   if (sub === "bond") {
@@ -3438,7 +3496,7 @@ function petsBreedView() {
       return `<div class="breed-slot is-empty"><span class="muted">空位 ${idx + 1} · 下方加入</span></div>`;
     }
     return `<div class="breed-slot">
-      ${petIconFromPet(pet, { size: 36 })}
+      ${petArtFromPet(pet, { size: 36, generation: petGeneration(pet) })}
       <div>
         <strong>${escapeHtml(displayPetName(pet))}</strong>
         <span class="muted">${genTagHtml(petGeneration(pet))} · ${escapeHtml(pet.elementName)}·${escapeHtml(pet.personalityName)}</span>
@@ -3848,8 +3906,13 @@ function petsDetailView() {
   const lockOn = !!pet.locked;
   return wrapStage(
     "",
-    `<h2>${escapeHtml(displayPetName(pet))}${petFlagTags(pet)}</h2>
-    <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
+    `<div class="pet-detail-hero">
+      ${petArtFromPet(pet, { size: 52, generation: g, className: "pet-art--detail" })}
+      <div class="pet-detail-hero-text">
+        <h2>${escapeHtml(displayPetName(pet))}${petFlagTags(pet)}</h2>
+        <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
+      </div>
+    </div>
     ${petDetailTabNav(detailTab)}
     ${tabBody}
     <p class="meta pet-detail-upgrade"><strong>升級</strong> — ${upgradeCostLine(upgradeCost, feedCost, lv)}</p>
@@ -3955,7 +4018,7 @@ function codexPanel() {
       const pct = Math.min(100, Math.round((s.found / Math.max(1, s.total)) * 100));
       const unlocked = s.found > 0;
       return `<li class="card-row codex-row${unlocked ? " is-unlocked" : ""}">
-        <div class="codex-icon">${unlocked ? petIconHtml(s.speciesId, { size: 36 }) : `<span class="pet-icon pet-icon-unknown">?</span>`}</div>
+        <div class="codex-icon">${unlocked ? petArtHtml(s.speciesId, { size: 36 }) : `<span class="pet-art pet-art-unknown"><span class="pet-icon pet-icon-unknown">?</span></span>`}</div>
         <div>
           <strong>${escapeHtml(s.speciesName)}</strong>
           <span class="muted">${escapeHtml(s.kind)}${s.breedOnly ? "·雜交" : ""} · ${s.found}/${s.total}</span>
@@ -4829,14 +4892,14 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const [group, id] = (btn.dataset.panelSub || "").split(":");
-      if (!group || !id || panelSub[group] === id) return;
-      if (group === "cultivate" && isCultivateSubLocked(state, id)) return;
-      if (group === "party" && isPartySubLocked(state, id)) return;
-      if (group === "dungeon" && isDungeonSubLocked(state, id)) return;
-      if (playback) {
-        if (!playback.done) return;
-        stopPlayback();
+      if (!group || !id) return;
+      if (panelSub[group] === id) return;
+      const block = panelSubSwitchBlockReason(group, id);
+      if (block) {
+        setFlash(block);
+        return;
       }
+      if (playback?.done) stopPlayback();
       panelSub = { ...panelSub, [group]: id };
       if (group === "dungeon") condSheetOpen = false;
       if (group === "party" && id !== "ranch") ranchRelease = null;
@@ -4894,7 +4957,7 @@ function bind() {
   app.querySelectorAll("[data-ranch-sort]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.ranchSort;
-      if (!["power", "gen", "rarity", "element", "status", "star"].includes(id)) return;
+      if (!["power", "gen", "rarity", "element", "status", "star", "level"].includes(id)) return;
       if (ranchSort === id) return;
       ranchSort = id;
       saveUiPrefs();
@@ -4922,14 +4985,15 @@ function bind() {
       if (selected.has(uid)) selected.delete(uid);
       else selected.add(uid);
       ranchRelease = { phase: "select", selected: [...selected] };
-      render();
+      renderPreservingStageScroll();
     });
   });
   app.querySelectorAll("[data-toggle-star]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const r = togglePetStarred(state, btn.dataset.toggleStar);
       saveState(state);
-      render();
+      if (tab === "party" && panelSub.party === "ranch") renderPreservingStageScroll();
+      else render();
       setFlash(r.msg);
     });
   });
@@ -4937,7 +5001,8 @@ function bind() {
     btn.addEventListener("click", () => {
       const r = togglePetLocked(state, btn.dataset.toggleLock);
       saveState(state);
-      render();
+      if (tab === "party" && panelSub.party === "ranch") renderPreservingStageScroll();
+      else render();
       setFlash(r.msg);
     });
   });
@@ -5979,13 +6044,7 @@ setInterval(() => {
     const breedPatch = patchBreedLive();
     if (breedPatch.needRender) {
       saveState(state);
-      const scroller = document.querySelector(".stage-scroll");
-      const scrollTop = scroller?.scrollTop ?? 0;
-      render();
-      requestAnimationFrame(() => {
-        const again = document.querySelector(".stage-scroll");
-        if (again) again.scrollTop = scrollTop;
-      });
+      renderPreservingStageScroll();
       return;
     }
     saveState(state);
@@ -5993,14 +6052,8 @@ setInterval(() => {
   }
   if (tab === "party" && panelSub.party === "hatch" && eggReadyNow) {
     saveState(state);
-    const scroller = document.querySelector(".stage-scroll");
-    const scrollTop = scroller?.scrollTop ?? 0;
     if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
-    render();
-    requestAnimationFrame(() => {
-      const again = document.querySelector(".stage-scroll");
-      if (again) again.scrollTop = scrollTop;
-    });
+    renderPreservingStageScroll();
     tutorialSnapCache = snap;
     return;
   }
@@ -6138,7 +6191,7 @@ function checkPushReminders() {
   const disp = dispatchView(state);
   for (const d of disp.active || []) {
     if (d.ready) {
-      pushNotifyOnce(`dispatch-ready-${d.dispatchId}`, "暗潮 · 派遣完成", `${d.missionName} 可以領獎了！`);
+      pushNotifyOnce(`dispatch-ready-${d.dispatchId}`, "暗潮 · 派遣完成", `${d.missionName} 可以收集了！`);
     } else if (d.leftMs > 0 && d.leftMs <= 30000) {
       pushNotifyOnce(
         `dispatch-soon-${d.dispatchId}`,
