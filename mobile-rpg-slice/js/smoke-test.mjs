@@ -2823,9 +2823,12 @@ assert(uiSrc2.includes("批量放生"), "ui batch release copy");
 assert(uiSrc2.includes("上鎖"), "ui lock copy");
 assert(uiSrc2.includes("星標"), "ui star copy");
 assert(uiSrc2.includes("renderPreservingStageScroll"), "ui batch release preserves stage-scroll");
-assert(/data-ranch-pick[\s\S]{0,500}renderPreservingStageScroll/.test(uiSrc2), "ui ranch pick uses scroll preserve");
+assert(
+  /ranchRelease\s*=\s*\{\s*phase:\s*"select"[\s\S]{0,120}renderPreservingStageScroll\(\)/.test(uiSrc2),
+  "ui ranch pick uses scroll preserve"
+);
 assert(uiSrc2.includes("petCornerBadges"), "ui pet corner badges helper");
-assert(uiSrc2.includes('["level", "Lv"]') || uiSrc2.includes('data-ranch-sort="${id}"'), "ui Lv sort in ranch chips");
+assert(uiSrc2.includes('["level", "Lv"]'), "ui Lv sort in ranch chips");
 assert(uiSrc2.includes('sortKey === "level"'), "ui sortRanchEntries level");
 assert(!uiSrc2.includes("確定放歸？將返還部分靈石"), "ui no browser confirm stone refund copy");
 assert(cssSrc.includes("release-modal"), "css release modal");
