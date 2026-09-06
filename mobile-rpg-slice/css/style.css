@@ -98,6 +98,69 @@ body {
   animation: fadeUp 0.6s 0.1s ease-out both;
 }
 
+
+.team-bond-bar {
+  display: block;
+  width: 100%;
+  margin: 0 0 0.28rem;
+  padding: 0.38rem 0.55rem 0.32rem;
+  border: 1px solid rgba(90, 160, 140, 0.38);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(24, 48, 44, 0.72) 0%, rgba(14, 28, 36, 0.8) 100%);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.team-bond-bar:active {
+  transform: scale(0.99);
+}
+.team-bond-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-bottom: 0.22rem;
+}
+.team-bond-kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--jade-bright);
+}
+.team-bond-meta {
+  font-size: 0.58rem;
+  color: var(--fog);
+  white-space: nowrap;
+}
+.team-bond-track {
+  height: 0.38rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.team-bond-track > i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #3d8f7a, #8fd4bf);
+  border-radius: inherit;
+}
+.team-bond-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.58rem;
+  color: var(--muted);
+}
+.bond-sheet-card .cond-list {
+  margin: 0.35rem 0 0.6rem;
+  max-height: 40vh;
+  overflow: auto;
+}
+.offline-home-slot.is-empty {
+  opacity: 0.85;
+}
+.offline-claim-card button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .hero-strip {
   display: none;
 }
@@ -2797,7 +2860,8 @@ button.pet-badge {
   height: var(--icon-size, 32px);
   flex-shrink: 0;
 }
-.pet-icon svg { display: block; }
+.pet-icon svg,
+.pet-icon-svg { display: block; }
 .pet-icon.is-hybrid svg { filter: drop-shadow(0 0 4px rgba(183, 212, 204, 0.35)); }
 .pet-icon--rarity-rare svg { filter: drop-shadow(0 0 3px rgba(109, 179, 217, 0.45)); }
 .pet-icon--rarity-epic svg { filter: drop-shadow(0 0 4px rgba(201, 160, 232, 0.5)); }
@@ -2814,6 +2878,60 @@ button.pet-badge {
   font-size: 0.75rem;
   line-height: 32px;
   text-align: center;
+}
+
+/* Pack Y — creature silhouette parts (readable at ranch card ~28–34px) */
+.pet-icon--creature .pet-icon-creature {
+  transform-origin: 16px 18px;
+}
+.pet-icon-part {
+  vector-effect: non-scaling-stroke;
+}
+.pet-icon-part--body { opacity: 0.96; }
+.pet-icon-part--shell { opacity: 0.9; }
+.pet-icon-part--head { opacity: 1; }
+.pet-icon-part--ear,
+.pet-icon-part--wing,
+.pet-icon-part--fin,
+.pet-icon-part--tail,
+.pet-icon-part--antenna,
+.pet-icon-part--beak,
+.pet-icon-part--leg {
+  opacity: 0.88;
+}
+.pet-icon-part--eye {
+  opacity: 0.9;
+}
+.pet-icon-part--stroke {
+  pointer-events: none;
+}
+.pet-icon--kind-beast .pet-icon-part--ear {
+  opacity: 0.95;
+}
+.pet-icon--kind-avian .pet-icon-part--wing,
+.pet-icon--kind-avian .pet-icon-part--beak {
+  opacity: 0.95;
+}
+.pet-icon--kind-scale .pet-icon-part--fin,
+.pet-icon--kind-scale .pet-icon-part--tail {
+  opacity: 0.95;
+}
+.pet-icon--kind-shell .pet-icon-part--shell {
+  opacity: 0.92;
+}
+.pet-icon--kind-bug .pet-icon-part--wing,
+.pet-icon--kind-bug .pet-icon-part--antenna {
+  opacity: 0.9;
+}
+.pet-icon--kind-light .pet-icon-part--wing {
+  opacity: 0.72;
+}
+.pet-icon--kind-light .pet-icon-part--fin {
+  opacity: 0.95;
+}
+.pet-card .pet-icon--creature .pet-icon-creature,
+.pet-pick-card .pet-icon--creature .pet-icon-creature {
+  transform: scale(1.06);
 }
 
 /* Pack D — pet art frame (element wash + rarity edge + gen mark) */

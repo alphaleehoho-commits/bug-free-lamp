@@ -55,6 +55,7 @@ import {
   renamePet,
   claimOfflineBank,
   offlineBankView,
+  teamBondBarView,
   persistTrainIdleCombatState,
   clearTrainIdleCombatState,
   restoreTrainIdleCombatState,
@@ -164,6 +165,8 @@ import {
   skillTypeLabel,
   skillPowerMult,
   SECOND_SKILL_UNLOCK,
+  OFFLINE_CLAIM_MIN_SEC,
+  OFFLINE_HINT_SEC,
 } from "./data.js";
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
@@ -251,6 +254,8 @@ let trainRatesOpen = false;
 let statsSheetOpen = false;
 /** 離線收益預覽半屏（收集確認） */
 let offlineClaimOpen = false;
+/** 契隊連結／突破半屏 */
+let bondSheetOpen = false;
 /** 孵化領取結果半屏：{ pets: object[] } | null */
 let hatchClaimModal = null;
 /** 孵化庫存篩選：all | breed | shop | ready */
@@ -276,6 +281,8 @@ let releaseModal = null;
  * @type {null | { source: "bag" | "abyss" }}
  */
 let tideShiftModal = null;
+/** 今次 session 已關過每日儀表板 */
+let dailyHubDismissedSession = false;
 
 const UI_PREFS_KEY = "void-tide-ui-prefs";
 
@@ -1162,10 +1169,115 @@ function stopPlayback() {
   playback = null;
 }
 
+/** DOM 上是否有戰報／結算全屏遮罩 */
+function combatModalInDom() {
+  return !!document.querySelector("[data-live=combat-modal]");
+}
+
+/** 目前會擋 pointer 嘅全屏／半屏狀態（唔計教學 spotlight） */
+function fullscreenOverlayBlockReason() {
+  if (playback && !playback.done) {
+    return combatModalInDom() ? "戰鬥中" : "戰鬥卡住";
+  }
+  if (playback?.done) {
+    return combatModalInDom() ? "戰報未關閉" : "戰報卡住";
+  }
+  if (tideShiftModal) return "潮轉符視窗";
+  if (dispatchModal) return "派遣視窗";
+  if (attackPreview) return "進攻預覽";
+  if (sweepResult) return "掃蕩結算";
+  if (offlineClaimOpen) return "離線收益";
+  if (hatchClaimModal) return "孵化領取";
+  if (releaseModal) return "放生確認";
+  if (condSheetOpen) return "敵情條件";
+  if (bondSheetOpen) return "契隊連結";
+  if (statsSheetOpen) return "資源詳情";
+  if (!tutorialActive(state) && !dailyHubDismissedSession) {
+    try {
+      if (dailyHubView(state)?.shouldShow) return "每日儀表板";
+    } catch {
+      /* ignore */
+    }
+  }
+  return "";
+}
+
+/** 清晒會擋 UI 嘅 sheet／modal（可選清 playback） */
+function clearUiOverlays(opts = {}) {
+  const clearPlayback = !!opts.clearPlayback;
+  const includeDonePlayback = opts.includeDonePlayback !== false;
+  tideShiftModal = null;
+  dispatchModal = null;
+  attackPreview = null;
+  sweepResult = null;
+  offlineClaimOpen = false;
+  bondSheetOpen = false;
+  hatchClaimModal = null;
+  releaseModal = null;
+  condSheetOpen = false;
+  statsSheetOpen = false;
+  rewardDetailsOpen = false;
+  if (!tutorialActive(state)) {
+    try {
+      if (dailyHubView(state)?.shouldShow) {
+        dismissDailyHub(state);
+        dailyHubDismissedSession = true;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (clearPlayback && playback) {
+    if (!playback.done || includeDonePlayback) stopPlayback();
+  }
+}
+
+/** playback 有狀態但戰報 DOM 唔見 → 視為卡住，清走並 flash */
+function recoverStuckPlayback(flashMsg = "已解除卡住戰報") {
+  if (!playback) return false;
+  if (combatModalInDom()) return false;
+  stopPlayback();
+  rewardDetailsOpen = false;
+  setFlash(flashMsg);
+  return true;
+}
+
+/** Escape／返回／點底欄時：有遮罩則清；卡住 playback 亦清 */
+function dismissBlockingUi(opts = {}) {
+  const fromUser = opts.fromUser !== false;
+  const reason = fullscreenOverlayBlockReason();
+  if (!reason) return false;
+  const stuck = reason.includes("卡住") || (playback && !combatModalInDom());
+  if (stuck || opts.force) {
+    clearUiOverlays({ clearPlayback: true, includeDonePlayback: true });
+    if (fromUser) setFlash(stuck ? "已解除卡住介面" : "已關閉視窗");
+    render();
+    return true;
+  }
+  if (fromUser) setFlash(reason);
+  return false;
+}
+
 function switchTab(id) {
   if (playback && !playback.done) {
-    setFlash("戰鬥中");
-    return;
+    if (recoverStuckPlayback("已解除卡住戰鬥")) {
+      render();
+    } else {
+      setFlash("戰鬥中");
+      return;
+    }
+  } else if (playback?.done && !combatModalInDom()) {
+    recoverStuckPlayback();
+  }
+  const overlayReason = fullscreenOverlayBlockReason();
+  if (overlayReason && overlayReason !== "戰報未關閉") {
+    // 戰報未關閉時允許喺秘境內操作；其他全屏遮罩擋底欄並 flash 原因
+    if (overlayReason.includes("卡住")) {
+      dismissBlockingUi({ force: true });
+    } else {
+      setFlash(overlayReason);
+      return;
+    }
   }
   if (isTabLocked(state, id)) {
     setFlash(tutorialLockReason(state, "tab", id) || "教學中");
@@ -1188,8 +1300,13 @@ function switchTab(id) {
         panelSub = { ...panelSub, cultivate: "train" };
       }
     } else if (id === "dungeon") {
-      if (step === "dungeon_fight" || step === "dungeon_win") panelSub = { ...panelSub, dungeon: "field" };
-      else if (step === "tactics") panelSub = { ...panelSub, dungeon: "setup" };
+      if (step === "dungeon_fight" || step === "dungeon_win") {
+        // 潮淵停留唔被教學強制踢去秘境 field
+        if (panelSub.dungeon !== "abyss") panelSub = { ...panelSub, dungeon: "field" };
+      } else if (step === "tactics") {
+        // Pack B mirror：潮淵 sub 唔好被 switchTab 強制 setup
+        if (panelSub.dungeon !== "abyss") panelSub = { ...panelSub, dungeon: "setup" };
+      }
     }
   }
   if (id === "codex" && tutorialActive(state) && state.tutorial.step === "codex") {
@@ -1238,7 +1355,10 @@ function panelSubIsLocked(group, id) {
 
 /** 子分頁切換阻擋原因；空＝可切 */
 function panelSubSwitchBlockReason(group, id) {
-  if (playback && !playback.done) return "戰鬥中";
+  if (playback && !playback.done) {
+    if (!combatModalInDom()) return "戰鬥卡住";
+    return "戰鬥中";
+  }
   if (panelSubIsLocked(group, id)) {
     return tutorialLockReason(state, panelSubLockKind(group), id) || "教學中";
   }
@@ -1595,6 +1715,20 @@ function patchLive() {
   if (stageEl) stageEl.textContent = stage.name;
   if (wins) wins.textContent = `勝 ${state.combatsWon}`;
 
+  const offLabel = document.querySelector("[data-live=offline-home-label]");
+  if (offLabel) {
+    const bank = offlineBankView(state);
+    const sec = bank.sec || 0;
+    const capped = bank.capped ? " · 已達上限" : "";
+    offLabel.textContent = sec > 0
+      ? `離線收集（${fmtOfflineDuration(sec)}）${capped}`
+      : `離線收集（0秒）· 離開後累積`;
+  }
+  const bondFill = document.querySelector(".team-bond-bar .team-bond-track > i");
+  if (bondFill) {
+    bondFill.style.width = `${teamBondBarView(state).pct}%`;
+  }
+
   const eggReadyNow = patchEggLive();
   patchTutorialHintLive();
   patchMatChipsLive();
@@ -1949,6 +2083,7 @@ function render() {
   app.className = `${enterClass}${inTutorial ? " is-tutorial" : ""}`;
   app.innerHTML = `
     <header class="top top-compact">
+      ${teamBondBarHtml()}
       <div class="brand-row">
         <p class="brand">暗潮</p>
         <p class="tag">靈寵修行 · <span data-live="wins">勝 ${state.combatsWon}</span></p>
@@ -1985,6 +2120,7 @@ function render() {
     ${attackPreview ? attackPreviewModalHtml() : ""}
     ${condSheetOpen ? dungeonCondSheetHtml() : ""}
     ${statsSheetOpen ? statsSheetHtml() : ""}
+    ${bondSheetOpen ? bondSheetHtml() : ""}
     ${offlineClaimOpen ? offlineClaimModalHtml() : ""}
     ${hatchClaimModal ? hatchClaimModalHtml() : ""}
     ${releaseModal ? releaseModalHtml() : ""}
@@ -2005,11 +2141,17 @@ function render() {
     requestAnimationFrame(() => positionTutorialSpotlight(false));
   });
   if (playback) {
-    updatePlaybackDom();
-    requestAnimationFrame(() => {
-      const scroller = document.querySelector("[data-live=combat-scroll]");
-      if (scroller) scroller.scrollTop = scroller.scrollHeight;
-    });
+    // 有 playback 狀態但全屏戰報唔見 → 唔好留住隱形擋掣
+    if (!combatModalInDom()) {
+      stopPlayback();
+      rewardDetailsOpen = false;
+    } else {
+      updatePlaybackDom();
+      requestAnimationFrame(() => {
+        const scroller = document.querySelector("[data-live=combat-scroll]");
+        if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      });
+    }
   }
 }
 
@@ -2023,8 +2165,6 @@ function dispatchMatBits(mission) {
     })
     .join(" ");
 }
-
-let dailyHubDismissedSession = false;
 
 function statsStripHtml(stage) {
   return `<button type="button" class="stats stats-compact stats-tappable" data-act="toggle-stats-sheet" aria-label="查看資源詳情">
@@ -2179,6 +2319,67 @@ function installBanner() {
     </div>`;
 }
 
+
+function fmtOfflineDuration(sec) {
+  const s = Math.max(0, Math.floor(sec || 0));
+  if (s < 60) return `${s}秒`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m < 60) return r ? `${m}分${r}秒` : `${m}分`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm ? `${h}時${rm}分` : `${h}時`;
+}
+
+function teamBondBarHtml() {
+  const bar = teamBondBarView(state);
+  const next = bar.nextName ? `→【${escapeHtml(bar.nextName)}】` : "";
+  const ready = bar.ready ? " · 可突破" : "";
+  return `
+    <button type="button" class="team-bond-bar" data-act="open-bond-sheet" aria-label="契隊連結">
+      <div class="team-bond-top">
+        <span class="team-bond-kicker">契隊連結</span>
+        <span class="team-bond-meta">出戰 ${bar.petCount}/${bar.petMax} · 戰力 ${bar.power}${ready}</span>
+      </div>
+      <div class="bar team-bond-track"><i style="width:${bar.pct}%"></i></div>
+      <p class="team-bond-sub">${escapeHtml(bar.stageName || "")}${next} · 均Lv ${bar.avgLv}</p>
+    </button>`;
+}
+
+function bondSheetHtml() {
+  if (!bondSheetOpen) return "";
+  const bar = teamBondBarView(state);
+  const br = bar.br || breakthroughView(state);
+  const rows = (br.items || [])
+    .map(
+      (it) => `
+      <li class="cond-item ${it.ok ? "is-met" : "is-miss"}">
+        <span class="cond-badge">${it.ok ? "達成" : "未達"}</span>
+        <div class="cond-body">
+          <strong>${escapeHtml(it.label)}</strong>
+          <span class="muted">${escapeHtml(it.progress || "")}</span>
+        </div>
+      </li>`
+    )
+    .join("");
+  return `
+    <div class="sheet-overlay" role="presentation" data-act="close-bond-sheet">
+      <div class="sheet-card bond-sheet-card" role="dialog" aria-label="契隊連結" data-sheet-card>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <h3>契隊連結</h3>
+        <p class="lead">出戰 ${bar.petCount}/${bar.petMax} · 戰力 ${bar.power} · 星標 ${bar.starred} · 均Lv ${bar.avgLv}</p>
+        <div class="bar team-bond-track"><i style="width:${bar.pct}%"></i></div>
+        <p class="meta">${escapeHtml(bar.stageName || "")} →【${escapeHtml(bar.nextName || "")}】· ${bar.pct}%</p>
+        <h4>下一階突破</h4>
+        <ul class="cond-list">${rows || '<li class="empty">已無下一階。</li>'}</ul>
+        <div class="row">
+          <button type="button" class="primary" data-act="goto-breakthrough">前往突破</button>
+          <button type="button" class="ghost sheet-close" data-act="close-bond-sheet">關閉</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function offlinePendingView() {
   const bank = offlineBankView(state);
   if (bank.hasPending) return bank;
@@ -2196,16 +2397,19 @@ function offlinePendingView() {
   return h;
 }
 
-/** 修行主頁固定欄：自動收集（離線約 Xm）[收集] —— 唔再用浮動 toast */
+/** 修行主頁固定欄：離線收集長駐；1 秒起顯示；點開睇總結，滿 30 分先可領 */
 function offlineHomeSlotHtml() {
-  const pending = offlinePendingView();
-  if (!pending) return "";
-  const min = Math.max(1, Math.round((pending.sec || 0) / 60));
-  const capped = pending.capped ? " · 已達上限" : "";
+  const bank = offlineBankView(state);
+  const sec = bank.sec || 0;
+  const capped = bank.capped ? " · 已達上限" : "";
+  const canClaim = !!bank.canClaim;
+  const label = sec > 0
+    ? `離線收集（${fmtOfflineDuration(sec)}）${capped}`
+    : `離線收集（0秒）· 離開後累積`;
   return `
     <div class="offline-home-slot" data-live="offline-home">
-      <p class="offline-home-label">自動收集（離線約 ${min}m）${escapeHtml(capped)}</p>
-      <button type="button" class="primary" data-act="open-offline-claim">收集</button>
+      <p class="offline-home-label" data-live="offline-home-label">${escapeHtml(label)}</p>
+      <button type="button" class="primary" data-act="open-offline-claim">${canClaim ? "收集" : "詳情"}</button>
     </div>`;
 }
 
@@ -2234,25 +2438,30 @@ function offlineGainRowsHtml(pending) {
 }
 
 function offlineClaimModalHtml() {
-  const pending = offlinePendingView();
-  if (!pending) return "";
-  const min = Math.max(1, Math.round((pending.sec || 0) / 60));
-  const site = pending.siteName ? ` · ${escapeHtml(pending.siteName)}` : "";
-  const capNote = pending.capped
+  const bank = offlineBankView(state);
+  const sec = bank.sec || 0;
+  const site = bank.siteName ? ` · ${escapeHtml(bank.siteName)}` : "";
+  const canClaim = !!bank.canClaim;
+  const left = bank.claimLeftSec || Math.max(0, OFFLINE_CLAIM_MIN_SEC - sec);
+  const capNote = bank.capped
     ? `<p class="meta muted">已達離線累積上限，請先收集。</p>`
     : "";
+  const gateNote = canClaim
+    ? `<p class="meta">已滿 30 分鐘，可以領取。</p>`
+    : `<p class="meta muted">滿 30 分鐘先可領取（而家 ${fmtOfflineDuration(sec)} · 仲差 ${fmtOfflineDuration(left)}）。</p>`;
   return `
     <div class="combat-modal-overlay offline-claim-overlay" data-live="offline-claim" role="dialog" aria-label="離線收益">
       <div class="combat-modal-card offline-claim-card">
         <div class="combat-modal-scroll">
-          <h2>自動收集 · 離線收益</h2>
-          <p class="lead">離線約 ${min} 分鐘${site}</p>
+          <h2>離線收集 · 收益總結</h2>
+          <p class="lead">離線 ${fmtOfflineDuration(sec)}${site}</p>
+          ${gateNote}
           ${capNote}
           <h3>待領物資</h3>
-          <ul class="list offline-gain-list">${offlineGainRowsHtml(pending)}</ul>
+          <ul class="list offline-gain-list">${offlineGainRowsHtml(bank)}</ul>
         </div>
         <div class="combat-modal-actions row">
-          <button type="button" class="primary" data-act="claim-offline">收集</button>
+          <button type="button" class="primary" data-act="claim-offline" ${canClaim ? "" : "disabled"}>收集</button>
           <button type="button" class="ghost" data-act="close-offline-claim">返回</button>
         </div>
       </div>
@@ -4896,15 +5105,34 @@ function bind() {
       if (panelSub[group] === id) return;
       const block = panelSubSwitchBlockReason(group, id);
       if (block) {
-        setFlash(block);
+        if (block.includes("卡住") && recoverStuckPlayback()) {
+          render();
+          // 解除後再試切頁
+        } else {
+          setFlash(block);
+          return;
+        }
+      }
+      const block2 = panelSubSwitchBlockReason(group, id);
+      if (block2) {
+        setFlash(block2);
         return;
       }
       if (playback?.done) stopPlayback();
+      // 切去潮淵：清晒可能殘留嘅全屏遮罩，避免隱形擋掣
+      if (group === "dungeon" && id === "abyss") {
+        clearUiOverlays({ clearPlayback: false });
+      } else if (group === "dungeon") {
+        condSheetOpen = false;
+      }
       panelSub = { ...panelSub, [group]: id };
-      if (group === "dungeon") condSheetOpen = false;
       if (group === "party" && id !== "ranch") ranchRelease = null;
       markTutorialSubVisit(group, id);
       render();
+      if (group === "dungeon" && id === "abyss") {
+        // 渲染後若仍有無 DOM 嘅 playback，即刻救回
+        if (recoverStuckPlayback()) render();
+      }
     });
   });
   app.querySelectorAll("[data-bag-inner]").forEach((btn) => {
@@ -5068,14 +5296,21 @@ function bind() {
         render();
         setFlash(r.msg);
       } else if (act === "open-offline-claim") {
-        if (!offlinePendingView()) {
-          setFlash("沒有可收集的離線收益。");
-          return;
-        }
         offlineClaimOpen = true;
         render();
       } else if (act === "close-offline-claim") {
         offlineClaimOpen = false;
+        render();
+      } else if (act === "open-bond-sheet") {
+        bondSheetOpen = true;
+        render();
+      } else if (act === "close-bond-sheet") {
+        bondSheetOpen = false;
+        render();
+      } else if (act === "goto-breakthrough") {
+        bondSheetOpen = false;
+        tab = "cultivate";
+        panelSub = { ...panelSub, cultivate: "advance" };
         render();
       } else if (act === "close-hatch-claim") {
         hatchClaimModal = null;
@@ -5138,7 +5373,7 @@ function bind() {
         setFlash(r.msg);
       } else if (act === "claim-offline") {
         const r = claimOfflineBank(state);
-        offlineClaimOpen = false;
+        if (r.ok) offlineClaimOpen = false;
         saveState(state);
         render();
         setFlash(r.msg, r.ok ? "unlock" : "");
@@ -5337,9 +5572,23 @@ function bind() {
       if (e.target !== el) return;
       condSheetOpen = false;
       statsSheetOpen = false;
+      bondSheetOpen = false;
       dispatchModal = null;
       attackPreview = null;
+      tideShiftModal = null;
       render();
+    });
+  });
+  // 戰報遮罩：點暗位 → 已結算可關閉；卡住時由 Escape／底欄救回
+  app.querySelectorAll("[data-live=combat-modal]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      if (e.target !== el) return;
+      if (!playback) return;
+      if (!playback.done) {
+        setFlash("戰鬥中");
+        return;
+      }
+      clearCombatPlayback();
     });
   });
   app.querySelectorAll("[data-act=toggle-combat-fast]").forEach((input) => {
@@ -5996,6 +6245,19 @@ document.addEventListener("touchend", onTutorialMisclick, true);
 window.addEventListener("resize", () => {
   syncAppHeight();
   positionTutorialSpotlight(false);
+});
+
+/** Escape／瀏覽器返回：清遮罩；卡住 playback 一律清 */
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape") return;
+  if (!fullscreenOverlayBlockReason() && !playback) return;
+  ev.preventDefault();
+  dismissBlockingUi({ force: true });
+});
+window.addEventListener("popstate", () => {
+  if (fullscreenOverlayBlockReason() || playback) {
+    dismissBlockingUi({ force: true });
+  }
 });
 
 document.addEventListener("visibilitychange", () => {

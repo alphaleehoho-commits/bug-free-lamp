@@ -5776,8 +5776,14 @@ export function weekKey(now = Date.now()) {
   return `${tmp.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
-/** 離線結算提示門檻（秒）——達標後收益入離線庫而非即時入帳 */
-export const OFFLINE_HINT_SEC = 90;
+/**
+ * 離線入庫門檻（秒）——超過此間隔視為離開前景，收益入離線庫而非即時入帳。
+ * 線上 1 秒 tick（約 1s）仍走即時入帳；≥2s 缺口（切分頁／熄屏）入庫，方便見到短至數秒嘅離線時間。
+ */
+export const OFFLINE_HINT_SEC = 2;
+
+/** 離線收集領取門檻（秒）——可睇總結，但未滿此時長唔可領 */
+export const OFFLINE_CLAIM_MIN_SEC = 30 * 60;
 
 /** 離線／AFK 未領取收益累積上限（秒） */
 export const OFFLINE_BANK_CAP_SEC = 3600 * 8;

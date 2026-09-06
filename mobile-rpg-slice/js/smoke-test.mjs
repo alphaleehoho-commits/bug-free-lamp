@@ -157,6 +157,7 @@ import {
   ABYSS_TIDE_SHIFT_COST,
   ELEMENTS,
   OFFLINE_HINT_SEC,
+  OFFLINE_CLAIM_MIN_SEC,
   OFFLINE_BANK_CAP_SEC,
   releaseSoulGain,
   releaseRefund,
@@ -1277,7 +1278,22 @@ const tickMatSt = {
   log: [],
 };
 tickCultivation(tickMatSt);
-assert(Math.floor(tickMatSt.materials.tide_dew) >= 1, "deterministic train mats over 40s");
+// ≥ OFFLINE_HINT_SEC 缺口入離線庫；材料應在 bank 而非錢包
+const tickMatBank = offlineBankView(tickMatSt);
+assert(
+  Math.floor(tickMatBank.materials?.tide_dew || 0) >= 1 || Math.floor(tickMatSt.materials.tide_dew || 0) >= 1,
+  "deterministic train mats over 40s (wallet or offline bank)"
+);
+// 短 tick（< hint）仍即時入帳
+const tickOnlineSt = {
+  ...tickMatSt,
+  materials: { tide_dew: 0 },
+  lastTick: Date.now() - 1000,
+  offlineBank: null,
+  offlineHint: null,
+};
+tickCultivation(tickOnlineSt);
+assert(Math.floor(tickOnlineSt.materials.tide_dew || 0) >= 0, "1s online tick does not throw");
 
 /* Offline bank: accrue without wallet credit until claim; accumulate up to cap */
 const offSt = {
@@ -1318,8 +1334,12 @@ const bank2 = offlineBankView(offSt);
 assert(bank2.sec > sec1, "uncollected offline bank keeps accumulating");
 clearOfflineHint(offSt);
 assert(offlineBankView(offSt).hasPending, "dismiss hint keeps bank");
+const earlyClaim = claimOfflineBank(offSt);
+assert(!earlyClaim.ok, "claim blocked under 30 min");
+assert(offlineBankView(offSt).hasPending, "bank kept when claim blocked");
+offSt.offlineBank.sec = Math.max(offSt.offlineBank.sec | 0, OFFLINE_CLAIM_MIN_SEC);
 const claimOff = claimOfflineBank(offSt);
-assert(claimOff.ok, "claim offline bank ok");
+assert(claimOff.ok, "claim offline bank ok after 30 min");
 assert((offSt.qi | 0) > (qiBeforeOff | 0), "claim credits qi");
 assert(!offlineBankView(offSt).hasPending, "bank empty after claim");
 // cap: fill bank to cap then refuse more
@@ -1837,6 +1857,36 @@ assert(uiSrc.includes("data-sub-locked"), "ui shows locked dungeon subs clickabl
 assert(uiSrc.includes("is-locked"), "ui locked sub class");
 assert(uiSrc.includes("tutorialLockReason"), "ui uses tutorial lock reason");
 assert(!uiSrc.includes("items.filter(({ id }) => !lockFn"), "ui no longer hides locked subs");
+
+/* Pack X: abyss click must not leave invisible fullscreen blockers */
+assert(uiSrc.includes("function clearUiOverlays"), "ui clears overlay stack helper");
+assert(uiSrc.includes("function recoverStuckPlayback"), "ui recovers stuck playback without modal");
+assert(uiSrc.includes("function fullscreenOverlayBlockReason"), "ui overlay block reason for tabs");
+assert(uiSrc.includes("function dismissBlockingUi"), "ui dismiss blocking overlays helper");
+assert(uiSrc.includes('ev.key !== "Escape"') || uiSrc.includes('ev.key !== \'Escape\''), "ui Escape clears overlays");
+assert(uiSrc.includes("popstate"), "ui back/popstate clears overlays");
+assert(uiSrc.includes("tideShiftModal = null"), "ui can clear tideShiftModal");
+assert(
+  uiSrc.includes('group === "dungeon" && id === "abyss"') && uiSrc.includes("clearUiOverlays"),
+  "ui clears overlays when switching to abyss sub"
+);
+assert(
+  uiSrc.includes('panelSub.dungeon !== "abyss"') && uiSrc.includes('dungeon: "setup"'),
+  "ui switchTab tactics does not force setup when on abyss"
+);
+assert(
+  uiSrc.includes("combatModalInDom") && uiSrc.includes("data-live=combat-modal"),
+  "ui detects missing combat modal for stuck playback"
+);
+/* Pack X: switchTab("dungeon") must NOT force setup when current sub is abyss */
+{
+  const switchChunk = uiSrc.slice(uiSrc.indexOf("function switchTab"), uiSrc.indexOf("function markTutorialSubVisit"));
+  assert(switchChunk.includes('panelSub.dungeon !== "abyss"'), "switchTab guards abyss before forcing setup/field");
+  assert(
+    /step === "tactics"[\s\S]*panelSub\.dungeon !== "abyss"[\s\S]*dungeon: "setup"/.test(switchChunk),
+    "switchTab tactics only forces setup when not on abyss"
+  );
+}
 
 /* Ranch idle + dispatch gen mult */
 const idlePet = {
@@ -2533,9 +2583,13 @@ assert(uiSrc2.includes("restoreTrainIdleCombatState"), "ui restores idle combat 
 assert(uiSrc2.includes("claim-offline"), "ui offline collect button");
 assert(uiSrc2.includes("claimOfflineBank"), "ui claims offline bank");
 assert(uiSrc2.includes("offline-home-slot"), "ui fixed offline home slot");
+assert(uiSrc2.includes("teamBondBarHtml"), "ui team bond bar at top");
+assert(uiSrc2.includes("OFFLINE_CLAIM_MIN_SEC") || uiSrc2.includes("canClaim"), "ui offline claim gate");
+assert(uiSrc2.includes("fmtOfflineDuration"), "ui formats offline seconds");
+assert(uiSrc2.includes("bondSheetHtml"), "ui bond breakthrough sheet");
 assert(uiSrc2.includes("open-offline-claim"), "ui opens offline claim modal");
 assert(uiSrc2.includes("close-offline-claim"), "ui can close offline claim without taking");
-assert(uiSrc2.includes("自動收集"), "ui offline auto-collect copy");
+assert(uiSrc2.includes("離線收集"), "ui offline collect copy");
 assert(uiSrc2.includes("offline-claim-overlay"), "ui offline claim half-modal");
 assert(!uiSrc2.includes("offline-toast"), "ui no floating offline toast");
 assert(!uiSrc2.includes("clear-offline"), "ui no dismiss-offline toast act");
@@ -2575,6 +2629,7 @@ assert(uiSrc2.includes("breakthrough-miss-note"), "ui shows remaining gate count
 const cssSrc = readFileSync(join(__dir, "../css/style.css"), "utf8");
 assert(cssSrc.includes("cond-list.is-compact"), "css compact breakthrough checklist");
 assert(cssSrc.includes("offline-home-slot"), "css offline home slot");
+assert(cssSrc.includes("team-bond-bar"), "css team bond bar");
 assert(cssSrc.includes("offline-claim-card"), "css offline claim modal card");
 assert(cssSrc.includes("hatch-slots"), "css hatch slots grid");
 assert(cssSrc.includes("hatch-claim-card"), "css hatch claim modal card");
@@ -3029,6 +3084,42 @@ assert(cssSrc.includes("pet-pick-sheet"), "css pet-pick-sheet");
   assert(cssSrc.includes("pet-art-elem-dot"), "css element accent dot");
   assert(cssSrc.includes("pet-detail-hero"), "css pet detail hero");
   assert(/\.pet-card-badges\s*\{[^}]*position:\s*absolute/s.test(cssSrc), "css Pack A badges still absolute");
+}
+
+/* Pack Y: creature-like silhouettes (head/body/ears/wings/tail) — keep tint/frame/★鎖 */
+{
+  const iconSrcY = readFileSync(join(__dir, "pet-icons.js"), "utf8");
+  assert(iconSrcY.includes("CREATURE_PARTS"), "pet-icons CREATURE_PARTS export");
+  assert(iconSrcY.includes('"body"') && iconSrcY.includes('"head"'), "CREATURE_PARTS body/head");
+  assert(iconSrcY.includes('"ear"') && iconSrcY.includes('"wing"') && iconSrcY.includes('"tail"'), "CREATURE_PARTS ear/wing/tail");
+  assert(iconSrcY.includes("pet-icon-part"), "pet-icons part class");
+  assert(iconSrcY.includes("pet-icon-part--${part}"), "pet-icons part class template");
+  assert(iconSrcY.includes("pet-icon--creature"), "pet-icons creature class");
+  assert(iconSrcY.includes("pet-icon-creature"), "pet-icons creature group");
+  assert(iconSrcY.includes("renderCreaturePaths"), "pet-icons renderCreaturePaths");
+  assert(iconSrcY.includes("kindPartsForSpecies"), "pet-icons kindPartsForSpecies");
+  assert(/body:\s*"M/.test(iconSrcY), "beast/scale body path present");
+  assert(/head:\s*"M/.test(iconSrcY), "head path present");
+  assert(/ear:\s*"M/.test(iconSrcY), "ear path present");
+  assert(/wing:\s*"M/.test(iconSrcY), "wing path present");
+  assert(/tail:\s*"M/.test(iconSrcY), "tail path present");
+  assert(/fin:\s*"M/.test(iconSrcY), "fin path present");
+  assert(iconSrcY.includes("pet-icon--kind-${kindSlug}"), "kind class template retained");
+  assert(iconSrcY.includes('獸: "beast"'), "kind slug beast mapping");
+  assert(iconSrcY.includes("ELEMENT_COLORS"), "Pack Y keeps element tint");
+  assert(iconSrcY.includes("RARITY_GLOW"), "Pack Y keeps rarity frame");
+  assert(uiSrc2.includes("petCornerBadges"), "Pack Y keeps ★/鎖 corner badges");
+  assert(!iconSrcY.includes("abyssOverlay") && !iconSrcY.includes("abyss-overlay"), "Pack Y does not touch abyss overlay");
+  assert(cssSrc.includes("pet-icon-part"), "css pet-icon-part");
+  assert(cssSrc.includes("pet-icon-part--body"), "css body part");
+  assert(cssSrc.includes("pet-icon-part--head"), "css head part");
+  assert(cssSrc.includes("pet-icon-part--ear"), "css ear part");
+  assert(cssSrc.includes("pet-icon-part--wing"), "css wing part");
+  assert(cssSrc.includes("pet-icon-part--tail"), "css tail part");
+  assert(cssSrc.includes("pet-icon--creature"), "css creature icon");
+  assert(cssSrc.includes("pet-icon--kind-beast"), "css kind-beast");
+  assert(cssSrc.includes("pet-icon--kind-avian"), "css kind-avian");
+  assert(cssSrc.includes("pet-icon--kind-scale"), "css kind-scale");
 }
 
 const engineSrcPackA = readFileSync(join(__dir, "engine.js"), "utf8");
