@@ -2,7 +2,7 @@
  * P13：新手引導 — 寵物蛋 → 練功 Lv3 → 秘境 → 商肆蛋
  * 目標節奏約 10–15 分鐘；不在 render 自動連跳
  */
-import { nextStageAt, upgradeMatCost, upgradeStoneCost } from "./data.js";
+import { nextStageAt, upgradeMatCost, upgradeStoneCost, FUSION_MAX_STAGE } from "./data.js";
 
 export const TUTORIAL_STEPS = [
   {
@@ -78,7 +78,12 @@ export const TUTORIAL_STEPS = [
   {
     id: "fuse_intro",
     title: "融合覺醒",
-    hint: "通關秘境三後解鎖融合。打開靈寵詳情，用同種素材完成一次融合。",
+    hint: "通關秘境三後解鎖融合。打開靈寵詳情，進入融合頁了解流程（唔使即刻融合）。",
+  },
+  {
+    id: "fuse_once",
+    title: "完成融合",
+    hint: "用同種素材完成一次融合。自由探索，唔會再鎖功能或強行標示。",
   },
   {
     id: "complete",
@@ -104,7 +109,7 @@ export const CORE_TUTORIAL_STEPS = [
   "codex",
 ];
 
-export const LATE_TUTORIAL_STEPS = ["dispatch", "tactics", "fuse_intro"];
+export const LATE_TUTORIAL_STEPS = ["dispatch", "tactics", "fuse_intro", "fuse_once"];
 export const LATE_TUTORIAL_MIN_REALM = 2;
 
 /** 教學：首寵升級門檻 */
@@ -169,8 +174,24 @@ export function tutorialNeedsRanchSub(step) {
     step === "meet_pet" ||
     step === "deploy" ||
     step === "train_pet" ||
-    step === "breed_intro"
+    step === "breed_intro" ||
+    step === "fuse_intro"
   );
+}
+
+/** 教學標示用：只挑一隻目標靈寵（唔好成欄發光） */
+export function tutorialCoachDetailUid(state) {
+  const owned = [...(state.pets || []), ...(state.ranch || [])];
+  if (!owned.length) return null;
+  const step = state.tutorial?.step;
+  if (step === "train_pet") {
+    return tutorialTrainTargetPet(state)?.uid || owned[0].uid;
+  }
+  if (step === "fuse_intro") {
+    const eligible = owned.find((p) => (p.fusionLevel ?? 0) < FUSION_MAX_STAGE);
+    return (eligible || owned[0]).uid;
+  }
+  return owned[0].uid;
 }
 
 /** 載入／舊存檔正規化 */
@@ -347,6 +368,14 @@ function locksForStep(stepId) {
         dungeonSub: { ...allDung },
         trainSites: false,
       };
+    case "fuse_once":
+      return {
+        tabs: {},
+        cultivateSub: {},
+        partySub: {},
+        dungeonSub: {},
+        trainSites: false,
+      };
     default:
       return {
         tabs: {},
@@ -449,6 +478,8 @@ function meetsAdvance(state, stepId) {
     case "tactics":
       return !!flags.tacticsVisited;
     case "fuse_intro":
+      return !!flags.fusePageVisited;
+    case "fuse_once":
       return !!flags.fuseDone || (state.stats?.fusions || 0) >= 1;
     case "complete":
       return true;
@@ -468,46 +499,66 @@ function resolveNextStepId(state, cur) {
   if (isLateStep(nextId) && (state.realm | 0) < LATE_TUTORIAL_MIN_REALM) {
     return "complete";
   }
-  if (nextId === "fuse_intro" && !(state.clearedDungeons || {}).tide_3) {
+  if (
+    (nextId === "fuse_intro" || nextId === "fuse_once") &&
+    !(state.clearedDungeons || {}).tide_3
+  ) {
     return "complete";
   }
   return nextId;
 }
 
+function fuseTutorialPending(state, flags) {
+  return (
+    !!(state.clearedDungeons || {}).tide_3 &&
+    !flags.fuseDone &&
+    (state.stats?.fusions || 0) < 1
+  );
+}
+
+function fuseTutorialStartStep(flags) {
+  return flags.fusePageVisited ? "fuse_once" : "fuse_intro";
+}
+
 export function maybeStartLateTutorial(state) {
   normalizeTutorial(state);
   const flags = state.tutorial.flags || {};
-  const fusePending =
-    !!(state.clearedDungeons || {}).tide_3 &&
-    !flags.fuseDone &&
-    (state.stats?.fusions || 0) < 1;
+  // 跳過教學後唔好再自動拉起任何進階引導
+  if (flags.skipped || state.tutorial.lateCompleted) return { started: false };
+
+  const fusePending = fuseTutorialPending(state, flags);
 
   // 通關心核後：即使其他進階教學已完，仍可拉起融合引導
   if (fusePending) {
-    if (tutorialActive(state) && state.tutorial.step === "fuse_intro") {
+    if (
+      tutorialActive(state) &&
+      (state.tutorial.step === "fuse_intro" || state.tutorial.step === "fuse_once")
+    ) {
       return { started: false };
     }
-    if (!tutorialActive(state) || state.tutorial.done || state.tutorial.lateCompleted) {
+    if (!tutorialActive(state) || state.tutorial.done) {
+      const stepId = fuseTutorialStartStep(flags);
       state.tutorial.done = false;
       state.tutorial.lateCompleted = false;
-      state.tutorial.step = "fuse_intro";
+      state.tutorial.step = stepId;
       state.tutorial.latePending = true;
       if (!state.materials) state.materials = {};
       if ((state.materials.fuse_sand || 0) < 1) state.materials.fuse_sand = 1;
+      const info = TUTORIAL_STEPS.find((s) => s.id === stepId);
       return {
         started: true,
-        msg: "進階教學：融合覺醒（通關心核解鎖）",
-        stepId: "fuse_intro",
+        msg: `進階教學：${info?.title || stepId}（通關心核解鎖）`,
+        stepId,
       };
     }
   }
 
   if ((state.realm | 0) < LATE_TUTORIAL_MIN_REALM) return { started: false };
-  if (state.tutorial.lateCompleted) return { started: false };
   const pending = LATE_TUTORIAL_STEPS.filter((id) => {
     if (id === "dispatch") return !flags.dispatchVisited;
     if (id === "tactics") return !flags.tacticsVisited;
-    if (id === "fuse_intro") return fusePending;
+    if (id === "fuse_intro") return fusePending && !flags.fusePageVisited;
+    if (id === "fuse_once") return fusePending && !!flags.fusePageVisited;
     return false;
   });
   if (!pending.length) {
@@ -675,6 +726,9 @@ export function syncTutorialNavigation(state, nav) {
       next = clampTutorialTabs(nav, ["dungeon"]);
       next.panelSub = { ...next.panelSub, dungeon: "setup" };
       break;
+    case "fuse_intro":
+      next = clampTutorialTabs(nav, ["party"]);
+      break;
     default:
       next = cloneNav(nav);
   }
@@ -706,16 +760,21 @@ export function tutorialHighlights(state, nav = {}) {
       if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
       return [{ type: "tab", id: "party" }];
     }
-    case "meet_pet":
-      if (tab === "party" && ps.party === "ranch") return [{ type: "pet-detail" }];
+    case "meet_pet": {
+      const uid = tutorialCoachDetailUid(state);
+      if (tab === "party" && ps.party === "ranch") {
+        return uid ? [{ type: "pet-detail", uid }] : [{ type: "pet-detail" }];
+      }
       if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
       return [{ type: "tab", id: "party" }];
+    }
     case "train_pet": {
       const canUp = trainPetCanUpgrade(state);
       const inDetail = !!nav.petDetail;
+      const uid = tutorialCoachDetailUid(state);
       if (tab === "party" && ps.party === "ranch") {
         if (canUp && inDetail) return [{ type: "upgrade" }];
-        if (canUp) return [{ type: "pet-detail" }];
+        if (canUp) return uid ? [{ type: "pet-detail", uid }] : [{ type: "pet-detail" }];
         return [{ type: "tab", id: "cultivate" }];
       }
       if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
@@ -783,10 +842,20 @@ export function tutorialHighlights(state, nav = {}) {
       if (tab === "dungeon" && ps.dungeon === "setup") return [];
       if (tab === "dungeon") return [{ type: "panel-sub", group: "dungeon", id: "setup" }];
       return [{ type: "tab", id: "dungeon" }];
-    case "fuse_intro":
-      if (tab === "party" && ps.party === "ranch") return [{ type: "pet-detail" }, { type: "start-fuse" }];
+    case "fuse_intro": {
+      // 到達融合頁即完成此步；唔標示血統連結
+      if (nav.petFuse) return [];
+      const uid = tutorialCoachDetailUid(state);
+      if (tab === "party" && ps.party === "ranch") {
+        if (nav.petDetail) return [{ type: "start-fuse" }];
+        return uid ? [{ type: "pet-detail", uid }] : [{ type: "pet-detail" }];
+      }
       if (tab === "party") return [{ type: "panel-sub", group: "party", id: "ranch" }];
       return [{ type: "tab", id: "party" }];
+    }
+    case "fuse_once":
+      // 完成一次融合；唔發光、唔鎖功能
+      return [];
     default:
       return [];
   }
@@ -803,11 +872,14 @@ function highlightMatches(h, spec) {
       return h.act === spec.act;
     case "shop-buy":
     case "deploy":
-    case "pet-detail":
     case "upgrade":
     case "start-hatch":
     case "claim-hatch":
     case "start-fuse":
+      return true;
+    case "pet-detail":
+      if (h.uid && spec.uid) return h.uid === spec.uid;
+      if (h.uid || spec.uid) return !h.uid || !spec.uid || h.uid === spec.uid;
       return true;
     case "dungeon":
       return !spec.dungeonId || h.dungeonId === spec.dungeonId;
@@ -834,7 +906,10 @@ export function tutorialTargetSelector(spec) {
     case "deploy":
       return "[data-deploy]:not([disabled])";
     case "pet-detail":
-      return "[data-pet-detail]";
+      // 只標「詳情」掣，唔標名稱／血統連結（linkish）
+      return spec.uid
+        ? `button.info[data-pet-detail="${spec.uid}"]`
+        : "button.info[data-pet-detail]";
     case "upgrade":
       return "[data-upgrade-feed]:not([disabled]), [data-upgrade]:not([disabled])";
     case "start-fuse":
@@ -859,9 +934,13 @@ export function findTutorialTargetElements(state, nav = {}) {
   for (const spec of specs) {
     const sel = tutorialTargetSelector(spec);
     if (!sel) continue;
-    document.querySelectorAll(sel).forEach((el) => {
-      if (!el.disabled && !el.hidden) els.push(el);
-    });
+    const matched = [...document.querySelectorAll(sel)].filter((el) => !el.disabled && !el.hidden);
+    // pet-detail：永遠只取第一個清楚目標
+    if (spec.type === "pet-detail") {
+      if (matched[0]) els.push(matched[0]);
+      continue;
+    }
+    matched.forEach((el) => els.push(el));
   }
   return els;
 }
@@ -884,6 +963,8 @@ export function skipTutorial(state) {
   state.tutorial.step = "complete";
   state.tutorial.lateCompleted = true;
   state.tutorial.latePending = false;
+  if (!state.tutorial.flags) state.tutorial.flags = {};
+  state.tutorial.flags.skipped = true;
   return { ok: true, msg: "已跳過新手教學，所有功能已解鎖。" };
 }
 

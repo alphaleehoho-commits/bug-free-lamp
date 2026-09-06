@@ -178,6 +178,7 @@ import {
   tutorialBannerHint,
   tutorialNeedsRanchSub,
   tutorialEggReady,
+  tutorialCoachDetailUid,
 } from "./tutorial.js";
 
 const app = document.querySelector("#app");
@@ -348,7 +349,7 @@ function isTutorialTargetClick(target) {
 
 function onTutorialMisclick(ev) {
   if (!tutorialActive(state)) return;
-  if (ev.target.closest?.(".tutorial-skip")) return;
+  if (ev.target.closest?.(".tutorial-skip, [data-live=tutorial] [data-act=skip-tutorial]")) return;
   if (isTutorialTargetClick(ev.target)) {
     tutMisclickCount = 0;
     return;
@@ -405,6 +406,38 @@ function refreshTutorialGlow() {
   positionTutorialSpotlight(false);
 }
 
+function handleTutorialBannerAct(act) {
+  if (act === "skip-tutorial") {
+    const r = skipTutorial(state);
+    saveState(state);
+    render();
+    setFlash(r.msg, "unlock");
+    return true;
+  }
+  if (act === "collapse-tutorial") {
+    tutorialCollapsed = true;
+    render();
+    return true;
+  }
+  if (act === "expand-tutorial") {
+    tutorialCollapsed = false;
+    render();
+    return true;
+  }
+  return false;
+}
+
+/** live patch 會換掉 banner DOM，用委派避免「跳過」掣失聯 */
+function onTutorialBannerClick(ev) {
+  const btn = ev.target.closest?.("[data-live=tutorial] [data-act]");
+  if (!btn) return;
+  const act = btn.dataset.act;
+  if (act === "skip-tutorial" || act === "collapse-tutorial" || act === "expand-tutorial") {
+    ev.preventDefault();
+    handleTutorialBannerAct(act);
+  }
+}
+
 function patchTutorialBanner() {
   const cur = document.querySelector("[data-live=tutorial]");
   if (!tutorialActive(state)) {
@@ -432,7 +465,12 @@ let petView = {
 };
 
 function tutorialNavCtx() {
-  return { tab, panelSub, petDetail: petView.mode === "detail" };
+  return {
+    tab,
+    panelSub,
+    petDetail: petView.mode === "detail",
+    petFuse: petView.mode === "fuse",
+  };
 }
 
 function initTutorialNav() {
@@ -1767,6 +1805,18 @@ function render() {
       setFlash(adv.unlockMsg, "unlock");
     }
   }
+  // 融合引導：到達融合頁即完成 fuse_intro
+  if (
+    tutorialActive(state) &&
+    state.tutorial.step === "fuse_intro" &&
+    petView.mode === "fuse" &&
+    !state.tutorial.flags?.fusePageVisited
+  ) {
+    const adv = markTutorialFlag(state, "fusePageVisited");
+    if (adv.advanced && adv.unlockMsg) {
+      setFlash(adv.unlockMsg, "unlock");
+    }
+  }
 
   const stage = realmInfo(state);
   const next = nextRealm(state);
@@ -2655,19 +2705,20 @@ function petGridCard(p, extraBtn = "", tagHtml = "") {
   const title = displayPetName(p);
   const r = rarityInfo(p.rarity ?? 0);
   const g = petGeneration(p);
+  const detailGlow = tutGlow({ type: "pet-detail", uid: p.uid || p.templateId });
   return `
     <li class="pet-card">
       <div class="pet-card-top">
         ${petIconFromPet(p, { size: 28 })}
         <div class="pet-card-title">
-          <button type="button" class="linkish${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
+          <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
           ${tagHtml}
         </div>
       </div>
       <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""}</span>
       <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)} · 攻${fmtInt(p.atk)}</span>
       <div class="row-actions pet-card-actions">
-        <button type="button" class="info${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}">詳情</button>
+        <button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>
         ${extraBtn}
       </div>
     </li>`;
@@ -2680,17 +2731,18 @@ function petRow(p, extraBtn = "", tagHtml = "") {
   const title = displayPetName(p);
   const r = rarityInfo(p.rarity ?? 0);
   const g = petGeneration(p);
+  const detailGlow = tutGlow({ type: "pet-detail", uid: p.uid || p.templateId });
   return `
     <li class="card-row pet-row">
       ${petIconFromPet(p, { size: 34 })}
       <div>
-        <button type="button" class="linkish${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
+        <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
         ${tagHtml}
         <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
         <span class="muted">攻${fmtInt(p.atk)} 血${fmtInt(p.hp)} 速${fmtInt(p.spd)} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
-        <button type="button" class="info${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}">詳情</button>
+        <button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>
         ${extraBtn}
       </div>
     </li>`;
@@ -4347,11 +4399,9 @@ function bind() {
         saveState(state);
         render();
         setFlash(r.msg, r.ok ? "unlock" : "");
-      } else if (act === "skip-tutorial") {
-        const r = skipTutorial(state);
-        saveState(state);
-        render();
-        setFlash(r.msg, "unlock");
+      } else if (act === "skip-tutorial" || act === "collapse-tutorial" || act === "expand-tutorial") {
+        // 交由 document 委派 onTutorialBannerClick（live patch 換 DOM 後仍可用）
+        return;
       } else if (act === "pwa-install") {
         if (!pwaInstallEvt) {
           setFlash("此裝置暫不支援安裝。");
@@ -4476,12 +4526,6 @@ function bind() {
         render();
       } else if (act === "toggle-reward-details") {
         rewardDetailsOpen = !rewardDetailsOpen;
-        render();
-      } else if (act === "collapse-tutorial") {
-        tutorialCollapsed = true;
-        render();
-      } else if (act === "expand-tutorial") {
-        tutorialCollapsed = false;
         render();
       } else if (act === "toggle-mat-section") {
         matSectionOpen = !matSectionOpen;
@@ -4899,6 +4943,10 @@ function bind() {
         fuseMats: [],
         breedParents: [],
       };
+      if (tutorialActive(state) && state.tutorial.step === "fuse_intro") {
+        const adv = markTutorialFlag(state, "fusePageVisited");
+        if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+      }
       render();
     });
   });
@@ -4947,6 +4995,10 @@ function bind() {
       saveState(state);
       if (r.ok) {
         petView = { mode: "detail", uid: baseUid, fuseBase: null, fuseMats: [], breedParents: [], detailTab: "stats" };
+        if (tutorialActive(state)) {
+          const adv = advanceTutorialIfReady(state);
+          if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+        }
       }
       render();
       flashResult(r);
@@ -5050,6 +5102,7 @@ if (lateBoot.started) {
 }
 maybeNotifyOffline(state.offlineHint || (offlineBankView(state).hasPending ? offlineBankView(state) : null));
 
+document.addEventListener("click", onTutorialBannerClick);
 document.addEventListener("click", onTutorialMisclick, true);
 document.addEventListener("touchend", onTutorialMisclick, true);
 window.addEventListener("resize", () => {

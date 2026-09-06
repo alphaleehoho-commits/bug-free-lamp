@@ -258,6 +258,9 @@ import {
   tutorialNeedsRanchSub,
   tutorialTargetSelector,
   isDungeonSubLocked,
+  tutorialCoachDetailUid,
+  LATE_TUTORIAL_STEPS,
+  isPartySubLocked,
 } from "./tutorial.js";
 
 function assertNavKeepsTab(state, step, tab, panelSub = {}) {
@@ -1079,6 +1082,12 @@ assert(tutorialBannerHint(qiBannerSt).includes("35s"), "qi banner shows idle cou
 assert(tutorialNeedsRanchSub("train_pet"), "train_pet needs ranch");
 assert(tutorialTargetSelector({ type: "upgrade" }).includes("data-upgrade-feed"), "upgrade selector");
 assert(tutorialTargetSelector({ type: "start-fuse" }) === "[data-start-fuse]:not([disabled])", "fuse selector");
+assert(
+  tutorialTargetSelector({ type: "pet-detail", uid: "p1" }) === 'button.info[data-pet-detail="p1"]',
+  "pet-detail selector is info btn only"
+);
+assert(tutorialNeedsRanchSub("fuse_intro"), "fuse_intro needs ranch");
+assert(LATE_TUTORIAL_STEPS.includes("fuse_once"), "late includes fuse_once");
 
 const eggReadySt = {
   eggs: [{ uid: "e1", startedAt: Date.now() - 30_000, readyAt: Date.now() - 1000, tier: "C", name: "潮霧蛋" }],
@@ -1254,6 +1263,20 @@ assert(tutorialActive(skipSt), "skip pre active");
 const skipR = skipTutorial(skipSt);
 assert(skipR.ok && !tutorialActive(skipSt), "skip tutorial unlocks");
 assert(skipSt.tutorial.done && skipSt.tutorial.step === "complete", "skip marks complete");
+assert(skipSt.tutorial.flags.skipped && skipSt.tutorial.lateCompleted, "skip sets skipped+lateCompleted");
+
+for (const step of ["train_pet", "dungeon_win", "fuse_intro", "fuse_once"]) {
+  const mid = {
+    realm: 2,
+    clearedDungeons: { tide_3: true },
+    stats: { fusions: 0 },
+    tutorial: { done: false, step, flags: {}, latePending: true, lateCompleted: false },
+  };
+  const r = skipTutorial(mid);
+  assert(r.ok && !tutorialActive(mid), `skip works at ${step}`);
+  const restart = maybeStartLateTutorial(mid);
+  assert(!restart.started, `skip stays skipped after late check (${step})`);
+}
 
 const meetHi = tutorialHighlights(
   {
@@ -1264,7 +1287,7 @@ const meetHi = tutorialHighlights(
   },
   { tab: "party", panelSub: { party: "ranch" } }
 );
-assert(meetHi.some((h) => h.type === "pet-detail"), "meet_pet highlights detail");
+assert(meetHi.some((h) => h.type === "pet-detail" && h.uid), "meet_pet highlights one coach detail");
 
 const ga = genAwakenBonus(3);
 assert(ga?.skillLevel === 2 && ga.atk > 0, "gen3 awaken");
@@ -1479,6 +1502,53 @@ const lateNav = syncTutorialNavigation(lateTac, {
 assert(lateNav.panelSub.dungeon === "setup", "late tactics forces setup");
 lateTac.tutorial.flags.tacticsVisited = true;
 assert(advanceTutorialIfReady(lateTac).advanced && lateTac.tutorial.done, "tactics visit completes late tutorial");
+
+/* Pack D: fuse_intro completes on fuse page; fuse_once needs a fusion; no glow on fuse_once */
+const fusePetA = { ...makeStarterPet(), uid: "fuse-a", speciesId: "reefox", fusionLevel: 0, level: 8 };
+const fusePetB = { ...makeStarterPet(), uid: "fuse-b", speciesId: "reefox", fusionLevel: 0, level: 5 };
+const fuseIntroSt = {
+  realm: 2,
+  clearedDungeons: { tide_3: true },
+  stats: { fusions: 0 },
+  pets: [fusePetA],
+  ranch: [fusePetB],
+  materials: { fuse_sand: 2 },
+  stones: 999,
+  tutorial: {
+    done: false,
+    step: "fuse_intro",
+    flags: {},
+    latePending: true,
+    lateCompleted: false,
+  },
+};
+normalizeTutorial(fuseIntroSt);
+const fuseListHi = tutorialHighlights(fuseIntroSt, {
+  tab: "party",
+  panelSub: { party: "ranch" },
+});
+assert(fuseListHi.length === 1 && fuseListHi[0].type === "pet-detail", "fuse_intro one pet-detail target");
+assert(fuseListHi[0].uid === tutorialCoachDetailUid(fuseIntroSt), "fuse_intro coach uid");
+const fuseDetailHi = tutorialHighlights(fuseIntroSt, {
+  tab: "party",
+  panelSub: { party: "ranch" },
+  petDetail: true,
+});
+assert(fuseDetailHi.some((h) => h.type === "start-fuse"), "fuse_intro highlights start-fuse on detail");
+assert(!fuseDetailHi.some((h) => h.type === "pet-detail"), "fuse_intro detail step no lineage/name glow");
+fuseIntroSt.tutorial.flags.fusePageVisited = true;
+const fuseAdv = advanceTutorialIfReady(fuseIntroSt);
+assert(fuseAdv.advanced && fuseIntroSt.tutorial.step === "fuse_once", "fuse page completes fuse_intro");
+assert(!isTabLocked(fuseIntroSt, "dungeon"), "fuse_once does not lock dungeon");
+assert(!isPartySubLocked(fuseIntroSt, "dispatch"), "fuse_once does not lock dispatch");
+const fuseOnceHi = tutorialHighlights(fuseIntroSt, {
+  tab: "party",
+  panelSub: { party: "ranch" },
+  petDetail: true,
+});
+assert(fuseOnceHi.length === 0, "fuse_once has no highlights");
+fuseIntroSt.tutorial.flags.fuseDone = true;
+assert(advanceTutorialIfReady(fuseIntroSt).advanced && fuseIntroSt.tutorial.done, "fuse_once completes on fusion");
 
 const dayKey = todayKey();
 const dailyAllSt = {
