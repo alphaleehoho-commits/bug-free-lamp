@@ -1848,6 +1848,11 @@ assert(BREED_QUEUE_MAX === 3, "breed queue max 3");
 assert(uiSrc.includes("panel-subnav-dock"), "ui has panel subnav dock");
 assert(uiSrc.includes("panel-subnav-dock--top"), "ui docks subnav at top to avoid bottom-tab hit steal");
 assert(uiSrc.includes("function switchPanelSub"), "ui panel sub switch helper");
+assert(uiSrc.includes("let abyssSquadPick"), "ui declares abyssSquadPick");
+assert(uiSrc.includes("let abyssRearrangePick"), "ui declares abyssRearrangePick");
+assert(uiSrc.includes("rearrangeAbyssSquad"), "ui imports rearrangeAbyssSquad");
+assert(uiSrc.includes("resolveAbyssEvent"), "ui imports resolveAbyssEvent");
+
 assert(uiSrc.includes("function wrapStage"), "ui has wrapStage layout helper");
 assert(uiSrc.includes("tabs-bottom"), "ui has bottom tab bar");
 assert(uiSrc.includes("statsSheetHtml"), "ui has stats resource sheet");
