@@ -2064,18 +2064,6 @@ export function formationFoePlacement(unitCount = 0) {
  */
 export const DUNGEON_CHALLENGE_RULES = [
   {
-    id: "max_1_pet",
-    label: "挑戰：孤寵出戰（僅 1 寵）",
-    maxPets: 1,
-    bonus: { stones: 24, scrap: 1 },
-  },
-  {
-    id: "max_2_pets",
-    label: "挑戰：出戰≤2寵",
-    maxPets: 2,
-    bonus: { stones: 18, dust: 4 },
-  },
-  {
     id: "ban_flame",
     label: "挑戰：禁焰屬出戰",
     banElement: "flame",
@@ -2127,13 +2115,10 @@ export function pickDailyChallenge(dateKey, dungeonId) {
   return { ...list[idx] };
 }
 
-/** 評估出戰是否滿足挑戰規則（可拿挑戰獎） */
+/** 評估出戰是否滿足挑戰規則（可拿挑戰獎）；唔再限制出戰隻數 */
 export function evaluateDungeonChallenge(pets, challenge, opts = {}) {
   if (!challenge) return { ok: true, reason: "" };
   const list = Array.isArray(pets) ? pets : [];
-  if (challenge.maxPets != null && list.length > challenge.maxPets) {
-    return { ok: false, reason: `出戰 ${list.length}／上限 ${challenge.maxPets}` };
-  }
   if (challenge.banElement) {
     const hit = list.filter((p) => p.elementId === challenge.banElement);
     if (hit.length) {
@@ -4778,9 +4763,19 @@ export const ABYSS_GRIT_ID = "abyss_grit";
 export const ABYSS_ENTRY_TOKEN_COST = 1;
 export const ABYSS_WIPE_KEEP_RATE = 0.4;
 export const ABYSS_MUTATION_EVERY = 3;
-export const ABYSS_MAX_ACTIVE_MUTATIONS = 2;
+/** @deprecated 突變唔再設活躍上限；保留常數以免舊引用爆 */
+export const ABYSS_MAX_ACTIVE_MUTATIONS = Infinity;
+/** 深潛獨立編隊：5 寵（3 出戰 + 2 替補） */
+export const ABYSS_SQUAD_SIZE = 5;
+export const ABYSS_ACTIVE_SIZE = 3;
+/** 每通關 N 層觸發 2 選 1 事件 */
+export const ABYSS_EVENT_EVERY = 5;
+/** 營火／潮篝回血比例 */
+export const ABYSS_CAMPFIRE_HEAL = 0.3;
+/** 祭壇復活後血量比例 */
+export const ABYSS_ALTAR_REVIVE_HP = 0.4;
 
-/** @type {Record<string, { id: string, name: string, desc: string, healMult?: number, frontDmgTakenMult?: number, maxPets?: number }>} */
+/** @type {Record<string, { id: string, name: string, desc: string, healMult?: number, frontDmgTakenMult?: number, foeAtkMult?: number, allySpdMult?: number, foeHpMult?: number }>} */
 export const ABYSS_MUTATIONS = {
   mut_no_heal: {
     id: "mut_no_heal",
@@ -4797,12 +4792,72 @@ export const ABYSS_MUTATIONS = {
   mut_duo: {
     id: "mut_duo",
     name: "雙影",
-    desc: "本場出戰最多 2 寵",
-    maxPets: 2,
+    desc: "敵方攻擊 +18%",
+    foeAtkMult: 1.18,
+  },
+  mut_mire: {
+    id: "mut_mire",
+    name: "淤泥",
+    desc: "友方速度 −12%",
+    allySpdMult: 0.88,
+  },
+  mut_swell: {
+    id: "mut_swell",
+    name: "漲潮",
+    desc: "敵方血量 +20%",
+    foeHpMult: 1.2,
   },
 };
 
 export const ABYSS_MUTATION_IDS = Object.keys(ABYSS_MUTATIONS);
+
+/** 行商本潛增益（花淵砂；只喺今趟深潛生效） */
+export const ABYSS_MERCHANT_BUFFS = {
+  tide_blade: {
+    id: "tide_blade",
+    name: "潮刃符",
+    desc: "本潛攻擊 +12%",
+    cost: 8,
+    atkMult: 1.12,
+  },
+  mist_ward: {
+    id: "mist_ward",
+    name: "霧護符",
+    desc: "本潛最大血量 +15%（按比例補血）",
+    cost: 8,
+    hpMult: 1.15,
+  },
+  grit_focus: {
+    id: "grit_focus",
+    name: "凝砂印",
+    desc: "本潛承傷 −10%",
+    cost: 10,
+    dmgTakenMult: 0.9,
+  },
+};
+
+export const ABYSS_MERCHANT_BUFF_IDS = Object.keys(ABYSS_MERCHANT_BUFFS);
+
+/** 潮淵層間事件類型 */
+export const ABYSS_EVENT_TYPES = {
+  campfire: {
+    id: "campfire",
+    name: "潮篝",
+    desc: "全體回復約 30% 血量（陣亡唔復活）",
+  },
+  merchant: {
+    id: "merchant",
+    name: "行商",
+    desc: "花淵砂買本潛增益",
+  },
+  altar: {
+    id: "altar",
+    name: "祭壇",
+    desc: "復活一隻陣亡靈寵",
+  },
+};
+
+export const ABYSS_EVENT_TYPE_IDS = Object.keys(ABYSS_EVENT_TYPES);
 
 /** 深潛限定外觀（小幅 %，有帳號 cap） */
 export const ABYSS_COSMETICS = {
@@ -4872,10 +4927,39 @@ export function abyssHash(seed) {
 }
 
 export function pickAbyssMutationId(seed, excludeIds = []) {
-  const pool = ABYSS_MUTATION_IDS.filter((id) => !excludeIds.includes(id));
-  if (!pool.length) return ABYSS_MUTATION_IDS[0];
+  let pool = ABYSS_MUTATION_IDS.filter((id) => !excludeIds.includes(id));
+  // 活躍唔設上限：池空就由全表再抽，允許重複疊加
+  if (!pool.length) pool = [...ABYSS_MUTATION_IDS];
   const h = abyssHash(seed);
   return pool[h % pool.length];
+}
+
+/** 每 5 層：由營火／行商／祭壇隨機抽 2 個做 2 選 1 */
+export function rollAbyssFloorEvent(seed, depth) {
+  const h = abyssHash(`${seed}:evt${depth}`);
+  const pool = [...ABYSS_EVENT_TYPE_IDS];
+  const i0 = h % pool.length;
+  const first = pool.splice(i0, 1)[0];
+  const i1 = (h >>> 8) % pool.length;
+  const second = pool[i1];
+  const buffId = ABYSS_MERCHANT_BUFF_IDS[(h >>> 16) % ABYSS_MERCHANT_BUFF_IDS.length];
+  return {
+    depth: depth | 0,
+    options: [first, second].map((type) => {
+      const base = ABYSS_EVENT_TYPES[type];
+      if (type === "merchant") {
+        const buff = ABYSS_MERCHANT_BUFFS[buffId];
+        return {
+          type,
+          name: base.name,
+          desc: `${base.desc}：【${buff.name}】${buff.desc}（淵砂×${buff.cost}）`,
+          buffId: buff.id,
+          cost: buff.cost,
+        };
+      }
+      return { type, name: base.name, desc: base.desc };
+    }),
+  };
 }
 
 /** 已解鎖外觀疊加嘅攻血倍率（受 cap） */

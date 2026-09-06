@@ -4103,9 +4103,65 @@ function abyssNextFloorNote(next) {
   if (!next) return "";
   if (next.willAddMutation) return "將加入 1 條新突變";
   if (next.insuranceSkips) return "突變保險將略過新突變";
-  if (next.atMutationCap) return "突變已達上限，無新增";
   if (next.mutationFloor) return "突變層（無新增）";
   return "本層無新突變";
+}
+
+function abyssRosterMiniHtml(roster) {
+  if (!roster) return "";
+  const row = (list, label) => {
+    const bits = (list || [])
+      .map((p) => {
+        const hp = `${p.hp}/${p.maxHp}`;
+        const dead = p.dead ? " · 陣亡" : "";
+        return `<li><strong>${escapeHtml(p.name)}</strong><span class="muted"> ${hp}${dead}</span></li>`;
+      })
+      .join("");
+    return `<div class="abyss-roster-col"><span class="muted">${label}</span><ul class="abyss-roster-list">${bits || "<li class='empty'>—</li>"}</ul></div>`;
+  };
+  return `<div class="abyss-roster-mini">${row(roster.active, "出戰")} ${row(roster.bench, "替補")}</div>`;
+}
+
+function abyssEventHtml(pendingEvent) {
+  if (!pendingEvent?.options?.length) return "";
+  const opts = pendingEvent.options
+    .map(
+      (o) => `<button type="button" class="secondary abyss-event-opt" data-abyss-event="${escapeHtml(o.type)}">
+        <strong>${escapeHtml(o.name)}</strong>
+        <span class="muted">${escapeHtml(o.desc || "")}</span>
+      </button>`
+    )
+    .join("");
+  return `<div class="abyss-event-block">
+      <p class="lead">潮淵事件 · 2 選 1</p>
+      <p class="meta muted">第 ${pendingEvent.depth | 0} 層通關獎勵——揀一項先至可以續潛。</p>
+      <div class="abyss-event-opts">${opts}</div>
+    </div>`;
+}
+
+function abyssRearrangeHtml(roster) {
+  if (!roster?.squad?.length) return "";
+  const pick = new Set(abyssRearrangePick || (roster.active || []).map((p) => p.uid));
+  const rows = (roster.squad || [])
+    .map((p) => {
+      const on = pick.has(p.uid);
+      const dead = p.dead ? "disabled" : "";
+      return `<li class="card-row">
+        <div><strong>${escapeHtml(p.name)}</strong><span class="muted"> ${p.hp}/${p.maxHp}${p.dead ? " · 陣亡" : ""}</span></div>
+        <button type="button" class="${on ? "primary" : "secondary"}" data-abyss-rearrange-toggle="${escapeHtml(p.uid)}" ${dead}>${
+          on ? "出戰" : "替補"
+        }</button>
+      </li>`;
+    })
+    .join("");
+  return `<div class="abyss-rearrange-block">
+      <p class="lead">整理隊伍 · 揀最多 3 隻出戰</p>
+      <ul class="list">${rows}</ul>
+      <div class="row">
+        <button type="button" class="primary" data-act="abyss-rearrange-confirm">確認編隊</button>
+        <button type="button" data-act="abyss-rearrange-cancel">取消</button>
+      </div>
+    </div>`;
 }
 
 function abyssSettlementHtml(result) {
@@ -4132,17 +4188,26 @@ function abyssSettlementHtml(result) {
   }
   const next = result.nextFloor;
   const nextNote = abyssNextFloorNote(next);
+  const liveRun = abyssDiveView(state).run;
+  const pendingEvent = liveRun?.pendingEvent || result.pendingEvent || null;
+  const roster = liveRun?.roster || result.roster || null;
+  const eventBlock = pendingEvent ? abyssEventHtml(pendingEvent) : "";
+  const rearrangeBlock = abyssRearrangePick ? abyssRearrangeHtml(roster) : "";
+  const rosterMini = !abyssRearrangePick && roster ? abyssRosterMiniHtml(roster) : "";
   return `
     <div class="abyss-settle">
       <p class="lead">已通關第 <strong>${result.clearedDepth || result.depth}</strong> 層</p>
       <div class="settle-summary-row abyss-grit-row">
         <div>
           <strong class="settle-total">淵砂 +${result.gritGained || 0}</strong>
-          <span class="muted">待結算累計 ${result.pendingGrit || 0}</span>
+          <span class="muted">待結算累計 ${result.pendingGrit || 0} · 層間唔回滿血</span>
         </div>
       </div>
       <p class="meta">活躍突變：</p>
       <p class="meta abyss-mut-list">${mutLine}</p>
+      ${rosterMini}
+      ${eventBlock}
+      ${rearrangeBlock}
       <div class="abyss-next-preview">
         <strong>下一層預覽 · 第 ${next?.depth ?? (result.depth | 0) + 1} 層</strong>
         <span class="muted">${escapeHtml(nextNote)}</span>
@@ -4210,8 +4275,16 @@ function combatModalHtml() {
           <button type="button" data-act="skip-combat">跳過動畫</button>
           <button type="button" class="primary" data-act="${clearAct}" disabled>${escapeHtml(clearLabel)}</button>`;
   } else if (isAbyss && result?.won && !result?.wiped && result?.canContinue) {
+    const liveRun = abyssDiveView(state).run;
+    const needEvent = !!liveRun?.pendingEvent;
+    const contDisabled = needEvent || !!abyssRearrangePick ? "disabled" : "";
     actions = `
-          <button type="button" class="primary" data-act="abyss-continue-floor">繼續下一層</button>
+          <button type="button" class="primary" data-act="abyss-continue-floor" ${contDisabled}>${
+            needEvent ? "先揀事件" : "繼續下一層"
+          }</button>
+          <button type="button" class="secondary" data-act="abyss-open-rearrange" ${
+            abyssRearrangePick || needEvent ? "disabled" : ""
+          }>整理隊伍</button>
           <button type="button" class="secondary" data-act="abyss-retreat-settle">撤退結算</button>
           <button type="button" data-act="${clearAct}">${escapeHtml(clearLabel)}</button>`;
   } else if (isAbyss) {
@@ -4299,21 +4372,65 @@ function abyssPanelHtml() {
   const mutLine = run?.mutations?.length
     ? run.mutations.map((m) => `【${escapeHtml(m.name)}】${escapeHtml(m.desc)}`).join("<br/>")
     : "尚無突變";
-  const runBlock = run
-    ? `<div class="abyss-run card-block">
+  const buffLine = run?.diveBuffList?.length
+    ? run.diveBuffList.map((b) => `【${escapeHtml(b.name)}】`).join("")
+    : "無";
+  let runBlock;
+  if (run) {
+    const needEvent = !!run.pendingEvent;
+    const roster = abyssRosterMiniHtml(run.roster);
+    const eventBlock = needEvent ? abyssEventHtml(run.pendingEvent) : "";
+    const rearrangeBlock = abyssRearrangePick ? abyssRearrangeHtml(run.roster) : "";
+    runBlock = `<div class="abyss-run card-block">
         <p class="lead">進行中 · 已通第 <strong>${run.depth}</strong> 層 · 待結算淵砂 <strong>${run.pendingGrit}</strong></p>
-        <p class="meta">下一挑戰：第 <strong>${(run.depth | 0) + 1}</strong> 層</p>
+        <p class="meta">下一挑戰：第 <strong>${(run.depth | 0) + 1}</strong> 層 · 本潛增益：${buffLine}</p>
         <p class="meta">突變：${mutLine}</p>
+        ${roster}
+        ${eventBlock}
+        ${rearrangeBlock}
         <div class="row">
-          <button type="button" class="primary" data-abyss-advance>挑戰第 ${(run.depth | 0) + 1} 層</button>
+          <button type="button" class="primary" data-abyss-advance ${needEvent || abyssRearrangePick ? "disabled" : ""}>${
+            needEvent ? "先揀事件" : `挑戰第 ${(run.depth | 0) + 1} 層`
+          }</button>
+          <button type="button" class="secondary" data-act="abyss-open-rearrange" ${
+            abyssRearrangePick || needEvent ? "disabled" : ""
+          }>整理隊伍</button>
           <button type="button" class="secondary" data-abyss-retreat>撤退結算</button>
         </div>
-      </div>`
-    : `<div class="abyss-run card-block">
+      </div>`;
+  } else if (abyssSquadPick) {
+    const pick = new Set(abyssSquadPick);
+    const cands = abyssSquadCandidates(state);
+    const rows = cands
+      .map((p) => {
+        const on = pick.has(p.uid);
+        return `<li class="card-row">
+          <div><strong>${escapeHtml(p.name)}</strong><span class="muted"> Lv${p.level} · 攻${p.atk} 血${p.hp}</span></div>
+          <button type="button" class="${on ? "primary" : "secondary"}" data-abyss-squad-toggle="${escapeHtml(p.uid)}">${
+            on ? "已選" : "選擇"
+          }</button>
+        </li>`;
+      })
+      .join("") || `<li class="empty">冇可用靈寵。</li>`;
+    runBlock = `<div class="abyss-run card-block">
+        <p class="lead">編組潮淵隊 · ${pick.size}/${v.squadSize}</p>
+        <p class="meta">揀 ${v.squadSize} 隻（前 ${v.activeSize} 出戰，其餘替補）。層間唔回滿血。</p>
+        <ul class="list">${rows}</ul>
+        <div class="row">
+          <button type="button" class="primary" data-abyss-start ${pick.size === v.squadSize ? "" : "disabled"}>確認開潛</button>
+          <button type="button" data-act="abyss-squad-cancel">取消</button>
+        </div>
+      </div>`;
+  } else {
+    runBlock = `<div class="abyss-run card-block">
         <p class="lead">未開潛</p>
         <p class="meta">今日首趟免費 · 其後耗潮霧令 ×${v.entryCost || 1}（現有 ${v.tokenHave}）</p>
-        <button type="button" class="primary" data-abyss-start>開始深潛（第 1 層）</button>
+        <p class="meta">需獨立編隊 ${v.squadSize} 寵（3 出戰 + 2 替補）· 現有 ${v.ownedCount} 隻</p>
+        <button type="button" class="primary" data-act="abyss-open-squad" ${
+          v.canFormSquad ? "" : "disabled"
+        }>${v.canFormSquad ? "開始深潛（編隊）" : `靈寵不足（需 ${v.squadSize}）`}</button>
       </div>`;
+  }
   const cosRows = (v.cosmeticList || [])
     .map((c) => {
       const owned = c.owned ? "已擁有" : `淵砂×${c.cost}`;
@@ -4963,19 +5080,61 @@ function bind() {
         skipPlayback();
       } else if (act === "abyss-continue-floor") {
         if (!playback?.done || !isAbyssCombat(playback.result)) return;
+        if (abyssDiveView(state).run?.pendingEvent) {
+          setFlash("請先揀潮淵事件（2 選 1）。");
+          return;
+        }
+        if (abyssRearrangePick) {
+          setFlash("請先確認或取消整理隊伍。");
+          return;
+        }
         stopPlayback();
         rewardDetailsOpen = false;
+        abyssRearrangePick = null;
         panelSub = { ...panelSub, dungeon: "abyss" };
         playAbyssResult(advanceAbyssDive(state));
       } else if (act === "abyss-retreat-settle") {
         if (!playback?.done || !isAbyssCombat(playback.result)) return;
         stopPlayback();
         rewardDetailsOpen = false;
+        abyssRearrangePick = null;
         const r = retreatAbyssDive(state);
         saveState(state);
         panelSub = { ...panelSub, dungeon: "abyss" };
         render();
         setFlash(r.msg || "已撤退結算");
+      } else if (act === "abyss-open-squad") {
+        if (!abyssDiveView(state).canFormSquad) {
+          setFlash("靈寵不足，無法組成潮淵編隊。");
+          return;
+        }
+        abyssSquadPick = [];
+        render();
+      } else if (act === "abyss-squad-cancel") {
+        abyssSquadPick = null;
+        render();
+      } else if (act === "abyss-open-rearrange") {
+        const roster = abyssDiveView(state).run?.roster;
+        if (!roster?.squad?.length) {
+          setFlash("冇可整理嘅編隊。");
+          return;
+        }
+        abyssRearrangePick = (roster.active || []).map((p) => p.uid);
+        render();
+      } else if (act === "abyss-rearrange-cancel") {
+        abyssRearrangePick = null;
+        render();
+      } else if (act === "abyss-rearrange-confirm") {
+        const r = rearrangeAbyssSquad(state, abyssRearrangePick || []);
+        if (r.ok) {
+          abyssRearrangePick = null;
+          if (playback?.result && isAbyssCombat(playback.result)) {
+            playback.result = { ...playback.result, roster: r.roster };
+          }
+        }
+        saveState(state);
+        render();
+        setFlash(r.msg);
       } else if (act === "toggle-cond-sheet") {
         condSheetOpen = !condSheetOpen;
         render();
@@ -5223,14 +5382,81 @@ function bind() {
     });
   });
   app.querySelectorAll("[data-abyss-start]").forEach((btn) => {
-    btn.addEventListener("click", () => playAbyssResult(startAbyssDive(state)));
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const pick = abyssSquadPick || [];
+      const r = startAbyssDive(state, pick);
+      if (!r.ok) {
+        setFlash(r.msg);
+        render();
+        return;
+      }
+      abyssSquadPick = null;
+      playAbyssResult(r);
+    });
+  });
+  app.querySelectorAll("[data-abyss-squad-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!Array.isArray(abyssSquadPick)) abyssSquadPick = [];
+      const uid = btn.dataset.abyssSquadToggle;
+      const set = new Set(abyssSquadPick);
+      const need = abyssDiveView(state).squadSize || 5;
+      if (set.has(uid)) set.delete(uid);
+      else {
+        if (set.size >= need) {
+          setFlash(`最多揀 ${need} 隻。`);
+          return;
+        }
+        set.add(uid);
+      }
+      abyssSquadPick = [...set];
+      render();
+    });
+  });
+  app.querySelectorAll("[data-abyss-rearrange-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      if (!Array.isArray(abyssRearrangePick)) abyssRearrangePick = [];
+      const uid = btn.dataset.abyssRearrangeToggle;
+      const set = new Set(abyssRearrangePick);
+      if (set.has(uid)) set.delete(uid);
+      else {
+        if (set.size >= 3) {
+          setFlash("出戰最多 3 隻。");
+          return;
+        }
+        set.add(uid);
+      }
+      abyssRearrangePick = [...set];
+      render();
+    });
+  });
+  app.querySelectorAll("[data-abyss-event]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const type = btn.dataset.abyssEvent;
+      const r = resolveAbyssEvent(state, type);
+      if (r.ok && playback?.result && isAbyssCombat(playback.result)) {
+        playback.result = {
+          ...playback.result,
+          pendingEvent: null,
+          roster: r.roster || playback.result.roster,
+        };
+      }
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
   });
   app.querySelectorAll("[data-abyss-advance]").forEach((btn) => {
-    btn.addEventListener("click", () => playAbyssResult(advanceAbyssDive(state)));
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      playAbyssResult(advanceAbyssDive(state));
+    });
   });
   app.querySelectorAll("[data-abyss-retreat]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const r = retreatAbyssDive(state);
+      abyssRearrangePick = null;
       saveState(state);
       render();
       setFlash(r.msg);
