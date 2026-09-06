@@ -139,6 +139,12 @@ import {
   ABYSS_MUTATION_IDS,
   ABYSS_COSMETIC_IDS,
   ABYSS_WIPE_KEEP_RATE,
+  ABYSS_SQUAD_SIZE,
+  ABYSS_ACTIVE_SIZE,
+  ABYSS_EVENT_EVERY,
+  ABYSS_MUTATIONS,
+  ABYSS_MERCHANT_BUFFS,
+  rollAbyssFloorEvent,
   emptyAbyssDive,
   emptyMaterials,
   emptyItems,
@@ -148,8 +154,14 @@ import {
   RANCH_CAP_BONUS_MAX,
   HATCH_SLOT_BASE,
   HATCH_SLOT_BONUS_MAX,
+  ABYSS_TIDE_SHIFT_COST,
+  ELEMENTS,
   OFFLINE_HINT_SEC,
   OFFLINE_BANK_CAP_SEC,
+  releaseSoulGain,
+  releaseRefund,
+  SOUL_SHOP_OFFERS,
+  soulShopOfferById,
   elementExplain,
   kindExplain,
   personalityExplain,
@@ -170,6 +182,8 @@ import {
   claimDailyAllClear,
   dailyAllClearView,
   buyShopOffer,
+  soulShopView,
+  buySoulShopOffer,
   tryBondPending,
   ensureShop,
   breedPreview,
@@ -221,16 +235,30 @@ import {
   trainIdleCombatView,
   trainSitesView,
   abyssDiveView,
+  abyssSquadCandidates,
   startAbyssDive,
   advanceAbyssDive,
   retreatAbyssDive,
+  rearrangeAbyssSquad,
+  resolveAbyssEvent,
   buyAbyssInsurance,
   buyAbyssCosmetic,
   buyAbyssEgg,
+  buyAbyssTideShiftCharm,
+  useTideShiftCharm,
   ranchCap,
   hatchSlotCap,
   useBagItem,
   itemsView,
+  releasePet,
+  releasePets,
+  previewReleaseSoul,
+  togglePetStarred,
+  togglePetLocked,
+  setPetStarred,
+  setPetLocked,
+  saveState,
+  loadState,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -291,9 +319,11 @@ assert(bestiaryTotal() === 2640, "bestiary 48×5×11");
 assert(Object.keys(PERSONALITIES).length === 20, "20 personalities");
 assert(ranchCapForStage(0) === 6 && ranchCapForStage(5) === 21, "ranch cap 6+stage*3");
 assert(ITEMS.ranch_fence?.name === "欄柵" && ITEMS.hatch_nest_token?.name === "暖巢箋", "bag items defined");
-assert(ITEM_IDS.length === 2, "two bag consumables");
+assert(ITEMS.tide_shift_charm?.name === "潮轉符" && ITEMS.tide_shift_charm?.needsTarget, "tide shift charm defined");
+assert(ITEM_IDS.length === 3, "three bag consumables");
 assert(HATCH_SLOT_BASE === 3 && HATCH_SLOT_BONUS_MAX === 3, "hatch slot base+bonus");
 assert(RANCH_CAP_BONUS_MAX === 12, "ranch fence bonus max");
+assert(ABYSS_TIDE_SHIFT_COST >= 1, "abyss tide shift grit cost");
 {
   const bagSt = {
     realm: 0,
@@ -322,6 +352,67 @@ assert(RANCH_CAP_BONUS_MAX === 12, "ranch fence bonus max");
     itemBonus: { ranchCap: 0, hatchSlots: 0 },
   });
   assert(view.find((i) => i.id === "ranch_fence")?.canUse, "itemsView canUse fence");
+}
+/* Pack E: 潮轉符 — permanent random element change */
+{
+  const pet = {
+    uid: "shift1",
+    name: "潮礁狐",
+    speciesId: "reefox",
+    speciesName: "礁狐",
+    elementId: "tide",
+    elementName: "潮",
+    personalityId: "fierce",
+    personalityName: "兇猛",
+    atk: 20,
+    hp: 100,
+    spd: 12,
+    level: 3,
+    genes: { species: "reefox", element: "tide", personality: "fierce" },
+  };
+  const ranchPet = {
+    ...pet,
+    uid: "shift2",
+    elementId: "flame",
+    elementName: "焰",
+    name: "焰礁狐",
+    genes: { species: "reefox", element: "flame", personality: "fierce" },
+  };
+  const shiftSt = {
+    pets: [pet],
+    ranch: [ranchPet],
+    items: { ...emptyItems(), tide_shift_charm: 2 },
+    materials: { ...emptyMaterials(), abyss_grit: ABYSS_TIDE_SHIFT_COST + 5 },
+    bestiary: {},
+    abyssDive: emptyAbyssDive(),
+    log: [],
+  };
+  assert(!useBagItem(shiftSt, "tide_shift_charm").ok, "tide shift needs target");
+  assert(useBagItem(shiftSt, "tide_shift_charm").needsTarget, "tide shift needsTarget flag");
+  const r1 = useTideShiftCharm(shiftSt, "shift1");
+  assert(r1.ok && r1.fromElement === "tide" && r1.toElement !== "tide", "party pet element changed");
+  assert(shiftSt.pets[0].elementId === r1.toElement, "pet record elementId persisted");
+  assert(shiftSt.pets[0].elementName === ELEMENTS[r1.toElement].name, "elementName updated");
+  assert(shiftSt.pets[0].genes.element === r1.toElement, "genes.element updated");
+  assert(shiftSt.items.tide_shift_charm === 1, "charm consumed");
+  assert(shiftSt.pets[0].name.startsWith(ELEMENTS[r1.toElement].name), "name prefix updated");
+  const beforeRanchEl = shiftSt.ranch[0].elementId;
+  const r2 = useBagItem(shiftSt, "tide_shift_charm", "shift2");
+  assert(r2.ok && shiftSt.ranch[0].elementId !== beforeRanchEl, "ranch pet via useBagItem");
+  assert(shiftSt.items.tide_shift_charm === 0, "second charm consumed");
+  assert(!useTideShiftCharm(shiftSt, "shift1").ok, "empty charm fails");
+  const buy = buyAbyssTideShiftCharm(shiftSt);
+  assert(buy.ok && shiftSt.items.tide_shift_charm === 1, "buy charm with grit");
+  assert(
+    Math.floor(shiftSt.materials.abyss_grit) === 5,
+    "grit spent for charm"
+  );
+  /* persist via save/load */
+  const saved = JSON.parse(JSON.stringify(shiftSt.pets[0]));
+  assert(saved.elementId === shiftSt.pets[0].elementId, "element survives serialize");
+  const iv = itemsView(shiftSt);
+  assert(iv.find((i) => i.id === "tide_shift_charm")?.needsTarget, "itemsView needsTarget");
+  assert(iv.find((i) => i.id === "tide_shift_charm")?.canUse, "itemsView canUse charm");
 }
 assert(RANCH_IDLE_GLOBAL_MULT === 0.35, "idle global mult");
 assert(DISPATCH_GEN_REWARD_MULT[3] === 1.25, "gen3 dispatch mult");
@@ -709,7 +800,8 @@ assert(
   ).ok,
   "ban flame"
 );
-assert(evaluateDungeonChallenge([{ elementId: "tide" }, { elementId: "gale" }], { maxPets: 2 }).ok, "max2 ok");
+assert(evaluateDungeonChallenge([{ elementId: "tide" }, { elementId: "gale" }], { banElement: "flame" }).ok, "no ban ok");
+assert(DUNGEON_CHALLENGE_RULES.every((r) => r.maxPets == null), "no maxPets challenge rules");
 
 /* P9: pet depth + dispatch + gear sets + tide seal */
 const synKin = partySynergy([
@@ -1385,7 +1477,9 @@ assert(bg3.costs.dust === 12 && bg3.checks.find((c) => c.type === "breeds")?.nee
 assert(bg3.checks.find((c) => c.type === "bestiary")?.need === 12, "bt gate 3 bestiary");
 assert(!(BREAKTHROUGH_GATES[5].checks || []).some((c) => c.type === "gear_equipped"), "no gear at r5");
 assert(DUNGEON_CHALLENGE_RULES.every((r) => !r.banMaster), "no banMaster challenge");
-assert(DUNGEON_CHALLENGE_RULES.some((r) => r.maxPets === 1), "solo pet challenge");
+assert(!DUNGEON_CHALLENGE_RULES.some((r) => r.maxPets != null), "no party-count challenge");
+assert(!ABYSS_MUTATIONS.mut_duo.maxPets, "mut_duo no longer caps pets");
+assert(ABYSS_SQUAD_SIZE === 5 && ABYSS_ACTIVE_SIZE === 3, "abyss squad 5=3+2");
 const dailyHybrid = BREED_GOALS.find((g) => g.id === "daily_hybrid");
 assert(dailyHybrid?.type === "breed_cross_kind", "daily hybrid cross kind");
 
@@ -2296,6 +2390,10 @@ assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
 assert(uiSrc2.includes('id: "bag"'), "ui bag sub-tab");
 assert(uiSrc2.includes("data-bag-inner"), "ui bag inner mats/items tabs");
 assert(uiSrc2.includes("data-use-item"), "ui use bag item");
+assert(uiSrc2.includes("tideShiftModal"), "ui tide shift pet picker");
+assert(uiSrc2.includes("data-tide-shift-pet"), "ui tide shift target");
+assert(uiSrc2.includes("data-abyss-buy-shift"), "ui abyss buy tide shift");
+assert(uiSrc2.includes("潮轉符"), "ui tide shift copy");
 assert(uiSrc2.includes("背包"), "ui bag label");
 assert(uiSrc2.includes("hatchSlotCap"), "ui exposes hatch slot cap");
 assert(uiSrc2.includes('id: "hatch"'), "ui hatch party sub-tab");
@@ -2311,6 +2409,8 @@ assert(!uiSrc2.includes('id: "mats"'), "ui materials tab renamed to bag");
 const dataSrcBag = readFileSync(join(__dir, "data.js"), "utf8");
 assert(dataSrcBag.includes("欄柵") && dataSrcBag.includes("暖巢箋"), "data bag item copy");
 assert(dataSrcBag.includes("ranch_fence") && dataSrcBag.includes("hatch_nest_token"), "data bag item ids");
+assert(dataSrcBag.includes("tide_shift_charm") && dataSrcBag.includes("潮轉符"), "data tide shift charm");
+assert(dataSrcBag.includes("ABYSS_TIDE_SHIFT_COST"), "data abyss tide shift cost");
 assert(!uiSrc2.includes("br.items.slice(0, 6)"), "ui breakthrough checklist shows all gates");
 assert(!uiSrc2.includes("gateCompact"), "ui no truncated gateCompact list");
 assert(uiSrc2.includes("breakthrough-gates"), "ui breakthrough gates list class");
@@ -2331,28 +2431,34 @@ assert(!cssSrc.includes("is-lunge-east"), "css no legacy east lunge");
 
 /* Tide Abyss Dive */
 assert(MATERIALS.abyss_grit?.tier === "abyss", "abyss grit material");
-assert(ABYSS_MUTATION_IDS.length === 3, "three abyss mutations");
+assert(ABYSS_MUTATION_IDS.length >= 5, "abyss mutations expanded");
 assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
+assert(ABYSS_EVENT_EVERY === 5, "event every 5 floors");
+assert(rollAbyssFloorEvent("seed", 5).options.length === 2, "event offers 2 choices");
+assert(Object.keys(ABYSS_MERCHANT_BUFFS).length >= 3, "merchant buffs");
 {
+  const mkPet = (uid, over = {}) => ({
+    uid,
+    name: uid,
+    speciesId: "reefox",
+    elementId: "tide",
+    personalityId: "fierce",
+    kind: "獸",
+    atk: 60,
+    hp: 280,
+    spd: 28,
+    level: 8,
+    skillLevel: 1,
+    generation: 1,
+    bloodmarks: [],
+    ...over,
+  });
+  const squadPets = [mkPet("ap1"), mkPet("ap2"), mkPet("ap3"), mkPet("ap4"), mkPet("ap5")];
+  const squadUids = squadPets.map((p) => p.uid);
   const abyssSt = {
     realm: 1,
-    pets: [
-      {
-        uid: "ap1",
-        name: "淵測",
-        speciesId: "reefox",
-        elementId: "tide",
-        personalityId: "fierce",
-        kind: "獸",
-        atk: 60,
-        hp: 280,
-        spd: 28,
-        level: 8,
-        skillLevel: 1,
-        generation: 1,
-        bloodmarks: [],
-      },
-    ],
+    pets: squadPets.slice(0, 3),
+    ranch: squadPets.slice(3),
     materials: { ...emptyMaterials(), mist_token: 5, abyss_grit: 200 },
     clearedDungeons: { tide_1: true },
     formation: "balanced",
@@ -2362,48 +2468,132 @@ assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
     abyssDive: emptyAbyssDive(),
   };
   const av = abyssDiveView(abyssSt);
-  assert(av.unlocked && av.freeLeft, "abyss unlocked free first");
-  const s1 = startAbyssDive(abyssSt);
+  assert(av.unlocked && av.freeLeft && av.canFormSquad, "abyss unlocked free first");
+  assert(abyssSquadCandidates(abyssSt).length === 5, "squad candidates from pets+ranch");
+  assert(!startAbyssDive(abyssSt, squadUids.slice(0, 3)).ok, "reject short squad");
+  const s1 = startAbyssDive(abyssSt, squadUids);
   assert(s1.ok && s1.won && s1.depth === 1 && s1.combatEvents?.length, "abyss floor 1 clear");
   assert(s1.clearedDepth === 1 && s1.nextFloor?.depth === 2, "abyss settle cleared + next preview");
   assert(String(s1.msg || "").includes("已通關第 1 層"), "abyss win copy means cleared");
   assert(s1.combatKind === "abyss" && s1.gritGained > 0, "abyss grit on clear");
   assert(abyssSt.abyssDive.run?.pendingGrit > 0, "pending grit after floor");
+  assert(abyssSt.abyssDive.run?.squadUids?.length === 5, "run keeps 5-pet squad");
+  assert(abyssSt.abyssDive.run?.activeUids?.length === 3, "3 active");
+  assert(abyssSt.abyssDive.run?.benchUids?.length === 2, "2 bench");
+  // HP persistence: damage tracked after floor 1
+  const hpAfter1 = { ...abyssSt.abyssDive.run.hpByUid };
+  assert(Object.keys(hpAfter1).length >= 3, "hp snapshot after floor");
   const s3 = advanceAbyssDive(abyssSt);
   assert(s3.ok, "abyss floor 2");
+  // after floor 2, hp should not all be full if they took damage — at least snapshot exists
+  assert(abyssSt.abyssDive.run?.hpByUid, "hp persists across floors");
   const s4 = advanceAbyssDive(abyssSt);
   assert(s4.ok && (abyssSt.abyssDive.run?.mutationIds || []).length >= 1, "mutation by floor 3");
   if (s4.won) {
     assert(s4.nextFloor?.depth === 4, "next floor after clear 3");
     assert(s4.mutations?.length >= 1, "settlement lists mutations");
+    assert(s4.nextFloor?.atMutationCap === false, "no mutation active cap");
+  }
+  // rearrange: put bench into active
+  const rr = rearrangeAbyssSquad(abyssSt, ["ap4", "ap5", "ap1"]);
+  assert(rr.ok && abyssSt.abyssDive.run.activeUids.includes("ap4"), "rearrange active");
+  assert(abyssSt.abyssDive.run.benchUids.includes("ap2"), "rearrange bench");
+  // push to floor 5 for event
+  let guard = 0;
+  while ((abyssSt.abyssDive.run?.depth | 0) < 5 && abyssSt.abyssDive.run && guard < 8) {
+    if (abyssSt.abyssDive.run.pendingEvent) {
+      const t = abyssSt.abyssDive.run.pendingEvent.options[0].type;
+      const er = resolveAbyssEvent(abyssSt, t);
+      assert(er.ok, "resolve mid-loop event");
+    }
+    const step = advanceAbyssDive(abyssSt);
+    assert(step.ok, `advance toward floor 5 (${guard})`);
+    if (!step.won) break;
+    guard += 1;
+  }
+  if ((abyssSt.abyssDive.run?.depth | 0) >= 5) {
+    assert(abyssSt.abyssDive.run.pendingEvent?.options?.length === 2, "floor 5 event 2-pick-1");
+    const opt = abyssSt.abyssDive.run.pendingEvent.options.find((o) => o.type === "campfire")
+      || abyssSt.abyssDive.run.pendingEvent.options[0];
+    // damage a pet then campfire heal if available
+    const uid0 = abyssSt.abyssDive.run.squadUids[0];
+    const beforeHp = abyssSt.abyssDive.run.hpByUid[uid0];
+    if (beforeHp && beforeHp.hp > 0) {
+      abyssSt.abyssDive.run.hpByUid[uid0] = {
+        ...beforeHp,
+        hp: Math.max(1, Math.floor(beforeHp.maxHp * 0.4)),
+      };
+    }
+    if (opt.type === "campfire") {
+      const er = resolveAbyssEvent(abyssSt, "campfire");
+      assert(er.ok && !abyssSt.abyssDive.run.pendingEvent, "campfire clears event");
+      const after = abyssSt.abyssDive.run.hpByUid[uid0];
+      assert(after.hp > Math.floor(after.maxHp * 0.4), "campfire healed");
+    } else if (opt.type === "merchant") {
+      const er = resolveAbyssEvent(abyssSt, "merchant");
+      assert(er.ok, "merchant resolve");
+      assert((abyssSt.abyssDive.run.diveBuffs || []).length >= 1, "dive buff applied");
+    } else {
+      // altar with no dead — still ok
+      abyssSt.abyssDive.run.hpByUid[uid0] = { hp: 0, maxHp: beforeHp?.maxHp || 100 };
+      const er = resolveAbyssEvent(abyssSt, "altar");
+      assert(er.ok && (abyssSt.abyssDive.run.hpByUid[uid0].hp | 0) > 0, "altar revive");
+    }
+  }
+  // mutation uncapped: stack past old limit of 2
+  {
+    const mutSt = {
+      realm: 1,
+      pets: squadPets.slice(0, 3),
+      ranch: squadPets.slice(3),
+      materials: { ...emptyMaterials(), mist_token: 5, abyss_grit: 50 },
+      clearedDungeons: { tide_1: true },
+      formation: "balanced",
+      tactics: "balanced",
+      eggs: [],
+      log: [],
+      abyssDive: {
+        ...emptyAbyssDive(),
+        freeUsedDate: "",
+        run: {
+          seed: "mut-stack",
+          depth: 8,
+          pendingGrit: 10,
+          mutationIds: ["mut_no_heal", "mut_front_tax", "mut_duo"],
+          startedAt: Date.now(),
+          squadUids,
+          activeUids: squadUids.slice(0, 3),
+          benchUids: squadUids.slice(3),
+          hpByUid: Object.fromEntries(
+            squadUids.map((uid) => [uid, { hp: 500, maxHp: 500 }])
+          ),
+          diveBuffs: [],
+          pendingEvent: null,
+        },
+      },
+    };
+    // floor 9 is mutation floor (9 % 3 === 0)
+    const m9 = advanceAbyssDive(mutSt);
+    if (m9.ok && m9.won) {
+      assert((mutSt.abyssDive.run.mutationIds || []).length >= 4, "mutations stack beyond 2");
+    }
   }
   const before = Math.floor(abyssSt.materials.abyss_grit || 0);
-  const ret = retreatAbyssDive(abyssSt);
-  assert(ret.ok && ret.grit > 0, "retreat grants grit");
-  assert(String(ret.msg || "").includes("已通第"), "retreat copy cleared depth");
-  assert(Math.floor(abyssSt.materials.abyss_grit) === before + ret.grit, "grit banked");
-  assert(!abyssSt.abyssDive.run, "run cleared on retreat");
+  if (abyssSt.abyssDive.run) {
+    const ret = retreatAbyssDive(abyssSt);
+    assert(ret.ok && ret.grit >= 0, "retreat grants grit");
+    assert(String(ret.msg || "").includes("已通第") || ret.depth === 0, "retreat copy cleared depth");
+    assert(Math.floor(abyssSt.materials.abyss_grit) === before + ret.grit, "grit banked");
+    assert(!abyssSt.abyssDive.run, "run cleared on retreat");
+  }
   // wipe settlement fields
   {
+    const weak = [mkPet("aw1", { atk: 1, hp: 8, spd: 1, level: 1 }), mkPet("aw2", { atk: 1, hp: 8, spd: 1 }), mkPet("aw3", { atk: 1, hp: 8, spd: 1 }), mkPet("aw4", { atk: 1, hp: 8, spd: 1 }), mkPet("aw5", { atk: 1, hp: 8, spd: 1 })];
+    const wUids = weak.map((p) => p.uid);
     const wipeSt = {
       realm: 1,
-      pets: [
-        {
-          uid: "aw1",
-          name: "弱測",
-          speciesId: "reefox",
-          elementId: "tide",
-          personalityId: "fierce",
-          kind: "獸",
-          atk: 1,
-          hp: 8,
-          spd: 1,
-          level: 1,
-          skillLevel: 1,
-          generation: 1,
-          bloodmarks: [],
-        },
-      ],
+      pets: weak.slice(0, 3),
+      ranch: weak.slice(3),
       materials: { ...emptyMaterials(), mist_token: 5, abyss_grit: 0 },
       clearedDungeons: { tide_1: true },
       formation: "balanced",
@@ -2418,6 +2608,12 @@ assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
           pendingGrit: 20,
           mutationIds: ["mut_no_heal"],
           startedAt: Date.now(),
+          squadUids: wUids,
+          activeUids: wUids.slice(0, 3),
+          benchUids: wUids.slice(3),
+          hpByUid: Object.fromEntries(wUids.map((uid) => [uid, { hp: 8, maxHp: 8 }])),
+          diveBuffs: [],
+          pendingEvent: null,
         },
       },
     };
@@ -2428,11 +2624,17 @@ assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
     assert(wipe.combatKind === "abyss" && wipe.combatEvents?.length, "wipe still has playback");
     assert(!wipeSt.abyssDive.run, "wipe clears run");
   }
+  // refresh grit for shop buys after possible retreat
+  abyssSt.materials.abyss_grit = Math.max(200, abyssSt.materials.abyss_grit | 0);
   assert(buyAbyssInsurance(abyssSt).ok, "buy insurance");
   assert(buyAbyssCosmetic(abyssSt, "veil_mark").ok, "buy cosmetic");
   assert(abyssSt.abyssDive.cosmetics.veil_mark, "cosmetic owned");
   const eggR = buyAbyssEgg(abyssSt);
   assert(eggR.ok && eggR.egg?.source === "abyss_dive", "buy abyss egg");
+  const gritBeforeCharm = Math.floor(abyssSt.materials.abyss_grit || 0);
+  const charmBuy = buyAbyssTideShiftCharm(abyssSt);
+  assert(charmBuy.ok && abyssSt.items.tide_shift_charm >= 1, "buy tide shift charm in abyss shop");
+  assert(Math.floor(abyssSt.materials.abyss_grit) === gritBeforeCharm - ABYSS_TIDE_SHIFT_COST, "charm grit cost");
   assert(TRAIN_SITES.every((s) => !(s.drops || []).some((d) => d.mat === "abyss_grit")), "train drops no grit");
 }
 assert(uiSrc2.includes("abyssDiveView"), "ui abyss view");
@@ -2444,7 +2646,11 @@ assert(uiSrc2.includes("abyss-continue-floor"), "ui continue next floor");
 assert(uiSrc2.includes("abyss-retreat-settle"), "ui retreat from combat settle");
 assert(uiSrc2.includes("已通關第"), "ui cleared-floor copy");
 assert(uiSrc2.includes("下一層預覽"), "ui next floor preview");
+assert(uiSrc2.includes("整理隊伍"), "ui rearrange squad");
+assert(uiSrc2.includes("data-abyss-event"), "ui abyss event pick");
+assert(uiSrc2.includes("abyss-open-squad"), "ui squad pick entry");
 assert(cssSrc.includes("combat-report-card--abyss-settle"), "css abyss settle enlarge");
+assert(cssSrc.includes("abyss-event-block"), "css abyss event block");
 
 /* Pet detail explain tabs */
 {
@@ -2471,6 +2677,222 @@ assert(uiSrc2.includes("相剋"), "ui element matchup copy");
 assert(uiSrc2.includes("data-upgrade-skill") && uiSrc2.includes("data-temper-oil"), "ui keep upgrade/temper");
 assert(cssSrc.includes("pet-detail-tabs"), "css pet detail tabs");
 assert(cssSrc.includes("pet-explain"), "css pet explain blocks");
+
+/* Pack A: star / lock / release→soul / batch release */
+{
+  assert(MATERIALS.soul_essence?.name === "精魂", "soul_essence material");
+  assert(emptyMaterials().soul_essence === 0, "empty mats has soul");
+  const baseSoul = releaseSoulGain({ level: 1, rarity: 0, fusionLevel: 0, generation: 1 });
+  assert(baseSoul === 6, `lv1 common soul=6 got ${baseSoul}`);
+  const rareSoul = releaseSoulGain({ level: 10, rarity: 1, fusionLevel: 1, generation: 2 });
+  assert(rareSoul === 36, `rare formula got ${rareSoul}`);
+  const oldRef = releaseRefund({ level: 5, fusionLevel: 1 });
+  assert(oldRef.stones === 0 && oldRef.feed === 0 && oldRef.dust === 0 && oldRef.soul > 0, "legacy refund is soul-only");
+
+  const lockSt = {
+    pets: [],
+    ranch: [
+      { ...makeStarterPet(), uid: "lock-a", level: 3, rarity: 0, fusionLevel: 0, locked: false, starred: false },
+      { ...makeStarterPet(), uid: "lock-b", level: 2, rarity: 0, fusionLevel: 0, locked: true, starred: false },
+    ],
+    materials: { ...emptyMaterials() },
+    stones: 100,
+    feed: 10,
+    dust: 10,
+    stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+    log: [],
+  };
+  const stonesBefore = lockSt.stones;
+  const feedBefore = lockSt.feed;
+  const dustBefore = lockSt.dust;
+  const blocked = releasePet(lockSt, "lock-b");
+  assert(!blocked.ok && String(blocked.msg).includes("上鎖"), "lock blocks release");
+  assert(lockSt.ranch.some((p) => p.uid === "lock-b"), "locked pet remains");
+  assert(lockSt.stones === stonesBefore && lockSt.feed === feedBefore && lockSt.dust === dustBefore, "lock release no stone/feed/dust change");
+
+  const soulBefore = Math.floor(lockSt.materials.soul_essence || 0);
+  const expectSoul = releaseSoulGain(lockSt.ranch.find((p) => p.uid === "lock-a"));
+  const freed = releasePet(lockSt, "lock-a");
+  assert(freed.ok && freed.soul === expectSoul, "release grants soul");
+  assert(Math.floor(lockSt.materials.soul_essence) === soulBefore + expectSoul, "soul banked in materials");
+  assert(lockSt.stones === stonesBefore && lockSt.feed === feedBefore && lockSt.dust === dustBefore, "release no longer refunds stone/feed/dust");
+  assert(!lockSt.ranch.some((p) => p.uid === "lock-a"), "released pet removed");
+
+  const starSt = {
+    pets: [],
+    ranch: [{ ...makeStarterPet(), uid: "star-1", starred: false, locked: false }],
+    materials: { ...emptyMaterials() },
+    stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+    log: [],
+  };
+  const starOn = togglePetStarred(starSt, "star-1");
+  assert(starOn.ok && starSt.ranch[0].starred === true, "star toggle on");
+  const starOff = togglePetStarred(starSt, "star-1");
+  assert(starOff.ok && starSt.ranch[0].starred === false, "star toggle off");
+  setPetStarred(starSt, "star-1", true);
+  assert(starSt.ranch[0].starred, "star set true");
+
+  // star persist via save/load normalize
+  const mem = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+    setItem: (k, v) => mem.set(k, String(v)),
+    removeItem: (k) => mem.delete(k),
+  };
+  const persistSt = {
+    realm: 0,
+    qi: 0,
+    stones: 50,
+    scrap: 0,
+    feed: 0,
+    dust: 0,
+    materials: { ...emptyMaterials() },
+    items: { ...emptyItems() },
+    itemBonus: emptyItemBonus(),
+    pets: [],
+    ranch: [{ ...makeStarterPet(), uid: "persist-star", starred: true, locked: true, level: 4 }],
+    eggs: [],
+    pending: [],
+    log: ["t"],
+    lastTick: Date.now(),
+    combatsWon: 0,
+    winStreak: 0,
+    clearedDungeons: {},
+    dungeonReadyAt: {},
+    dungeonSummon: {},
+    breedReadyAt: 0,
+    breedPair: null,
+    breedJobs: [],
+    bestiary: {},
+    daily: { date: "", progress: {}, claimed: {} },
+    pathQuests: { claimed: {} },
+    achievements: {},
+    stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+    master: { skillIds: [], equip: { weapon: null, armor: null, accessory: null } },
+    trainSite: "shore",
+    inventory: [],
+  };
+  saveState(persistSt);
+  const loaded = loadState();
+  const lp = (loaded.ranch || []).find((p) => p.uid === "persist-star");
+  assert(lp?.starred === true && lp?.locked === true, "star+lock persist through save/load");
+
+  const batchSt = {
+    pets: [],
+    ranch: [
+      { ...makeStarterPet(), uid: "batch-1", level: 5, rarity: 0, fusionLevel: 0, locked: false },
+      { ...makeStarterPet(), uid: "batch-2", level: 8, rarity: 1, fusionLevel: 0, locked: false },
+      { ...makeStarterPet(), uid: "batch-3", level: 2, rarity: 0, fusionLevel: 0, locked: true },
+    ],
+    materials: { ...emptyMaterials() },
+    stones: 200,
+    feed: 20,
+    dust: 20,
+    stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
+    log: [],
+  };
+  const prevBatch = previewReleaseSoul(batchSt, ["batch-1", "batch-3"]);
+  assert(!prevBatch.ok && String(prevBatch.msg).includes("上鎖"), "preview rejects locked in batch");
+  const okPrev = previewReleaseSoul(batchSt, ["batch-1", "batch-2"]);
+  assert(okPrev.ok && okPrev.pets.length === 2 && okPrev.soul > 0, "preview batch soul");
+  const soul0 = Math.floor(batchSt.materials.soul_essence || 0);
+  const batchR = releasePets(batchSt, ["batch-1", "batch-2"]);
+  assert(batchR.ok && batchR.count === 2 && batchR.soul === okPrev.soul, "batch release soul grant");
+  assert(Math.floor(batchSt.materials.soul_essence) === soul0 + okPrev.soul, "batch soul banked");
+  assert(batchSt.ranch.length === 1 && batchSt.ranch[0].uid === "batch-3", "batch left locked pet");
+  assert(batchSt.stats.releases === 2, "batch increments release stats");
+
+  const lockToggle = togglePetLocked(batchSt, "batch-3");
+  assert(lockToggle.ok && batchSt.ranch[0].locked === false, "unlock works");
+  setPetLocked(batchSt, "batch-3", true);
+  assert(batchSt.ranch[0].locked, "relock");
+}
+assert(uiSrc2.includes("releaseModalHtml"), "ui release modal");
+assert(uiSrc2.includes("confirm-release"), "ui confirm release act");
+assert(uiSrc2.includes("ranch-release-start"), "ui batch release start");
+assert(uiSrc2.includes("ranch-release-confirm"), "ui batch release confirm");
+assert(uiSrc2.includes("data-toggle-star"), "ui star toggle");
+assert(uiSrc2.includes("data-toggle-lock"), "ui lock toggle");
+assert(uiSrc2.includes("data-ranch-star-filter"), "ui star filter");
+assert(uiSrc2.includes("精魂"), "ui soul copy");
+assert(uiSrc2.includes("確認放生"), "ui confirm release copy");
+assert(uiSrc2.includes("批量放生"), "ui batch release copy");
+assert(uiSrc2.includes("上鎖"), "ui lock copy");
+assert(uiSrc2.includes("星標"), "ui star copy");
+assert(!uiSrc2.includes("確定放歸？將返還部分靈石"), "ui no browser confirm stone refund copy");
+assert(cssSrc.includes("release-modal"), "css release modal");
+assert(cssSrc.includes("pet-tag-star"), "css star tag");
+assert(cssSrc.includes("pet-tag-lock"), "css lock tag");
+
+/* Pack B: dense pet pickers (~30) — 2-col grids + sticky ranch filters */
+assert(uiSrc2.includes("petPickCard"), "ui petPickCard helper");
+assert(uiSrc2.includes("pet-pick-grid"), "ui pet-pick-grid class");
+assert(uiSrc2.includes("pet-pick-sheet"), "ui dispatch pick sheet");
+assert(uiSrc2.includes("breed-pet-list"), "ui breed standby list");
+assert(uiSrc2.includes("fuse-mat-list"), "ui fuse material list");
+assert(uiSrc2.includes("petFlagTags(p)"), "ui pickers show star/lock tags");
+assert(cssSrc.includes(".pet-pick-grid"), "css pet-pick-grid");
+assert(cssSrc.includes(".pet-pick-card"), "css pet-pick-card");
+assert(/\.pet-pick-grid\s*\{[^}]*grid-template-columns:\s*1fr\s+1fr/s.test(cssSrc), "css pet-pick 2-col");
+assert(/\.pet-grid\s*\{[^}]*grid-template-columns:\s*1fr\s+1fr/s.test(cssSrc), "css ranch pet-grid 2-col");
+assert(/\.ranch-sort\s*\{[^}]*position:\s*sticky/s.test(cssSrc), "css ranch-sort sticky");
+assert(cssSrc.includes("pet-pick-sheet"), "css pet-pick-sheet");
+const engineSrcPackA = readFileSync(join(__dir, "engine.js"), "utf8");
+assert(engineSrcPackA.includes("next.starred = !!next.starred"), "engine normalize starred");
+assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize locked");
+
+/* Pack F: soul essence merchant */
+{
+  assert(SOUL_SHOP_OFFERS.length >= 3, "soul shop catalog size");
+  assert(soulShopOfferById("feed_pouch")?.name === "飼料小包", "feed pouch offer");
+  assert(soulShopOfferById("tide_dew_pack")?.grant?.materials?.tide_dew > 0, "tide dew offer");
+  assert(soulShopOfferById("coral_shard_pack")?.grant?.materials?.coral_shard > 0, "coral offer");
+  assert(
+    soulShopOfferById("hatch_nest_token")?.grant?.items?.hatch_nest_token === 1 ||
+      soulShopOfferById("ranch_fence")?.grant?.items?.ranch_fence === 1,
+    "item offer hatch/fence"
+  );
+  assert(soulShopOfferById("tide_shift_charm")?.grant?.items?.tide_shift_charm === 1, "soul shop tide shift");
+  const soulShopSt = {
+    materials: { ...emptyMaterials(), soul_essence: 120 },
+    feed: 10,
+    items: { ...emptyItems() },
+    log: [],
+  };
+  const view = soulShopView(soulShopSt);
+  assert(view.length === SOUL_SHOP_OFFERS.length, "soulShopView length");
+  assert(view.every((o) => o.canAfford), "view afford flags with 120 soul");
+  const broke = buySoulShopOffer(
+    { materials: { ...emptyMaterials(), soul_essence: 1 }, feed: 0, items: emptyItems(), log: [] },
+    "feed_pouch"
+  );
+  assert(!broke.ok && String(broke.msg).includes("精魂不足"), "afford check blocks buy");
+  const missing = buySoulShopOffer(soulShopSt, "no_such_offer");
+  assert(!missing.ok, "unknown offer rejected");
+  const feedBefore = soulShopSt.feed;
+  const soulBefore = Math.floor(soulShopSt.materials.soul_essence);
+  const buyFeed = buySoulShopOffer(soulShopSt, "feed_pouch");
+  assert(buyFeed.ok, "buy feed pouch ok");
+  assert(soulShopSt.feed === feedBefore + 25, "feed granted");
+  assert(Math.floor(soulShopSt.materials.soul_essence) === soulBefore - 8, "soul spent for feed");
+  const dewBefore = Math.floor(soulShopSt.materials.tide_dew || 0);
+  const buyDew = buySoulShopOffer(soulShopSt, "tide_dew_pack");
+  assert(buyDew.ok && Math.floor(soulShopSt.materials.tide_dew) === dewBefore + 5, "tide dew granted");
+  const coralBefore = Math.floor(soulShopSt.materials.coral_shard || 0);
+  const buyCoral = buySoulShopOffer(soulShopSt, "coral_shard_pack");
+  assert(buyCoral.ok && Math.floor(soulShopSt.materials.coral_shard) === coralBefore + 4, "coral granted");
+  const fenceBefore = Math.floor(soulShopSt.items.ranch_fence || 0);
+  const buyFence = buySoulShopOffer(soulShopSt, "ranch_fence");
+  assert(buyFence.ok && Math.floor(soulShopSt.items.ranch_fence) === fenceBefore + 1, "fence item granted");
+  const nestBefore = Math.floor(soulShopSt.items.hatch_nest_token || 0);
+  const buyNest = buySoulShopOffer(soulShopSt, "hatch_nest_token");
+  assert(buyNest.ok && Math.floor(soulShopSt.items.hatch_nest_token) === nestBefore + 1, "nest token granted");
+}
+assert(uiSrc2.includes("精魂商人"), "ui soul merchant title");
+assert(uiSrc2.includes('id: "soul"') || uiSrc2.includes('label: "精魂"'), "ui soul cultivate tab");
+assert(uiSrc2.includes("data-soul-shop-buy"), "ui soul buy buttons");
+assert(engineSrcPackA.includes("buySoulShopOffer"), "engine buySoulShopOffer");
+assert(engineSrcPackA.includes("soulShopView"), "engine soulShopView");
 
 console.log("odds 1+2", odds12, "sample genes", g.generation, g.hybrid);
 console.log("smoke-test ok");

@@ -252,7 +252,7 @@ export function tutorialStepInfo(state) {
 }
 
 function locksForStep(stepId) {
-  const allCult = { advance: true, shop: true };
+  const allCult = { advance: true, shop: true, soul: true };
   const allParty = { fight: true, ranch: true, hatch: true, breed: true, dispatch: true, bond: true };
   const allDung = { setup: true };
 
@@ -260,7 +260,7 @@ function locksForStep(stepId) {
     case "hatch_starter":
       return {
         tabs: { dungeon: true, codex: true, log: true },
-        cultivateSub: { advance: true, shop: true },
+        cultivateSub: { advance: true, shop: true, soul: true },
         partySub: { fight: true, ranch: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
@@ -276,7 +276,7 @@ function locksForStep(stepId) {
     case "train_pet":
       return {
         tabs: { dungeon: true, codex: true, log: true },
-        cultivateSub: { advance: true, shop: true },
+        cultivateSub: { advance: true, shop: true, soul: true },
         partySub: { fight: true, hatch: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
@@ -301,7 +301,7 @@ function locksForStep(stepId) {
     case "shop_egg":
       return {
         tabs: { party: true, dungeon: true, codex: true, log: true },
-        cultivateSub: { advance: true, shop: false },
+        cultivateSub: { advance: true, shop: false, soul: true },
         partySub: { ...allParty },
         dungeonSub: { ...allDung },
         trainSites: true,
@@ -309,7 +309,7 @@ function locksForStep(stepId) {
     case "hatch_second":
       return {
         tabs: { dungeon: true, codex: true, log: true },
-        cultivateSub: { advance: true, shop: true },
+        cultivateSub: { advance: true, shop: true, soul: true },
         partySub: { fight: true, ranch: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
@@ -325,7 +325,7 @@ function locksForStep(stepId) {
     case "breakthrough":
       return {
         tabs: { party: true, dungeon: true, codex: true, log: true },
-        cultivateSub: { shop: true, advance: false },
+        cultivateSub: { shop: true, soul: true, advance: false },
         partySub: { hatch: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,

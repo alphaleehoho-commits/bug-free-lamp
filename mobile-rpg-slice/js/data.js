@@ -2064,18 +2064,6 @@ export function formationFoePlacement(unitCount = 0) {
  */
 export const DUNGEON_CHALLENGE_RULES = [
   {
-    id: "max_1_pet",
-    label: "挑戰：孤寵出戰（僅 1 寵）",
-    maxPets: 1,
-    bonus: { stones: 24, scrap: 1 },
-  },
-  {
-    id: "max_2_pets",
-    label: "挑戰：出戰≤2寵",
-    maxPets: 2,
-    bonus: { stones: 18, dust: 4 },
-  },
-  {
     id: "ban_flame",
     label: "挑戰：禁焰屬出戰",
     banElement: "flame",
@@ -2127,13 +2115,10 @@ export function pickDailyChallenge(dateKey, dungeonId) {
   return { ...list[idx] };
 }
 
-/** 評估出戰是否滿足挑戰規則（可拿挑戰獎） */
+/** 評估出戰是否滿足挑戰規則（可拿挑戰獎）；唔再限制出戰隻數 */
 export function evaluateDungeonChallenge(pets, challenge, opts = {}) {
   if (!challenge) return { ok: true, reason: "" };
   const list = Array.isArray(pets) ? pets : [];
-  if (challenge.maxPets != null && list.length > challenge.maxPets) {
-    return { ok: false, reason: `出戰 ${list.length}／上限 ${challenge.maxPets}` };
-  }
   if (challenge.banElement) {
     const hit = list.filter((p) => p.elementId === challenge.banElement);
     if (hit.length) {
@@ -4260,7 +4245,69 @@ export const MATERIALS = {
     desc: "潮淵深潛結算所得 · 換突變保險、深潛外觀、高階寵物蛋",
     tier: "abyss",
   },
+  /** 放生所得：精魂商人兌換 */
+  soul_essence: {
+    id: "soul_essence",
+    name: "精魂",
+    desc: "放生靈寵所得 · 精魂商人兌換飼料／材料／道具",
+    tier: "soul",
+  },
 };
+
+/**
+ * 精魂商人固定目錄（佔位貨；耗精魂，唔轉靈石）
+ * grant: feed／materials／items 可並存
+ */
+export const SOUL_SHOP_OFFERS = [
+  {
+    id: "feed_pouch",
+    name: "飼料小包",
+    desc: "常用飼料一小包",
+    cost: 8,
+    grant: { feed: 25 },
+  },
+  {
+    id: "tide_dew_pack",
+    name: "潮露小瓶",
+    desc: "常用升級材料",
+    cost: 10,
+    grant: { materials: { tide_dew: 5 } },
+  },
+  {
+    id: "coral_shard_pack",
+    name: "珊瑚屑袋",
+    desc: "常用繁殖材料",
+    cost: 12,
+    grant: { materials: { coral_shard: 4 } },
+  },
+  {
+    id: "hatch_nest_token",
+    name: "暖巢箋",
+    desc: "永久擴孵欄 · 使用後 +1 孵化欄",
+    cost: 40,
+    grant: { items: { hatch_nest_token: 1 } },
+  },
+  {
+    id: "ranch_fence",
+    name: "欄柵",
+    desc: "永久擴牧場 · 使用後 +1 牧場容量",
+    cost: 35,
+    grant: { items: { ranch_fence: 1 } },
+  },
+  {
+    id: "tide_shift_charm",
+    name: "潮轉符",
+    desc: "永久隨機轉屬 · 對一隻靈寵使用",
+    cost: 45,
+    grant: { items: { tide_shift_charm: 1 } },
+  },
+];
+
+export const SOUL_SHOP_OFFER_IDS = SOUL_SHOP_OFFERS.map((o) => o.id);
+
+export function soulShopOfferById(offerId) {
+  return SOUL_SHOP_OFFERS.find((o) => o.id === offerId) || null;
+}
 
 export const MATERIAL_IDS = Object.keys(MATERIALS);
 
@@ -4273,6 +4320,7 @@ export function emptyMaterials() {
  * - 欄柵 ranch_fence：每次使用永久 +1 牧場待命上限；itemBonus.ranchCap 累加，上限 RANCH_CAP_BONUS_MAX（+12）。
  * - 暖巢箋 hatch_nest_token：每次使用永久 +1 孵化欄；itemBonus.hatchSlots 累加，上限 HATCH_SLOT_BONUS_MAX（+3）。
  *   基準欄位 HATCH_SLOT_BASE=3 → 理論上限 6（孵化 UI 見 pack B）。
+ * - 潮轉符 tide_shift_charm：指定靈寵永久隨機轉屬（唔可轉回同一屬；白板按元素倍率重算）。
  */
 export const RANCH_CAP_BONUS_MAX = 12;
 export const HATCH_SLOT_BASE = 3;
@@ -4290,6 +4338,13 @@ export const ITEMS = {
     name: "暖巢箋",
     desc: "溫暖孵巢符箋 · 使用後永久 +1 孵化欄（基準 3，最多 +3 至 6）",
     use: "擴孵欄",
+  },
+  tide_shift_charm: {
+    id: "tide_shift_charm",
+    name: "潮轉符",
+    desc: "潮淵轉屬符箋 · 對一隻靈寵永久隨機轉換元素（唔會轉成同一屬）",
+    use: "轉屬",
+    needsTarget: true,
   },
 };
 
@@ -4713,6 +4768,7 @@ export const MATERIAL_USES = {
   tide_key_4: "暗潮域主",
   warden_echo: "域主複打殘響",
   abyss_grit: "潮淵兌換",
+  soul_essence: "放生／精魂商店",
 };
 
 /* ─── 潮淵深潛（秘境旁路；唔改潮域產物表）─── */
@@ -4722,9 +4778,19 @@ export const ABYSS_GRIT_ID = "abyss_grit";
 export const ABYSS_ENTRY_TOKEN_COST = 1;
 export const ABYSS_WIPE_KEEP_RATE = 0.4;
 export const ABYSS_MUTATION_EVERY = 3;
-export const ABYSS_MAX_ACTIVE_MUTATIONS = 2;
+/** @deprecated 突變唔再設活躍上限；保留常數以免舊引用爆 */
+export const ABYSS_MAX_ACTIVE_MUTATIONS = Infinity;
+/** 深潛獨立編隊：5 寵（3 出戰 + 2 替補） */
+export const ABYSS_SQUAD_SIZE = 5;
+export const ABYSS_ACTIVE_SIZE = 3;
+/** 每通關 N 層觸發 2 選 1 事件 */
+export const ABYSS_EVENT_EVERY = 5;
+/** 營火／潮篝回血比例 */
+export const ABYSS_CAMPFIRE_HEAL = 0.3;
+/** 祭壇復活後血量比例 */
+export const ABYSS_ALTAR_REVIVE_HP = 0.4;
 
-/** @type {Record<string, { id: string, name: string, desc: string, healMult?: number, frontDmgTakenMult?: number, maxPets?: number }>} */
+/** @type {Record<string, { id: string, name: string, desc: string, healMult?: number, frontDmgTakenMult?: number, foeAtkMult?: number, allySpdMult?: number, foeHpMult?: number }>} */
 export const ABYSS_MUTATIONS = {
   mut_no_heal: {
     id: "mut_no_heal",
@@ -4741,12 +4807,72 @@ export const ABYSS_MUTATIONS = {
   mut_duo: {
     id: "mut_duo",
     name: "雙影",
-    desc: "本場出戰最多 2 寵",
-    maxPets: 2,
+    desc: "敵方攻擊 +18%",
+    foeAtkMult: 1.18,
+  },
+  mut_mire: {
+    id: "mut_mire",
+    name: "淤泥",
+    desc: "友方速度 −12%",
+    allySpdMult: 0.88,
+  },
+  mut_swell: {
+    id: "mut_swell",
+    name: "漲潮",
+    desc: "敵方血量 +20%",
+    foeHpMult: 1.2,
   },
 };
 
 export const ABYSS_MUTATION_IDS = Object.keys(ABYSS_MUTATIONS);
+
+/** 行商本潛增益（花淵砂；只喺今趟深潛生效） */
+export const ABYSS_MERCHANT_BUFFS = {
+  tide_blade: {
+    id: "tide_blade",
+    name: "潮刃符",
+    desc: "本潛攻擊 +12%",
+    cost: 8,
+    atkMult: 1.12,
+  },
+  mist_ward: {
+    id: "mist_ward",
+    name: "霧護符",
+    desc: "本潛最大血量 +15%（按比例補血）",
+    cost: 8,
+    hpMult: 1.15,
+  },
+  grit_focus: {
+    id: "grit_focus",
+    name: "凝砂印",
+    desc: "本潛承傷 −10%",
+    cost: 10,
+    dmgTakenMult: 0.9,
+  },
+};
+
+export const ABYSS_MERCHANT_BUFF_IDS = Object.keys(ABYSS_MERCHANT_BUFFS);
+
+/** 潮淵層間事件類型 */
+export const ABYSS_EVENT_TYPES = {
+  campfire: {
+    id: "campfire",
+    name: "潮篝",
+    desc: "全體回復約 30% 血量（陣亡唔復活）",
+  },
+  merchant: {
+    id: "merchant",
+    name: "行商",
+    desc: "花淵砂買本潛增益",
+  },
+  altar: {
+    id: "altar",
+    name: "祭壇",
+    desc: "復活一隻陣亡靈寵",
+  },
+};
+
+export const ABYSS_EVENT_TYPE_IDS = Object.keys(ABYSS_EVENT_TYPES);
 
 /** 深潛限定外觀（小幅 %，有帳號 cap） */
 export const ABYSS_COSMETICS = {
@@ -4783,6 +4909,8 @@ export const ABYSS_COSMETIC_BONUS_CAP = 0.05;
 export const ABYSS_INSURANCE_COST = 25;
 export const ABYSS_EGG_COST = 90;
 export const ABYSS_EGG_WEEKLY_LIMIT = 2;
+/** 淵砂兌換潮轉符（永久轉屬道具） */
+export const ABYSS_TIDE_SHIFT_COST = 35;
 
 export function emptyAbyssDive(now = Date.now()) {
   return {
@@ -4816,10 +4944,39 @@ export function abyssHash(seed) {
 }
 
 export function pickAbyssMutationId(seed, excludeIds = []) {
-  const pool = ABYSS_MUTATION_IDS.filter((id) => !excludeIds.includes(id));
-  if (!pool.length) return ABYSS_MUTATION_IDS[0];
+  let pool = ABYSS_MUTATION_IDS.filter((id) => !excludeIds.includes(id));
+  // 活躍唔設上限：池空就由全表再抽，允許重複疊加
+  if (!pool.length) pool = [...ABYSS_MUTATION_IDS];
   const h = abyssHash(seed);
   return pool[h % pool.length];
+}
+
+/** 每 5 層：由營火／行商／祭壇隨機抽 2 個做 2 選 1 */
+export function rollAbyssFloorEvent(seed, depth) {
+  const h = abyssHash(`${seed}:evt${depth}`);
+  const pool = [...ABYSS_EVENT_TYPE_IDS];
+  const i0 = h % pool.length;
+  const first = pool.splice(i0, 1)[0];
+  const i1 = (h >>> 8) % pool.length;
+  const second = pool[i1];
+  const buffId = ABYSS_MERCHANT_BUFF_IDS[(h >>> 16) % ABYSS_MERCHANT_BUFF_IDS.length];
+  return {
+    depth: depth | 0,
+    options: [first, second].map((type) => {
+      const base = ABYSS_EVENT_TYPES[type];
+      if (type === "merchant") {
+        const buff = ABYSS_MERCHANT_BUFFS[buffId];
+        return {
+          type,
+          name: base.name,
+          desc: `${base.desc}：【${buff.name}】${buff.desc}（淵砂×${buff.cost}）`,
+          buffId: buff.id,
+          cost: buff.cost,
+        };
+      }
+      return { type, name: base.name, desc: base.desc };
+    }),
+  };
 }
 
 /** 已解鎖外觀疊加嘅攻血倍率（受 cap） */
@@ -4876,6 +5033,8 @@ export function materialSourceLabel(matId) {
     return "秘境潮鑰／域主";
   }
   if (mat.tier === "gate") return "練功／每日／升階（秘境不掉）";
+  if (mat.tier === "soul") return "放生靈寵所得";
+  if (mat.tier === "abyss") return "潮淵深潛";
   const e = MATERIAL_SOURCE_INDEX[matId];
   if (!e) return mat.desc || "";
   const parts = [];
@@ -5128,14 +5287,22 @@ export function bestiaryCombatBonus(discoveredCount) {
   };
 }
 
-/** 放生返還 */
+/**
+ * 放生精魂公式（只返還精魂，唔再退石／飼料／塵）：
+ * 基礎 4 ＋ 等級×2 ＋ 稀有×6 ＋ 融階×4 ＋（代數−1）×2
+ * 例：普 Lv1 → 6；稀有 Lv10 融1 二代 → 4+20+6+4+2 = 36
+ */
+export function releaseSoulGain(pet) {
+  const lv = Math.max(1, pet?.level ?? 1);
+  const fus = Math.max(0, pet?.fusionLevel ?? 0);
+  const rar = Math.max(0, Math.min(RARITY_MAX, pet?.rarity ?? 0));
+  const gen = Math.max(1, petGeneration(pet) || 1);
+  return Math.max(1, 4 + lv * 2 + rar * 6 + fus * 4 + (gen - 1) * 2);
+}
+
+/** @deprecated 舊放生石／飼料／塵；保留別名以便舊測試／註解對照 */
 export function releaseRefund(pet) {
-  const lv = pet.level ?? 1;
-  const fus = pet.fusionLevel ?? 0;
-  const stones = 8 + lv * 4 + fus * 12;
-  const feed = 2 + Math.floor(lv / 2) + fus;
-  const dust = fus > 0 ? fus * 3 : Math.floor(lv / 3);
-  return { stones, feed, dust };
+  return { soul: releaseSoulGain(pet), stones: 0, feed: 0, dust: 0 };
 }
 
 export const NICK_MAX_LEN = 8;

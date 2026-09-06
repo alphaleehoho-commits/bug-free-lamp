@@ -69,6 +69,7 @@ import {
   bestiaryTotal,
   bestiaryEntries,
   bestiaryCombatBonus,
+  releaseSoulGain,
   releaseRefund,
   NICK_MAX_LEN,
   DAILY_QUESTS,
@@ -141,6 +142,8 @@ import {
   emptyItemBonus,
   ITEMS,
   ITEM_IDS,
+  SOUL_SHOP_OFFERS,
+  soulShopOfferById,
   RANCH_CAP_BONUS_MAX,
   HATCH_SLOT_BASE,
   HATCH_SLOT_BONUS_MAX,
@@ -197,18 +200,25 @@ import {
   ABYSS_ENTRY_TOKEN_COST,
   ABYSS_WIPE_KEEP_RATE,
   ABYSS_MUTATION_EVERY,
-  ABYSS_MAX_ACTIVE_MUTATIONS,
+  ABYSS_SQUAD_SIZE,
+  ABYSS_ACTIVE_SIZE,
+  ABYSS_EVENT_EVERY,
+  ABYSS_CAMPFIRE_HEAL,
+  ABYSS_ALTAR_REVIVE_HP,
   ABYSS_MUTATIONS,
   ABYSS_MUTATION_IDS,
+  ABYSS_MERCHANT_BUFFS,
   ABYSS_COSMETICS,
   ABYSS_COSMETIC_IDS,
   ABYSS_INSURANCE_COST,
   ABYSS_EGG_COST,
   ABYSS_EGG_WEEKLY_LIMIT,
+  ABYSS_TIDE_SHIFT_COST,
   emptyAbyssDive,
   abyssFloorGrit,
   abyssHash,
   pickAbyssMutationId,
+  rollAbyssFloorEvent,
   abyssCosmeticCombatMult,
 } from "./data.js";
 import {
@@ -503,6 +513,8 @@ function normalizePet(p) {
   }
   // 寵物不再穿裝備
   if (next.equip) delete next.equip;
+  next.starred = !!next.starred;
+  next.locked = !!next.locked;
   return next;
 }
 
@@ -1723,12 +1735,15 @@ export function itemsView(state) {
     } else if (id === "hatch_nest_token") {
       atCap = bonus.hatchSlots >= HATCH_SLOT_BONUS_MAX;
       bonusNote = `已擴 +${bonus.hatchSlots}/${HATCH_SLOT_BONUS_MAX}（欄 ${hatchSlotCap(state)}）`;
+    } else if (id === "tide_shift_charm") {
+      bonusNote = "指定靈寵永久轉屬";
     }
     return {
       ...def,
       count,
       bonusNote,
       atCap,
+      needsTarget: !!def.needsTarget,
       canUse: count > 0 && !atCap,
     };
   });
@@ -1741,8 +1756,8 @@ function ensureItems(state) {
   else state.itemBonus = normalizeItemBonus(state.itemBonus);
 }
 
-/** 使用背包道具（欄柵／暖巢箋）；永久加成按使用次數計 */
-export function useBagItem(state, itemId) {
+/** 使用背包道具（欄柵／暖巢箋／潮轉符）；永久加成按使用次數計 */
+export function useBagItem(state, itemId, petUid = null) {
   ensureItems(state);
   const def = ITEMS[itemId];
   if (!def) return { ok: false, msg: "未知道具。" };
@@ -1779,7 +1794,67 @@ export function useBagItem(state, itemId) {
     };
   }
 
+  if (itemId === "tide_shift_charm") {
+    if (!petUid) return { ok: false, msg: "請先揀一隻靈寵使用潮轉符。", needsTarget: true };
+    return useTideShiftCharm(state, petUid);
+  }
+
   return { ok: false, msg: "呢件道具暫時唔用得。" };
+}
+
+/**
+ * 潮轉符：永久隨機轉換靈寵元素（唔可轉成同一屬）
+ * 白板按元素倍率比例重算；寫入 pet 記錄並登錄新屬性圖鑑。
+ */
+export function useTideShiftCharm(state, uid) {
+  ensureItems(state);
+  const have = Math.floor(state.items.tide_shift_charm || 0);
+  if (have < 1) return { ok: false, msg: "沒有潮轉符。" };
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  const pet = found.pet;
+  const oldId = pet.elementId;
+  const oldEl = ELEMENTS[oldId];
+  const others = Object.keys(ELEMENTS).filter((id) => id !== oldId);
+  if (!others.length) return { ok: false, msg: "無可替換屬性。" };
+  let newId = others[Math.floor(Math.random() * others.length)];
+  let guard = 0;
+  while (newId === oldId && guard < 8) {
+    newId = others[Math.floor(Math.random() * others.length)];
+    guard += 1;
+  }
+  if (newId === oldId) return { ok: false, msg: "轉屬失敗，請再試。" };
+  const newEl = ELEMENTS[newId];
+  if (!newEl) return { ok: false, msg: "屬性資料異常。" };
+
+  state.items.tide_shift_charm = have - 1;
+  if (oldEl && newEl) {
+    pet.atk = Math.max(1, Math.round((pet.atk / (oldEl.atk || 1)) * newEl.atk));
+    pet.hp = Math.max(1, Math.round((pet.hp / (oldEl.hp || 1)) * newEl.hp));
+    pet.spd = Math.max(1, Math.round((pet.spd / (oldEl.spd || 1)) * newEl.spd));
+  }
+  pet.elementId = newId;
+  pet.elementName = newEl.name;
+  const spName = pet.speciesName || SPECIES[pet.speciesId]?.name || "";
+  if (spName) pet.name = `${newEl.name}${spName}`;
+  else if (pet.name && oldEl?.name && pet.name.startsWith(oldEl.name)) {
+    pet.name = `${newEl.name}${pet.name.slice(oldEl.name.length)}`;
+  }
+  if (pet.genes) {
+    pet.genes = { ...pet.genes, element: newId };
+  }
+  registerBestiary(state, pet);
+  pushLog(
+    state,
+    `【${displayPetName(pet)}】使用潮轉符：${oldEl?.name || oldId} → ${newEl.name}（永久）。`
+  );
+  return {
+    ok: true,
+    msg: `${displayPetName(pet)} 屬性 → ${newEl.name}`,
+    fromElement: oldId,
+    toElement: newId,
+    petUid: pet.uid,
+  };
 }
 
 function emptyOfflineBank() {
@@ -2654,6 +2729,75 @@ export function shopView(state) {
   });
 }
 
+/** 精魂商人目錄（固定佔位貨） */
+export function soulShopView(state) {
+  if (!state.materials) state.materials = emptyMaterials();
+  const soul = Math.floor(state.materials.soul_essence || 0);
+  return SOUL_SHOP_OFFERS.map((o) => {
+    const grantBits = [];
+    if (o.grant?.feed) grantBits.push(`飼料×${o.grant.feed}`);
+    if (o.grant?.materials) {
+      for (const [id, n] of Object.entries(o.grant.materials)) {
+        if (!n) continue;
+        grantBits.push(`${MATERIALS[id]?.name || id}×${n}`);
+      }
+    }
+    if (o.grant?.items) {
+      for (const [id, n] of Object.entries(o.grant.items)) {
+        if (!n) continue;
+        grantBits.push(`${ITEMS[id]?.name || id}×${n}`);
+      }
+    }
+    return {
+      ...o,
+      grantLabel: grantBits.join("／") || "—",
+      canAfford: soul >= o.cost,
+      soul,
+    };
+  });
+}
+
+/** 精魂商人購入（afford 精魂後發放飼料／材料／道具） */
+export function buySoulShopOffer(state, offerId) {
+  const offer = soulShopOfferById(offerId);
+  if (!offer) return { ok: false, msg: "商品不存在。" };
+  if (!state.materials) state.materials = emptyMaterials();
+  const have = Math.floor(state.materials.soul_essence || 0);
+  if (have < offer.cost) {
+    return { ok: false, msg: `精魂不足（需 ${offer.cost}，現有 ${have}）。` };
+  }
+  state.materials.soul_essence = have - offer.cost;
+  const granted = [];
+  if (offer.grant?.feed) {
+    state.feed = (state.feed || 0) + offer.grant.feed;
+    granted.push(`飼料×${offer.grant.feed}`);
+  }
+  if (offer.grant?.materials) {
+    addMaterials(state, offer.grant.materials);
+    for (const [id, n] of Object.entries(offer.grant.materials)) {
+      if (!n) continue;
+      granted.push(`${MATERIALS[id]?.name || id}×${n}`);
+    }
+  }
+  if (offer.grant?.items) {
+    if (!state.items) state.items = emptyItems();
+    for (const [id, n] of Object.entries(offer.grant.items)) {
+      if (!n) continue;
+      state.items[id] = (state.items[id] || 0) + n;
+      granted.push(`${ITEMS[id]?.name || id}×${n}`);
+    }
+  }
+  const grantTxt = granted.join("／") || "貨物";
+  pushLog(state, `精魂商人購入【${offer.name}】，耗精魂 ${offer.cost}，獲 ${grantTxt}。`);
+  return {
+    ok: true,
+    msg: `購入 ${offer.name}（耗精魂 ${offer.cost}）· ${grantTxt}`,
+    offerId: offer.id,
+    cost: offer.cost,
+    grant: offer.grant,
+  };
+}
+
 export function buyShopOffer(state, offerId) {
   ensureShop(state);
   const offer = state.shop.offers.find((o) => o.offerId === offerId);
@@ -3057,9 +3201,6 @@ export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
   }
   const tutWaiveChallenge = tutorialWaivesDungeonChallenge(state, dungeonId);
   const challenge = tutWaiveChallenge ? null : d.challenge || null;
-  if (!tutWaiveChallenge && challenge?.maxPets != null && state.pets.length > challenge.maxPets) {
-    return `今日挑戰要求出戰≤${challenge.maxPets}寵（現 ${state.pets.length}）。`;
-  }
   if (!tutWaiveChallenge && challenge?.banElement) {
     const banned = state.pets.filter((p) => p.elementId === challenge.banElement);
     if (banned.length) {
@@ -3439,23 +3580,103 @@ export function releasePet(state, uid) {
   if (!state.ranch) state.ranch = [];
   const found = findOwnedPet(state, uid);
   if (!found) return { ok: false, msg: "不在靈寵欄／牧場。" };
+  if (found.pet.locked) {
+    return { ok: false, msg: "已上鎖，唔可以放生。請先解鎖。" };
+  }
   const list = found.list === "pets" ? state.pets : state.ranch;
   const [gone] = list.splice(found.index, 1);
-  const refund = releaseRefund(gone);
-  state.stones += refund.stones;
-  state.feed = (state.feed || 0) + refund.feed;
-  state.dust = (state.dust || 0) + refund.dust;
+  const soul = releaseSoulGain(gone);
+  if (!state.materials) state.materials = emptyMaterials();
+  state.materials.soul_essence = (state.materials.soul_essence || 0) + soul;
   if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
   state.stats.releases += 1;
-  pushLog(
-    state,
-    `放歸 ${gone.nick || gone.name}，返還 ${refund.stones} 石／${refund.feed} 飼料／${refund.dust} 靈塵。`
-  );
+  const label = gone.nick || gone.name;
+  pushLog(state, `放生 ${label}，獲精魂 ${soul}。`);
   return {
     ok: true,
-    msg: `放歸返還 ${refund.stones}石 ${refund.feed}飼料 ${refund.dust}塵`,
-    refund,
+    msg: `放生 ${label}，獲精魂 ${soul}`,
+    soul,
+    refund: { soul, stones: 0, feed: 0, dust: 0 },
   };
+}
+
+/** 批量放生（遇鎖／缺失即中止，已成功嘅會保留） */
+export function releasePets(state, uids) {
+  const ids = Array.isArray(uids) ? uids.filter(Boolean) : [];
+  if (!ids.length) return { ok: false, msg: "未揀靈寵。", soul: 0, count: 0 };
+  let totalSoul = 0;
+  let count = 0;
+  const names = [];
+  for (const uid of ids) {
+    const r = releasePet(state, uid);
+    if (!r.ok) {
+      return {
+        ok: false,
+        msg: count ? `${r.msg}（已放生 ${count} 隻，精魂 +${totalSoul}）` : r.msg,
+        soul: totalSoul,
+        count,
+        partial: count > 0,
+      };
+    }
+    totalSoul += r.soul || 0;
+    count += 1;
+    names.push(r.msg);
+  }
+  return {
+    ok: true,
+    msg: count === 1 ? names[0] : `放生 ${count} 隻，共獲精魂 ${totalSoul}`,
+    soul: totalSoul,
+    count,
+  };
+}
+
+export function setPetStarred(state, uid, starred) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  found.pet.starred = !!starred;
+  const on = found.pet.starred;
+  pushLog(state, `${displayPetName(found.pet)} ${on ? "已星標" : "取消星標"}。`);
+  return { ok: true, msg: on ? "已星標" : "已取消星標", starred: on };
+}
+
+export function togglePetStarred(state, uid) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  return setPetStarred(state, uid, !found.pet.starred);
+}
+
+export function setPetLocked(state, uid, locked) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  found.pet.locked = !!locked;
+  const on = found.pet.locked;
+  pushLog(state, `${displayPetName(found.pet)} ${on ? "已上鎖" : "已解鎖"}。`);
+  return { ok: true, msg: on ? "已上鎖" : "已解鎖", locked: on };
+}
+
+export function togglePetLocked(state, uid) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  return setPetLocked(state, uid, !found.pet.locked);
+}
+
+/** 預覽放生精魂總額（唔改狀態） */
+export function previewReleaseSoul(state, uids) {
+  const ids = Array.isArray(uids) ? uids : [uids];
+  let soul = 0;
+  const pets = [];
+  for (const uid of ids) {
+    const found = findOwnedPet(state, uid);
+    if (!found) continue;
+    if (found.pet.locked) {
+      return { ok: false, msg: `${displayPetName(found.pet)} 已上鎖`, soul: 0, pets: [] };
+    }
+    const gain = releaseSoulGain(found.pet);
+    soul += gain;
+    pets.push({ uid: found.pet.uid, name: displayPetName(found.pet), soul: gain, pet: found.pet });
+  }
+  if (!pets.length) return { ok: false, msg: "找不到靈寵。", soul: 0, pets: [] };
+  return { ok: true, soul, pets };
 }
 
 /** 為靈寵命名（最多 NICK_MAX_LEN 字） */
@@ -4173,13 +4394,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
   const formation = FORMATIONS[formationId] || FORMATIONS.balanced;
 
   const chalEval = evaluateDungeonChallenge(state.pets, challenge, {});
-  // 強制入口限制：出戰人數／禁屬不符則拒進（教學秘境豁免）
-  if (!tutWaiveChallenge && challenge?.maxPets != null && state.pets.length > challenge.maxPets) {
-    return {
-      ok: false,
-      msg: `今日挑戰要求出戰≤${challenge.maxPets}寵（現 ${state.pets.length}）。`,
-    };
-  }
+  // 強制入口限制：禁屬不符則拒進（教學秘境豁免）；唔再限制出戰隻數
   if (!tutWaiveChallenge && challenge?.banElement) {
     const banned = state.pets.filter((p) => p.elementId === challenge.banElement);
     if (banned.length) {
@@ -5979,64 +6194,241 @@ function applyAbyssMutationsToAllies(allies, mutationIds, formationId) {
   for (let i = 0; i < allies.length; i += 1) {
     const slot = placement.find((p) => p.unitIndex === i);
     allies[i].lane = slot?.lane || "front";
-    allies[i].dmgTakenMult = 1;
+    allies[i].dmgTakenMult = allies[i].dmgTakenMult || 1;
     allies[i].healOutMult = 1;
   }
   let healMult = 1;
   let frontTax = 1;
+  let allySpd = 1;
   for (const id of mutationIds || []) {
     const m = ABYSS_MUTATIONS[id];
     if (!m) continue;
     if (m.healMult != null) healMult = Math.min(healMult, m.healMult);
     if (m.frontDmgTakenMult != null) frontTax = Math.max(frontTax, m.frontDmgTakenMult);
+    if (m.allySpdMult != null) allySpd *= m.allySpdMult;
   }
   for (const a of allies) {
     a.healOutMult = healMult;
-    if (a.lane === "front") a.dmgTakenMult = frontTax;
+    if (a.lane === "front") a.dmgTakenMult = (a.dmgTakenMult || 1) * frontTax;
+    if (allySpd !== 1) a.spd = Math.max(1, Math.round(a.spd * allySpd));
   }
+}
+
+function abyssMutationFoeMult(mutationIds) {
+  let atk = 1;
+  let hp = 1;
+  for (const id of mutationIds || []) {
+    const m = ABYSS_MUTATIONS[id];
+    if (!m) continue;
+    if (m.foeAtkMult != null) atk *= m.foeAtkMult;
+    if (m.foeHpMult != null) hp *= m.foeHpMult;
+  }
+  return { atkMult: atk, hpMult: hp };
 }
 
 function mapAbyssMutations(ids) {
   return (ids || []).map((id) => ABYSS_MUTATIONS[id]).filter(Boolean);
 }
 
-/** 已通關 depth 之後，下一層預覽（突變／保險） */
+function abyssDiveBuffMult(diveBuffs) {
+  let atk = 1;
+  let hp = 1;
+  let dmgTaken = 1;
+  for (const id of diveBuffs || []) {
+    const b = ABYSS_MERCHANT_BUFFS[id];
+    if (!b) continue;
+    if (b.atkMult) atk *= b.atkMult;
+    if (b.hpMult) hp *= b.hpMult;
+    if (b.dmgTakenMult) dmgTaken *= b.dmgTakenMult;
+  }
+  return { atkMult: atk, hpMult: hp, dmgTakenMult: dmgTaken };
+}
+
+function abyssOwnedPets(state) {
+  return [...(state.pets || []), ...(state.ranch || [])];
+}
+
+function normalizeAbyssRunSquad(run) {
+  if (!run) return run;
+  if (!run.hpByUid || typeof run.hpByUid !== "object") run.hpByUid = {};
+  if (!Array.isArray(run.diveBuffs)) run.diveBuffs = [];
+  if (!Array.isArray(run.squadUids)) run.squadUids = [];
+  if (!Array.isArray(run.activeUids)) {
+    run.activeUids = run.squadUids.slice(0, ABYSS_ACTIVE_SIZE);
+  }
+  if (!Array.isArray(run.benchUids)) {
+    const active = new Set(run.activeUids);
+    run.benchUids = run.squadUids.filter((uid) => !active.has(uid));
+  }
+  return run;
+}
+function abyssPetCombatStats(state, pet, diveBuffs) {
+  const formationId = FORMATION_IDS.includes(state.formation) ? state.formation : "balanced";
+  const formation = FORMATIONS[formationId] || FORMATIONS.balanced;
+  const stageBonus = (state.realm || 0) * 2;
+  const activePets = (state.abyssDive?.run?.activeUids || [])
+    .map((uid) => findOwnedPet(state, uid)?.pet)
+    .filter(Boolean);
+  const synergy = partySynergy(activePets.length ? activePets : [pet]);
+  const dex = bestiaryStatus(state);
+  const sealMult = tideSealCombatMult(state.tideSeals || 0);
+  const cos = abyssCosmeticCombatMult(state.abyssDive?.cosmetics || {});
+  const buff = abyssDiveBuffMult(diveBuffs);
+  const atkMult = synergy.atkMult * dex.atkMult * sealMult * cos.atkMult * buff.atkMult;
+  const hpMult = synergy.hpMult * dex.hpMult * sealMult * cos.hpMult * buff.hpMult;
+  const skills = petSkillIds(pet);
+  const gen = petGeneration(pet);
+  const gMult = genCombatMult(gen);
+  const fAtk = formation.petAtkMult || 1;
+  const fHp = formation.petHpMult || 1;
+  const fSpd = formation.petSpdMult || 1;
+  const pe = personalityCombatForPet(pet);
+  const pAtk = pe?.atkMult || 1;
+  const pHp = pe?.hpMult || 1;
+  const pSpd = pe?.spdMult || 1;
+  const bm = bloodmarkCombatMult(pet.bloodmarks);
+  const maxHp = Math.round((pet.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp);
+  const atk = Math.round((pet.atk + stageBonus) * atkMult * gMult * fAtk * pAtk * bm.atk);
+  const spd = Math.round(pet.spd * synergy.spdMult * fSpd * pSpd * bm.spd);
+  return {
+    maxHp,
+    atk,
+    spd,
+    skills,
+    gen,
+    pe,
+    formation,
+    synergy,
+    dmgTakenMult: buff.dmgTakenMult,
+  };
+}
+
+/** 由深潛編隊組出戰方；血量沿用 hpByUid（層間唔回滿） */
+function buildAbyssCombatAllies(state, run) {
+  normalizeAbyssRunSquad(run);
+  const activePets = [];
+  for (const uid of run.activeUids || []) {
+    const hit = findOwnedPet(state, uid);
+    if (hit?.pet) activePets.push(hit.pet);
+  }
+  if (!activePets.length) {
+    return { allies: [], synergy: partySynergy([]), formation: FORMATIONS.balanced, tactics: "balanced" };
+  }
+  const tactics = TACTIC_IDS.includes(state.tactics) ? state.tactics : "balanced";
+  const formationId = FORMATION_IDS.includes(state.formation) ? state.formation : "balanced";
+  const formation = FORMATIONS[formationId] || FORMATIONS.balanced;
+  const synergy = partySynergy(activePets);
+  const allies = [];
+  for (const p of activePets) {
+    const st = abyssPetCombatStats(state, p, run.diveBuffs);
+    const saved = run.hpByUid?.[p.uid];
+    let hp = st.maxHp;
+    if (saved && saved.maxHp > 0) {
+      if ((saved.hp | 0) <= 0) hp = 0;
+      else hp = Math.max(1, Math.round((saved.hp / saved.maxHp) * st.maxHp));
+      hp = Math.min(st.maxHp, hp);
+    }
+    allies.push({
+      side: "ally",
+      petUid: p.uid,
+      name: displayPetName(p),
+      hp,
+      maxHp: st.maxHp,
+      atk: st.atk,
+      spd: st.spd,
+      elementId: p.elementId,
+      skillLevel: p.skillLevel ?? 1,
+      skills: st.skills,
+      skillCd: Object.fromEntries(st.skills.map((id) => [id, 0])),
+      guardTurns: 0,
+      atkBuffTurns: 0,
+      atkBuffPct: 0,
+      generation: st.gen,
+      sustainBias: !!st.pe?.sustainBias,
+      dmgTakenMult: st.dmgTakenMult || 1,
+    });
+  }
+  return { allies, synergy, formation, tactics };
+}
+
+function snapshotAbyssAllyHp(run, allies) {
+  if (!run.hpByUid) run.hpByUid = {};
+  for (const a of allies || []) {
+    if (!a.petUid) continue;
+    run.hpByUid[a.petUid] = {
+      hp: Math.max(0, a.hp | 0),
+      maxHp: Math.max(1, a.maxHp | 0),
+    };
+  }
+}
+
+function ensureAbyssSquadHp(state, run) {
+  normalizeAbyssRunSquad(run);
+  for (const uid of run.squadUids || []) {
+    if (run.hpByUid[uid]) continue;
+    const hit = findOwnedPet(state, uid);
+    if (!hit?.pet) continue;
+    const st = abyssPetCombatStats(state, hit.pet, run.diveBuffs);
+    run.hpByUid[uid] = { hp: st.maxHp, maxHp: st.maxHp };
+  }
+}
+
+function abyssSquadRosterView(state, run) {
+  if (!run) return { active: [], bench: [], squad: [] };
+  normalizeAbyssRunSquad(run);
+  ensureAbyssSquadHp(state, run);
+  const mapOne = (uid) => {
+    const hit = findOwnedPet(state, uid);
+    const hp = run.hpByUid[uid] || { hp: 0, maxHp: 1 };
+    return {
+      uid,
+      name: hit?.pet ? displayPetName(hit.pet) : uid,
+      elementId: hit?.pet?.elementId || "",
+      hp: hp.hp | 0,
+      maxHp: Math.max(1, hp.maxHp | 0),
+      dead: (hp.hp | 0) <= 0,
+      missing: !hit?.pet,
+    };
+  };
+  return {
+    active: (run.activeUids || []).map(mapOne),
+    bench: (run.benchUids || []).map(mapOne),
+    squad: (run.squadUids || []).map(mapOne),
+  };
+}
+
+/** 已通關 depth 之後，下一層預覽（突變／保險）；突變無活躍上限 */
 function previewAbyssNextFloor(clearedDepth, mutationIds, insuranceCharges) {
   const depth = (clearedDepth | 0) + 1;
   const mutationFloor = depth % ABYSS_MUTATION_EVERY === 0;
-  const active = mutationIds || [];
-  const atCap = active.length >= ABYSS_MAX_ACTIVE_MUTATIONS;
-  const wouldRoll = mutationFloor && !atCap;
+  const wouldRoll = mutationFloor;
   const insuranceSkips = wouldRoll && (insuranceCharges | 0) > 0;
   return {
     depth,
     mutationFloor,
     willAddMutation: wouldRoll && !insuranceSkips,
     insuranceSkips,
-    atMutationCap: mutationFloor && atCap,
+    atMutationCap: false,
   };
 }
-
-function runAbyssFloorCombat(state, { depth, seed, mutationIds }) {
-  if (!(state.pets || []).length) {
-    return { ok: false, msg: "請先派出至少一隻靈寵。" };
-  }
-  let maxPets = ACTIVE_PET_MAX;
-  for (const id of mutationIds || []) {
-    const m = ABYSS_MUTATIONS[id];
-    if (m?.maxPets != null) maxPets = Math.min(maxPets, m.maxPets);
-  }
-  const savedPets = state.pets;
-  if (savedPets.length > maxPets) {
-    state.pets = savedPets.slice(0, maxPets);
-  }
-  const ctx = buildTrainCombatAllies(state);
-  state.pets = savedPets;
+function runAbyssFloorCombat(state, { depth, seed, mutationIds, run }) {
+  const ctx = buildAbyssCombatAllies(state, run);
   const { allies, synergy, formation, tactics } = ctx;
+  if (!allies.length) return { ok: false, msg: "潮淵編隊無可用出戰靈寵。" };
+  if (allies.every((a) => a.hp <= 0)) {
+    return { ok: false, msg: "出戰靈寵全數陣亡——請先整理隊伍或用祭壇復活。" };
+  }
+
   applyAbyssMutationsToAllies(allies, mutationIds, state.formation || "balanced");
-  if (!allies.length) return { ok: false, msg: "請先派出至少一隻靈寵。" };
+  const foeMult = abyssMutationFoeMult(mutationIds);
 
   const waves = buildAbyssFloorWaves(depth, seed);
+  for (const w of waves) {
+    for (const e of w.enemies || []) {
+      e.hp = Math.round((e.hp || 1) * foeMult.hpMult);
+      e.atk = Math.round((e.atk || 1) * foeMult.atkMult);
+    }
+  }
   let waveIndex = 0;
   let foes = spawnWaveFoes(waves[0]);
   _combatUid = 0;
@@ -6072,6 +6464,7 @@ function runAbyssFloorCombat(state, { depth, seed, mutationIds }) {
   if (mutNames.length) transcript.push(`活躍突變：${mutNames.join("、")}。`);
   transcript.push(`戰術【${TACTICS[tactics]?.name || tactics}】· 陣型【${formation.name}】。`);
   if (synergy.labels?.length) transcript.push(`陣容羈絆：${synergy.labels.join("、")}。`);
+  transcript.push("層間唔回滿血——血量會帶到下一層。");
 
   pushWave(1, waves[0].label, foes);
   const combatStart = {
@@ -6145,20 +6538,21 @@ function runAbyssFloorCombat(state, { depth, seed, mutationIds }) {
     transcript,
     combatEvents: combatEvents.slice(0, 120),
     combatStart,
+    allies,
     mutationIds: [...(mutationIds || [])],
     mutations: mapAbyssMutations(mutationIds),
   };
 }
-
 /** 秘境旁路：潮淵深潛狀態摘要 */
 export function abyssDiveView(state, now = Date.now()) {
   const ad = ensureAbyssDive(state, now);
   const today = todayKey(now);
   const freeLeft = ad.freeUsedDate !== today;
-  const run = ad.run;
+  const run = ad.run ? normalizeAbyssRunSquad(ad.run) : null;
   const gritHave = Math.floor(state.materials?.[ABYSS_GRIT_ID] || 0);
   const tokenHave = Math.floor(state.materials?.mist_token || 0);
   const unlocked = abyssUnlocked(state);
+  const ownedCount = abyssOwnedPets(state).length;
   return {
     unlocked,
     gritHave,
@@ -6173,6 +6567,12 @@ export function abyssDiveView(state, now = Date.now()) {
     eggsWeeklyLimit: ABYSS_EGG_WEEKLY_LIMIT,
     insuranceCost: ABYSS_INSURANCE_COST,
     eggCost: ABYSS_EGG_COST,
+    tideShiftCost: ABYSS_TIDE_SHIFT_COST,
+    tideShiftHave: Math.floor(state.items?.tide_shift_charm || 0),
+    squadSize: ABYSS_SQUAD_SIZE,
+    activeSize: ABYSS_ACTIVE_SIZE,
+    ownedCount,
+    canFormSquad: ownedCount >= ABYSS_SQUAD_SIZE,
     cosmeticList: ABYSS_COSMETIC_IDS.map((id) => ({
       ...ABYSS_COSMETICS[id],
       owned: !!ad.cosmetics[id],
@@ -6184,22 +6584,52 @@ export function abyssDiveView(state, now = Date.now()) {
           mutationIds: [...(run.mutationIds || [])],
           mutations: (run.mutationIds || []).map((id) => ABYSS_MUTATIONS[id]).filter(Boolean),
           seed: run.seed,
+          diveBuffs: [...(run.diveBuffs || [])],
+          diveBuffList: (run.diveBuffs || []).map((id) => ABYSS_MERCHANT_BUFFS[id]).filter(Boolean),
+          pendingEvent: run.pendingEvent || null,
+          roster: abyssSquadRosterView(state, run),
         }
       : null,
   };
 }
 
-/** 開潛／續潛下一層（戰鬥） */
-export function startAbyssDive(state, now = Date.now()) {
+/** 開潛候選靈寵（出戰＋牧場） */
+export function abyssSquadCandidates(state) {
+  return abyssOwnedPets(state).map((p) => ({
+    uid: p.uid,
+    name: displayPetName(p),
+    elementId: p.elementId,
+    atk: p.atk | 0,
+    hp: p.hp | 0,
+    level: p.level | 0,
+    generation: petGeneration(p),
+  }));
+}
+
+/**
+ * 開潛（戰鬥）
+ * @param {string[]} squadUids 開潛時必填 5 個 uid
+ */
+export function startAbyssDive(state, squadUids, now = Date.now()) {
   if (!abyssUnlocked(state)) {
     return { ok: false, msg: "先通關潮汐秘境一層，再開潮淵。" };
-  }
-  if (!(state.pets || []).length) {
-    return { ok: false, msg: "請先派出至少一隻靈寵。" };
   }
   const ad = ensureAbyssDive(state, now);
   if (ad.run) {
     return { ok: false, msg: "已在深潛中——請先挑戰本層或撤退。" };
+  }
+  if (typeof squadUids === "number") {
+    now = squadUids;
+    squadUids = null;
+  }
+  const uids = [...new Set((squadUids || []).filter(Boolean))];
+  if (uids.length !== ABYSS_SQUAD_SIZE) {
+    return { ok: false, msg: `請揀齊 ${ABYSS_SQUAD_SIZE} 隻靈寵組成潮淵編隊。` };
+  }
+  for (const uid of uids) {
+    if (!findOwnedPet(state, uid)) {
+      return { ok: false, msg: "編隊含有唔屬於你嘅靈寵。" };
+    }
   }
   const today = todayKey(now);
   let spentToken = 0;
@@ -6212,13 +6642,22 @@ export function startAbyssDive(state, now = Date.now()) {
     ad.freeUsedDate = today;
   }
   const seed = `${today}:${now}:${abyssHash(String(now))}`;
+  const activeUids = uids.slice(0, ABYSS_ACTIVE_SIZE);
+  const benchUids = uids.slice(ABYSS_ACTIVE_SIZE);
   ad.run = {
     seed,
     depth: 0,
     pendingGrit: 0,
     mutationIds: [],
     startedAt: now,
+    squadUids: uids,
+    activeUids,
+    benchUids,
+    hpByUid: {},
+    diveBuffs: [],
+    pendingEvent: null,
   };
+  ensureAbyssSquadHp(state, ad.run);
   pushLog(state, spentToken ? `踏入潮淵（耗潮霧令×${spentToken}）。` : "今日首潛潮淵（免費）。");
   return advanceAbyssDive(state, now);
 }
@@ -6227,9 +6666,18 @@ export function startAbyssDive(state, now = Date.now()) {
 export function advanceAbyssDive(state, now = Date.now()) {
   const ad = ensureAbyssDive(state, now);
   if (!ad.run) return { ok: false, msg: "尚未開潛。" };
+  normalizeAbyssRunSquad(ad.run);
+  if (ad.run.pendingEvent) {
+    return { ok: false, msg: "請先揀潮淵事件（2 選 1）。" };
+  }
+  const livingActive = (ad.run.activeUids || []).filter((uid) => (ad.run.hpByUid?.[uid]?.hp | 0) > 0);
+  if (!livingActive.length) {
+    return { ok: false, msg: "出戰位全數陣亡——請整理隊伍或等祭壇復活。" };
+  }
+
   const nextDepth = (ad.run.depth | 0) + 1;
   const mutationFloor = nextDepth % ABYSS_MUTATION_EVERY === 0;
-  if (mutationFloor && (ad.run.mutationIds || []).length < ABYSS_MAX_ACTIVE_MUTATIONS) {
+  if (mutationFloor) {
     if ((ad.insuranceCharges | 0) > 0) {
       ad.insuranceCharges -= 1;
       pushLog(state, "突變保險發動——本層略過新突變。");
@@ -6242,8 +6690,11 @@ export function advanceAbyssDive(state, now = Date.now()) {
     depth: nextDepth,
     seed: ad.run.seed,
     mutationIds: ad.run.mutationIds || [],
+    run: ad.run,
   });
   if (!combat.ok) return combat;
+
+  snapshotAbyssAllyHp(ad.run, combat.allies);
 
   if (combat.won) {
     ad.run.depth = nextDepth;
@@ -6252,6 +6703,11 @@ export function advanceAbyssDive(state, now = Date.now()) {
     if (nextDepth > (ad.bestDepth | 0)) ad.bestDepth = nextDepth;
     if (nextDepth > (ad.weekBestDepth | 0)) ad.weekBestDepth = nextDepth;
     const mutIds = [...(ad.run.mutationIds || [])];
+    let pendingEvent = null;
+    if (nextDepth % ABYSS_EVENT_EVERY === 0) {
+      pendingEvent = rollAbyssFloorEvent(ad.run.seed, nextDepth);
+      ad.run.pendingEvent = pendingEvent;
+    }
     return {
       ...combat,
       ok: true,
@@ -6264,11 +6720,12 @@ export function advanceAbyssDive(state, now = Date.now()) {
       mutationIds: mutIds,
       mutations: mapAbyssMutations(mutIds),
       nextFloor: previewAbyssNextFloor(nextDepth, mutIds, ad.insuranceCharges | 0),
+      pendingEvent,
+      roster: abyssSquadRosterView(state, ad.run),
       msg: `已通關第 ${nextDepth} 層 · 淵砂 +${gain}（待結算 ${ad.run.pendingGrit}）`,
     };
   }
 
-  // 全滅保底
   const pending = ad.run.pendingGrit | 0;
   const clearedBefore = ad.run.depth | 0;
   const mutIds = [...(ad.run.mutationIds || [])];
@@ -6295,6 +6752,116 @@ export function advanceAbyssDive(state, now = Date.now()) {
       : `第 ${nextDepth} 層挑戰失敗 · 未帶出淵砂`,
   };
 }
+/** 層間整理：由編隊 5 寵重設 3 出戰 + 2 替補 */
+export function rearrangeAbyssSquad(state, activeUids, now = Date.now()) {
+  const ad = ensureAbyssDive(state, now);
+  if (!ad.run) return { ok: false, msg: "沒有進行中的深潛。" };
+  normalizeAbyssRunSquad(ad.run);
+  const squad = new Set(ad.run.squadUids || []);
+  const next = [...new Set((activeUids || []).filter((uid) => squad.has(uid)))];
+  if (!next.length) return { ok: false, msg: "至少揀 1 隻出戰。" };
+  if (next.length > ABYSS_ACTIVE_SIZE) {
+    return { ok: false, msg: `出戰最多 ${ABYSS_ACTIVE_SIZE} 隻。` };
+  }
+  const living = next.filter((uid) => (ad.run.hpByUid?.[uid]?.hp | 0) > 0);
+  if (!living.length) return { ok: false, msg: "出戰位唔可以全係陣亡靈寵。" };
+  ad.run.activeUids = next;
+  ad.run.benchUids = (ad.run.squadUids || []).filter((uid) => !next.includes(uid));
+  return {
+    ok: true,
+    msg: "已整理潮淵編隊。",
+    roster: abyssSquadRosterView(state, ad.run),
+  };
+}
+
+/** 解決每 5 層 2 選 1 事件 */
+export function resolveAbyssEvent(state, optionType, opts = {}, now = Date.now()) {
+  const ad = ensureAbyssDive(state, now);
+  if (!ad.run?.pendingEvent) return { ok: false, msg: "沒有待選事件。" };
+  normalizeAbyssRunSquad(ad.run);
+  ensureAbyssSquadHp(state, ad.run);
+  const evt = ad.run.pendingEvent;
+  const opt = (evt.options || []).find((o) => o.type === optionType);
+  if (!opt) return { ok: false, msg: "無效選項。" };
+
+  if (optionType === "campfire") {
+    for (const uid of ad.run.squadUids || []) {
+      const slot = ad.run.hpByUid[uid];
+      if (!slot || (slot.hp | 0) <= 0) continue;
+      const maxHp = Math.max(1, slot.maxHp | 0);
+      const heal = Math.round(maxHp * ABYSS_CAMPFIRE_HEAL);
+      slot.hp = Math.min(maxHp, (slot.hp | 0) + heal);
+    }
+    ad.run.pendingEvent = null;
+    pushLog(state, "潮篝餘溫——編隊回復約三成血。");
+    return {
+      ok: true,
+      msg: "潮篝：編隊回復約 30% 血量。",
+      roster: abyssSquadRosterView(state, ad.run),
+    };
+  }
+
+  if (optionType === "merchant") {
+    const buffId = opt.buffId || opts.buffId;
+    const buff = ABYSS_MERCHANT_BUFFS[buffId];
+    if (!buff) return { ok: false, msg: "行商貨物唔識。" };
+    if ((ad.run.diveBuffs || []).includes(buffId)) {
+      return { ok: false, msg: "本潛已有此增益。" };
+    }
+    if (!spendMaterials(state, { [ABYSS_GRIT_ID]: buff.cost })) {
+      return { ok: false, msg: `淵砂不足（需×${buff.cost}）。` };
+    }
+    ad.run.diveBuffs = [...(ad.run.diveBuffs || []), buffId];
+    if (buff.hpMult && buff.hpMult !== 1) {
+      for (const uid of ad.run.squadUids || []) {
+        const hit = findOwnedPet(state, uid);
+        if (!hit?.pet) continue;
+        const st = abyssPetCombatStats(state, hit.pet, ad.run.diveBuffs);
+        const prev = ad.run.hpByUid[uid] || { hp: st.maxHp, maxHp: st.maxHp };
+        const ratio = prev.maxHp > 0 ? prev.hp / prev.maxHp : 1;
+        ad.run.hpByUid[uid] = {
+          maxHp: st.maxHp,
+          hp: prev.hp <= 0 ? 0 : Math.max(1, Math.round(ratio * st.maxHp)),
+        };
+      }
+    }
+    ad.run.pendingEvent = null;
+    pushLog(state, `行商成交——【${buff.name}】（本潛）。`);
+    return {
+      ok: true,
+      msg: `行商：獲得【${buff.name}】（本潛有效）。`,
+      roster: abyssSquadRosterView(state, ad.run),
+      diveBuffs: [...ad.run.diveBuffs],
+    };
+  }
+
+  if (optionType === "altar") {
+    const dead = (ad.run.squadUids || []).filter((uid) => (ad.run.hpByUid?.[uid]?.hp | 0) <= 0);
+    if (!dead.length) {
+      ad.run.pendingEvent = null;
+      return { ok: true, msg: "祭壇無回應——冇陣亡靈寵可復活。", roster: abyssSquadRosterView(state, ad.run) };
+    }
+    const pick = opts.uid && dead.includes(opts.uid) ? opts.uid : dead[0];
+    const slot = ad.run.hpByUid[pick];
+    const maxHp = Math.max(1, slot?.maxHp | 0);
+    ad.run.hpByUid[pick] = {
+      maxHp,
+      hp: Math.max(1, Math.round(maxHp * ABYSS_ALTAR_REVIVE_HP)),
+    };
+    ad.run.pendingEvent = null;
+    const hit = findOwnedPet(state, pick);
+    const name = hit?.pet ? displayPetName(hit.pet) : pick;
+    pushLog(state, `祭壇靈光——【${name}】復活。`);
+    return {
+      ok: true,
+      msg: `祭壇：【${name}】以 ${Math.round(ABYSS_ALTAR_REVIVE_HP * 100)}% 血復活。`,
+      roster: abyssSquadRosterView(state, ad.run),
+      revivedUid: pick,
+    };
+  }
+
+  return { ok: false, msg: "未知事件。" };
+}
 
 /** 撤退結算 */
 export function retreatAbyssDive(state, now = Date.now()) {
@@ -6315,6 +6882,7 @@ export function retreatAbyssDive(state, now = Date.now()) {
       : `撤退結算 · 淵砂×${grit}`,
   };
 }
+
 
 export function buyAbyssInsurance(state, now = Date.now()) {
   const ad = ensureAbyssDive(state, now);
@@ -6359,6 +6927,21 @@ export function buyAbyssEgg(state, now = Date.now()) {
   return { ok: true, egg, msg: "獲得潮淵高階蛋（A）。" };
 }
 
+/** 淵砂兌換潮轉符（入背包道具；永久轉屬） */
+export function buyAbyssTideShiftCharm(state, now = Date.now()) {
+  ensureAbyssDive(state, now);
+  ensureItems(state);
+  if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_TIDE_SHIFT_COST })) {
+    return { ok: false, msg: `需要淵砂×${ABYSS_TIDE_SHIFT_COST}。` };
+  }
+  state.items.tide_shift_charm = Math.floor(state.items.tide_shift_charm || 0) + 1;
+  pushLog(state, `淵砂兌換潮轉符×1（持有 ${state.items.tide_shift_charm}）。`);
+  return {
+    ok: true,
+    msg: `兌換潮轉符×1（持有 ${state.items.tide_shift_charm}）`,
+    have: state.items.tide_shift_charm,
+  };
+}
 
 function pushLog(state, line) {
   if (!state.log) state.log = [];
@@ -6428,6 +7011,8 @@ export {
   petGeneration,
   hybridRecipeSummary,
   hybridRecipeMatrix,
+  releaseSoulGain,
+  releaseRefund,
   DUNGEON_TRIALS,
   KINDS,
   dungeonWaves,

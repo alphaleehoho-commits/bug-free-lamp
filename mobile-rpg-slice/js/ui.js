@@ -5,7 +5,11 @@ import {
   tryBreakthrough,
   tryBondPending,
   dismissPending,
-  releasePet,
+  releasePets,
+  previewReleaseSoul,
+  releaseSoulGain,
+  togglePetStarred,
+  togglePetLocked,
   deployPet,
   undeployPet,
   eggsView,
@@ -82,6 +86,8 @@ import {
   breakthroughView,
   shopView,
   buyShopOffer,
+  soulShopView,
+  buySoulShopOffer,
   setTactics,
   tacticsView,
   setFormation,
@@ -142,6 +148,9 @@ import {
   buyAbyssInsurance,
   buyAbyssCosmetic,
   buyAbyssEgg,
+  buyAbyssTideShiftCharm,
+  useTideShiftCharm,
+  abyssSquadCandidates,
 } from "./engine.js";
 import {
   DUNGEON_SUMMON_MIN,
@@ -247,8 +256,25 @@ let hatchClaimModal = null;
 let hatchEggFilter = "all";
 /** 背包內頁：材料 | 道具 */
 let bagInner = "mats";
-/** @type {"power" | "gen" | "rarity" | "element" | "status"} */
+/** @type {"power" | "gen" | "rarity" | "element" | "status" | "star"} */
 let ranchSort = "status";
+/** 牧場只顯示星標 */
+let ranchStarOnly = false;
+/**
+ * 批量放生：null | { phase: "select", selected: string[] } | { phase: "confirm", selected: string[] }
+ * @type {null | { phase: "select" | "confirm", selected: string[] }}
+ */
+let ranchRelease = null;
+/**
+ * 放生確認半屏（單隻／批量）
+ * @type {null | { uids: string[], fromDetail?: boolean }}
+ */
+let releaseModal = null;
+/**
+ * 潮轉符選寵半屏
+ * @type {null | { source: "bag" | "abyss" }}
+ */
+let tideShiftModal = null;
 
 const UI_PREFS_KEY = "void-tide-ui-prefs";
 
@@ -265,7 +291,7 @@ function loadUiPrefs() {
 function saveUiPrefs() {
   sessionStorage.setItem(
     UI_PREFS_KEY,
-    JSON.stringify({ matSectionOpen, trainRatesOpen, ranchSort, bagInner })
+    JSON.stringify({ matSectionOpen, trainRatesOpen, ranchSort, ranchStarOnly, bagInner })
   );
 }
 
@@ -275,9 +301,10 @@ trainRatesOpen = !!uiPrefsBoot.trainRatesOpen;
 if (uiPrefsBoot.bagInner === "items" || uiPrefsBoot.bagInner === "mats") {
   bagInner = uiPrefsBoot.bagInner;
 }
-if (["power", "gen", "rarity", "element", "status"].includes(uiPrefsBoot.ranchSort)) {
+if (["power", "gen", "rarity", "element", "status", "star"].includes(uiPrefsBoot.ranchSort)) {
   ranchSort = uiPrefsBoot.ranchSort;
 }
+ranchStarOnly = !!uiPrefsBoot.ranchStarOnly;
 
 const COMBAT_PREFS_KEY = "void-tide-combat-prefs";
 
@@ -1287,8 +1314,9 @@ function bagItemsHtml() {
   const rows = itemsView(state)
     .map((it) => {
       const empty = it.count <= 0;
+      const useLabel = it.needsTarget ? "揀寵使用" : "使用";
       const useBtn = it.canUse
-        ? `<button type="button" class="primary" data-use-item="${escapeHtml(it.id)}">使用</button>`
+        ? `<button type="button" class="primary" data-use-item="${escapeHtml(it.id)}">${useLabel}</button>`
         : `<button type="button" disabled>${it.atCap ? "已滿" : "使用"}</button>`;
       return `
     <li class="bag-item ${empty ? "is-empty" : ""}">
@@ -1302,6 +1330,38 @@ function bagItemsHtml() {
     })
     .join("");
   return `<ul class="list bag-item-list">${rows || `<li class="empty">暫無道具。</li>`}</ul>`;
+}
+
+function tideShiftModalHtml() {
+  if (!tideShiftModal) return "";
+  const have = Math.floor(state.items?.tide_shift_charm || 0);
+  const party = (state.pets || []).map((p) => ({ pet: p, where: "出戰" }));
+  const ranch = (state.ranch || []).map((p) => ({ pet: p, where: "牧場" }));
+  const rows =
+    [...party, ...ranch]
+      .map(({ pet: p, where }) => {
+        return `
+        <li class="card-row">
+          <div>
+            <strong>${escapeHtml(displayPetName(p))}</strong>
+            <span class="muted">${escapeHtml(where)} · ${escapeHtml(p.elementName || "")}屬 · Lv.${p.level | 0}</span>
+          </div>
+          <button type="button" class="primary" data-tide-shift-pet="${escapeHtml(p.uid)}" ${have < 1 ? "disabled" : ""}>轉屬</button>
+        </li>`;
+      })
+      .join("") || `<li class="empty">冇可用靈寵。</li>`;
+  return `
+    <div class="sheet-overlay" role="presentation" data-live="tide-shift-modal">
+      <div class="sheet-card" role="dialog" aria-label="潮轉符選寵" data-sheet-card>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <h3>潮轉符 · 揀寵轉屬</h3>
+        <p class="meta">永久隨機轉換元素（唔會轉成同一屬）· 持有 ${have}</p>
+        <ul class="list">${rows}</ul>
+        <div class="row">
+          <button type="button" class="secondary" data-act="close-tide-shift-modal">取消</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 function bagInnerNavHtml() {
@@ -1899,6 +1959,8 @@ function render() {
     ${statsSheetOpen ? statsSheetHtml() : ""}
     ${offlineClaimOpen ? offlineClaimModalHtml() : ""}
     ${hatchClaimModal ? hatchClaimModalHtml() : ""}
+    ${releaseModal ? releaseModalHtml() : ""}
+    ${tideShiftModal ? tideShiftModalHtml() : ""}
     ${dailyHubHtml()}
     ${inTutorial ? "" : installBanner()}
   `;
@@ -1971,6 +2033,7 @@ function statsSheetHtml() {
           <li><span>碎片</span><strong>${state.scrap}</strong></li>
           <li><span>飼料</span><strong>${Math.floor(state.feed || 0)}</strong></li>
           <li><span>靈塵</span><strong>${Math.floor(state.dust || 0)}</strong></li>
+          <li><span>精魂</span><strong>${Math.floor(state.materials?.soul_essence || 0)}</strong></li>
           <li><span>勝場</span><strong>${state.combatsWon}</strong></li>
           <li><span>牧場</span><strong>${ranchN}／${ranchCap(state)}</strong></li>
           <li><span>出戰</span><strong>${state.pets.length}／${ACTIVE_PET_MAX}</strong></li>
@@ -2163,6 +2226,47 @@ function offlineClaimModalHtml() {
         <div class="combat-modal-actions row">
           <button type="button" class="primary" data-act="claim-offline">收集</button>
           <button type="button" class="ghost" data-act="close-offline-claim">返回</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function releaseModalHtml() {
+  if (!releaseModal?.uids?.length) return "";
+  const prev = previewReleaseSoul(state, releaseModal.uids);
+  if (!prev.ok) {
+    return `
+    <div class="combat-modal-overlay release-modal-overlay" data-live="release-modal" role="dialog" aria-label="放生確認">
+      <div class="combat-modal-card release-modal-card">
+        <div class="combat-modal-scroll">
+          <h2>無法放生</h2>
+          <p class="lead">${escapeHtml(prev.msg || "請返回重試。")}</p>
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" class="primary" data-act="close-release-modal">返回</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  const multi = prev.pets.length > 1;
+  const rows = prev.pets
+    .map(
+      (row) =>
+        `<li class="card-row release-pet-row"><div><strong>${escapeHtml(row.name)}</strong><span class="muted">精魂 +${row.soul}</span></div></li>`
+    )
+    .join("");
+  return `
+    <div class="combat-modal-overlay release-modal-overlay" data-live="release-modal" role="dialog" aria-label="放生確認">
+      <div class="combat-modal-card release-modal-card">
+        <div class="combat-modal-scroll">
+          <h2>${multi ? "確認批量放生" : "確認放生"}</h2>
+          <p class="lead">${multi ? `共 ${prev.pets.length} 隻` : escapeHtml(prev.pets[0]?.name || "")} · 精魂 +${prev.soul}</p>
+          <p class="meta muted">放生只獲<strong>精魂</strong>，唔再退靈石／飼料／靈塵。此操作不可復原。</p>
+          <ul class="list">${rows}</ul>
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" class="ghost" data-act="close-release-modal">返回</button>
+          <button type="button" class="primary" data-act="confirm-release">確認放生</button>
         </div>
       </div>
     </div>`;
@@ -2585,6 +2689,7 @@ function cultivatePanel(qiPct, next, m) {
     { id: "train", label: "練功" },
     { id: "bag", label: "背包" },
     { id: "shop", label: "商肆" },
+    { id: "soul", label: "精魂" },
     { id: "advance", label: "進階" },
   ]);
 
@@ -2606,6 +2711,31 @@ function cultivatePanel(qiPct, next, m) {
       `<h2>商肆 · 今日</h2>
       <p class="lead">靈石 ${Math.floor(state.stones)} · 牧場 ${ranchN}／${ranchCap(state)}</p>
       <ul class="list">${shopRows}</ul>`
+    );
+  }
+
+  if (sub === "soul") {
+    const soulN = Math.floor(state.materials?.soul_essence || 0);
+    const soulRows =
+      soulShopView(state)
+        .map((o) => {
+          return `
+        <li class="card-row">
+          <div>
+            <strong>${escapeHtml(o.name)}</strong>
+            <span class="muted">${escapeHtml(o.desc || "")} · 獲 ${escapeHtml(o.grantLabel)} · ${o.cost} 精魂</span>
+          </div>
+          <button type="button" class="primary" data-soul-shop-buy="${escapeHtml(o.id)}" ${
+            o.canAfford ? "" : "disabled"
+          }>兌換</button>
+        </li>`;
+        })
+        .join("") || `<li class="empty">暫無精魂貨物。</li>`;
+    return wrapStage(
+      nav,
+      `<h2>精魂商人</h2>
+      <p class="lead">精魂 ${soulN} · 放生所得兌換飼料／材料／道具</p>
+      <ul class="list">${soulRows}</ul>`
     );
   }
 
@@ -2699,6 +2829,13 @@ function petStatusTag(kind) {
   return map[kind] || "";
 }
 
+function petFlagTags(p) {
+  const bits = [];
+  if (p.starred) bits.push(`<span class="pet-tag pet-tag-star" title="星標">★</span>`);
+  if (p.locked) bits.push(`<span class="pet-tag pet-tag-lock" title="上鎖">鎖</span>`);
+  return bits.join("");
+}
+
 function petPowerScore(p) {
   return (p.atk || 0) * 2 + (p.hp || 0) + (p.spd || 0) + (p.level || 1) * 8 + (p.fusionLevel || 0) * 20;
 }
@@ -2710,6 +2847,12 @@ function sortRanchEntries(entries, sortKey) {
   list.sort((a, b) => {
     const pa = a.pet;
     const pb = b.pet;
+    // 星標永遠浮頂（除非專排星標時仍用星標優先）
+    const starDiff = (pb.starred ? 1 : 0) - (pa.starred ? 1 : 0);
+    if (starDiff) return starDiff;
+    if (sortKey === "star") {
+      return petPowerScore(pb) - petPowerScore(pa);
+    }
     if (sortKey === "gen") {
       const d = petGeneration(pb) - petGeneration(pa);
       if (d) return d;
@@ -2731,7 +2874,7 @@ function sortRanchEntries(entries, sortKey) {
   return list;
 }
 
-function petGridCard(p, extraBtn = "", tagHtml = "") {
+function petGridCard(p, extraBtn = "", tagHtml = "", opts = {}) {
   const uid = escapeHtml(p.uid || p.templateId);
   const lv = p.level ?? 1;
   const fus = p.fusionLevel ?? 0;
@@ -2739,20 +2882,52 @@ function petGridCard(p, extraBtn = "", tagHtml = "") {
   const r = rarityInfo(p.rarity ?? 0);
   const g = petGeneration(p);
   const detailGlow = tutGlow({ type: "pet-detail", uid: p.uid || p.templateId });
+  const managing = !!opts.managing;
+  const selected = !!opts.selected;
+  const selectable = !!opts.selectable;
+  const lockedBlock = !!p.locked && managing;
+  const selectCls = managing
+    ? ` is-manage${selected ? " is-selected" : ""}${lockedBlock ? " is-locked-pet" : ""}${
+        selectable ? " is-selectable" : ""
+      }`
+    : p.starred
+      ? " is-starred"
+      : "";
+  const selectBtn = managing
+    ? lockedBlock
+      ? `<button type="button" disabled>已上鎖</button>`
+      : selectable
+        ? `<button type="button" class="${selected ? "primary" : "secondary"}" data-ranch-pick="${uid}">${
+            selected ? "已選" : "選擇"
+          }</button>`
+        : `<button type="button" disabled>不可選</button>`
+    : "";
+  const quick =
+    managing || opts.hideQuick
+      ? ""
+      : `<button type="button" class="ghost pet-quick-flag${p.starred ? " on" : ""}" data-toggle-star="${uid}" aria-label="星標">${
+          p.starred ? "★" : "☆"
+        }</button>
+        <button type="button" class="ghost pet-quick-flag${p.locked ? " on" : ""}" data-toggle-lock="${uid}" aria-label="上鎖">${
+          p.locked ? "鎖" : "開"
+        }</button>`;
   return `
-    <li class="pet-card">
+    <li class="pet-card${selectCls}">
       <div class="pet-card-top">
         ${petIconFromPet(p, { size: 28 })}
         <div class="pet-card-title">
-          <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
-          ${tagHtml}
+          <button type="button" class="linkish" data-pet-detail="${uid}" ${managing ? "disabled" : ""}><strong>${escapeHtml(title)}</strong></button>
+          ${tagHtml}${petFlagTags(p)}
         </div>
       </div>
       <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""}</span>
       <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)} · 攻${fmtInt(p.atk)}</span>
       <div class="row-actions pet-card-actions">
-        <button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>
-        ${extraBtn}
+        ${
+          managing
+            ? selectBtn
+            : `<button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>${quick}${extraBtn}`
+        }
       </div>
     </li>`;
 }
@@ -2770,7 +2945,7 @@ function petRow(p, extraBtn = "", tagHtml = "") {
       ${petIconFromPet(p, { size: 34 })}
       <div>
         <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
-        ${tagHtml}
+        ${tagHtml}${petFlagTags(p)}
         <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
         <span class="muted">攻${fmtInt(p.atk)} 血${fmtInt(p.hp)} 速${fmtInt(p.spd)} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
@@ -2778,6 +2953,29 @@ function petRow(p, extraBtn = "", tagHtml = "") {
         <button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>
         ${extraBtn}
       </div>
+    </li>`;
+}
+
+/** 密集揀寵卡（繁殖／派遣／融合）：兩欄緊湊＋星標／上鎖 */
+function petPickCard(p, opts = {}) {
+  const selected = !!opts.selected;
+  const disabled = !!opts.disabled;
+  const btnLabel = opts.btnLabel || (selected ? "已選" : "選擇");
+  const btnAttr = opts.btnAttr || "";
+  const meta = opts.meta || "";
+  const btnClass = opts.btnClass || (selected ? "primary" : "secondary");
+  const starCls = p.starred ? " is-starred" : "";
+  const lockCls = p.locked ? " is-locked-pet" : "";
+  return `
+    <li class="pet-pick-card${selected ? " is-selected" : ""}${disabled ? " is-disabled" : ""}${starCls}${lockCls}">
+      <div class="pet-pick-top">
+        ${petIconFromPet(p, { size: 24 })}
+        <div class="pet-pick-title">
+          <strong>${escapeHtml(displayPetName(p))}</strong>${petFlagTags(p)}
+        </div>
+      </div>
+      <span class="muted">${meta}</span>
+      <button type="button" class="${btnClass}" ${btnAttr} ${disabled ? "disabled" : ""}>${btnLabel}</button>
     </li>`;
 }
 
@@ -2797,24 +2995,24 @@ function dispatchModalHtml() {
       .map((p) => {
         const selected = pick.has(p.uid);
         const match = petMatchesDispatchMission(p, mission);
-        return `
-        <li class="card-row">
-          <div>
-            <strong>${escapeHtml(displayPetName(p))}</strong>
-            <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · 攻${fmtInt(p.atk)} 血${fmtInt(p.hp)}${match ? "" : " · 唔符合限制"}</span>
-          </div>
-          <button type="button" class="${selected ? "primary" : "secondary"}" data-dispatch-pick="${escapeHtml(p.uid)}" ${match ? "" : "disabled"}>${selected ? "已選" : match ? "選擇" : "不符"}</button>
-        </li>`;
+        const r = rarityInfo(p.rarity ?? 0);
+        return petPickCard(p, {
+          selected,
+          disabled: !match,
+          btnLabel: selected ? "已選" : match ? "選擇" : "不符",
+          btnAttr: `data-dispatch-pick="${escapeHtml(p.uid)}"`,
+          meta: `<span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(p.elementName)} · 攻${fmtInt(p.atk)}${match ? "" : " · 唔符合"}`,
+        });
       })
-      .join("") || `<li class="empty">牧場無可派遣靈寵（需撤回出戰或等派遣歸來）。</li>`;
+      .join("") || `<li class="empty pet-pick-empty">牧場無可派遣靈寵（需撤回出戰或等派遣歸來）。</li>`;
   return `
     <div class="sheet-overlay" role="presentation" data-live="dispatch-modal">
-      <div class="sheet-card" role="dialog" aria-label="選擇派遣靈寵" data-sheet-card>
+      <div class="sheet-card pet-pick-sheet" role="dialog" aria-label="選擇派遣靈寵" data-sheet-card>
         <div class="sheet-handle" aria-hidden="true"></div>
         <h3>${escapeHtml(mission.name)}</h3>
         <p class="meta">${escapeHtml(mission.desc)}${reqLabel ? ` · ${escapeHtml(reqLabel)}` : ""} · 需 ${need} 隻 · 已選 ${pick.size}/${need}</p>
-        <ul class="list">${rows}</ul>
-        <div class="row">
+        <ul class="pet-pick-grid">${rows}</ul>
+        <div class="row pet-pick-actions">
           <button type="button" class="secondary" data-act="close-dispatch-modal">取消</button>
           <button type="button" class="primary" data-act="confirm-dispatch" ${pick.size === need ? "" : "disabled"}>派出</button>
         </div>
@@ -2887,7 +3085,7 @@ function petsListView() {
 
   const deployedIds = new Set((state.pets || []).map((p) => p.uid));
   const ranchIdle = (ranch || []).filter((p) => !deployedIds.has(p.uid));
-  const ranchEntries = sortRanchEntries(
+  let ranchEntries = sortRanchEntries(
     [
       ...ranchIdle.filter((p) => busy.has(p.uid)).map((p) => ({ pet: p, kind: "dispatch" })),
       ...(state.pets || []).map((p) => ({ pet: p, kind: "fight" })),
@@ -2895,6 +3093,10 @@ function petsListView() {
     ],
     ranchSort
   );
+  if (ranchStarOnly) {
+    ranchEntries = ranchEntries.filter((e) => e.pet.starred);
+  }
+  const manageSelect = ranchRelease?.phase === "select" ? new Set(ranchRelease.selected || []) : null;
   const ranchList =
     ranchEntries
       .map(({ pet: p, kind }) => {
@@ -2910,13 +3112,21 @@ function petsListView() {
             : kind === "dispatch"
               ? ""
               : `<button type="button" class="primary${tutGlow({ type: "deploy" })}" data-deploy="${escapeHtml(p.uid)}">出戰</button>`;
-        return petGridCard(p, extra, tag);
+        const selectable = kind === "idle" && !p.locked;
+        return petGridCard(p, extra, tag, {
+          managing: !!manageSelect,
+          selected: manageSelect ? manageSelect.has(p.uid) : false,
+          selectable,
+        });
       })
       .join("") ||
-    `<li class="empty pet-grid-empty">牧場空。孵化／契約成功的靈寵會進入牧場（容量 ${cap}）。</li>`;
+    `<li class="empty pet-grid-empty">${
+      ranchStarOnly ? "冇星標靈寵。" : `牧場空。孵化／契約成功的靈寵會進入牧場（容量 ${cap}）。`
+    }</li>`;
 
   const sortOpts = [
     ["status", "狀態"],
+    ["star", "星標"],
     ["power", "戰力"],
     ["gen", "代數"],
     ["rarity", "稀有"],
@@ -2927,6 +3137,9 @@ function petsListView() {
         `<button type="button" class="sort-chip${ranchSort === id ? " on" : ""}" data-ranch-sort="${id}">${label}</button>`
     )
     .join("");
+  const starFilterChip = `<button type="button" class="sort-chip${ranchStarOnly ? " on" : ""}" data-ranch-star-filter aria-pressed="${
+    ranchStarOnly ? "true" : "false"
+  }">只睇星標</button>`;
 
   const idleEggs = eggsView(state).filter((e) => !e.hatching);
   const hatchBusy = activeHatchCount(state);
@@ -3010,12 +3223,54 @@ function petsListView() {
   const sub = panelSub.party;
 
   if (sub === "ranch") {
+    if (ranchRelease?.phase === "confirm") {
+      const prev = previewReleaseSoul(state, ranchRelease.selected || []);
+      const rows =
+        (prev.pets || [])
+          .map(
+            (row) =>
+              `<li class="card-row"><div><strong>${escapeHtml(row.name)}</strong><span class="muted">精魂 +${row.soul}</span></div></li>`
+          )
+          .join("") || `<li class="empty">未揀靈寵。</li>`;
+      return wrapStage(
+        nav,
+        `<h2>確認放生</h2>
+        <p class="lead">將放生 ${prev.pets?.length || 0} 隻 · 預計精魂 +${prev.soul || 0}</p>
+        <p class="meta muted">放生只獲精魂，唔再退靈石／飼料／靈塵。</p>
+        <ul class="list">${rows}</ul>`,
+        `<div class="row">
+          <button type="button" class="secondary" data-act="ranch-release-back">返回</button>
+          <button type="button" class="primary" data-act="ranch-release-confirm" ${
+            prev.ok && prev.pets?.length ? "" : "disabled"
+          }>確認放生</button>
+        </div>`
+      );
+    }
+    const selCount = ranchRelease?.phase === "select" ? (ranchRelease.selected || []).length : 0;
+    const selSoul =
+      ranchRelease?.phase === "select" && selCount
+        ? previewReleaseSoul(state, ranchRelease.selected).soul || 0
+        : 0;
+    const manageBar = ranchRelease?.phase === "select"
+      ? `<div class="ranch-manage-bar">
+          <p class="meta">已選 ${selCount} · 預計精魂 +${selSoul} · 上鎖／出戰／派遣不可選</p>
+          <div class="row">
+            <button type="button" class="secondary" data-act="ranch-release-cancel">取消</button>
+            <button type="button" class="primary" data-act="ranch-release-next" ${selCount ? "" : "disabled"}>下一步</button>
+          </div>
+        </div>`
+      : `<div class="row ranch-manage-entry">
+          <button type="button" class="secondary" data-act="ranch-release-start">批量放生</button>
+        </div>`;
     return wrapStage(
       nav,
       `<h2>靈寵 · 牧場</h2>
-      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 待命微產飼料／靈塵／潮霧令</p>
+      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 精魂 ${Math.floor(
+        state.materials?.soul_essence || 0
+      )} · 待命微產飼料／靈塵／潮霧令</p>
       ${eggBrief}
-      <div class="ranch-sort" role="group" aria-label="牧場排序">${sortOpts}</div>
+      <div class="ranch-sort" role="group" aria-label="牧場排序">${sortOpts}${starFilterChip}</div>
+      ${manageBar}
       <ul class="pet-grid">${ranchList}</ul>`
     );
   }
@@ -3199,22 +3454,17 @@ function petsBreedView() {
         const on = selected.has(p.uid);
         const mating = matingBusy.has(p.uid);
         const r = rarityInfo(p.rarity ?? 0);
-        return `
-        <li class="card-row">
-          <div>
-            <strong>${escapeHtml(displayPetName(p))}</strong>
-            <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
-              petGeneration(p)
-            )} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}${
-              mating ? " · 交配中" : ""
-            }</span>
-          </div>
-          <button type="button" class="${on ? "primary" : "secondary"}" data-breed-toggle="${escapeHtml(p.uid)}" ${
-            mating && !on ? "disabled" : ""
-          }>${mating ? "交配中" : on ? "已選" : "加入交配"}</button>
-        </li>`;
+        return petPickCard(p, {
+          selected: on,
+          disabled: mating && !on,
+          btnLabel: mating ? "交配中" : on ? "已選" : "加入交配",
+          btnAttr: `data-breed-toggle="${escapeHtml(p.uid)}"`,
+          meta: `<span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
+            petGeneration(p)
+          )} · ${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}${mating ? " · 交配中" : ""}`,
+        });
       })
-      .join("") || `<li class="empty">牧場需要待命靈寵才能交配（派遣中不可用）。</li>`;
+      .join("") || `<li class="empty pet-pick-empty">牧場需要待命靈寵才能交配（派遣中不可用）。</li>`;
 
   const preview = pa && pb ? breedPreview(pa, pb) : null;
   const unitMat =
@@ -3252,7 +3502,7 @@ function petsBreedView() {
       <p class="sweep-label">約 ${cycleSec * batch}s · ${stoneNeed} 石${batch > 1 ? ` · 可中途領蛋` : ""}</p>
     </div>
     <h3>待命靈寵</h3>
-    <ul class="list breed-pet-list">${list}</ul>`;
+    <ul class="pet-pick-grid breed-pet-list">${list}</ul>`;
   const dock = `<div class="row">
       <button type="button" class="primary${tutGlow({ type: "act", act: "start-breed" })}" data-breed-confirm data-breed-count="${batch}" ${canStart ? "" : "disabled"}>開始交配×${batch}（${selected.size}/2）</button>
     </div>`;
@@ -3593,9 +3843,12 @@ function petsDetailView() {
         ? petDetailSkillsHtml(pet, detail)
         : petDetailStatsHtml(pet, detail, r);
   const lineage = petLineage(state, pet.uid);
+  const soulGain = releaseSoulGain(pet);
+  const starOn = !!pet.starred;
+  const lockOn = !!pet.locked;
   return wrapStage(
     "",
-    `<h2>${escapeHtml(displayPetName(pet))}</h2>
+    `<h2>${escapeHtml(displayPetName(pet))}${petFlagTags(pet)}</h2>
     <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
     ${petDetailTabNav(detailTab)}
     ${tabBody}
@@ -3604,6 +3857,14 @@ function petsDetailView() {
     <div class="row gear-row">
       <label>暱稱<input type="text" maxlength="${NICK_MAX_LEN}" data-nick-input value="${escapeHtml(pet.nick || "")}" placeholder="${escapeHtml(pet.name)}" /></label>
       <button type="button" data-rename="${escapeHtml(pet.uid)}">命名</button>
+    </div>
+    <div class="row pet-flag-row">
+      <button type="button" class="secondary${starOn ? " on" : ""}" data-toggle-star="${escapeHtml(pet.uid)}">${
+        starOn ? "★ 已星標" : "☆ 星標"
+      }</button>
+      <button type="button" class="secondary${lockOn ? " on" : ""}" data-toggle-lock="${escapeHtml(pet.uid)}">${
+        lockOn ? "已上鎖" : "上鎖"
+      }</button>
     </div>`,
     `<div class="row">
       <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升級</button>
@@ -3622,7 +3883,9 @@ function petsDetailView() {
           ? `<button type="button" data-undeploy="${escapeHtml(pet.uid)}">撤回</button>`
           : `<button type="button" data-deploy="${escapeHtml(pet.uid)}">出戰</button>`
       }
-      <button type="button" data-release="${escapeHtml(pet.uid)}">放歸</button>
+      <button type="button" data-release="${escapeHtml(pet.uid)}" ${lockOn ? "disabled" : ""} title="${
+        lockOn ? "已上鎖，唔可以放生" : `放生獲精魂 ${soulGain}`
+      }">${lockOn ? "已上鎖" : `放生（精魂${soulGain}）`}</button>
       <button type="button" data-pet-back>返回</button>
     </div>`
   );
@@ -3651,24 +3914,24 @@ function petsFuseView() {
     owned
       .map((p) => {
         const on = selected.has(p.uid);
-        return `
-        <li class="card-row">
-          <div>
-            <strong>${escapeHtml(p.name)}</strong>
-            <span class="muted">素材（等級不計）· 融${p.fusionLevel ?? 0} · 攻${p.atk} 血${p.hp} 速${p.spd}</span>
-          </div>
-          <button type="button" class="${on ? "primary" : ""}" data-fuse-toggle="${escapeHtml(p.uid)}">${on ? "已選" : "選擇"}</button>
-        </li>`;
+        const r = rarityInfo(p.rarity ?? 0);
+        return petPickCard(p, {
+          selected: on,
+          btnLabel: on ? "已選" : "選擇",
+          btnClass: on ? "primary" : "secondary",
+          btnAttr: `data-fuse-toggle="${escapeHtml(p.uid)}"`,
+          meta: `<span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · 素材 · 融${p.fusionLevel ?? 0} · 攻${fmtInt(p.atk)}`,
+        });
       })
       .join("") ||
-    `<li class="empty">沒有同種族（${escapeHtml(base.speciesName)}）可作素材。</li>`;
+    `<li class="empty pet-pick-empty">沒有同種族（${escapeHtml(base.speciesName)}）可作素材。</li>`;
 
   const ready = lvOk && selected.size === needMats;
   return wrapStage(
     "",
     `<h2>融合 · 融階 ${target}</h2>
     <p class="lead">主體 ${escapeHtml(base.name)} Lv.${baseLv}${lvOk ? "" : `（需 ≥${needLv}）`} · 已選素材 ${selected.size}/${needMats} · 耗 ${cost} 靈石 · 結果繼承主體等級</p>
-    <ul class="list">${mats}</ul>`,
+    <ul class="pet-pick-grid fuse-mat-list">${mats}</ul>`,
     `<div class="row">
       <button type="button" class="primary" data-fuse-confirm ${ready ? "" : "disabled"}>確認融合</button>
       <button type="button" data-pet-detail="${escapeHtml(base.uid)}">返回詳情</button>
@@ -3900,9 +4163,65 @@ function abyssNextFloorNote(next) {
   if (!next) return "";
   if (next.willAddMutation) return "將加入 1 條新突變";
   if (next.insuranceSkips) return "突變保險將略過新突變";
-  if (next.atMutationCap) return "突變已達上限，無新增";
   if (next.mutationFloor) return "突變層（無新增）";
   return "本層無新突變";
+}
+
+function abyssRosterMiniHtml(roster) {
+  if (!roster) return "";
+  const row = (list, label) => {
+    const bits = (list || [])
+      .map((p) => {
+        const hp = `${p.hp}/${p.maxHp}`;
+        const dead = p.dead ? " · 陣亡" : "";
+        return `<li><strong>${escapeHtml(p.name)}</strong><span class="muted"> ${hp}${dead}</span></li>`;
+      })
+      .join("");
+    return `<div class="abyss-roster-col"><span class="muted">${label}</span><ul class="abyss-roster-list">${bits || "<li class='empty'>—</li>"}</ul></div>`;
+  };
+  return `<div class="abyss-roster-mini">${row(roster.active, "出戰")} ${row(roster.bench, "替補")}</div>`;
+}
+
+function abyssEventHtml(pendingEvent) {
+  if (!pendingEvent?.options?.length) return "";
+  const opts = pendingEvent.options
+    .map(
+      (o) => `<button type="button" class="secondary abyss-event-opt" data-abyss-event="${escapeHtml(o.type)}">
+        <strong>${escapeHtml(o.name)}</strong>
+        <span class="muted">${escapeHtml(o.desc || "")}</span>
+      </button>`
+    )
+    .join("");
+  return `<div class="abyss-event-block">
+      <p class="lead">潮淵事件 · 2 選 1</p>
+      <p class="meta muted">第 ${pendingEvent.depth | 0} 層通關獎勵——揀一項先至可以續潛。</p>
+      <div class="abyss-event-opts">${opts}</div>
+    </div>`;
+}
+
+function abyssRearrangeHtml(roster) {
+  if (!roster?.squad?.length) return "";
+  const pick = new Set(abyssRearrangePick || (roster.active || []).map((p) => p.uid));
+  const rows = (roster.squad || [])
+    .map((p) => {
+      const on = pick.has(p.uid);
+      const dead = p.dead ? "disabled" : "";
+      return `<li class="card-row">
+        <div><strong>${escapeHtml(p.name)}</strong><span class="muted"> ${p.hp}/${p.maxHp}${p.dead ? " · 陣亡" : ""}</span></div>
+        <button type="button" class="${on ? "primary" : "secondary"}" data-abyss-rearrange-toggle="${escapeHtml(p.uid)}" ${dead}>${
+          on ? "出戰" : "替補"
+        }</button>
+      </li>`;
+    })
+    .join("");
+  return `<div class="abyss-rearrange-block">
+      <p class="lead">整理隊伍 · 揀最多 3 隻出戰</p>
+      <ul class="list">${rows}</ul>
+      <div class="row">
+        <button type="button" class="primary" data-act="abyss-rearrange-confirm">確認編隊</button>
+        <button type="button" data-act="abyss-rearrange-cancel">取消</button>
+      </div>
+    </div>`;
 }
 
 function abyssSettlementHtml(result) {
@@ -3929,17 +4248,26 @@ function abyssSettlementHtml(result) {
   }
   const next = result.nextFloor;
   const nextNote = abyssNextFloorNote(next);
+  const liveRun = abyssDiveView(state).run;
+  const pendingEvent = liveRun?.pendingEvent || result.pendingEvent || null;
+  const roster = liveRun?.roster || result.roster || null;
+  const eventBlock = pendingEvent ? abyssEventHtml(pendingEvent) : "";
+  const rearrangeBlock = abyssRearrangePick ? abyssRearrangeHtml(roster) : "";
+  const rosterMini = !abyssRearrangePick && roster ? abyssRosterMiniHtml(roster) : "";
   return `
     <div class="abyss-settle">
       <p class="lead">已通關第 <strong>${result.clearedDepth || result.depth}</strong> 層</p>
       <div class="settle-summary-row abyss-grit-row">
         <div>
           <strong class="settle-total">淵砂 +${result.gritGained || 0}</strong>
-          <span class="muted">待結算累計 ${result.pendingGrit || 0}</span>
+          <span class="muted">待結算累計 ${result.pendingGrit || 0} · 層間唔回滿血</span>
         </div>
       </div>
       <p class="meta">活躍突變：</p>
       <p class="meta abyss-mut-list">${mutLine}</p>
+      ${rosterMini}
+      ${eventBlock}
+      ${rearrangeBlock}
       <div class="abyss-next-preview">
         <strong>下一層預覽 · 第 ${next?.depth ?? (result.depth | 0) + 1} 層</strong>
         <span class="muted">${escapeHtml(nextNote)}</span>
@@ -4007,8 +4335,16 @@ function combatModalHtml() {
           <button type="button" data-act="skip-combat">跳過動畫</button>
           <button type="button" class="primary" data-act="${clearAct}" disabled>${escapeHtml(clearLabel)}</button>`;
   } else if (isAbyss && result?.won && !result?.wiped && result?.canContinue) {
+    const liveRun = abyssDiveView(state).run;
+    const needEvent = !!liveRun?.pendingEvent;
+    const contDisabled = needEvent || !!abyssRearrangePick ? "disabled" : "";
     actions = `
-          <button type="button" class="primary" data-act="abyss-continue-floor">繼續下一層</button>
+          <button type="button" class="primary" data-act="abyss-continue-floor" ${contDisabled}>${
+            needEvent ? "先揀事件" : "繼續下一層"
+          }</button>
+          <button type="button" class="secondary" data-act="abyss-open-rearrange" ${
+            abyssRearrangePick || needEvent ? "disabled" : ""
+          }>整理隊伍</button>
           <button type="button" class="secondary" data-act="abyss-retreat-settle">撤退結算</button>
           <button type="button" data-act="${clearAct}">${escapeHtml(clearLabel)}</button>`;
   } else if (isAbyss) {
@@ -4096,21 +4432,65 @@ function abyssPanelHtml() {
   const mutLine = run?.mutations?.length
     ? run.mutations.map((m) => `【${escapeHtml(m.name)}】${escapeHtml(m.desc)}`).join("<br/>")
     : "尚無突變";
-  const runBlock = run
-    ? `<div class="abyss-run card-block">
+  const buffLine = run?.diveBuffList?.length
+    ? run.diveBuffList.map((b) => `【${escapeHtml(b.name)}】`).join("")
+    : "無";
+  let runBlock;
+  if (run) {
+    const needEvent = !!run.pendingEvent;
+    const roster = abyssRosterMiniHtml(run.roster);
+    const eventBlock = needEvent ? abyssEventHtml(run.pendingEvent) : "";
+    const rearrangeBlock = abyssRearrangePick ? abyssRearrangeHtml(run.roster) : "";
+    runBlock = `<div class="abyss-run card-block">
         <p class="lead">進行中 · 已通第 <strong>${run.depth}</strong> 層 · 待結算淵砂 <strong>${run.pendingGrit}</strong></p>
-        <p class="meta">下一挑戰：第 <strong>${(run.depth | 0) + 1}</strong> 層</p>
+        <p class="meta">下一挑戰：第 <strong>${(run.depth | 0) + 1}</strong> 層 · 本潛增益：${buffLine}</p>
         <p class="meta">突變：${mutLine}</p>
+        ${roster}
+        ${eventBlock}
+        ${rearrangeBlock}
         <div class="row">
-          <button type="button" class="primary" data-abyss-advance>挑戰第 ${(run.depth | 0) + 1} 層</button>
+          <button type="button" class="primary" data-abyss-advance ${needEvent || abyssRearrangePick ? "disabled" : ""}>${
+            needEvent ? "先揀事件" : `挑戰第 ${(run.depth | 0) + 1} 層`
+          }</button>
+          <button type="button" class="secondary" data-act="abyss-open-rearrange" ${
+            abyssRearrangePick || needEvent ? "disabled" : ""
+          }>整理隊伍</button>
           <button type="button" class="secondary" data-abyss-retreat>撤退結算</button>
         </div>
-      </div>`
-    : `<div class="abyss-run card-block">
+      </div>`;
+  } else if (abyssSquadPick) {
+    const pick = new Set(abyssSquadPick);
+    const cands = abyssSquadCandidates(state);
+    const rows = cands
+      .map((p) => {
+        const on = pick.has(p.uid);
+        return `<li class="card-row">
+          <div><strong>${escapeHtml(p.name)}</strong><span class="muted"> Lv${p.level} · 攻${p.atk} 血${p.hp}</span></div>
+          <button type="button" class="${on ? "primary" : "secondary"}" data-abyss-squad-toggle="${escapeHtml(p.uid)}">${
+            on ? "已選" : "選擇"
+          }</button>
+        </li>`;
+      })
+      .join("") || `<li class="empty">冇可用靈寵。</li>`;
+    runBlock = `<div class="abyss-run card-block">
+        <p class="lead">編組潮淵隊 · ${pick.size}/${v.squadSize}</p>
+        <p class="meta">揀 ${v.squadSize} 隻（前 ${v.activeSize} 出戰，其餘替補）。層間唔回滿血。</p>
+        <ul class="list">${rows}</ul>
+        <div class="row">
+          <button type="button" class="primary" data-abyss-start ${pick.size === v.squadSize ? "" : "disabled"}>確認開潛</button>
+          <button type="button" data-act="abyss-squad-cancel">取消</button>
+        </div>
+      </div>`;
+  } else {
+    runBlock = `<div class="abyss-run card-block">
         <p class="lead">未開潛</p>
         <p class="meta">今日首趟免費 · 其後耗潮霧令 ×${v.entryCost || 1}（現有 ${v.tokenHave}）</p>
-        <button type="button" class="primary" data-abyss-start>開始深潛（第 1 層）</button>
+        <p class="meta">需獨立編隊 ${v.squadSize} 寵（3 出戰 + 2 替補）· 現有 ${v.ownedCount} 隻</p>
+        <button type="button" class="primary" data-act="abyss-open-squad" ${
+          v.canFormSquad ? "" : "disabled"
+        }>${v.canFormSquad ? "開始深潛（編隊）" : `靈寵不足（需 ${v.squadSize}）`}</button>
       </div>`;
+  }
   const cosRows = (v.cosmeticList || [])
     .map((c) => {
       const owned = c.owned ? "已擁有" : `淵砂×${c.cost}`;
@@ -4133,6 +4513,13 @@ function abyssPanelHtml() {
       <li class="card-row">
         <div><strong>潮淵高階蛋</strong><span class="muted"> · 本週 ${v.eggsBoughtWeek}/${v.eggsWeeklyLimit} · 較易出稀有</span></div>
         <button type="button" class="secondary" data-abyss-egg ${v.eggsBoughtWeek >= v.eggsWeeklyLimit ? "disabled" : ""}>淵砂×${v.eggCost}</button>
+      </li>
+      <li class="card-row">
+        <div><strong>潮轉符</strong><span class="muted"> · 永久隨機轉屬 · 持有 ${v.tideShiftHave || 0}</span></div>
+        <div class="row-actions">
+          <button type="button" class="secondary" data-abyss-buy-shift>淵砂×${v.tideShiftCost}</button>
+          <button type="button" class="primary" data-act="open-tide-shift" ${(v.tideShiftHave || 0) < 1 ? "disabled" : ""}>使用</button>
+        </div>
       </li>
       ${cosRows}
     </ul>`;
@@ -4452,6 +4839,7 @@ function bind() {
       }
       panelSub = { ...panelSub, [group]: id };
       if (group === "dungeon") condSheetOpen = false;
+      if (group === "party" && id !== "ranch") ranchRelease = null;
       markTutorialSubVisit(group, id);
       render();
     });
@@ -4471,7 +4859,33 @@ function bind() {
       if (btn.disabled) return;
       const id = btn.dataset.useItem;
       if (!id) return;
+      if (id === "tide_shift_charm") {
+        tideShiftModal = { source: "bag" };
+        render();
+        return;
+      }
       const r = useBagItem(state, id);
+      saveState(state);
+      render();
+      setFlash(r.msg || "");
+    });
+  });
+  app.querySelectorAll("[data-tide-shift-pet]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const uid = btn.dataset.tideShiftPet;
+      if (!uid) return;
+      const r = useTideShiftCharm(state, uid);
+      if (r.ok) tideShiftModal = null;
+      saveState(state);
+      render();
+      setFlash(r.msg || "");
+    });
+  });
+  app.querySelectorAll("[data-abyss-buy-shift]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = buyAbyssTideShiftCharm(state);
       saveState(state);
       render();
       setFlash(r.msg || "");
@@ -4480,11 +4894,51 @@ function bind() {
   app.querySelectorAll("[data-ranch-sort]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.ranchSort;
-      if (!["power", "gen", "rarity", "element", "status"].includes(id)) return;
+      if (!["power", "gen", "rarity", "element", "status", "star"].includes(id)) return;
       if (ranchSort === id) return;
       ranchSort = id;
       saveUiPrefs();
       render();
+    });
+  });
+  app.querySelectorAll("[data-ranch-star-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      ranchStarOnly = !ranchStarOnly;
+      saveUiPrefs();
+      render();
+    });
+  });
+  app.querySelectorAll("[data-ranch-pick]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled || ranchRelease?.phase !== "select") return;
+      const uid = btn.dataset.ranchPick;
+      if (!uid) return;
+      const found = (state.ranch || []).find((p) => p.uid === uid);
+      if (!found || found.locked) {
+        setFlash(found?.locked ? "已上鎖，唔可以揀。" : "找不到靈寵。");
+        return;
+      }
+      const selected = new Set(ranchRelease.selected || []);
+      if (selected.has(uid)) selected.delete(uid);
+      else selected.add(uid);
+      ranchRelease = { phase: "select", selected: [...selected] };
+      render();
+    });
+  });
+  app.querySelectorAll("[data-toggle-star]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = togglePetStarred(state, btn.dataset.toggleStar);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-toggle-lock]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = togglePetLocked(state, btn.dataset.toggleLock);
+      saveState(state);
+      render();
+      setFlash(r.msg);
     });
   });
   app.querySelectorAll("[data-dungeon-prev]").forEach((btn) => {
@@ -4561,6 +5015,62 @@ function bind() {
       } else if (act === "close-hatch-claim") {
         hatchClaimModal = null;
         render();
+      } else if (act === "close-release-modal") {
+        releaseModal = null;
+        render();
+      } else if (act === "close-tide-shift-modal") {
+        tideShiftModal = null;
+        render();
+      } else if (act === "open-tide-shift") {
+        if (Math.floor(state.items?.tide_shift_charm || 0) < 1) {
+          setFlash("沒有潮轉符。");
+          return;
+        }
+        tideShiftModal = { source: "abyss" };
+        render();
+      } else if (act === "confirm-release") {
+        if (!releaseModal?.uids?.length) return;
+        const fromDetail = !!releaseModal.fromDetail;
+        const r = releasePets(state, releaseModal.uids);
+        saveState(state);
+        releaseModal = null;
+        ranchRelease = null;
+        if (fromDetail || r.ok) {
+          petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [], detailTab: "stats" };
+        }
+        render();
+        setFlash(r.msg);
+      } else if (act === "ranch-release-start") {
+        ranchRelease = { phase: "select", selected: [] };
+        releaseModal = null;
+        render();
+      } else if (act === "ranch-release-cancel") {
+        ranchRelease = null;
+        render();
+      } else if (act === "ranch-release-next") {
+        if (ranchRelease?.phase !== "select" || !(ranchRelease.selected || []).length) return;
+        const prev = previewReleaseSoul(state, ranchRelease.selected);
+        if (!prev.ok) {
+          setFlash(prev.msg);
+          return;
+        }
+        ranchRelease = { phase: "confirm", selected: [...ranchRelease.selected] };
+        render();
+      } else if (act === "ranch-release-back") {
+        if (ranchRelease?.phase === "confirm") {
+          ranchRelease = { phase: "select", selected: [...(ranchRelease.selected || [])] };
+        } else {
+          ranchRelease = null;
+        }
+        render();
+      } else if (act === "ranch-release-confirm") {
+        if (ranchRelease?.phase !== "confirm" || !(ranchRelease.selected || []).length) return;
+        const r = releasePets(state, ranchRelease.selected);
+        saveState(state);
+        ranchRelease = null;
+        releaseModal = null;
+        render();
+        setFlash(r.msg);
       } else if (act === "claim-offline") {
         const r = claimOfflineBank(state);
         offlineClaimOpen = false;
@@ -4673,19 +5183,61 @@ function bind() {
         skipPlayback();
       } else if (act === "abyss-continue-floor") {
         if (!playback?.done || !isAbyssCombat(playback.result)) return;
+        if (abyssDiveView(state).run?.pendingEvent) {
+          setFlash("請先揀潮淵事件（2 選 1）。");
+          return;
+        }
+        if (abyssRearrangePick) {
+          setFlash("請先確認或取消整理隊伍。");
+          return;
+        }
         stopPlayback();
         rewardDetailsOpen = false;
+        abyssRearrangePick = null;
         panelSub = { ...panelSub, dungeon: "abyss" };
         playAbyssResult(advanceAbyssDive(state));
       } else if (act === "abyss-retreat-settle") {
         if (!playback?.done || !isAbyssCombat(playback.result)) return;
         stopPlayback();
         rewardDetailsOpen = false;
+        abyssRearrangePick = null;
         const r = retreatAbyssDive(state);
         saveState(state);
         panelSub = { ...panelSub, dungeon: "abyss" };
         render();
         setFlash(r.msg || "已撤退結算");
+      } else if (act === "abyss-open-squad") {
+        if (!abyssDiveView(state).canFormSquad) {
+          setFlash("靈寵不足，無法組成潮淵編隊。");
+          return;
+        }
+        abyssSquadPick = [];
+        render();
+      } else if (act === "abyss-squad-cancel") {
+        abyssSquadPick = null;
+        render();
+      } else if (act === "abyss-open-rearrange") {
+        const roster = abyssDiveView(state).run?.roster;
+        if (!roster?.squad?.length) {
+          setFlash("冇可整理嘅編隊。");
+          return;
+        }
+        abyssRearrangePick = (roster.active || []).map((p) => p.uid);
+        render();
+      } else if (act === "abyss-rearrange-cancel") {
+        abyssRearrangePick = null;
+        render();
+      } else if (act === "abyss-rearrange-confirm") {
+        const r = rearrangeAbyssSquad(state, abyssRearrangePick || []);
+        if (r.ok) {
+          abyssRearrangePick = null;
+          if (playback?.result && isAbyssCombat(playback.result)) {
+            playback.result = { ...playback.result, roster: r.roster };
+          }
+        }
+        saveState(state);
+        render();
+        setFlash(r.msg);
       } else if (act === "toggle-cond-sheet") {
         condSheetOpen = !condSheetOpen;
         render();
@@ -4835,12 +5387,15 @@ function bind() {
   });
   app.querySelectorAll("[data-release]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!confirm("確定放歸？將返還部分靈石／飼料／靈塵。")) return;
-      const r = releasePet(state, btn.dataset.release);
-      saveState(state);
-      petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+      if (btn.disabled) return;
+      const uid = btn.dataset.release;
+      const prev = previewReleaseSoul(state, [uid]);
+      if (!prev.ok) {
+        setFlash(prev.msg);
+        return;
+      }
+      releaseModal = { uids: [uid], fromDetail: true };
       render();
-      setFlash(r.msg);
     });
   });
   app.querySelectorAll("[data-rename]").forEach((btn) => {
@@ -4865,6 +5420,15 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = buyShopOffer(state, btn.dataset.shopBuy);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-soul-shop-buy]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = buySoulShopOffer(state, btn.dataset.soulShopBuy);
       saveState(state);
       render();
       setFlash(r.msg);
@@ -4921,14 +5485,81 @@ function bind() {
     });
   });
   app.querySelectorAll("[data-abyss-start]").forEach((btn) => {
-    btn.addEventListener("click", () => playAbyssResult(startAbyssDive(state)));
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const pick = abyssSquadPick || [];
+      const r = startAbyssDive(state, pick);
+      if (!r.ok) {
+        setFlash(r.msg);
+        render();
+        return;
+      }
+      abyssSquadPick = null;
+      playAbyssResult(r);
+    });
+  });
+  app.querySelectorAll("[data-abyss-squad-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!Array.isArray(abyssSquadPick)) abyssSquadPick = [];
+      const uid = btn.dataset.abyssSquadToggle;
+      const set = new Set(abyssSquadPick);
+      const need = abyssDiveView(state).squadSize || 5;
+      if (set.has(uid)) set.delete(uid);
+      else {
+        if (set.size >= need) {
+          setFlash(`最多揀 ${need} 隻。`);
+          return;
+        }
+        set.add(uid);
+      }
+      abyssSquadPick = [...set];
+      render();
+    });
+  });
+  app.querySelectorAll("[data-abyss-rearrange-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      if (!Array.isArray(abyssRearrangePick)) abyssRearrangePick = [];
+      const uid = btn.dataset.abyssRearrangeToggle;
+      const set = new Set(abyssRearrangePick);
+      if (set.has(uid)) set.delete(uid);
+      else {
+        if (set.size >= 3) {
+          setFlash("出戰最多 3 隻。");
+          return;
+        }
+        set.add(uid);
+      }
+      abyssRearrangePick = [...set];
+      render();
+    });
+  });
+  app.querySelectorAll("[data-abyss-event]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const type = btn.dataset.abyssEvent;
+      const r = resolveAbyssEvent(state, type);
+      if (r.ok && playback?.result && isAbyssCombat(playback.result)) {
+        playback.result = {
+          ...playback.result,
+          pendingEvent: null,
+          roster: r.roster || playback.result.roster,
+        };
+      }
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
   });
   app.querySelectorAll("[data-abyss-advance]").forEach((btn) => {
-    btn.addEventListener("click", () => playAbyssResult(advanceAbyssDive(state)));
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      playAbyssResult(advanceAbyssDive(state));
+    });
   });
   app.querySelectorAll("[data-abyss-retreat]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const r = retreatAbyssDive(state);
+      abyssRearrangePick = null;
       saveState(state);
       render();
       setFlash(r.msg);
