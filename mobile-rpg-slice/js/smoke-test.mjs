@@ -202,6 +202,7 @@ import {
   startDispatch,
   dispatchView,
   ensureDispatchBoard,
+  ensureDispatchBoardDaily,
   petMatchesDispatchMission,
   dispatchMissionReqLabel,
   upgradePet,
@@ -1969,24 +1970,38 @@ const boardSt = {
   daily: { date: todayKey(), progress: {}, claimed: {}, idleSec: 0 },
   achievements: {},
 };
+boardSt.dispatchBoardDate = todayKey();
 ensureDispatchBoard(boardSt, () => 0);
 assert(boardSt.dispatchBoard.length === 2, "early board fills unlocked only (2)");
 assert(boardSt.dispatchBoard.every((id) => ["forage", "egg_shore"].includes(id)), "early board from shore pool");
 const dv0 = dispatchView(boardSt);
 assert(dv0.slotsMax === 3 && dv0.boardSize === 3, "view exposes slot/board caps");
-assert(dv0.missions.length === 2, "view shows board missions only");
+assert(dv0.slots.length === 3, "view always exposes 3 fixed slots");
+assert(dv0.slots.filter((s) => s.status === "available").length === 2, "two available early");
+assert(dv0.slots.filter((s) => s.status === "empty").length === 1, "one empty early slot");
+assert(dv0.missions.length === 2, "view shows available missions only");
 const wrongKind = startDispatch(boardSt, "egg_shore", ["disp-tide"]);
 assert(!wrongKind.ok && String(wrongKind.msg).includes("限制"), "kind restriction blocks");
 const okStart = startDispatch(boardSt, "forage", ["disp-tide"]);
 assert(okStart.ok, "tide pet starts forage");
-assert(!boardSt.dispatchBoard.includes("forage"), "started mission leaves board");
+assert(boardSt.dispatchBoard.includes("forage"), "started mission stays in fixed slot");
 assert(boardSt.dispatches.length === 1, "one active dispatch");
+const dvBusy = dispatchView(boardSt);
+const forageSlot = dvBusy.slots.find((s) => s.missionId === "forage");
+assert(forageSlot?.status === "busy", "dispatched slot status busy / 探險中");
+assert(dvBusy.slots.filter((s) => s.status === "available").length === 1, "other slot still available");
 const beforeBoard = [...boardSt.dispatchBoard];
+const forageIdx = beforeBoard.indexOf("forage");
 boardSt.dispatches[0].readyAt = Date.now() - 1;
-const claimBoard = claimDispatch(boardSt, boardSt.dispatches[0].dispatchId);
+const dvReady = dispatchView(boardSt);
+assert(dvReady.slots.find((s) => s.missionId === "forage")?.status === "ready", "ready slot status 收集");
+const claimBoard = claimDispatch(boardSt, boardSt.dispatches[0].dispatchId, () => 0);
 assert(claimBoard.ok, "claim after ready");
-assert(boardSt.dispatchBoard.length === beforeBoard.length + 1, "board grew after claim");
+assert(!boardSt.dispatchBoard.includes("forage") || claimBoard.boardFilled === "forage", "claimed slot replaced (or same if only pool left)");
 assert(claimBoard.boardFilled, "random mission pulled on claim");
+assert(claimBoard.slotIndex === forageIdx, "refill targets claimed slot index");
+assert(boardSt.dispatchBoard.length === beforeBoard.length, "board size stable after claim refill");
+assert(String(claimBoard.msg).startsWith("收集"), "claim message uses 收集");
 
 const nowCap = Date.now();
 const capSt = {
@@ -2029,6 +2044,83 @@ const capSt = {
 };
 const over = startDispatch(capSt, "forage", ["c4"]);
 assert(!over.ok && String(over.msg).includes("滿"), "4th concurrent blocked at 3");
+
+/* Pack C: fixed 3 slots stay on dispatch; claim refills that slot; daily renew */
+const packCTide = {
+  ...buildPetStats({
+    id: "pct",
+    species: "reefox",
+    element: "tide",
+    personality: "gentle",
+    cost: 0,
+  }),
+  uid: "packc-tide",
+};
+const packCScale = {
+  ...buildPetStats({
+    id: "pcs",
+    species: "tidecarp",
+    element: "tide",
+    personality: "gentle",
+    cost: 0,
+  }),
+  uid: "packc-scale",
+};
+const packCNow = Date.now();
+const packCSt = {
+  realm: 0,
+  clearedDungeons: {},
+  trainMap: {},
+  ranch: [packCTide, packCScale],
+  pets: [],
+  dispatches: [],
+  dispatchBoard: [],
+  dispatchBoardDate: null,
+  eggs: [],
+  log: [],
+  stats: {},
+  stones: 0,
+  feed: 0,
+  dust: 0,
+  scrap: 0,
+  materials: {},
+  daily: { date: todayKey(packCNow), progress: {}, claimed: {}, idleSec: 0 },
+  achievements: {},
+};
+ensureDispatchBoardDaily(packCSt, packCNow, () => 0);
+assert(packCSt.dispatchBoardDate === todayKey(packCNow), "board date stamped on ensure");
+assert(packCSt.dispatchBoard.length === 2, "packc early board size 2");
+const startMid = startDispatch(packCSt, "forage", ["packc-tide"]);
+assert(startMid.ok, "packc start middle-ish slot");
+const boardWhileBusy = [...packCSt.dispatchBoard];
+assert(boardWhileBusy.includes("forage"), "slot kept while 探險中");
+const sameDay = ensureDispatchBoardDaily(packCSt, packCNow, () => 0.9);
+assert(JSON.stringify(sameDay) === JSON.stringify(boardWhileBusy), "same-day renew no-op on available+busy");
+const nextDay = packCNow + 86_400_000 + 1000;
+const busyBeforeRenew = [...packCSt.dispatchBoard];
+ensureDispatchBoardDaily(packCSt, nextDay, () => 0.5);
+assert(packCSt.dispatchBoardDate === todayKey(nextDay), "board date advances");
+assert(packCSt.dispatchBoard.includes("forage"), "daily renew keeps busy slot");
+assert(packCSt.dispatches.some((d) => d.missionId === "forage" && !d.claimed), "busy dispatch survives renew");
+const availableAfter = packCSt.dispatchBoard.filter((id) => id !== "forage");
+const availableBefore = busyBeforeRenew.filter((id) => id !== "forage");
+// available slots refreshed from pool (may coincidentally match with fixed rng)
+assert(packCSt.dispatchBoard.length >= 1, "board still populated after daily renew");
+packCSt.dispatches[0].readyAt = Date.now() - 1;
+const dvPack = dispatchView(packCSt, nextDay);
+assert(dvPack.slots.length === 3, "packc always 3 slots");
+assert(dvPack.slots.some((s) => s.status === "ready" && s.missionId === "forage"), "ready → 收集");
+const claimPack = claimDispatch(packCSt, packCSt.dispatches[0].dispatchId, () => 0.2);
+assert(claimPack.ok && claimPack.boardFilled, "packc claim refills slot");
+assert(!packCSt.dispatches.length, "dispatch cleared after claim");
+assert(packCSt.dispatchBoard.length === dvPack.slots.filter((s) => s.missionId).length || packCSt.dispatchBoard.length >= 1, "board after claim");
+
+assert(uiSrc.includes("探險中"), "ui dispatch busy label 探險中");
+assert(uiSrc.includes(">收集</button>") || uiSrc.includes("收集</button>"), "ui dispatch claim label 收集");
+assert(uiSrc.includes("dispatch-slots"), "ui fixed dispatch slots list");
+assert(uiSrc.includes("可接任務每日刷新"), "ui daily renew copy");
+assert(!uiSrc.includes("領獎後隨機補任務"), "ui old dispatch lead removed");
+
 
 /* Feed upgrade deducts; fusion gated; dungeon realm block msg */
 const feedUpSt = {

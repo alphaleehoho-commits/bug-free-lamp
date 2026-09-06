@@ -3225,47 +3225,52 @@ function petsListView() {
     .join("") ||
     `<li class="empty">尚無待契約靈寵。去秘境打本，隨機遇見後會出現喺呢度（最多 ${PENDING_BOND_MAX} 隻）。</li>`;
 
-  const activeDisp =
-    dv.active
-      .map((d) => {
-        if (!d.ready) {
-          const left = Math.ceil((d.leftMs || 0) / 1000);
-          return `
-        <li class="card-row">
-          <div>
-            <strong>${escapeHtml(d.missionName)}</strong>
-            <span class="muted">${escapeHtml(d.petNames)} · 剩餘 ${left}s</span>
-          </div>
-        </li>`;
-        }
+  const slotRows = (dv.slots || [])
+    .map((s) => {
+      if (s.status === "empty" || !s.mission) {
         return `
-        <li class="card-row">
-          <div>
-            <strong>${escapeHtml(d.missionName)}</strong>
-            <span class="muted">${escapeHtml(d.petNames)} · 已歸來</span>
-          </div>
-          <button type="button" class="success" data-claim-dispatch="${escapeHtml(d.dispatchId)}">領獎</button>
-        </li>`;
-      })
-      .join("") || `<li class="empty">尚無進行中派遣。</li>`;
-
-  const missionRows = dv.missions
-    .map((m) => {
-      const slotsOk = dv.slotsUsed < dv.slotsMax;
-      const matBits = dispatchMatBits(m);
-      const eggNote = m.eggChance
-        ? ` · 蛋${Math.round((m.eggChance.rate || 0) * 100)}%`
-        : "";
-      const reqNote = m.reqLabel ? ` · ${escapeHtml(m.reqLabel)}` : "";
-      return `
-      <li class="card-row">
+      <li class="card-row dispatch-slot">
         <div>
-          <strong>${escapeHtml(m.name)}</strong>
-          <span class="muted">${escapeHtml(m.desc)}${reqNote} · 需 ${m.needPets} 隻 · ${escapeHtml(rewardBitsHtml(m.reward))}${
-            matBits ? ` · ${matBits}` : ""
-          }${eggNote}</span>
+          <strong class="muted">空槽</strong>
+          <span class="muted">解鎖更多練功地後開放新任務</span>
         </div>
-        <button type="button" class="primary" data-open-dispatch="${m.id}" ${slotsOk ? "" : "disabled"}>派出</button>
+        <button type="button" class="secondary" disabled>未開放</button>
+      </li>`;
+      }
+      const matBits = dispatchMatBits(s.mission);
+      const eggNote = s.eggChance
+        ? ` · 蛋${Math.round((s.eggChance.rate || 0) * 100)}%`
+        : "";
+      const reqNote = s.reqLabel ? ` · ${escapeHtml(s.reqLabel)}` : "";
+      const rewardNote = `${escapeHtml(rewardBitsHtml(s.reward))}${matBits ? ` · ${matBits}` : ""}${eggNote}`;
+      if (s.status === "busy") {
+        const left = Math.ceil((s.leftMs || 0) / 1000);
+        return `
+      <li class="card-row dispatch-slot">
+        <div>
+          <strong>${escapeHtml(s.name)}</strong>
+          <span class="muted">${escapeHtml(s.petNames)} · 剩餘 ${left}s${reqNote}</span>
+        </div>
+        <button type="button" class="secondary" disabled>探險中</button>
+      </li>`;
+      }
+      if (s.status === "ready") {
+        return `
+      <li class="card-row dispatch-slot">
+        <div>
+          <strong>${escapeHtml(s.name)}</strong>
+          <span class="muted">${escapeHtml(s.petNames)} · 已歸來 · ${rewardNote}</span>
+        </div>
+        <button type="button" class="success" data-claim-dispatch="${escapeHtml(s.dispatchId)}">收集</button>
+      </li>`;
+      }
+      return `
+      <li class="card-row dispatch-slot">
+        <div>
+          <strong>${escapeHtml(s.name)}</strong>
+          <span class="muted">${escapeHtml(s.desc)}${reqNote} · 需 ${s.needPets} 隻 · ${rewardNote}</span>
+        </div>
+        <button type="button" class="primary" data-open-dispatch="${s.missionId}">派出</button>
       </li>`;
     })
     .join("");
@@ -3339,9 +3344,8 @@ function petsListView() {
     return wrapStage(
       nav,
       `<h2>靈寵 · 派遣</h2>
-      <p class="lead">進行 ${dv.slotsUsed}/${dv.slotsMax} · 可接 ${dv.missions.length}/${dv.boardSize} · 撳「派出」揀合限制嘅靈寵 · 領獎後隨機補任務</p>
-      <ul class="list">${missionRows || `<li class="empty muted">尚無可接派遣（解鎖更多練功地後開放）。</li>`}</ul>
-      <ul class="list">${activeDisp}</ul>`
+      <p class="lead">固定 ${dv.boardSize} 槽 · 進行 ${dv.slotsUsed}/${dv.slotsMax} · 派出後槽位變「探險中」· 完成撳「收集」先換新任務 · 可接任務每日刷新</p>
+      <ul class="list dispatch-slots">${slotRows}</ul>`
     );
   }
   if (sub === "bond") {
@@ -6187,7 +6191,7 @@ function checkPushReminders() {
   const disp = dispatchView(state);
   for (const d of disp.active || []) {
     if (d.ready) {
-      pushNotifyOnce(`dispatch-ready-${d.dispatchId}`, "暗潮 · 派遣完成", `${d.missionName} 可以領獎了！`);
+      pushNotifyOnce(`dispatch-ready-${d.dispatchId}`, "暗潮 · 派遣完成", `${d.missionName} 可以收集了！`);
     } else if (d.leftMs > 0 && d.leftMs <= 30000) {
       pushNotifyOnce(
         `dispatch-soon-${d.dispatchId}`,
