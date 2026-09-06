@@ -55,6 +55,7 @@ import {
   renamePet,
   claimOfflineBank,
   offlineBankView,
+  teamBondBarView,
   persistTrainIdleCombatState,
   clearTrainIdleCombatState,
   restoreTrainIdleCombatState,
@@ -164,6 +165,8 @@ import {
   skillTypeLabel,
   skillPowerMult,
   SECOND_SKILL_UNLOCK,
+  OFFLINE_CLAIM_MIN_SEC,
+  OFFLINE_HINT_SEC,
 } from "./data.js";
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
@@ -251,6 +254,8 @@ let trainRatesOpen = false;
 let statsSheetOpen = false;
 /** 離線收益預覽半屏（收集確認） */
 let offlineClaimOpen = false;
+/** 契隊連結／突破半屏 */
+let bondSheetOpen = false;
 /** 孵化領取結果半屏：{ pets: object[] } | null */
 let hatchClaimModal = null;
 /** 孵化庫存篩選：all | breed | shop | ready */
@@ -1185,6 +1190,7 @@ function fullscreenOverlayBlockReason() {
   if (hatchClaimModal) return "孵化領取";
   if (releaseModal) return "放生確認";
   if (condSheetOpen) return "敵情條件";
+  if (bondSheetOpen) return "契隊連結";
   if (statsSheetOpen) return "資源詳情";
   if (!tutorialActive(state) && !dailyHubDismissedSession) {
     try {
@@ -1205,6 +1211,7 @@ function clearUiOverlays(opts = {}) {
   attackPreview = null;
   sweepResult = null;
   offlineClaimOpen = false;
+  bondSheetOpen = false;
   hatchClaimModal = null;
   releaseModal = null;
   condSheetOpen = false;
@@ -1708,6 +1715,20 @@ function patchLive() {
   if (stageEl) stageEl.textContent = stage.name;
   if (wins) wins.textContent = `勝 ${state.combatsWon}`;
 
+  const offLabel = document.querySelector("[data-live=offline-home-label]");
+  if (offLabel) {
+    const bank = offlineBankView(state);
+    const sec = bank.sec || 0;
+    const capped = bank.capped ? " · 已達上限" : "";
+    offLabel.textContent = sec > 0
+      ? `離線收集（${fmtOfflineDuration(sec)}）${capped}`
+      : `離線收集（0秒）· 離開後累積`;
+  }
+  const bondFill = document.querySelector(".team-bond-bar .team-bond-track > i");
+  if (bondFill) {
+    bondFill.style.width = `${teamBondBarView(state).pct}%`;
+  }
+
   const eggReadyNow = patchEggLive();
   patchTutorialHintLive();
   patchMatChipsLive();
@@ -2062,6 +2083,7 @@ function render() {
   app.className = `${enterClass}${inTutorial ? " is-tutorial" : ""}`;
   app.innerHTML = `
     <header class="top top-compact">
+      ${teamBondBarHtml()}
       <div class="brand-row">
         <p class="brand">暗潮</p>
         <p class="tag">靈寵修行 · <span data-live="wins">勝 ${state.combatsWon}</span></p>
@@ -2098,6 +2120,7 @@ function render() {
     ${attackPreview ? attackPreviewModalHtml() : ""}
     ${condSheetOpen ? dungeonCondSheetHtml() : ""}
     ${statsSheetOpen ? statsSheetHtml() : ""}
+    ${bondSheetOpen ? bondSheetHtml() : ""}
     ${offlineClaimOpen ? offlineClaimModalHtml() : ""}
     ${hatchClaimModal ? hatchClaimModalHtml() : ""}
     ${releaseModal ? releaseModalHtml() : ""}
@@ -2296,6 +2319,67 @@ function installBanner() {
     </div>`;
 }
 
+
+function fmtOfflineDuration(sec) {
+  const s = Math.max(0, Math.floor(sec || 0));
+  if (s < 60) return `${s}秒`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m < 60) return r ? `${m}分${r}秒` : `${m}分`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm ? `${h}時${rm}分` : `${h}時`;
+}
+
+function teamBondBarHtml() {
+  const bar = teamBondBarView(state);
+  const next = bar.nextName ? `→【${escapeHtml(bar.nextName)}】` : "";
+  const ready = bar.ready ? " · 可突破" : "";
+  return `
+    <button type="button" class="team-bond-bar" data-act="open-bond-sheet" aria-label="契隊連結">
+      <div class="team-bond-top">
+        <span class="team-bond-kicker">契隊連結</span>
+        <span class="team-bond-meta">出戰 ${bar.petCount}/${bar.petMax} · 戰力 ${bar.power}${ready}</span>
+      </div>
+      <div class="bar team-bond-track"><i style="width:${bar.pct}%"></i></div>
+      <p class="team-bond-sub">${escapeHtml(bar.stageName || "")}${next} · 均Lv ${bar.avgLv}</p>
+    </button>`;
+}
+
+function bondSheetHtml() {
+  if (!bondSheetOpen) return "";
+  const bar = teamBondBarView(state);
+  const br = bar.br || breakthroughView(state);
+  const rows = (br.items || [])
+    .map(
+      (it) => `
+      <li class="cond-item ${it.ok ? "is-met" : "is-miss"}">
+        <span class="cond-badge">${it.ok ? "達成" : "未達"}</span>
+        <div class="cond-body">
+          <strong>${escapeHtml(it.label)}</strong>
+          <span class="muted">${escapeHtml(it.progress || "")}</span>
+        </div>
+      </li>`
+    )
+    .join("");
+  return `
+    <div class="sheet-overlay" role="presentation" data-act="close-bond-sheet">
+      <div class="sheet-card bond-sheet-card" role="dialog" aria-label="契隊連結" data-sheet-card>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <h3>契隊連結</h3>
+        <p class="lead">出戰 ${bar.petCount}/${bar.petMax} · 戰力 ${bar.power} · 星標 ${bar.starred} · 均Lv ${bar.avgLv}</p>
+        <div class="bar team-bond-track"><i style="width:${bar.pct}%"></i></div>
+        <p class="meta">${escapeHtml(bar.stageName || "")} →【${escapeHtml(bar.nextName || "")}】· ${bar.pct}%</p>
+        <h4>下一階突破</h4>
+        <ul class="cond-list">${rows || '<li class="empty">已無下一階。</li>'}</ul>
+        <div class="row">
+          <button type="button" class="primary" data-act="goto-breakthrough">前往突破</button>
+          <button type="button" class="ghost sheet-close" data-act="close-bond-sheet">關閉</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function offlinePendingView() {
   const bank = offlineBankView(state);
   if (bank.hasPending) return bank;
@@ -2313,16 +2397,19 @@ function offlinePendingView() {
   return h;
 }
 
-/** 修行主頁固定欄：自動收集（離線約 Xm）[收集] —— 唔再用浮動 toast */
+/** 修行主頁固定欄：離線收集長駐；1 秒起顯示；點開睇總結，滿 30 分先可領 */
 function offlineHomeSlotHtml() {
-  const pending = offlinePendingView();
-  if (!pending) return "";
-  const min = Math.max(1, Math.round((pending.sec || 0) / 60));
-  const capped = pending.capped ? " · 已達上限" : "";
+  const bank = offlineBankView(state);
+  const sec = bank.sec || 0;
+  const capped = bank.capped ? " · 已達上限" : "";
+  const canClaim = !!bank.canClaim;
+  const label = sec > 0
+    ? `離線收集（${fmtOfflineDuration(sec)}）${capped}`
+    : `離線收集（0秒）· 離開後累積`;
   return `
     <div class="offline-home-slot" data-live="offline-home">
-      <p class="offline-home-label">自動收集（離線約 ${min}m）${escapeHtml(capped)}</p>
-      <button type="button" class="primary" data-act="open-offline-claim">收集</button>
+      <p class="offline-home-label" data-live="offline-home-label">${escapeHtml(label)}</p>
+      <button type="button" class="primary" data-act="open-offline-claim">${canClaim ? "收集" : "詳情"}</button>
     </div>`;
 }
 
@@ -2351,25 +2438,30 @@ function offlineGainRowsHtml(pending) {
 }
 
 function offlineClaimModalHtml() {
-  const pending = offlinePendingView();
-  if (!pending) return "";
-  const min = Math.max(1, Math.round((pending.sec || 0) / 60));
-  const site = pending.siteName ? ` · ${escapeHtml(pending.siteName)}` : "";
-  const capNote = pending.capped
+  const bank = offlineBankView(state);
+  const sec = bank.sec || 0;
+  const site = bank.siteName ? ` · ${escapeHtml(bank.siteName)}` : "";
+  const canClaim = !!bank.canClaim;
+  const left = bank.claimLeftSec || Math.max(0, OFFLINE_CLAIM_MIN_SEC - sec);
+  const capNote = bank.capped
     ? `<p class="meta muted">已達離線累積上限，請先收集。</p>`
     : "";
+  const gateNote = canClaim
+    ? `<p class="meta">已滿 30 分鐘，可以領取。</p>`
+    : `<p class="meta muted">滿 30 分鐘先可領取（而家 ${fmtOfflineDuration(sec)} · 仲差 ${fmtOfflineDuration(left)}）。</p>`;
   return `
     <div class="combat-modal-overlay offline-claim-overlay" data-live="offline-claim" role="dialog" aria-label="離線收益">
       <div class="combat-modal-card offline-claim-card">
         <div class="combat-modal-scroll">
-          <h2>自動收集 · 離線收益</h2>
-          <p class="lead">離線約 ${min} 分鐘${site}</p>
+          <h2>離線收集 · 收益總結</h2>
+          <p class="lead">離線 ${fmtOfflineDuration(sec)}${site}</p>
+          ${gateNote}
           ${capNote}
           <h3>待領物資</h3>
-          <ul class="list offline-gain-list">${offlineGainRowsHtml(pending)}</ul>
+          <ul class="list offline-gain-list">${offlineGainRowsHtml(bank)}</ul>
         </div>
         <div class="combat-modal-actions row">
-          <button type="button" class="primary" data-act="claim-offline">收集</button>
+          <button type="button" class="primary" data-act="claim-offline" ${canClaim ? "" : "disabled"}>收集</button>
           <button type="button" class="ghost" data-act="close-offline-claim">返回</button>
         </div>
       </div>
@@ -5204,14 +5296,21 @@ function bind() {
         render();
         setFlash(r.msg);
       } else if (act === "open-offline-claim") {
-        if (!offlinePendingView()) {
-          setFlash("沒有可收集的離線收益。");
-          return;
-        }
         offlineClaimOpen = true;
         render();
       } else if (act === "close-offline-claim") {
         offlineClaimOpen = false;
+        render();
+      } else if (act === "open-bond-sheet") {
+        bondSheetOpen = true;
+        render();
+      } else if (act === "close-bond-sheet") {
+        bondSheetOpen = false;
+        render();
+      } else if (act === "goto-breakthrough") {
+        bondSheetOpen = false;
+        tab = "cultivate";
+        panelSub = { ...panelSub, cultivate: "advance" };
         render();
       } else if (act === "close-hatch-claim") {
         hatchClaimModal = null;
@@ -5274,7 +5373,7 @@ function bind() {
         setFlash(r.msg);
       } else if (act === "claim-offline") {
         const r = claimOfflineBank(state);
-        offlineClaimOpen = false;
+        if (r.ok) offlineClaimOpen = false;
         saveState(state);
         render();
         setFlash(r.msg, r.ok ? "unlock" : "");
@@ -5473,6 +5572,7 @@ function bind() {
       if (e.target !== el) return;
       condSheetOpen = false;
       statsSheetOpen = false;
+      bondSheetOpen = false;
       dispatchModal = null;
       attackPreview = null;
       tideShiftModal = null;

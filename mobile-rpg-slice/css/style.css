@@ -98,6 +98,69 @@ body {
   animation: fadeUp 0.6s 0.1s ease-out both;
 }
 
+
+.team-bond-bar {
+  display: block;
+  width: 100%;
+  margin: 0 0 0.28rem;
+  padding: 0.38rem 0.55rem 0.32rem;
+  border: 1px solid rgba(90, 160, 140, 0.38);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(24, 48, 44, 0.72) 0%, rgba(14, 28, 36, 0.8) 100%);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.team-bond-bar:active {
+  transform: scale(0.99);
+}
+.team-bond-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-bottom: 0.22rem;
+}
+.team-bond-kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--jade-bright);
+}
+.team-bond-meta {
+  font-size: 0.58rem;
+  color: var(--fog);
+  white-space: nowrap;
+}
+.team-bond-track {
+  height: 0.38rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.team-bond-track > i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #3d8f7a, #8fd4bf);
+  border-radius: inherit;
+}
+.team-bond-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.58rem;
+  color: var(--muted);
+}
+.bond-sheet-card .cond-list {
+  margin: 0.35rem 0 0.6rem;
+  max-height: 40vh;
+  overflow: auto;
+}
+.offline-home-slot.is-empty {
+  opacity: 0.85;
+}
+.offline-claim-card button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .hero-strip {
   display: none;
 }

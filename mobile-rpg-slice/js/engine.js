@@ -79,6 +79,7 @@ import {
   todayKey,
   yesterdayKey,
   OFFLINE_HINT_SEC,
+  OFFLINE_CLAIM_MIN_SEC,
   OFFLINE_BANK_CAP_SEC,
   LOGIN_STREAK_REWARDS,
   rarityInfo,
@@ -1982,23 +1983,39 @@ export function offlineBankView(state) {
     (bank.feed | 0) > 0 ||
     (bank.dust | 0) > 0 ||
     Object.values(bank.materials || {}).some((n) => (n | 0) > 0);
+  const sec = bank.sec || 0;
   return {
     qi: bank.qi || 0,
     feed: bank.feed || 0,
     dust: bank.dust || 0,
     materials: { ...(bank.materials || {}) },
-    sec: bank.sec || 0,
+    sec,
     siteName: bank.siteName || null,
     capped: !!bank.capped,
     hasPending: has,
+    canClaim: has && sec >= OFFLINE_CLAIM_MIN_SEC,
+    claimNeedSec: OFFLINE_CLAIM_MIN_SEC,
+    claimLeftSec: Math.max(0, OFFLINE_CLAIM_MIN_SEC - sec),
     capSec: OFFLINE_BANK_CAP_SEC,
-    remainingSec: Math.max(0, OFFLINE_BANK_CAP_SEC - (bank.sec || 0)),
+    remainingSec: Math.max(0, OFFLINE_BANK_CAP_SEC - sec),
   };
 }
 
-/** 領取離線庫收益入帳 */
+/** 領取離線庫收益入帳（需滿 OFFLINE_CLAIM_MIN_SEC） */
 export function claimOfflineBank(state) {
   const view = offlineBankView(state);
+  if (!view.hasPending && !(view.sec | 0)) {
+    state.offlineHint = null;
+    return { ok: false, msg: "沒有可領取的離線收益。" };
+  }
+  if ((view.sec || 0) < OFFLINE_CLAIM_MIN_SEC) {
+    const left = Math.max(0, OFFLINE_CLAIM_MIN_SEC - (view.sec || 0));
+    const leftMin = Math.ceil(left / 60);
+    return {
+      ok: false,
+      msg: `離線未滿 30 分鐘（仲差約 ${leftMin} 分），暫不可領。`,
+    };
+  }
   if (!view.hasPending) {
     state.offlineHint = null;
     return { ok: false, msg: "沒有可領取的離線收益。" };
@@ -2021,9 +2038,44 @@ export function claimOfflineBank(state) {
   };
   state.offlineBank = emptyOfflineBank();
   state.offlineHint = null;
-  const min = Math.max(1, Math.round((claimed.sec || 0) / 60));
-  pushLog(state, `領取離線約 ${min} 分鐘收益。`);
-  return { ok: true, msg: `已領取約 ${min} 分鐘離線收益`, claimed };
+  const sec = claimed.sec || 0;
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  const dur = rem ? `${min} 分 ${rem} 秒` : `${Math.max(1, min)} 分鐘`;
+  pushLog(state, `領取離線約 ${dur} 收益。`);
+  return { ok: true, msg: `已領取約 ${dur} 離線收益`, claimed };
+}
+
+/** 頂欄契隊連結：出戰隊進度 + 突破捷徑（甲＋丙） */
+export function teamBondBarView(state) {
+  const br = breakthroughView(state);
+  const pets = state.pets || [];
+  const ranch = state.ranch || [];
+  const power = partyCombatPower(pets);
+  const avgLv = pets.length
+    ? Math.round(pets.reduce((s, p) => s + (p.level || 1), 0) / pets.length)
+    : 0;
+  const starred = [...pets, ...ranch].filter((p) => p.starred).length;
+  const items = br.items || [];
+  const met = items.filter((i) => i.ok).length;
+  const total = Math.max(1, items.length);
+  const nextNeed = br.next?.need || 1;
+  const qiPct = Math.min(100, ((state.qi || 0) / nextNeed) * 100);
+  const gatePct = Math.round((met / total) * 100);
+  const pct = br.ready ? 100 : Math.round(qiPct * 0.55 + gatePct * 0.45);
+  return {
+    pct: Math.max(0, Math.min(100, pct)),
+    power,
+    petCount: pets.length,
+    petMax: ACTIVE_PET_MAX,
+    avgLv,
+    starred,
+    stageName: br.cur?.name || "",
+    nextName: br.next?.name || "",
+    ready: !!br.ready,
+    items,
+    br,
+  };
 }
 
 function applyOnlineIdleTick(state, elapsed) {
