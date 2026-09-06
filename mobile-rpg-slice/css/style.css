@@ -334,6 +334,39 @@ body {
   font-weight: 600;
 }
 
+.bag-inner-nav {
+  display: flex;
+  gap: 0.28rem;
+  margin: 0 0 0.45rem;
+}
+.bag-inner-nav button {
+  flex: 1;
+  padding: 0.34rem 0.25rem;
+  font-size: 0.72rem;
+  border-radius: 0.45rem;
+}
+.bag-inner-nav button.on {
+  color: var(--ink);
+  background: rgba(126, 168, 160, 0.75);
+  border-color: transparent;
+  font-weight: 600;
+}
+.bag-item-list .bag-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.bag-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+.bag-item.is-empty {
+  opacity: 0.72;
+}
+
 .panel > .tutorial-banner {
   flex-shrink: 0;
   margin: 0 0 0.35rem;
@@ -712,48 +745,135 @@ body {
   pointer-events: auto;
   animation: toastIn 0.32s ease-out;
 }
-.offline-toast {
-  bottom: calc(3.85rem + env(safe-area-inset-bottom, 0px));
-  border: 1px solid rgba(90, 160, 140, 0.55);
-  background: rgba(18, 32, 44, 0.94);
-}
-.offline-toast .offline-body {
-  flex: 1;
-  min-width: 0;
-}
-.offline-toast .offline-detail {
-  margin: 0.08rem 0 0;
-  font-size: 0.6rem;
-  color: var(--fog);
-  line-height: 1.3;
-}
-.offline-toast .offline-acts {
-  flex-shrink: 0;
-  gap: 0.25rem;
+.offline-home-slot {
+  display: flex;
   align-items: center;
-}
-.offline-toast button {
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin: 0 0.55rem 0.28rem;
+  padding: 0.32rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid rgba(90, 160, 140, 0.42);
+  background: linear-gradient(180deg, rgba(28, 52, 46, 0.55) 0%, rgba(18, 32, 40, 0.72) 100%);
   flex-shrink: 0;
-  padding: 0.3rem 0.45rem;
-  font-size: 0.62rem;
 }
-.install-toast {
-  top: calc(env(safe-area-inset-top, 0px) + 0.45rem);
-  border: 1px solid rgba(109, 179, 217, 0.45);
-  background: rgba(18, 32, 44, 0.94);
-}
-.install-toast p {
+.offline-home-slot .offline-home-label {
   margin: 0;
   flex: 1;
-  line-height: 1.25;
+  min-width: 0;
+  font-size: 0.68rem;
+  line-height: 1.3;
+  color: var(--jade-bright);
+  font-weight: 600;
 }
-.install-toast .row {
+.offline-home-slot button {
   flex-shrink: 0;
-  gap: 0.2rem;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.65rem;
 }
-.install-toast button {
-  padding: 0.25rem 0.4rem;
+.offline-claim-overlay .offline-claim-card {
+  max-height: min(52vh, calc(var(--app-h, 100dvh) * 0.55));
+}
+.hatch-claim-overlay .hatch-claim-card {
+  max-height: min(52vh, calc(var(--app-h, 100dvh) * 0.55));
+}
+.hatch-panel .lead {
+  margin-bottom: 0.35rem;
+}
+.hatch-slots {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+  margin: 0.25rem 0 0.45rem;
+}
+.hatch-slot {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.28rem;
+  min-height: 4.4rem;
+  padding: 0.4rem 0.35rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.22);
+  min-width: 0;
+}
+.hatch-slot.is-empty {
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  opacity: 0.8;
+}
+.hatch-slot.is-hatching {
+  border-color: rgba(109, 179, 217, 0.45);
+  background: rgba(30, 70, 100, 0.22);
+}
+.hatch-slot.is-ready {
+  border-color: rgba(120, 190, 140, 0.55);
+  background: rgba(28, 70, 48, 0.28);
+}
+.hatch-slot-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+.hatch-slot-body strong {
+  font-size: 0.7rem;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hatch-slot-body .muted,
+.hatch-slot .muted {
   font-size: 0.62rem;
+}
+.hatch-slot-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.hatch-slot-actions .primary {
+  width: 100%;
+  padding: 0.28rem 0.35rem;
+  font-size: 0.68rem;
+}
+.hatch-timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--jade-bright, #9ed9c0);
+}
+.hatch-claim-all-row {
+  margin: 0 0 0.55rem;
+}
+.hatch-claim-all-row .primary {
+  flex: 1;
+}
+.hatch-egg-filters {
+  margin-bottom: 0.35rem;
+}
+.hatch-ranch-brief {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.55rem;
+  margin: 0.15rem 0 0.45rem;
+}
+.hatch-claim-list {
+  margin-top: 0.15rem;
+}
+.offline-gain-list {
+  margin-top: 0.15rem;
+}
+.offline-gain-row {
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.offline-gain-row span {
+  color: var(--jade-bright);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .flash-truncate {
@@ -837,23 +957,23 @@ button.flash-act {
   line-height: 1.3;
 }
 
-.offline-body {
+.install-toast {
+  top: calc(env(safe-area-inset-top, 0px) + 0.45rem);
+  border: 1px solid rgba(109, 179, 217, 0.45);
+  background: rgba(18, 32, 44, 0.94);
+}
+.install-toast p {
+  margin: 0;
   flex: 1;
-  min-width: 0;
-}
-.offline-body strong {
-  display: block;
-  font-size: 0.68rem;
-  color: var(--jade-bright);
-}
-.offline-detail {
-  margin: 0.08rem 0 0;
-  font-size: 0.62rem;
   line-height: 1.25;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+}
+.install-toast .row {
+  flex-shrink: 0;
+  gap: 0.2rem;
+}
+.install-toast button {
+  padding: 0.25rem 0.4rem;
+  font-size: 0.62rem;
 }
 
 .cu-act {

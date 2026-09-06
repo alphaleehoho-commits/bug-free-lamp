@@ -137,6 +137,13 @@ import {
   emptyMaterials,
   MATERIALS,
   MATERIAL_IDS,
+  emptyItems,
+  emptyItemBonus,
+  ITEMS,
+  ITEM_IDS,
+  RANCH_CAP_BONUS_MAX,
+  HATCH_SLOT_BASE,
+  HATCH_SLOT_BONUS_MAX,
   upgradeMatCost,
   breedMatCost,
   skillMatCost,
@@ -380,6 +387,10 @@ function defaultState() {
     feed: 8,
     dust: 8,
     materials: mats,
+    /** 消耗道具庫存（欄柵／暖巢箋等；與 materials 分開） */
+    items: { ...emptyItems(), ranch_fence: 1, hatch_nest_token: 1 },
+    /** 道具永久加成：ranchCap / hatchSlots（按使用次數，見 data.js 註解） */
+    itemBonus: emptyItemBonus(),
     trainSite: "shore",
     trainMap: emptyTrainMap(),
     inventory: [],
@@ -544,8 +555,39 @@ function normalizeEggs(list) {
     });
 }
 
+function normalizeItems(raw) {
+  const items = emptyItems();
+  if (!raw || typeof raw !== "object") return items;
+  for (const id of ITEM_IDS) {
+    const n = Math.floor(Number(raw[id]) || 0);
+    items[id] = Math.max(0, n);
+  }
+  return items;
+}
+
+function normalizeItemBonus(raw) {
+  const base = emptyItemBonus();
+  if (!raw || typeof raw !== "object") return base;
+  base.ranchCap = Math.max(
+    0,
+    Math.min(RANCH_CAP_BONUS_MAX, Math.floor(Number(raw.ranchCap) || 0))
+  );
+  base.hatchSlots = Math.max(
+    0,
+    Math.min(HATCH_SLOT_BONUS_MAX, Math.floor(Number(raw.hatchSlots) || 0))
+  );
+  return base;
+}
+
 export function ranchCap(state) {
-  return ranchCapForStage(state.realm);
+  const bonus = normalizeItemBonus(state?.itemBonus).ranchCap;
+  return ranchCapForStage(state.realm) + bonus;
+}
+
+/** 孵化欄上限（pack B UI）；基準 HATCH_SLOT_BASE + 暖巢箋永久加成 */
+export function hatchSlotCap(state) {
+  const bonus = normalizeItemBonus(state?.itemBonus).hatchSlots;
+  return HATCH_SLOT_BASE + bonus;
 }
 
 export function loadState() {
@@ -649,6 +691,8 @@ export function loadState() {
       feed: parsed.feed ?? 0,
       dust: parsed.dust ?? 0,
       materials: mergedMats,
+      items: normalizeItems(parsed.items),
+      itemBonus: normalizeItemBonus(parsed.itemBonus),
       trainSite: TRAIN_SITES.some((s) => s.id === parsed.trainSite) ? parsed.trainSite : "shore",
       trainMap: migrateTrainMap(parsed),
       inventory,
@@ -1662,6 +1706,80 @@ export function materialsView(state) {
     ...MATERIALS[id],
     count: Math.floor(state.materials[id] || 0),
   }));
+}
+
+export function itemsView(state) {
+  if (!state.items) state.items = emptyItems();
+  if (!state.itemBonus) state.itemBonus = emptyItemBonus();
+  const bonus = normalizeItemBonus(state.itemBonus);
+  return ITEM_IDS.map((id) => {
+    const def = ITEMS[id];
+    const count = Math.floor(state.items[id] || 0);
+    let bonusNote = "";
+    let atCap = false;
+    if (id === "ranch_fence") {
+      atCap = bonus.ranchCap >= RANCH_CAP_BONUS_MAX;
+      bonusNote = `已擴 +${bonus.ranchCap}/${RANCH_CAP_BONUS_MAX}`;
+    } else if (id === "hatch_nest_token") {
+      atCap = bonus.hatchSlots >= HATCH_SLOT_BONUS_MAX;
+      bonusNote = `已擴 +${bonus.hatchSlots}/${HATCH_SLOT_BONUS_MAX}（欄 ${hatchSlotCap(state)}）`;
+    }
+    return {
+      ...def,
+      count,
+      bonusNote,
+      atCap,
+      canUse: count > 0 && !atCap,
+    };
+  });
+}
+
+function ensureItems(state) {
+  if (!state.items) state.items = emptyItems();
+  else state.items = normalizeItems(state.items);
+  if (!state.itemBonus) state.itemBonus = emptyItemBonus();
+  else state.itemBonus = normalizeItemBonus(state.itemBonus);
+}
+
+/** 使用背包道具（欄柵／暖巢箋）；永久加成按使用次數計 */
+export function useBagItem(state, itemId) {
+  ensureItems(state);
+  const def = ITEMS[itemId];
+  if (!def) return { ok: false, msg: "未知道具。" };
+  const have = Math.floor(state.items[itemId] || 0);
+  if (have < 1) return { ok: false, msg: `沒有${def.name}。` };
+
+  if (itemId === "ranch_fence") {
+    if (state.itemBonus.ranchCap >= RANCH_CAP_BONUS_MAX) {
+      return { ok: false, msg: `牧場擴容已達上限（+${RANCH_CAP_BONUS_MAX}）。` };
+    }
+    state.items[itemId] = have - 1;
+    state.itemBonus.ranchCap += 1;
+    const cap = ranchCap(state);
+    pushLog(state, `用咗欄柵，牧場容量變 ${cap}（永久 +${state.itemBonus.ranchCap}）。`);
+    return {
+      ok: true,
+      msg: `牧場容量 → ${cap}（永久 +${state.itemBonus.ranchCap}/${RANCH_CAP_BONUS_MAX}）`,
+      ranchCap: cap,
+    };
+  }
+
+  if (itemId === "hatch_nest_token") {
+    if (state.itemBonus.hatchSlots >= HATCH_SLOT_BONUS_MAX) {
+      return { ok: false, msg: `孵化欄已達上限（${HATCH_SLOT_BASE + HATCH_SLOT_BONUS_MAX}）。` };
+    }
+    state.items[itemId] = have - 1;
+    state.itemBonus.hatchSlots += 1;
+    const slots = hatchSlotCap(state);
+    pushLog(state, `用咗暖巢箋，孵化欄變 ${slots}（永久 +${state.itemBonus.hatchSlots}）。`);
+    return {
+      ok: true,
+      msg: `孵化欄 → ${slots}（永久 +${state.itemBonus.hatchSlots}/${HATCH_SLOT_BONUS_MAX}）`,
+      hatchSlotCap: slots,
+    };
+  }
+
+  return { ok: false, msg: "呢件道具暫時唔用得。" };
 }
 
 function emptyOfflineBank() {
@@ -3150,12 +3268,42 @@ export function eggsView(state, now = Date.now()) {
   });
 }
 
+/** 進行中孵化（已開始、未領取；領取後會移出 eggs） */
+export function activeHatchCount(state) {
+  return (state.eggs || []).filter((e) => e.startedAt != null).length;
+}
+
+/** 孵化欄位視圖：容量 hatchSlotCap，佔用＝進行中蛋 */
+export function hatchSlotsView(state, now = Date.now()) {
+  const cap = hatchSlotCap(state);
+  const hatching = eggsView(state, now)
+    .filter((e) => e.hatching)
+    .sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
+  const slots = [];
+  for (let i = 0; i < cap; i++) {
+    const egg = hatching[i] || null;
+    slots.push({
+      index: i,
+      empty: !egg,
+      egg,
+      ready: !!(egg && egg.ready),
+      hatching: !!(egg && egg.hatching && !egg.ready),
+    });
+  }
+  return { cap, used: hatching.length, slots, readyCount: hatching.filter((e) => e.ready).length };
+}
+
 /** 開始孵化 */
 export function startHatch(state, eggUid, now = Date.now()) {
   if (!state.eggs) state.eggs = [];
   const egg = state.eggs.find((e) => e.uid === eggUid);
   if (!egg) return { ok: false, msg: "找不到這枚蛋。" };
   if (egg.startedAt != null) return { ok: false, msg: "已在孵化中。" };
+  const cap = hatchSlotCap(state);
+  const used = activeHatchCount(state);
+  if (used >= cap) {
+    return { ok: false, msg: `孵化欄已滿（${used}/${cap}）。可用暖巢箋擴欄，或等完成後領取。` };
+  }
   const t = eggTierInfo(egg.tier);
   const tutShort =
     egg.source === "starter" ||
@@ -3239,6 +3387,37 @@ export function claimHatch(state, eggUid) {
     pet,
     tutorialUnlock: tut.advanced ? tut.unlockMsg : null,
   };
+}
+
+/** 一鍵領取所有已完成孵化（牧場滿則停） */
+export function claimAllReadyHatches(state, now = Date.now()) {
+  if (!state.eggs) state.eggs = [];
+  const readyUids = state.eggs
+    .filter((e) => e.startedAt != null && (e.readyAt || 0) <= now)
+    .map((e) => e.uid);
+  if (!readyUids.length) return { ok: false, msg: "沒有可領取的孵化。", pets: [] };
+  const pets = [];
+  let tutorialUnlock = null;
+  let stopMsg = null;
+  for (const uid of readyUids) {
+    const r = claimHatch(state, uid);
+    if (r.ok && r.pet) {
+      pets.push(r.pet);
+      if (r.tutorialUnlock) tutorialUnlock = r.tutorialUnlock;
+    } else {
+      stopMsg = r.msg || "領取中斷。";
+      break;
+    }
+  }
+  if (!pets.length) return { ok: false, msg: stopMsg || "無法領取。", pets: [] };
+  const msg =
+    pets.length === 1
+      ? `孵出 ${pets[0].name}`
+      : `一鍵收取 ${pets.length} 隻：${pets.map((p) => p.name).join("、")}`;
+  if (stopMsg) {
+    return { ok: true, msg: `${msg}（其後：${stopMsg}）`, pets, tutorialUnlock, partial: true };
+  }
+  return { ok: true, msg, pets, tutorialUnlock };
 }
 
 /** 出戰 → 牧場 */
@@ -6265,6 +6444,13 @@ export {
   formationFoePlacement,
   GEAR_SETS,
   MATERIALS,
+  ITEMS,
+  ITEM_IDS,
+  emptyItems,
+  emptyItemBonus,
+  RANCH_CAP_BONUS_MAX,
+  HATCH_SLOT_BASE,
+  HATCH_SLOT_BONUS_MAX,
   TRAIN_SITES,
   TRAIN_TIER_COUNT,
   TRAIN_DEPTH_MULT,

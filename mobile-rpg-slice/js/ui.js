@@ -11,6 +11,9 @@ import {
   eggsView,
   startHatch,
   claimHatch,
+  claimAllReadyHatches,
+  hatchSlotsView,
+  activeHatchCount,
   upgradePet,
   upgradePetSkill,
   fusePets,
@@ -43,9 +46,9 @@ import {
   realmInfo,
   nextRealm,
   ranchCap,
+  hatchSlotCap,
   partySynergy,
   renamePet,
-  clearOfflineHint,
   claimOfflineBank,
   offlineBankView,
   persistTrainIdleCombatState,
@@ -102,6 +105,8 @@ import {
   setTrainDepth,
   trainDailySpotlightView,
   materialHintsView,
+  itemsView,
+  useBagItem,
   dungeonDailyView,
   resolveDungeon,
   dungeonsForRealm,
@@ -175,6 +180,7 @@ import {
   tutorialWaivesDungeonChallenge,
   tutorialBannerHint,
   tutorialNeedsRanchSub,
+  tutorialNeedsHatchSub,
   tutorialEggReady,
 } from "./tutorial.js";
 
@@ -233,6 +239,14 @@ let tutorialCollapsed = false;
 let matSectionOpen = false;
 let trainRatesOpen = false;
 let statsSheetOpen = false;
+/** 離線收益預覽半屏（收集確認） */
+let offlineClaimOpen = false;
+/** 孵化領取結果半屏：{ pets: object[] } | null */
+let hatchClaimModal = null;
+/** 孵化庫存篩選：all | breed | shop | ready */
+let hatchEggFilter = "all";
+/** 背包內頁：材料 | 道具 */
+let bagInner = "mats";
 /** @type {"power" | "gen" | "rarity" | "element" | "status"} */
 let ranchSort = "status";
 
@@ -251,13 +265,16 @@ function loadUiPrefs() {
 function saveUiPrefs() {
   sessionStorage.setItem(
     UI_PREFS_KEY,
-    JSON.stringify({ matSectionOpen, trainRatesOpen, ranchSort })
+    JSON.stringify({ matSectionOpen, trainRatesOpen, ranchSort, bagInner })
   );
 }
 
 const uiPrefsBoot = loadUiPrefs();
 matSectionOpen = !!uiPrefsBoot.matSectionOpen;
 trainRatesOpen = !!uiPrefsBoot.trainRatesOpen;
+if (uiPrefsBoot.bagInner === "items" || uiPrefsBoot.bagInner === "mats") {
+  bagInner = uiPrefsBoot.bagInner;
+}
 if (["power", "gen", "rarity", "element", "status"].includes(uiPrefsBoot.ranchSort)) {
   ranchSort = uiPrefsBoot.ranchSort;
 }
@@ -339,7 +356,7 @@ function isTutorialTargetClick(target) {
 
 function onTutorialMisclick(ev) {
   if (!tutorialActive(state)) return;
-  if (ev.target.closest?.(".tutorial-skip")) return;
+  if (ev.target.closest?.(".tutorial-skip, [data-live=tutorial] [data-act=skip-tutorial]")) return;
   if (isTutorialTargetClick(ev.target)) {
     tutMisclickCount = 0;
     return;
@@ -396,6 +413,38 @@ function refreshTutorialGlow() {
   positionTutorialSpotlight(false);
 }
 
+function handleTutorialBannerAct(act) {
+  if (act === "skip-tutorial") {
+    const r = skipTutorial(state);
+    saveState(state);
+    render();
+    setFlash(r.msg, "unlock");
+    return true;
+  }
+  if (act === "collapse-tutorial") {
+    tutorialCollapsed = true;
+    render();
+    return true;
+  }
+  if (act === "expand-tutorial") {
+    tutorialCollapsed = false;
+    render();
+    return true;
+  }
+  return false;
+}
+
+/** live patch 會換掉 banner DOM，用委派避免「跳過」掣失聯 */
+function onTutorialBannerClick(ev) {
+  const btn = ev.target.closest?.("[data-live=tutorial] [data-act]");
+  if (!btn) return;
+  const act = btn.dataset.act;
+  if (act === "skip-tutorial" || act === "collapse-tutorial" || act === "expand-tutorial") {
+    ev.preventDefault();
+    handleTutorialBannerAct(act);
+  }
+}
+
 function patchTutorialBanner() {
   const cur = document.querySelector("[data-live=tutorial]");
   if (!tutorialActive(state)) {
@@ -423,7 +472,12 @@ let petView = {
 };
 
 function tutorialNavCtx() {
-  return { tab, panelSub, petDetail: petView.mode === "detail" };
+  return {
+    tab,
+    panelSub,
+    petDetail: petView.mode === "detail",
+    petFuse: petView.mode === "fuse",
+  };
 }
 
 function initTutorialNav() {
@@ -431,7 +485,7 @@ function initTutorialNav() {
   const step = state.tutorial.step;
   if ((step === "hatch_starter" || step === "hatch_second") && tutorialEggReady(state)) {
     tab = "party";
-    panelSub = { ...panelSub, party: "ranch" };
+    panelSub = { ...panelSub, party: "hatch" };
     return;
   }
   const nav = syncTutorialNavigation(state, { tab, panelSub });
@@ -1089,7 +1143,9 @@ function switchTab(id) {
   tutMisclickCount = 0;
   if (tutorialActive(state)) {
     const step = state.tutorial.step;
-    if (id === "party" && tutorialNeedsRanchSub(step)) {
+    if (id === "party" && tutorialNeedsHatchSub(step)) {
+      panelSub = { ...panelSub, party: "hatch" };
+    } else if (id === "party" && tutorialNeedsRanchSub(step)) {
       panelSub = { ...panelSub, party: "ranch" };
     } else if (id === "cultivate") {
       if (step === "shop_egg") panelSub = { ...panelSub, cultivate: "shop" };
@@ -1227,6 +1283,34 @@ function matOwnedCount() {
   return materialHintsView(state).filter((m) => m.count > 0).length;
 }
 
+function bagItemsHtml() {
+  const rows = itemsView(state)
+    .map((it) => {
+      const empty = it.count <= 0;
+      const useBtn = it.canUse
+        ? `<button type="button" class="primary" data-use-item="${escapeHtml(it.id)}">使用</button>`
+        : `<button type="button" disabled>${it.atCap ? "已滿" : "使用"}</button>`;
+      return `
+    <li class="bag-item ${empty ? "is-empty" : ""}">
+      <div class="bag-item-body">
+        <strong>${escapeHtml(it.name)}</strong>
+        <span class="muted">${escapeHtml(it.desc)}</span>
+        <span class="meta">持有 ${it.count}${it.bonusNote ? ` · ${escapeHtml(it.bonusNote)}` : ""}</span>
+      </div>
+      <div class="row-actions">${useBtn}</div>
+    </li>`;
+    })
+    .join("");
+  return `<ul class="list bag-item-list">${rows || `<li class="empty">暫無道具。</li>`}</ul>`;
+}
+
+function bagInnerNavHtml() {
+  return `<nav class="bag-inner-nav" aria-label="背包分類">
+    <button type="button" class="${bagInner === "mats" ? "on" : ""}" data-bag-inner="mats">材料</button>
+    <button type="button" class="${bagInner === "items" ? "on" : ""}" data-bag-inner="items">道具</button>
+  </nav>`;
+}
+
 function materialsBlockHtml() {
   const owned = matOwnedCount();
   return `<div class="fold-section">
@@ -1278,17 +1362,40 @@ function patchEggLive() {
     if (!uid || !Number.isFinite(readyAt)) return;
     const left = Math.max(0, readyAt - now);
     const sec = Math.ceil(left / 1000);
+    const slot = el.closest(".hatch-slot");
     if (left <= 0) {
       becameReady = true;
-      const row = el.closest(".egg-row");
-      const actions = row?.querySelector(".row-actions");
-      if (actions && !actions.querySelector("[data-claim-hatch]")) {
-        actions.innerHTML = `<button type="button" class="primary${tutGlow({ type: "claim-hatch" })}" data-claim-hatch="${escapeHtml(uid)}">領取</button>`;
+      if (slot) {
+        slot.classList.add("is-ready");
+        slot.classList.remove("is-hatching");
+        const actions = slot.querySelector(".hatch-slot-actions");
+        if (actions && !actions.querySelector("[data-claim-hatch]")) {
+          actions.innerHTML = `<button type="button" class="primary${tutGlow({ type: "claim-hatch" })}" data-claim-hatch="${escapeHtml(uid)}">領取</button>`;
+        }
+        const meta = slot.querySelector("[data-hatch-slot-meta]");
+        if (meta) meta.textContent = "已就緒";
+      } else {
+        const row = el.closest(".egg-row");
+        const actions = row?.querySelector(".row-actions");
+        if (actions && !actions.querySelector("[data-claim-hatch]")) {
+          actions.innerHTML = `<button type="button" class="primary${tutGlow({ type: "claim-hatch" })}" data-claim-hatch="${escapeHtml(uid)}">領取</button>`;
+        }
       }
+    } else if (slot) {
+      el.textContent = `${sec}s`;
+      const meta = slot.querySelector("[data-hatch-slot-meta]");
+      if (meta) meta.textContent = `孵化中 ${sec}s`;
     } else {
       el.textContent = `孵化中 ${sec}s`;
     }
   });
+  const claimAllBtn = document.querySelector("[data-claim-all-hatch]");
+  if (claimAllBtn) {
+    const readyN = hatchSlotsView(state, now).readyCount;
+    claimAllBtn.disabled = readyN <= 0;
+    const label = claimAllBtn.querySelector("[data-claim-all-label]");
+    if (label) label.textContent = readyN > 0 ? `一鍵收取（${readyN}）` : "一鍵收取";
+  }
   return becameReady;
 }
 
@@ -1730,6 +1837,18 @@ function render() {
       setFlash(adv.unlockMsg, "unlock");
     }
   }
+  // 融合引導：到達融合頁即完成 fuse_intro
+  if (
+    tutorialActive(state) &&
+    state.tutorial.step === "fuse_intro" &&
+    petView.mode === "fuse" &&
+    !state.tutorial.flags?.fusePageVisited
+  ) {
+    const adv = markTutorialFlag(state, "fusePageVisited");
+    if (adv.advanced && adv.unlockMsg) {
+      setFlash(adv.unlockMsg, "unlock");
+    }
+  }
 
   const stage = realmInfo(state);
   const next = nextRealm(state);
@@ -1751,6 +1870,7 @@ function render() {
     ${inTutorial ? tutorialStatsStrip() : statsStripHtml(stage)}
 
     ${nextGoalChipHtml()}
+    ${tab === "cultivate" ? offlineHomeSlotHtml() : ""}
 
     ${inTutorial ? tutorialBannerHtml(state, { collapsed: tutorialCollapsed }) : ""}
 
@@ -1777,8 +1897,9 @@ function render() {
     ${attackPreview ? attackPreviewModalHtml() : ""}
     ${condSheetOpen ? dungeonCondSheetHtml() : ""}
     ${statsSheetOpen ? statsSheetHtml() : ""}
+    ${offlineClaimOpen ? offlineClaimModalHtml() : ""}
+    ${hatchClaimModal ? hatchClaimModalHtml() : ""}
     ${dailyHubHtml()}
-    ${offlineBanner()}
     ${inTutorial ? "" : installBanner()}
   `;
 
@@ -1967,37 +2088,82 @@ function installBanner() {
     </div>`;
 }
 
-let offlineDismissedAtSec = -1;
-
-function offlineBanner() {
+function offlinePendingView() {
   const bank = offlineBankView(state);
-  const h = bank.hasPending ? bank : state.offlineHint;
-  if (!bank.hasPending && !h) return "";
-  const pending = bank.hasPending ? bank : h;
-  if (bank.hasPending && offlineDismissedAtSec === (bank.sec | 0)) return "";
+  if (bank.hasPending) return bank;
+  const h = state.offlineHint;
+  if (!h) return null;
   if (
-    !(pending.qi | 0) &&
-    !(pending.feed | 0) &&
-    !(pending.dust | 0) &&
-    !formatMatBits(pending.materials) &&
-    !(pending.sec | 0)
+    !(h.qi | 0) &&
+    !(h.feed | 0) &&
+    !(h.dust | 0) &&
+    !formatMatBits(h.materials) &&
+    !(h.sec | 0)
   ) {
-    return "";
+    return null;
   }
+  return h;
+}
+
+/** 修行主頁固定欄：自動收集（離線約 Xm）[收集] —— 唔再用浮動 toast */
+function offlineHomeSlotHtml() {
+  const pending = offlinePendingView();
+  if (!pending) return "";
   const min = Math.max(1, Math.round((pending.sec || 0) / 60));
-  const matLine = formatMatBits(pending.materials);
-  const detail = `靈契 +${fmtInt(pending.qi)} · 飼料 +${fmtMatQty(pending.feed)} · 靈塵 +${fmtMatQty(pending.dust)}${
-    matLine ? ` · ${matLine}` : ""
-  }${pending.siteName ? `（${pending.siteName}）` : ""}${pending.capped ? " · 已達累積上限" : ""}`;
+  const capped = pending.capped ? " · 已達上限" : "";
   return `
-    <div class="chrome-toast offline-toast" data-live="offline">
-      <div class="offline-body">
-        <strong>待領離線約 ${min} 分鐘</strong>
-        <p class="offline-detail">${escapeHtml(detail)}</p>
-      </div>
-      <div class="row offline-acts">
-        <button type="button" class="primary" data-act="claim-offline">領取</button>
-        <button type="button" class="ghost" data-act="clear-offline">稍後</button>
+    <div class="offline-home-slot" data-live="offline-home">
+      <p class="offline-home-label">自動收集（離線約 ${min}m）${escapeHtml(capped)}</p>
+      <button type="button" class="primary" data-act="open-offline-claim">收集</button>
+    </div>`;
+}
+
+function offlineGainRowsHtml(pending) {
+  const rows = [];
+  if ((pending.qi | 0) > 0) {
+    rows.push(`<li class="card-row offline-gain-row"><div><strong>靈契</strong></div><span>+${fmtInt(pending.qi)}</span></li>`);
+  }
+  if ((pending.feed | 0) > 0) {
+    rows.push(`<li class="card-row offline-gain-row"><div><strong>飼料</strong></div><span>+${fmtMatQty(pending.feed)}</span></li>`);
+  }
+  if ((pending.dust | 0) > 0) {
+    rows.push(`<li class="card-row offline-gain-row"><div><strong>靈塵</strong></div><span>+${fmtMatQty(pending.dust)}</span></li>`);
+  }
+  for (const [id, n] of Object.entries(pending.materials || {})) {
+    if ((n | 0) <= 0) continue;
+    const name = MATERIALS[id]?.name || id;
+    rows.push(
+      `<li class="card-row offline-gain-row"><div><strong>${escapeHtml(name)}</strong></div><span>+${fmtMatQty(n)}</span></li>`
+    );
+  }
+  if (!rows.length) {
+    return `<li class="empty">暫無明細收益。</li>`;
+  }
+  return rows.join("");
+}
+
+function offlineClaimModalHtml() {
+  const pending = offlinePendingView();
+  if (!pending) return "";
+  const min = Math.max(1, Math.round((pending.sec || 0) / 60));
+  const site = pending.siteName ? ` · ${escapeHtml(pending.siteName)}` : "";
+  const capNote = pending.capped
+    ? `<p class="meta muted">已達離線累積上限，請先收集。</p>`
+    : "";
+  return `
+    <div class="combat-modal-overlay offline-claim-overlay" data-live="offline-claim" role="dialog" aria-label="離線收益">
+      <div class="combat-modal-card offline-claim-card">
+        <div class="combat-modal-scroll">
+          <h2>自動收集 · 離線收益</h2>
+          <p class="lead">離線約 ${min} 分鐘${site}</p>
+          ${capNote}
+          <h3>待領物資</h3>
+          <ul class="list offline-gain-list">${offlineGainRowsHtml(pending)}</ul>
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" class="primary" data-act="claim-offline">收集</button>
+          <button type="button" class="ghost" data-act="close-offline-claim">返回</button>
+        </div>
       </div>
     </div>`;
 }
@@ -2413,21 +2579,25 @@ function cultivatePanel(qiPct, next, m) {
       : "突破階段（條件未齊）";
 
   if (panelSub.cultivate === "gear") panelSub.cultivate = "train";
+  if (panelSub.cultivate === "mats") panelSub.cultivate = "bag";
   const sub = panelSub.cultivate;
   const nav = panelSubNav("cultivate", [
     { id: "train", label: "練功" },
-    { id: "mats", label: "材料" },
+    { id: "bag", label: "背包" },
     { id: "shop", label: "商肆" },
     { id: "advance", label: "進階" },
   ]);
 
-  if (sub === "mats") {
-    return wrapStage(
-      nav,
-      `<h2>材料一覽</h2>
+  if (sub === "bag") {
+    const inner =
+      bagInner === "items"
+        ? `<h2>背包 · 道具</h2>
+      <p class="lead">牧場 ${ranchCap(state)} 欄 · 孵化 ${hatchSlotCap(state)} 欄</p>
+      ${bagItemsHtml()}`
+        : `<h2>背包 · 材料</h2>
       <p class="lead">靈石 ${Math.floor(state.stones)} · 飼料 ${Math.floor(state.feed || 0)} · 靈塵 ${Math.floor(state.dust || 0)}</p>
-      ${matHintListHtml()}`
-    );
+      ${matHintListHtml()}`;
+    return wrapStage(nav, `${bagInnerNavHtml()}${inner}`);
   }
 
   if (sub === "shop") {
@@ -2568,19 +2738,20 @@ function petGridCard(p, extraBtn = "", tagHtml = "") {
   const title = displayPetName(p);
   const r = rarityInfo(p.rarity ?? 0);
   const g = petGeneration(p);
+  const detailGlow = tutGlow({ type: "pet-detail", uid: p.uid || p.templateId });
   return `
     <li class="pet-card">
       <div class="pet-card-top">
         ${petIconFromPet(p, { size: 28 })}
         <div class="pet-card-title">
-          <button type="button" class="linkish${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
+          <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
           ${tagHtml}
         </div>
       </div>
       <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""}</span>
       <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)} · 攻${fmtInt(p.atk)}</span>
       <div class="row-actions pet-card-actions">
-        <button type="button" class="info${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}">詳情</button>
+        <button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>
         ${extraBtn}
       </div>
     </li>`;
@@ -2593,17 +2764,18 @@ function petRow(p, extraBtn = "", tagHtml = "") {
   const title = displayPetName(p);
   const r = rarityInfo(p.rarity ?? 0);
   const g = petGeneration(p);
+  const detailGlow = tutGlow({ type: "pet-detail", uid: p.uid || p.templateId });
   return `
     <li class="card-row pet-row">
       ${petIconFromPet(p, { size: 34 })}
       <div>
-        <button type="button" class="linkish${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
+        <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
         ${tagHtml}
         <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
         <span class="muted">攻${fmtInt(p.atk)} 血${fmtInt(p.hp)} 速${fmtInt(p.spd)} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
-        <button type="button" class="info${tutGlow({ type: "pet-detail" })}" data-pet-detail="${uid}">詳情</button>
+        <button type="button" class="info${detailGlow}" data-pet-detail="${uid}">詳情</button>
         ${extraBtn}
       </div>
     </li>`;
@@ -2756,24 +2928,16 @@ function petsListView() {
     )
     .join("");
 
-  const eggRows =
-    eggsView(state)
-      .map((e) => {
-        const action = !e.hatching
-          ? `<button type="button" class="primary${tutGlow({ type: "start-hatch" })}" data-start-hatch="${escapeHtml(e.uid)}">開始孵化</button>`
-          : e.ready
-            ? `<button type="button" class="primary${tutGlow({ type: "claim-hatch" })}" data-claim-hatch="${escapeHtml(e.uid)}">領取</button>`
-            : `<span class="muted" data-egg-timer data-egg-uid="${escapeHtml(e.uid)}" data-ready-at="${e.readyAt || 0}">孵化中 ${e.leftSec}s</span>`;
-        return `
-        <li class="card-row egg-row">
-          <div>
-            <strong>${escapeHtml(e.name)}</strong>
-            <span class="muted">${escapeHtml(e.label)} · ${escapeHtml(e.desc || "")}</span>
-          </div>
-          <div class="row-actions">${action}</div>
-        </li>`;
-      })
-      .join("") || `<li class="empty muted">尚無寵物蛋。商肆／派遣可獲得。</li>`;
+  const idleEggs = eggsView(state).filter((e) => !e.hatching);
+  const hatchBusy = activeHatchCount(state);
+  const hatchCap = hatchSlotCap(state);
+  const eggBrief =
+    idleEggs.length || hatchBusy
+      ? `<p class="meta hatch-ranch-brief" data-hatch-ranch-brief>
+          寵物蛋 ${idleEggs.length + hatchBusy} 枚 · 孵化中 ${hatchBusy}/${hatchCap}
+          <button type="button" class="linkish${tutGlow({ type: "panel-sub", group: "party", id: "hatch" })}" data-panel-sub="party:hatch">去孵化</button>
+        </p>`
+      : `<p class="meta hatch-ranch-brief muted" data-hatch-ranch-brief>尚無寵物蛋 · <button type="button" class="linkish" data-panel-sub="party:hatch">去孵化</button></p>`;
 
   const pending = (state.pending || [])
     .map(
@@ -2849,12 +3013,14 @@ function petsListView() {
     return wrapStage(
       nav,
       `<h2>靈寵 · 牧場</h2>
-      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 蛋 ${(state.eggs || []).length}/${EGG_CAP} · 待命微產飼料／靈塵／潮霧令</p>
-      <h3>寵物蛋</h3>
-      <ul class="list">${eggRows}</ul>
+      <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 待命微產飼料／靈塵／潮霧令</p>
+      ${eggBrief}
       <div class="ranch-sort" role="group" aria-label="牧場排序">${sortOpts}</div>
       <ul class="pet-grid">${ranchList}</ul>`
     );
+  }
+  if (sub === "hatch") {
+    return wrapStage(nav, petsHatchView());
   }
   if (sub === "breed") {
     const breed = petsBreedView();
@@ -3093,10 +3259,148 @@ function petsBreedView() {
   return { body, dock };
 }
 
+function hatchInventoryFilter(egg) {
+  if (hatchEggFilter === "breed") return egg.source === "breed";
+  if (hatchEggFilter === "shop") {
+    return (
+      egg.source === "shop" ||
+      egg.source === "tutorial_shop" ||
+      egg.source === "abyss_dive" ||
+      (egg.source !== "breed" && egg.source !== "starter")
+    );
+  }
+  if (hatchEggFilter === "ready") return !egg.hatching;
+  return true;
+}
+
+function petsHatchView() {
+  const hv = hatchSlotsView(state);
+  const free = Math.max(0, hv.cap - hv.used);
+  const slotCards = hv.slots
+    .map((s) => {
+      if (s.empty) {
+        return `<div class="hatch-slot is-empty" data-hatch-slot="${s.index}">
+          <span class="muted">空欄 ${s.index + 1}</span>
+        </div>`;
+      }
+      const e = s.egg;
+      const uid = escapeHtml(e.uid);
+      if (s.ready) {
+        return `<div class="hatch-slot is-ready" data-hatch-slot="${s.index}" data-egg-uid="${uid}">
+          <div class="hatch-slot-body">
+            <strong>${escapeHtml(e.name)}</strong>
+            <span class="muted" data-hatch-slot-meta>已就緒</span>
+          </div>
+          <div class="hatch-slot-actions">
+            <button type="button" class="primary${tutGlow({ type: "claim-hatch" })}" data-claim-hatch="${uid}">領取</button>
+          </div>
+        </div>`;
+      }
+      return `<div class="hatch-slot is-hatching" data-hatch-slot="${s.index}" data-egg-uid="${uid}">
+        <div class="hatch-slot-body">
+          <strong>${escapeHtml(e.name)}</strong>
+          <span class="muted" data-hatch-slot-meta>孵化中 ${e.leftSec}s</span>
+        </div>
+        <div class="hatch-slot-actions">
+          <span class="hatch-timer" data-egg-timer data-egg-uid="${uid}" data-ready-at="${e.readyAt || 0}">${e.leftSec}s</span>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  const invEggs = eggsView(state)
+    .filter((e) => !e.hatching)
+    .filter(hatchInventoryFilter);
+  const canStart = free > 0;
+  const invRows =
+    invEggs
+      .map((e) => {
+        const uid = escapeHtml(e.uid);
+        return `<li class="card-row egg-row hatch-inv-row">
+          <div>
+            <strong>${escapeHtml(e.name)}</strong>
+            <span class="muted">${escapeHtml(e.label)} · ${escapeHtml(e.desc || "")}</span>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="primary${tutGlow({ type: "start-hatch" })}" data-start-hatch="${uid}" ${
+              canStart ? "" : "disabled"
+            }>放入孵化</button>
+          </div>
+        </li>`;
+      })
+      .join("") || `<li class="empty muted">庫存無蛋。商肆／繁殖／派遣可獲得。</li>`;
+
+  const filters = [
+    ["all", "全部"],
+    ["breed", "繁殖"],
+    ["shop", "商肆／品階"],
+    ["ready", "可開孵"],
+  ]
+    .map(
+      ([id, label]) =>
+        `<button type="button" class="sort-chip${hatchEggFilter === id ? " on" : ""}" data-hatch-filter="${id}">${label}</button>`
+    )
+    .join("");
+
+  const claimAllDisabled = hv.readyCount <= 0;
+  return `<div class="hatch-panel" data-hatch-panel>
+    <h2>靈寵 · 孵化</h2>
+    <p class="lead">孵化欄 ${hv.used}/${hv.cap} · 庫存 ${(state.eggs || []).filter((e) => e.startedAt == null).length} 枚</p>
+    <h3>孵化欄</h3>
+    <div class="hatch-slots" data-hatch-slots>${slotCards}</div>
+    <div class="row hatch-claim-all-row">
+      <button type="button" class="primary" data-claim-all-hatch ${claimAllDisabled ? "disabled" : ""}>
+        <span data-claim-all-label>${hv.readyCount > 0 ? `一鍵收取（${hv.readyCount}）` : "一鍵收取"}</span>
+      </button>
+    </div>
+    <h3>蛋庫存</h3>
+    <div class="ranch-sort hatch-egg-filters" role="group" aria-label="蛋篩選">${filters}</div>
+    <ul class="list hatch-inv-list">${invRows}</ul>
+  </div>`;
+}
+
+function hatchClaimPetRowsHtml(pets) {
+  if (!pets?.length) return `<li class="empty">沒有孵出靈寵。</li>`;
+  return pets
+    .map((p) => {
+      const r = rarityInfo(p.rarity ?? 0);
+      return `<li class="card-row hatch-claim-row">
+        <div>
+          <strong>${escapeHtml(displayPetName(p))}</strong>
+          <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
+            petGeneration(p)
+          )} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}</span>
+          <span class="muted">攻${fmtInt(p.atk)} 血${fmtInt(p.hp)} 速${fmtInt(p.spd)}</span>
+        </div>
+      </li>`;
+    })
+    .join("");
+}
+
+function hatchClaimModalHtml() {
+  if (!hatchClaimModal?.pets?.length) return "";
+  const pets = hatchClaimModal.pets;
+  const title = pets.length === 1 ? "孵化完成" : `一鍵收取 · ${pets.length} 隻`;
+  return `
+    <div class="combat-modal-overlay hatch-claim-overlay" data-live="hatch-claim" role="dialog" aria-label="孵化領取">
+      <div class="combat-modal-card hatch-claim-card">
+        <div class="combat-modal-scroll">
+          <h2>${escapeHtml(title)}</h2>
+          <p class="lead">靈寵已進入牧場</p>
+          <ul class="list hatch-claim-list">${hatchClaimPetRowsHtml(pets)}</ul>
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" class="primary" data-act="close-hatch-claim">返回</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function partyNavHtml() {
   return panelSubNav("party", [
     { id: "fight", label: "出戰" },
     { id: "ranch", label: "牧場" },
+    { id: "hatch", label: "孵化" },
     { id: "breed", label: "繁殖" },
     { id: "dispatch", label: "派遣" },
     { id: "bond", label: "待契" },
@@ -4152,6 +4456,27 @@ function bind() {
       render();
     });
   });
+  app.querySelectorAll("[data-bag-inner]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.bagInner;
+      if (id !== "mats" && id !== "items") return;
+      if (bagInner === id) return;
+      bagInner = id;
+      saveUiPrefs();
+      render();
+    });
+  });
+  app.querySelectorAll("[data-use-item]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const id = btn.dataset.useItem;
+      if (!id) return;
+      const r = useBagItem(state, id);
+      saveState(state);
+      render();
+      setFlash(r.msg || "");
+    });
+  });
   app.querySelectorAll("[data-ranch-sort]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.ranchSort;
@@ -4223,22 +4548,28 @@ function bind() {
         saveState(state);
         render();
         setFlash(r.msg);
-      } else if (act === "clear-offline") {
-        offlineDismissedAtSec = offlineBankView(state).sec | 0;
-        clearOfflineHint(state);
-        saveState(state);
+      } else if (act === "open-offline-claim") {
+        if (!offlinePendingView()) {
+          setFlash("沒有可收集的離線收益。");
+          return;
+        }
+        offlineClaimOpen = true;
+        render();
+      } else if (act === "close-offline-claim") {
+        offlineClaimOpen = false;
+        render();
+      } else if (act === "close-hatch-claim") {
+        hatchClaimModal = null;
         render();
       } else if (act === "claim-offline") {
-        offlineDismissedAtSec = -1;
         const r = claimOfflineBank(state);
+        offlineClaimOpen = false;
         saveState(state);
         render();
         setFlash(r.msg, r.ok ? "unlock" : "");
-      } else if (act === "skip-tutorial") {
-        const r = skipTutorial(state);
-        saveState(state);
-        render();
-        setFlash(r.msg, "unlock");
+      } else if (act === "skip-tutorial" || act === "collapse-tutorial" || act === "expand-tutorial") {
+        // 交由 document 委派 onTutorialBannerClick（live patch 換 DOM 後仍可用）
+        return;
       } else if (act === "pwa-install") {
         if (!pwaInstallEvt) {
           setFlash("此裝置暫不支援安裝。");
@@ -4363,12 +4694,6 @@ function bind() {
         render();
       } else if (act === "toggle-reward-details") {
         rewardDetailsOpen = !rewardDetailsOpen;
-        render();
-      } else if (act === "collapse-tutorial") {
-        tutorialCollapsed = true;
-        render();
-      } else if (act === "expand-tutorial") {
-        tutorialCollapsed = false;
         render();
       } else if (act === "toggle-mat-section") {
         matSectionOpen = !matSectionOpen;
@@ -4730,10 +5055,34 @@ function bind() {
   app.querySelectorAll("[data-claim-hatch]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const r = claimHatch(state, btn.dataset.claimHatch);
+      if (r.ok && r.pet) {
+        hatchClaimModal = { pets: [r.pet] };
+      }
       saveState(state);
       render();
       if (r.tutorialUnlock) setFlash(r.tutorialUnlock, "unlock");
-      else setFlash(r.msg);
+      else if (!r.ok) setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-claim-all-hatch]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = claimAllReadyHatches(state);
+      if (r.ok && r.pets?.length) {
+        hatchClaimModal = { pets: r.pets };
+      }
+      saveState(state);
+      render();
+      if (r.tutorialUnlock) setFlash(r.tutorialUnlock, "unlock");
+      else if (!r.ok) setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-hatch-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.hatchFilter;
+      if (!id || hatchEggFilter === id) return;
+      hatchEggFilter = id;
+      render();
     });
   });
   app.querySelectorAll("[data-goto-train]").forEach((btn) => {
@@ -4786,6 +5135,10 @@ function bind() {
         fuseMats: [],
         breedParents: [],
       };
+      if (tutorialActive(state) && state.tutorial.step === "fuse_intro") {
+        const adv = markTutorialFlag(state, "fusePageVisited");
+        if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+      }
       render();
     });
   });
@@ -4834,6 +5187,10 @@ function bind() {
       saveState(state);
       if (r.ok) {
         petView = { mode: "detail", uid: baseUid, fuseBase: null, fuseMats: [], breedParents: [], detailTab: "stats" };
+        if (tutorialActive(state)) {
+          const adv = advanceTutorialIfReady(state);
+          if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+        }
       }
       render();
       flashResult(r);
@@ -4937,6 +5294,7 @@ if (lateBoot.started) {
 }
 maybeNotifyOffline(state.offlineHint || (offlineBankView(state).hasPending ? offlineBankView(state) : null));
 
+document.addEventListener("click", onTutorialBannerClick);
 document.addEventListener("click", onTutorialMisclick, true);
 document.addEventListener("touchend", onTutorialMisclick, true);
 window.addEventListener("resize", () => {
@@ -5000,6 +5358,19 @@ setInterval(() => {
       return;
     }
     saveState(state);
+    return;
+  }
+  if (tab === "party" && panelSub.party === "hatch" && eggReadyNow) {
+    saveState(state);
+    const scroller = document.querySelector(".stage-scroll");
+    const scrollTop = scroller?.scrollTop ?? 0;
+    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+    render();
+    requestAnimationFrame(() => {
+      const again = document.querySelector(".stage-scroll");
+      if (again) again.scrollTop = scrollTop;
+    });
+    tutorialSnapCache = snap;
     return;
   }
   if (onTrainPanel) {

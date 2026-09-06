@@ -141,6 +141,13 @@ import {
   ABYSS_WIPE_KEEP_RATE,
   emptyAbyssDive,
   emptyMaterials,
+  emptyItems,
+  emptyItemBonus,
+  ITEMS,
+  ITEM_IDS,
+  RANCH_CAP_BONUS_MAX,
+  HATCH_SLOT_BASE,
+  HATCH_SLOT_BONUS_MAX,
   OFFLINE_HINT_SEC,
   OFFLINE_BANK_CAP_SEC,
   elementExplain,
@@ -171,6 +178,9 @@ import {
   deployPet,
   claimHatch,
   startHatch,
+  claimAllReadyHatches,
+  hatchSlotsView,
+  activeHatchCount,
   eggsView,
   tickCultivation,
   tickRanchIdle,
@@ -217,6 +227,10 @@ import {
   buyAbyssInsurance,
   buyAbyssCosmetic,
   buyAbyssEgg,
+  ranchCap,
+  hatchSlotCap,
+  useBagItem,
+  itemsView,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -245,8 +259,12 @@ import {
   tutorialBannerHint,
   tutorialEggReady,
   tutorialNeedsRanchSub,
+  tutorialNeedsHatchSub,
   tutorialTargetSelector,
   isDungeonSubLocked,
+  tutorialCoachDetailUid,
+  LATE_TUTORIAL_STEPS,
+  isPartySubLocked,
 } from "./tutorial.js";
 
 function assertNavKeepsTab(state, step, tab, panelSub = {}) {
@@ -272,6 +290,39 @@ assert(Object.keys(SPECIES).length >= 40, "40+ species");
 assert(bestiaryTotal() === 2640, "bestiary 48×5×11");
 assert(Object.keys(PERSONALITIES).length === 20, "20 personalities");
 assert(ranchCapForStage(0) === 6 && ranchCapForStage(5) === 21, "ranch cap 6+stage*3");
+assert(ITEMS.ranch_fence?.name === "欄柵" && ITEMS.hatch_nest_token?.name === "暖巢箋", "bag items defined");
+assert(ITEM_IDS.length === 2, "two bag consumables");
+assert(HATCH_SLOT_BASE === 3 && HATCH_SLOT_BONUS_MAX === 3, "hatch slot base+bonus");
+assert(RANCH_CAP_BONUS_MAX === 12, "ranch fence bonus max");
+{
+  const bagSt = {
+    realm: 0,
+    items: { ...emptyItems(), ranch_fence: 2, hatch_nest_token: 2 },
+    itemBonus: emptyItemBonus(),
+    log: [],
+  };
+  assert(ranchCap(bagSt) === 6, "ranch cap no bonus");
+  assert(hatchSlotCap(bagSt) === HATCH_SLOT_BASE, "hatch slots base 3");
+  const f1 = useBagItem(bagSt, "ranch_fence");
+  assert(f1.ok && ranchCap(bagSt) === 7 && bagSt.items.ranch_fence === 1, "fence +1 ranch cap");
+  assert(bagSt.itemBonus.ranchCap === 1, "fence bonus tracked");
+  const n1 = useBagItem(bagSt, "hatch_nest_token");
+  assert(n1.ok && hatchSlotCap(bagSt) === 4 && bagSt.items.hatch_nest_token === 1, "nest +1 hatch slot");
+  bagSt.itemBonus.hatchSlots = HATCH_SLOT_BONUS_MAX;
+  bagSt.items.hatch_nest_token = 1;
+  assert(!useBagItem(bagSt, "hatch_nest_token").ok, "nest blocked at max bonus");
+  assert(hatchSlotCap(bagSt) === HATCH_SLOT_BASE + HATCH_SLOT_BONUS_MAX, "hatch cap 6 at max");
+  bagSt.itemBonus.ranchCap = RANCH_CAP_BONUS_MAX;
+  bagSt.items.ranch_fence = 1;
+  assert(!useBagItem(bagSt, "ranch_fence").ok, "fence blocked at max bonus");
+  assert(ranchCap(bagSt) === ranchCapForStage(0) + RANCH_CAP_BONUS_MAX, "ranch cap at max bonus");
+  const view = itemsView({
+    realm: 0,
+    items: { ...emptyItems(), ranch_fence: 1 },
+    itemBonus: { ranchCap: 0, hatchSlots: 0 },
+  });
+  assert(view.find((i) => i.id === "ranch_fence")?.canUse, "itemsView canUse fence");
+}
 assert(RANCH_IDLE_GLOBAL_MULT === 0.35, "idle global mult");
 assert(DISPATCH_GEN_REWARD_MULT[3] === 1.25, "gen3 dispatch mult");
 assert(IDLE_BY_PERSONALITY.diligent?.feed > IDLE_BY_PERSONALITY.fierce?.feed, "work>fight feed");
@@ -959,6 +1010,57 @@ const hatched = claimHatch(hatchSt, egg0.uid);
 assert(hatched.ok && hatchSt.ranch.length === 1 && hatchSt.eggs.length === 0, "claim hatch starter");
 assert(hatchSt.tutorial.step === "meet_pet" || hatchSt.tutorial.flags.starterHatched, "hatch advances");
 
+/* Pack B: hatch slot cap + claim-all */
+{
+  const now = Date.now();
+  const slotSt = {
+    realm: 0,
+    pets: [],
+    ranch: [],
+    eggs: [],
+    materials: {},
+    items: emptyItems(),
+    itemBonus: { ranchCap: 0, hatchSlots: 0 },
+    bestiary: {},
+    stats: {},
+    log: [],
+    tutorial: { done: true, step: "complete", flags: {} },
+  };
+  assert(hatchSlotCap(slotSt) === HATCH_SLOT_BASE, "pack B hatch cap base");
+  for (let i = 0; i < HATCH_SLOT_BASE; i++) {
+    const e = makeEgg("C", "shop", now);
+    e.uid = `slot-egg-${i}`;
+    slotSt.eggs.push(e);
+    assert(startHatch(slotSt, e.uid, now).ok, `start hatch slot ${i + 1}`);
+  }
+  assert(activeHatchCount(slotSt) === HATCH_SLOT_BASE, "3 concurrent hatches");
+  const overflow = makeEgg("C", "shop", now);
+  overflow.uid = "slot-egg-overflow";
+  slotSt.eggs.push(overflow);
+  const blocked = startHatch(slotSt, overflow.uid, now);
+  assert(!blocked.ok && String(blocked.msg).includes("孵化欄已滿"), "slot cap gates startHatch");
+  const hv = hatchSlotsView(slotSt, now);
+  assert(hv.cap === 3 && hv.used === 3 && hv.slots.length === 3, "hatchSlotsView fills 3");
+  assert(hv.slots.every((s) => !s.empty && s.hatching), "slots occupied hatching");
+
+  slotSt.itemBonus.hatchSlots = 1;
+  assert(hatchSlotCap(slotSt) === 4, "bonus opens 4th slot");
+  assert(startHatch(slotSt, overflow.uid, now).ok, "4th slot starts after nest bonus");
+  const hv4 = hatchSlotsView(slotSt, now);
+  assert(hv4.cap === 4 && hv4.slots.length === 4 && hv4.used === 4, "4-slot view");
+
+  /* claim one + claim-all */
+  for (const e of slotSt.eggs) {
+    if (e.startedAt != null) e.readyAt = now - 1000;
+  }
+  const oneUid = slotSt.eggs.find((e) => e.startedAt != null).uid;
+  const oneClaim = claimHatch(slotSt, oneUid);
+  assert(oneClaim.ok && oneClaim.pet && slotSt.ranch.length === 1, "claim one ready hatch");
+  const allRes = claimAllReadyHatches(slotSt, now);
+  assert(allRes.ok && allRes.pets.length === 3 && slotSt.eggs.every((e) => e.startedAt == null), "claimAllReadyHatches");
+  assert(slotSt.ranch.length === 4, "all claimed pets in ranch");
+}
+
 const hatchLockSt = { tutorial: { done: false, step: "hatch_starter", flags: {} } };
 assert(!isTabLocked(hatchLockSt, "cultivate"), "hatch_starter unlocks cultivate tab");
 assert(!isCultivateSubLocked(hatchLockSt, "train"), "hatch_starter unlocks train");
@@ -1035,6 +1137,12 @@ assert(tutorialBannerHint(qiBannerSt).includes("35s"), "qi banner shows idle cou
 assert(tutorialNeedsRanchSub("train_pet"), "train_pet needs ranch");
 assert(tutorialTargetSelector({ type: "upgrade" }).includes("data-upgrade-feed"), "upgrade selector");
 assert(tutorialTargetSelector({ type: "start-fuse" }) === "[data-start-fuse]:not([disabled])", "fuse selector");
+assert(
+  tutorialTargetSelector({ type: "pet-detail", uid: "p1" }) === 'button.info[data-pet-detail="p1"]',
+  "pet-detail selector is info btn only"
+);
+assert(tutorialNeedsRanchSub("fuse_intro"), "fuse_intro needs ranch");
+assert(LATE_TUTORIAL_STEPS.includes("fuse_once"), "late includes fuse_once");
 
 const eggReadySt = {
   eggs: [{ uid: "e1", startedAt: Date.now() - 30_000, readyAt: Date.now() - 1000, tier: "C", name: "潮霧蛋" }],
@@ -1044,7 +1152,11 @@ assert(tutorialEggReady(eggReadySt), "egg ready detect");
 const eggReadyHi = tutorialHighlights(eggReadySt, { tab: "cultivate", panelSub: { cultivate: "train" } });
 assert(eggReadyHi.some((h) => h.type === "tab" && h.id === "party"), "egg ready highlights party from cultivate");
 const eggReadyNav = syncTutorialNavigation(eggReadySt, { tab: "cultivate", panelSub: { cultivate: "train" } });
-assert(eggReadyNav.tab === "party" && eggReadyNav.panelSub.party === "ranch", "egg ready nav to ranch");
+assert(eggReadyNav.tab === "party" && eggReadyNav.panelSub.party === "hatch", "egg ready nav to hatch");
+assert(tutorialNeedsHatchSub("hatch_starter") && tutorialNeedsHatchSub("hatch_second"), "hatch steps need hatch sub");
+assert(!tutorialNeedsRanchSub("hatch_starter"), "hatch_starter no longer forces ranch");
+assert(!isPartySubLocked(hatchLockSt, "hatch"), "hatch_starter unlocks hatch sub");
+assert(isPartySubLocked(hatchLockSt, "ranch"), "hatch_starter locks ranch sub");
 
 const trainDetailHi = tutorialHighlights(
   { ...trainNavSt, ranch: [makeStarterPet()] },
@@ -1210,6 +1322,20 @@ assert(tutorialActive(skipSt), "skip pre active");
 const skipR = skipTutorial(skipSt);
 assert(skipR.ok && !tutorialActive(skipSt), "skip tutorial unlocks");
 assert(skipSt.tutorial.done && skipSt.tutorial.step === "complete", "skip marks complete");
+assert(skipSt.tutorial.flags.skipped && skipSt.tutorial.lateCompleted, "skip sets skipped+lateCompleted");
+
+for (const step of ["train_pet", "dungeon_win", "fuse_intro", "fuse_once"]) {
+  const mid = {
+    realm: 2,
+    clearedDungeons: { tide_3: true },
+    stats: { fusions: 0 },
+    tutorial: { done: false, step, flags: {}, latePending: true, lateCompleted: false },
+  };
+  const r = skipTutorial(mid);
+  assert(r.ok && !tutorialActive(mid), `skip works at ${step}`);
+  const restart = maybeStartLateTutorial(mid);
+  assert(!restart.started, `skip stays skipped after late check (${step})`);
+}
 
 const meetHi = tutorialHighlights(
   {
@@ -1220,7 +1346,7 @@ const meetHi = tutorialHighlights(
   },
   { tab: "party", panelSub: { party: "ranch" } }
 );
-assert(meetHi.some((h) => h.type === "pet-detail"), "meet_pet highlights detail");
+assert(meetHi.some((h) => h.type === "pet-detail" && h.uid), "meet_pet highlights one coach detail");
 
 const ga = genAwakenBonus(3);
 assert(ga?.skillLevel === 2 && ga.atk > 0, "gen3 awaken");
@@ -1435,6 +1561,53 @@ const lateNav = syncTutorialNavigation(lateTac, {
 assert(lateNav.panelSub.dungeon === "setup", "late tactics forces setup");
 lateTac.tutorial.flags.tacticsVisited = true;
 assert(advanceTutorialIfReady(lateTac).advanced && lateTac.tutorial.done, "tactics visit completes late tutorial");
+
+/* Pack D: fuse_intro completes on fuse page; fuse_once needs a fusion; no glow on fuse_once */
+const fusePetA = { ...makeStarterPet(), uid: "fuse-a", speciesId: "reefox", fusionLevel: 0, level: 8 };
+const fusePetB = { ...makeStarterPet(), uid: "fuse-b", speciesId: "reefox", fusionLevel: 0, level: 5 };
+const fuseIntroSt = {
+  realm: 2,
+  clearedDungeons: { tide_3: true },
+  stats: { fusions: 0 },
+  pets: [fusePetA],
+  ranch: [fusePetB],
+  materials: { fuse_sand: 2 },
+  stones: 999,
+  tutorial: {
+    done: false,
+    step: "fuse_intro",
+    flags: {},
+    latePending: true,
+    lateCompleted: false,
+  },
+};
+normalizeTutorial(fuseIntroSt);
+const fuseListHi = tutorialHighlights(fuseIntroSt, {
+  tab: "party",
+  panelSub: { party: "ranch" },
+});
+assert(fuseListHi.length === 1 && fuseListHi[0].type === "pet-detail", "fuse_intro one pet-detail target");
+assert(fuseListHi[0].uid === tutorialCoachDetailUid(fuseIntroSt), "fuse_intro coach uid");
+const fuseDetailHi = tutorialHighlights(fuseIntroSt, {
+  tab: "party",
+  panelSub: { party: "ranch" },
+  petDetail: true,
+});
+assert(fuseDetailHi.some((h) => h.type === "start-fuse"), "fuse_intro highlights start-fuse on detail");
+assert(!fuseDetailHi.some((h) => h.type === "pet-detail"), "fuse_intro detail step no lineage/name glow");
+fuseIntroSt.tutorial.flags.fusePageVisited = true;
+const fuseAdv = advanceTutorialIfReady(fuseIntroSt);
+assert(fuseAdv.advanced && fuseIntroSt.tutorial.step === "fuse_once", "fuse page completes fuse_intro");
+assert(!isTabLocked(fuseIntroSt, "dungeon"), "fuse_once does not lock dungeon");
+assert(!isPartySubLocked(fuseIntroSt, "dispatch"), "fuse_once does not lock dispatch");
+const fuseOnceHi = tutorialHighlights(fuseIntroSt, {
+  tab: "party",
+  panelSub: { party: "ranch" },
+  petDetail: true,
+});
+assert(fuseOnceHi.length === 0, "fuse_once has no highlights");
+fuseIntroSt.tutorial.flags.fuseDone = true;
+assert(advanceTutorialIfReady(fuseIntroSt).advanced && fuseIntroSt.tutorial.done, "fuse_once completes on fusion");
 
 const dayKey = todayKey();
 const dailyAllSt = {
@@ -2109,11 +2282,35 @@ assert(uiSrc2.includes("persistTrainIdleCombatState"), "ui persists idle combat 
 assert(uiSrc2.includes("restoreTrainIdleCombatState"), "ui restores idle combat session");
 assert(uiSrc2.includes("claim-offline"), "ui offline collect button");
 assert(uiSrc2.includes("claimOfflineBank"), "ui claims offline bank");
+assert(uiSrc2.includes("offline-home-slot"), "ui fixed offline home slot");
+assert(uiSrc2.includes("open-offline-claim"), "ui opens offline claim modal");
+assert(uiSrc2.includes("close-offline-claim"), "ui can close offline claim without taking");
+assert(uiSrc2.includes("自動收集"), "ui offline auto-collect copy");
+assert(uiSrc2.includes("offline-claim-overlay"), "ui offline claim half-modal");
+assert(!uiSrc2.includes("offline-toast"), "ui no floating offline toast");
+assert(!uiSrc2.includes("clear-offline"), "ui no dismiss-offline toast act");
 assert(uiSrc2.includes("visibilitychange"), "ui catch-up on tab visible");
 assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
 assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
-assert(uiSrc2.includes('id: "mats"'), "ui materials sub-tab");
+assert(uiSrc2.includes('id: "bag"'), "ui bag sub-tab");
+assert(uiSrc2.includes("data-bag-inner"), "ui bag inner mats/items tabs");
+assert(uiSrc2.includes("data-use-item"), "ui use bag item");
+assert(uiSrc2.includes("背包"), "ui bag label");
+assert(uiSrc2.includes("hatchSlotCap"), "ui exposes hatch slot cap");
+assert(uiSrc2.includes('id: "hatch"'), "ui hatch party sub-tab");
+assert(uiSrc2.includes("data-hatch-panel"), "ui hatch panel marker");
+assert(uiSrc2.includes("data-claim-all-hatch"), "ui claim-all hatch");
+assert(uiSrc2.includes("claimAllReadyHatches"), "ui uses claimAllReadyHatches");
+assert(uiSrc2.includes("hatch-claim-overlay"), "ui hatch claim half-modal");
+assert(uiSrc2.includes("去孵化"), "ui ranch link to hatch");
+assert(uiSrc2.includes("data-hatch-filter"), "ui hatch egg filters");
+assert(uiSrc2.includes("hatchSlotsView"), "ui hatch slots view");
+assert(!uiSrc2.includes("<h3>寵物蛋</h3>"), "ui ranch no longer hosts full egg list");
+assert(!uiSrc2.includes('id: "mats"'), "ui materials tab renamed to bag");
+const dataSrcBag = readFileSync(join(__dir, "data.js"), "utf8");
+assert(dataSrcBag.includes("欄柵") && dataSrcBag.includes("暖巢箋"), "data bag item copy");
+assert(dataSrcBag.includes("ranch_fence") && dataSrcBag.includes("hatch_nest_token"), "data bag item ids");
 assert(!uiSrc2.includes("br.items.slice(0, 6)"), "ui breakthrough checklist shows all gates");
 assert(!uiSrc2.includes("gateCompact"), "ui no truncated gateCompact list");
 assert(uiSrc2.includes("breakthrough-gates"), "ui breakthrough gates list class");
@@ -2121,6 +2318,11 @@ assert(uiSrc2.includes("未齊·"), "ui break button hints first unmet");
 assert(uiSrc2.includes("breakthrough-miss-note"), "ui shows remaining gate count");
 const cssSrc = readFileSync(join(__dir, "../css/style.css"), "utf8");
 assert(cssSrc.includes("cond-list.is-compact"), "css compact breakthrough checklist");
+assert(cssSrc.includes("offline-home-slot"), "css offline home slot");
+assert(cssSrc.includes("offline-claim-card"), "css offline claim modal card");
+assert(cssSrc.includes("hatch-slots"), "css hatch slots grid");
+assert(cssSrc.includes("hatch-claim-card"), "css hatch claim modal card");
+assert(!cssSrc.includes("offline-toast"), "css no floating offline toast");
 assert(cssSrc.includes("combat-formation-side"), "css formation side grid");
 assert(cssSrc.includes("is-empty-slot"), "css empty formation slots");
 assert(cssSrc.includes('data-lane="front"'), "css front lane columns");
