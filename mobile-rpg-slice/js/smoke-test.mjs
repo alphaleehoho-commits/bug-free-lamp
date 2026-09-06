@@ -2153,6 +2153,13 @@ assert(uiSrc2.includes("persistTrainIdleCombatState"), "ui persists idle combat 
 assert(uiSrc2.includes("restoreTrainIdleCombatState"), "ui restores idle combat session");
 assert(uiSrc2.includes("claim-offline"), "ui offline collect button");
 assert(uiSrc2.includes("claimOfflineBank"), "ui claims offline bank");
+assert(uiSrc2.includes("offline-home-slot"), "ui fixed offline home slot");
+assert(uiSrc2.includes("open-offline-claim"), "ui opens offline claim modal");
+assert(uiSrc2.includes("close-offline-claim"), "ui can close offline claim without taking");
+assert(uiSrc2.includes("自動收集"), "ui offline auto-collect copy");
+assert(uiSrc2.includes("offline-claim-overlay"), "ui offline claim half-modal");
+assert(!uiSrc2.includes("offline-toast"), "ui no floating offline toast");
+assert(!uiSrc2.includes("clear-offline"), "ui no dismiss-offline toast act");
 assert(uiSrc2.includes("visibilitychange"), "ui catch-up on tab visible");
 assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");

@@ -46,7 +46,6 @@ import {
   hatchSlotCap,
   partySynergy,
   renamePet,
-  clearOfflineHint,
   claimOfflineBank,
   offlineBankView,
   persistTrainIdleCombatState,
@@ -236,6 +235,8 @@ let tutorialCollapsed = false;
 let matSectionOpen = false;
 let trainRatesOpen = false;
 let statsSheetOpen = false;
+/** 離線收益預覽半屏（收集確認） */
+let offlineClaimOpen = false;
 /** 背包內頁：材料 | 道具 */
 let bagInner = "mats";
 /** @type {"power" | "gen" | "rarity" | "element" | "status"} */
@@ -1787,6 +1788,7 @@ function render() {
     ${inTutorial ? tutorialStatsStrip() : statsStripHtml(stage)}
 
     ${nextGoalChipHtml()}
+    ${tab === "cultivate" ? offlineHomeSlotHtml() : ""}
 
     ${inTutorial ? tutorialBannerHtml(state, { collapsed: tutorialCollapsed }) : ""}
 
@@ -1813,8 +1815,8 @@ function render() {
     ${attackPreview ? attackPreviewModalHtml() : ""}
     ${condSheetOpen ? dungeonCondSheetHtml() : ""}
     ${statsSheetOpen ? statsSheetHtml() : ""}
+    ${offlineClaimOpen ? offlineClaimModalHtml() : ""}
     ${dailyHubHtml()}
-    ${offlineBanner()}
     ${inTutorial ? "" : installBanner()}
   `;
 
@@ -2003,37 +2005,82 @@ function installBanner() {
     </div>`;
 }
 
-let offlineDismissedAtSec = -1;
-
-function offlineBanner() {
+function offlinePendingView() {
   const bank = offlineBankView(state);
-  const h = bank.hasPending ? bank : state.offlineHint;
-  if (!bank.hasPending && !h) return "";
-  const pending = bank.hasPending ? bank : h;
-  if (bank.hasPending && offlineDismissedAtSec === (bank.sec | 0)) return "";
+  if (bank.hasPending) return bank;
+  const h = state.offlineHint;
+  if (!h) return null;
   if (
-    !(pending.qi | 0) &&
-    !(pending.feed | 0) &&
-    !(pending.dust | 0) &&
-    !formatMatBits(pending.materials) &&
-    !(pending.sec | 0)
+    !(h.qi | 0) &&
+    !(h.feed | 0) &&
+    !(h.dust | 0) &&
+    !formatMatBits(h.materials) &&
+    !(h.sec | 0)
   ) {
-    return "";
+    return null;
   }
+  return h;
+}
+
+/** 修行主頁固定欄：自動收集（離線約 Xm）[收集] —— 唔再用浮動 toast */
+function offlineHomeSlotHtml() {
+  const pending = offlinePendingView();
+  if (!pending) return "";
   const min = Math.max(1, Math.round((pending.sec || 0) / 60));
-  const matLine = formatMatBits(pending.materials);
-  const detail = `靈契 +${fmtInt(pending.qi)} · 飼料 +${fmtMatQty(pending.feed)} · 靈塵 +${fmtMatQty(pending.dust)}${
-    matLine ? ` · ${matLine}` : ""
-  }${pending.siteName ? `（${pending.siteName}）` : ""}${pending.capped ? " · 已達累積上限" : ""}`;
+  const capped = pending.capped ? " · 已達上限" : "";
   return `
-    <div class="chrome-toast offline-toast" data-live="offline">
-      <div class="offline-body">
-        <strong>待領離線約 ${min} 分鐘</strong>
-        <p class="offline-detail">${escapeHtml(detail)}</p>
-      </div>
-      <div class="row offline-acts">
-        <button type="button" class="primary" data-act="claim-offline">領取</button>
-        <button type="button" class="ghost" data-act="clear-offline">稍後</button>
+    <div class="offline-home-slot" data-live="offline-home">
+      <p class="offline-home-label">自動收集（離線約 ${min}m）${escapeHtml(capped)}</p>
+      <button type="button" class="primary" data-act="open-offline-claim">收集</button>
+    </div>`;
+}
+
+function offlineGainRowsHtml(pending) {
+  const rows = [];
+  if ((pending.qi | 0) > 0) {
+    rows.push(`<li class="card-row offline-gain-row"><div><strong>靈契</strong></div><span>+${fmtInt(pending.qi)}</span></li>`);
+  }
+  if ((pending.feed | 0) > 0) {
+    rows.push(`<li class="card-row offline-gain-row"><div><strong>飼料</strong></div><span>+${fmtMatQty(pending.feed)}</span></li>`);
+  }
+  if ((pending.dust | 0) > 0) {
+    rows.push(`<li class="card-row offline-gain-row"><div><strong>靈塵</strong></div><span>+${fmtMatQty(pending.dust)}</span></li>`);
+  }
+  for (const [id, n] of Object.entries(pending.materials || {})) {
+    if ((n | 0) <= 0) continue;
+    const name = MATERIALS[id]?.name || id;
+    rows.push(
+      `<li class="card-row offline-gain-row"><div><strong>${escapeHtml(name)}</strong></div><span>+${fmtMatQty(n)}</span></li>`
+    );
+  }
+  if (!rows.length) {
+    return `<li class="empty">暫無明細收益。</li>`;
+  }
+  return rows.join("");
+}
+
+function offlineClaimModalHtml() {
+  const pending = offlinePendingView();
+  if (!pending) return "";
+  const min = Math.max(1, Math.round((pending.sec || 0) / 60));
+  const site = pending.siteName ? ` · ${escapeHtml(pending.siteName)}` : "";
+  const capNote = pending.capped
+    ? `<p class="meta muted">已達離線累積上限，請先收集。</p>`
+    : "";
+  return `
+    <div class="combat-modal-overlay offline-claim-overlay" data-live="offline-claim" role="dialog" aria-label="離線收益">
+      <div class="combat-modal-card offline-claim-card">
+        <div class="combat-modal-scroll">
+          <h2>自動收集 · 離線收益</h2>
+          <p class="lead">離線約 ${min} 分鐘${site}</p>
+          ${capNote}
+          <h3>待領物資</h3>
+          <ul class="list offline-gain-list">${offlineGainRowsHtml(pending)}</ul>
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" class="primary" data-act="claim-offline">收集</button>
+          <button type="button" class="ghost" data-act="close-offline-claim">返回</button>
+        </div>
       </div>
     </div>`;
 }
@@ -4284,14 +4331,19 @@ function bind() {
         saveState(state);
         render();
         setFlash(r.msg);
-      } else if (act === "clear-offline") {
-        offlineDismissedAtSec = offlineBankView(state).sec | 0;
-        clearOfflineHint(state);
-        saveState(state);
+      } else if (act === "open-offline-claim") {
+        if (!offlinePendingView()) {
+          setFlash("沒有可收集的離線收益。");
+          return;
+        }
+        offlineClaimOpen = true;
+        render();
+      } else if (act === "close-offline-claim") {
+        offlineClaimOpen = false;
         render();
       } else if (act === "claim-offline") {
-        offlineDismissedAtSec = -1;
         const r = claimOfflineBank(state);
+        offlineClaimOpen = false;
         saveState(state);
         render();
         setFlash(r.msg, r.ok ? "unlock" : "");
