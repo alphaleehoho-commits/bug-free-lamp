@@ -201,6 +201,9 @@ import {
   ABYSS_ENTRY_TOKEN_COST,
   ABYSS_WIPE_KEEP_RATE,
   ABYSS_MUTATION_EVERY,
+  ABYSS_MAX_ACTIVE_MUTATIONS,
+  ABYSS_RULES_TEXT,
+  APP_BUILD,
   ABYSS_SQUAD_SIZE,
   ABYSS_ACTIVE_SIZE,
   ABYSS_EVENT_EVERY,
@@ -768,6 +771,56 @@ export function loadState() {
 export function saveState(state) {
   localStorage.setItem(SAVE_KEY, JSON.stringify({ ...state, lastTick: Date.now() }));
 }
+
+/** 匯出存檔 JSON（可複製／下載；含建置號） */
+export function exportSaveJson(state = loadState()) {
+  const payload = {
+    app: "void-tide",
+    build: APP_BUILD,
+    exportedAt: Date.now(),
+    saveKey: SAVE_KEY,
+    state: { ...state, lastTick: Date.now() },
+  };
+  return JSON.stringify(payload);
+}
+
+/**
+ * 匯入存檔 JSON。成功會寫入 localStorage 並回傳新 state。
+ * @returns {{ ok: boolean, msg: string, state?: object }}
+ */
+export function importSaveJson(raw) {
+  try {
+    const text = String(raw || "").trim();
+    if (!text) return { ok: false, msg: "空白存檔。" };
+    const parsed = JSON.parse(text);
+    const st = parsed?.state || parsed;
+    if (!st || typeof st !== "object" || !Array.isArray(st.pets)) {
+      return { ok: false, msg: "存檔格式唔正確（缺少 pets）。" };
+    }
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ ...st, lastTick: Date.now() }));
+    const state = loadState();
+    pushLog(state, `已匯入存檔（建置 ${parsed.build || "未知"}）。`);
+    saveState(state);
+    return { ok: true, msg: "匯入成功。", state };
+  } catch (err) {
+    return { ok: false, msg: `匯入失敗：${err?.message || "JSON 無效"}` };
+  }
+}
+
+/** 更新公告（建置變更時提示硬刷新） */
+export function updateNoticeView() {
+  return {
+    build: APP_BUILD,
+    title: "更新公告",
+    body: [
+      "軟啟動信任修復：商肆分頁、融合確認、潮淵剪影。",
+      "精魂商店改為實用兌換；突破圖鑑改階段目標。",
+      "潮淵突變設上限並可讀規則；秘境 5 層+有獨特規則／掉落。",
+      "見聞錄可匯出／匯入存檔。若畫面異常請硬刷新（清 SW 快取）。",
+    ].join(" "),
+  };
+}
+
 
 export function realmInfo(state) {
   return stageAt(state.realm);
@@ -2433,7 +2486,8 @@ export function achievementsView(state) {
 
 export function dailyView(state) {
   ensureDaily(state);
-  return DAILY_QUESTS.map((q) => {
+  const fuseOn = isFusionUnlocked(state);
+  return DAILY_QUESTS.filter((q) => q.id !== "fuse" || fuseOn).map((q) => {
     const prog = state.daily.progress[q.id] || 0;
     return {
       ...q,
@@ -6543,14 +6597,19 @@ function abyssSquadRosterView(state, run) {
 function previewAbyssNextFloor(clearedDepth, mutationIds, insuranceCharges) {
   const depth = (clearedDepth | 0) + 1;
   const mutationFloor = depth % ABYSS_MUTATION_EVERY === 0;
+  const active = Array.isArray(mutationIds) ? mutationIds.length : 0;
+  const atMutationCap = active >= ABYSS_MAX_ACTIVE_MUTATIONS;
   const wouldRoll = mutationFloor;
   const insuranceSkips = wouldRoll && (insuranceCharges | 0) > 0;
+  // 達上限仍會 roll，但會頂替最舊一條
   return {
     depth,
     mutationFloor,
     willAddMutation: wouldRoll && !insuranceSkips,
     insuranceSkips,
-    atMutationCap: false,
+    atMutationCap,
+    activeMutations: active,
+    maxActiveMutations: ABYSS_MAX_ACTIVE_MUTATIONS,
   };
 }
 function runAbyssFloorCombat(state, { depth, seed, mutationIds, run }) {
@@ -6830,7 +6889,16 @@ export function advanceAbyssDive(state, now = Date.now()) {
       pushLog(state, "突變保險發動——本層略過新突變。");
     } else {
       const mid = pickAbyssMutationId(`${ad.run.seed}:mut${nextDepth}`, ad.run.mutationIds || []);
-      ad.run.mutationIds = [...(ad.run.mutationIds || []), mid];
+      let next = [...(ad.run.mutationIds || []), mid];
+      if (next.length > ABYSS_MAX_ACTIVE_MUTATIONS) {
+        const dropped = next.slice(0, next.length - ABYSS_MAX_ACTIVE_MUTATIONS);
+        next = next.slice(next.length - ABYSS_MAX_ACTIVE_MUTATIONS);
+        pushLog(
+          state,
+          `突變已達上限 ${ABYSS_MAX_ACTIVE_MUTATIONS}：新突變頂替最舊（移除 ${dropped.length} 條）。`
+        );
+      }
+      ad.run.mutationIds = next;
     }
   }
   const combat = runAbyssFloorCombat(state, {

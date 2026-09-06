@@ -1,5 +1,8 @@
 /** Data tables — 靈寵修行 */
 
+/** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
+export const APP_BUILD = "20260906.1";
+
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
   { id: 1, name: "通靈初期", need: 55, rate: 1.35 },
@@ -67,7 +70,7 @@ export const BREAKTHROUGH_GATES = {
       { type: "cleared", dungeonId: "tide_3", label: "通關【心核】" },
       { type: "hybrid_owned", need: 1, label: "擁有雜交種 ≥ 1" },
       { type: "fusions", need: 1, label: "完成融合 ≥ 1" },
-      { type: "bestiary", need: 40, label: "圖鑑登錄 ≥ 40 格" },
+      { type: "bestiary", need: 18, label: "圖鑑登錄 ≥ 18 格（階段目標）" },
       { type: "min_gen", gen: 1, label: "擁有 ≥ 1 代寵" },
     ],
   },
@@ -78,7 +81,7 @@ export const BREAKTHROUGH_GATES = {
       { type: "min_gen", gen: 2, label: "擁有 ≥ 2 代寵" },
       { type: "breeds", need: 5, label: "繁殖次數 ≥ 5" },
       { type: "hybrid_owned", need: 2, label: "擁有雜交種 ≥ 2" },
-      { type: "bestiary", need: 100, label: "圖鑑登錄 ≥ 100 格" },
+      { type: "bestiary", need: 36, label: "圖鑑登錄 ≥ 36 格（階段目標）" },
       { type: "bloodmark_owned", need: 1, label: "擁有帶血脈紋靈寵 ≥ 1" },
     ],
   },
@@ -116,8 +119,8 @@ export function breakthroughGateFor(targetRealmId) {
       },
       {
         type: "bestiary",
-        need: 80 + extra * 40,
-        label: `圖鑑登錄 ≥ ${80 + extra * 40} 格`,
+        need: 30 + extra * 12,
+        label: `圖鑑登錄 ≥ ${30 + extra * 12} 格（階段目標）`,
       },
       {
         type: "breeds",
@@ -2620,7 +2623,10 @@ export function dungeonDisplayName(tier) {
   if (tier === 2) return "潮汐廢墟 · 二層";
   if (tier === 3) return "潮汐廢墟 · 心核";
   if (tier === 4) return "潮汐廢墟 · 深層";
-  return `潮汐廢墟 · ${tier}層`;
+  if (tier === 5) return "潮汐廢墟 · 裂潮廊";
+  if (tier === 6) return "潮汐廢墟 · 沉淵殿";
+  if (tier === 7) return "潮汐廢墟 · 古潮墓";
+  return `潮汐廢墟 · 深淵${tier}層`;
 }
 
 function cloneDungeon(d) {
@@ -2660,6 +2666,88 @@ export function scaleDungeonForTier(base, tier) {
   for (const c of d.conditions || []) {
     if (c.bonus) c.bonus = scaleReward(c.bonus, rewardMult);
   }
+  const themes = {
+    5: {
+      loreTag: "裂潮",
+      passive: {
+        id: "rift_flame",
+        type: "elem_atk",
+        element: "flame",
+        mult: 1.1,
+        label: "關卡：裂潮焰印 · 焰屬友方攻擊 +10%",
+      },
+      condition: {
+        id: "tide_5_elem",
+        type: "min_element",
+        element: "tide",
+        count: 1,
+        label: "條件：出戰含潮屬",
+        bonus: { stones: 55, scrap: 2 },
+      },
+      matBias: { mist_token: 2, temper_oil: 3, blood_catalyst: 2 },
+    },
+    6: {
+      loreTag: "沉淵",
+      passive: {
+        id: "abyss_gloom",
+        type: "elem_atk",
+        element: "gloom",
+        mult: 1.1,
+        label: "關卡：沉淵幽印 · 幽屬友方攻擊 +10%",
+      },
+      condition: {
+        id: "tide_6_gen",
+        type: "min_gen",
+        gen: 2,
+        label: "條件：出戰含≥2代寵",
+        bonus: { stones: 70, dust: 12 },
+      },
+      matBias: { breed_ticket: 3, blood_catalyst: 3, temper_oil: 1 },
+    },
+    7: {
+      loreTag: "古潮",
+      passive: {
+        id: "ancient_stone",
+        type: "elem_atk",
+        element: "stone",
+        mult: 1.12,
+        label: "關卡：古潮岩印 · 岩屬友方攻擊 +12%",
+      },
+      condition: {
+        id: "tide_7_hybrid",
+        type: "min_hybrid",
+        count: 1,
+        label: "條件：出戰含雜交種",
+        bonus: { stones: 90, scrap: 3 },
+      },
+      matBias: { seal_ember: 2, breed_ticket: 2, mist_token: 2 },
+    },
+  };
+  const theme = themes[tier] || {
+    loreTag: `深淵${tier}`,
+    passive: {
+      id: `deep_${tier}_gale`,
+      type: "elem_atk",
+      element: "gale",
+      mult: 1.08 + extra * 0.01,
+      label: `關卡：深層風印 · 風屬友方攻擊 +${Math.round((0.08 + extra * 0.01) * 100)}%`,
+    },
+    condition: {
+      id: `tide_${tier}_lean`,
+      type: "max_pets",
+      max: 2,
+      label: "條件：出戰≤2寵",
+      bonus: { stones: 50 + extra * 15, scrap: 1 + Math.floor(extra / 2) },
+    },
+    matBias: { seal_ember: 1 + Math.floor(extra / 2), blood_catalyst: 2, temper_oil: 2 },
+  };
+  d.loreTag = theme.loreTag;
+  d.passives = [...(d.passives || []).filter((p) => p.id !== theme.passive.id), theme.passive];
+  d.conditions = [...(d.conditions || []).filter((c) => c.id !== theme.condition.id), theme.condition];
+  d.matDropOverride = {
+    chance: Math.min(0.62, 0.48 + extra * 0.03),
+    weights: theme.matBias,
+  };
   return d;
 }
 
@@ -3911,7 +3999,15 @@ export const DUNGEON_MAT_DROPS = {
 };
 
 export function rollDungeonMatDrop(dungeonId, opts = {}) {
-  const table = DUNGEON_MAT_DROPS[dungeonId] || DUNGEON_MAT_DROPS.tide_1;
+  let table = DUNGEON_MAT_DROPS[dungeonId];
+  if (!table) {
+    const tier = parseDungeonTier(dungeonId);
+    if (tier >= 5) {
+      const built = buildDungeonForTier(tier);
+      if (built?.matDropOverride) table = built.matDropOverride;
+    }
+  }
+  table = table || DUNGEON_MAT_DROPS.tide_1;
   if (!table) return null;
   let chance = table.chance || 0;
   if (opts.bossCleared) chance = Math.min(0.95, chance + 0.18);
@@ -4256,30 +4352,44 @@ export const MATERIALS = {
 };
 
 /**
- * 精魂商人固定目錄（佔位貨；耗精魂，唔轉靈石）
+ * 精魂商人固定目錄（實用兌換；耗精魂，唔轉靈石）
  * grant: feed／materials／items 可並存
  */
 export const SOUL_SHOP_OFFERS = [
   {
     id: "feed_pouch",
     name: "飼料小包",
-    desc: "常用飼料一小包",
+    desc: "牧場救急 · 放生精魂回補飼料",
     cost: 8,
-    grant: { feed: 25 },
+    grant: { feed: 30 },
   },
   {
     id: "tide_dew_pack",
     name: "潮露小瓶",
-    desc: "常用升級材料",
+    desc: "靈寵升級催化（唔影響靈石經濟）",
     cost: 10,
-    grant: { materials: { tide_dew: 5 } },
+    grant: { materials: { tide_dew: 6 } },
   },
   {
-    id: "coral_shard_pack",
-    name: "珊瑚屑袋",
-    desc: "常用繁殖材料",
-    cost: 12,
-    grant: { materials: { coral_shard: 4 } },
+    id: "temper_oil_pack",
+    name: "淬鍊油壺",
+    desc: "秘境專用強化油 · 育成向",
+    cost: 14,
+    grant: { materials: { temper_oil: 3 } },
+  },
+  {
+    id: "mist_token_pack",
+    name: "潮霧令×2",
+    desc: "已通關秘境掃蕩入場（小量，防刷崩靈石）",
+    cost: 18,
+    grant: { materials: { mist_token: 2 } },
+  },
+  {
+    id: "breed_ticket_pack",
+    name: "催生符",
+    desc: "立即重置繁殖冷卻",
+    cost: 22,
+    grant: { materials: { breed_ticket: 1 } },
   },
   {
     id: "hatch_nest_token",
@@ -4779,8 +4889,17 @@ export const ABYSS_GRIT_ID = "abyss_grit";
 export const ABYSS_ENTRY_TOKEN_COST = 1;
 export const ABYSS_WIPE_KEEP_RATE = 0.4;
 export const ABYSS_MUTATION_EVERY = 3;
-/** @deprecated 突變唔再設活躍上限；保留常數以免舊引用爆 */
-export const ABYSS_MAX_ACTIVE_MUTATIONS = Infinity;
+/** 深潛活躍突變上限（超出時新突變會替換最舊一條） */
+export const ABYSS_MAX_ACTIVE_MUTATIONS = 3;
+
+/** 潮淵規則（UI 一次講清） */
+export const ABYSS_RULES_TEXT = [
+  "獨立編隊 5 寵（3 出戰 + 2 替補）；層間唔回滿血。",
+  `每 ${ABYSS_MUTATION_EVERY} 層疊加 1 條突變；同時最多 ${ABYSS_MAX_ACTIVE_MUTATIONS} 條，新突變會頂掉最舊。`,
+  "突變保險可略過當層新突變（商人物件／淵砂兌換）。",
+  "失敗保底帶走部分待結算淵砂；撤退可提早結算。",
+  "商人事件係 2 揀 1：買潛航增益，或隨機移除 1 條突變。",
+].join("\n");
 /** 深潛獨立編隊：5 寵（3 出戰 + 2 替補） */
 export const ABYSS_SQUAD_SIZE = 5;
 export const ABYSS_ACTIVE_SIZE = 3;

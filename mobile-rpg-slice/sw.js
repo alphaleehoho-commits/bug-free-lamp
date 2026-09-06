@@ -1,4 +1,4 @@
-const CACHE = "void-tide-pets-v94";
+const CACHE = "void-tide-pets-v95";
 const ASSETS = [
   "./",
   "./index.html",
@@ -38,4 +38,8 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(
     caches.match(e.request).then((hit) => hit || fetch(e.request).catch(() => caches.match("./index.html")))
   );
+});
+
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "SKIP_WAITING") self.skipWaiting();
 });

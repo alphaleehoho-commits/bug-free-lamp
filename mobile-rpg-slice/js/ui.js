@@ -154,6 +154,9 @@ import {
   abyssSquadCandidates,
   rearrangeAbyssSquad,
   resolveAbyssEvent,
+  exportSaveJson,
+  importSaveJson,
+  updateNoticeView,
 } from "./engine.js";
 import {
   DUNGEON_SUMMON_MIN,
@@ -169,6 +172,8 @@ import {
   SECOND_SKILL_UNLOCK,
   OFFLINE_CLAIM_MIN_SEC,
   OFFLINE_HINT_SEC,
+  ABYSS_RULES_TEXT,
+  APP_BUILD,
 } from "./data.js";
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
@@ -222,6 +227,8 @@ function formatMatBits(mats) {
     .join("／");
 }
 
+let softLaunchDismissed = sessionStorage.getItem("void-tide-soft-launch-dismiss") === "1";
+let updateNoticeDismissed = localStorage.getItem(`void-tide-update-seen:${APP_BUILD}`) === "1";
 let state = loadState();
 state = tickCultivation(state);
 saveState(state);
@@ -2113,8 +2120,8 @@ function render() {
   app.innerHTML = `
     <header class="top top-compact">
       <div class="brand-row">
-        <p class="brand">暗潮</p>
-        <p class="tag">靈寵修行 · <span data-live="wins">勝 ${state.combatsWon}</span></p>
+        <p class="brand" data-brand="void-tide">暗潮</p>
+        <p class="tag">Void Tide · 靈寵修行 · <span data-live="wins">勝 ${state.combatsWon}</span></p>
       </div>
     </header>
 
@@ -2477,7 +2484,7 @@ function offlineClaimModalHtml() {
     : "";
   const gateNote = canClaim
     ? `<p class="meta">已滿 30 分鐘，可以領取。</p>`
-    : `<p class="meta muted">滿 30 分鐘先可領取（而家 ${fmtOfflineDuration(sec)} · 仲差 ${fmtOfflineDuration(left)}）。</p>`;
+    : `<p class="meta muted">離線滿 30 分鐘先可領取（未滿唔係壞咗）（而家 ${fmtOfflineDuration(sec)} · 仲差 ${fmtOfflineDuration(left)}）。</p>`;
   return `
     <div class="combat-modal-overlay offline-claim-overlay" data-live="offline-claim" role="dialog" aria-label="離線收益">
       <div class="combat-modal-card offline-claim-card">
@@ -4802,6 +4809,41 @@ function dungeonCondSheetHtml() {
 }
 
 
+
+function softLaunchBannerHtml() {
+  if (softLaunchDismissed) return "";
+  return `<div class="sys-banner soft-launch-banner" data-live="soft-launch">
+    <div>
+      <strong>軟啟動測試版</strong>
+      <p class="meta">10–30 人邀請制 · 請回報死掣／卡教學／舊快取。建置 ${escapeHtml(APP_BUILD)}</p>
+    </div>
+    <button type="button" class="ghost" data-act="dismiss-soft-launch">知道了</button>
+  </div>`;
+}
+
+function updateNoticeBannerHtml() {
+  if (updateNoticeDismissed) return "";
+  const n = updateNoticeView();
+  return `<div class="sys-banner update-notice-banner" data-live="update-notice">
+    <div>
+      <strong>${escapeHtml(n.title)} · ${escapeHtml(n.build)}</strong>
+      <p class="meta">${escapeHtml(n.body)}</p>
+      <p class="meta">若見舊版：iOS Safari 用「重新載入唔用快取」／Chrome 硬刷新。</p>
+    </div>
+    <button type="button" class="ghost" data-act="dismiss-update-notice">已更新</button>
+  </div>`;
+}
+
+function swRefreshBannerHtml() {
+  return `<div class="sys-banner sw-refresh-banner" data-live="sw-refresh" hidden>
+    <div>
+      <strong>有新版本</strong>
+      <p class="meta">已下載更新。請硬刷新以載入最新（否則可能仲係舊快取）。</p>
+    </div>
+    <button type="button" class="primary" data-act="hard-refresh">硬刷新</button>
+  </div>`;
+}
+
 function abyssPanelHtml() {
   const v = abyssDiveView(state);
   if (!v.unlocked) {
@@ -4876,6 +4918,10 @@ function abyssPanelHtml() {
   return `<h2>潮淵深潛</h2>
     <p class="lead">無限層 · 突變規則</p>
     <p class="meta">淵砂 <strong>${v.gritHave}</strong> · 最深 ${v.bestDepth} · 本週 ${v.weekBestDepth}</p>
+    <details class="abyss-rules">
+      <summary>潮淵規則（必讀）</summary>
+      <pre class="abyss-rules-body">${escapeHtml(ABYSS_RULES_TEXT)}</pre>
+    </details>
     ${runBlock}`;
 }
 
@@ -5151,6 +5197,15 @@ function logPanel() {
     `<div class="row log-tools">
       <button type="button" class="ghost" data-act="notify-perm">開啟通知</button>
       <button type="button" class="ghost" data-act="reset" ${busy ? "disabled" : ""}>重置存檔</button>
+    </div>
+    <div class="save-tools card-block">
+      <h3>存檔備份</h3>
+      <p class="meta">本機 localStorage · 換機／清瀏覽器前請匯出。建置 ${escapeHtml(APP_BUILD)}</p>
+      <div class="row log-tools">
+        <button type="button" class="secondary" data-act="export-save">匯出存檔</button>
+        <button type="button" class="ghost" data-act="import-save">匯入存檔</button>
+      </div>
+      <textarea class="save-io" data-save-io hidden rows="4" placeholder="貼上匯出嘅 JSON 存檔…"></textarea>
     </div>`
   );
 }
@@ -5552,6 +5607,58 @@ function bind() {
           panelSub = { ...panelSub, [gTab]: gSub };
         }
         render();
+
+      } else if (act === "dismiss-soft-launch") {
+        softLaunchDismissed = true;
+        sessionStorage.setItem("void-tide-soft-launch-dismiss", "1");
+        render();
+      } else if (act === "dismiss-update-notice") {
+        updateNoticeDismissed = true;
+        localStorage.setItem(`void-tide-update-seen:${APP_BUILD}`, "1");
+        render();
+      } else if (act === "hard-refresh") {
+        if (navigator.serviceWorker?.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: "SKIP_WAITING" });
+        }
+        const url = new URL(location.href);
+        url.searchParams.set("v", APP_BUILD);
+        location.href = url.toString();
+      } else if (act === "export-save") {
+        const json = exportSaveJson(state);
+        const ta = document.querySelector("[data-save-io]");
+        if (ta) {
+          ta.hidden = false;
+          ta.value = json;
+          ta.focus();
+          ta.select();
+        }
+        try {
+          const blob = new Blob([json], { type: "application/json" });
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `void-tide-save-${APP_BUILD}.json`;
+          a.click();
+          URL.revokeObjectURL(a.href);
+        } catch (_) {}
+        setFlash("已匯出存檔（可複製文字或下載檔）。");
+      } else if (act === "import-save") {
+        const ta = document.querySelector("[data-save-io]");
+        if (ta && ta.hidden) {
+          ta.hidden = false;
+          ta.focus();
+          setFlash("請貼上匯出嘅 JSON，再撳一次「匯入存檔」。");
+        } else {
+          const raw = ta?.value || "";
+          const r = importSaveJson(raw);
+          if (!r.ok) {
+            setFlash(r.msg);
+          } else {
+            state = r.state;
+            setFlash(r.msg);
+            render();
+          }
+        }
+
       } else if (act === "reset") {
         if (confirm("確定清除存檔？")) {
           stopPlayback();
@@ -6565,5 +6672,25 @@ function checkPushReminders() {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
+  navigator.serviceWorker.register("./sw.js").then((reg) => {
+    const showRefresh = () => {
+      const el = document.querySelector("[data-live=sw-refresh]");
+      if (el) el.hidden = false;
+    };
+    if (reg.waiting) showRefresh();
+    reg.addEventListener("updatefound", () => {
+      const nw = reg.installing;
+      if (!nw) return;
+      nw.addEventListener("statechange", () => {
+        if (nw.state === "installed" && navigator.serviceWorker.controller) showRefresh();
+      });
+    });
+    // 主動檢查更新（熱修後）
+    setInterval(() => reg.update().catch(() => {}), 5 * 60 * 1000);
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    // 新 SW 接管後提醒硬刷新一次
+    const el = document.querySelector("[data-live=sw-refresh]");
+    if (el) el.hidden = false;
+  });
 }
