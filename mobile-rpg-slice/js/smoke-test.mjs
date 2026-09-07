@@ -71,7 +71,10 @@ import {
   fusionAbsorbRate,
   fusionCombatMult,
   fusionMaterialRarityFactor,
+  fusionPowerMultFromParts,
   petFusionCombatMult,
+  healFusionPowerMult,
+  roundStat,
   rarityBreedCdMult,
   eggHatchMsFor,
   RARITY,
@@ -737,8 +740,19 @@ assert(fusionCombatMult(1) === 1.06 && fusionCombatMult(3) === 1.2, "fusion comb
 assert(fusionMaterialRarityFactor(2, [2, 2]) === 1, "fusion rarity ok");
 assert(fusionMaterialRarityFactor(2, [1, 1]) === 0.8, "fusion rarity soft -1");
 assert(fusionMaterialRarityFactor(3, [0, 0]) === 0.55, "fusion rarity soft worse");
+assert(fusionPowerMultFromParts(1, 1) === 1.06, "fusion mult full");
+assert(fusionPowerMultFromParts(1, 0.8) === 1.048, "fusion mult soft -1 bonus only");
+assert(fusionPowerMultFromParts(1, 0.55) === 1.033, "fusion mult soft worse still >=1");
 assert(petFusionCombatMult({ fusionLevel: 2 }) === 1.12, "pet fusion fallback");
-assert(petFusionCombatMult({ fusionLevel: 1, fusionPowerMult: 0.9 }) === 0.9, "pet fusion stored mult");
+assert(petFusionCombatMult({ fusionLevel: 1, fusionPowerMult: 0.9 }) === 1, "pet fusion clamps below 1");
+{
+  const healed = healFusionPowerMult({ fusionLevel: 1, fusionPowerMult: 0.58 });
+  assert(healed.fusionPowerMult === 1.033, "heal old 0.58 soft-bind product");
+  const healed85 = healFusionPowerMult({ fusionLevel: 1, fusionPowerMult: 0.85 });
+  assert(healed85.fusionPowerMult === 1.048, "heal old 0.85 soft-bind product");
+}
+assert(roundStat(63.400000000000006) === 63.4, "roundStat float noise");
+assert(String(roundStat(35.699999999999996)) === "35.7", "roundStat speed noise");
 assert(rarityBreedCdMult({ rarity: 3 }, { rarity: 0 }) === 0.78, "rarity breed cd");
 assert(eggHatchMsFor({ generation: 0 }, EGG_TIERS.C) === EGG_TIERS.C.hatchMs, "egg hatch gen0");
 assert(eggHatchMsFor({ generation: 2 }, EGG_TIERS.C) === Math.round(EGG_TIERS.C.hatchMs * 1.5), "egg hatch gen2");
@@ -3286,7 +3300,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v96"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v97"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

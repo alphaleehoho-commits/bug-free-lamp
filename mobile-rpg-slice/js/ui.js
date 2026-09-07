@@ -175,8 +175,9 @@ import {
   OFFLINE_HINT_SEC,
   ABYSS_RULES_TEXT,
   APP_BUILD,
-  fusionCombatMult,
   fusionMaterialRarityFactor,
+  fusionPowerMultFromParts,
+  roundStat,
 } from "./data.js";
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
@@ -216,6 +217,12 @@ function fmtInt(n) {
 
 function fmtMult(n) {
   return (Number(n) || 1).toFixed(2);
+}
+
+/** 戰力／天生顯示：最多 1 位小數，唔出 IEEE 回響 */
+function fmtStat(n) {
+  const x = roundStat(n, 1);
+  return Number.isInteger(x) ? String(x) : x.toFixed(1);
 }
 
 /** 材料／離線收益顯示（四捨五入到個位） */
@@ -2579,12 +2586,10 @@ function fuseConfirmModalHtml() {
     d.pet.rarity ?? 0,
     matPets.map((p) => p.rarity ?? 0)
   );
-  const nextMult = Number(
-    (fusionCombatMult(d.nextFusionStage) * rarityFactor).toFixed(2)
-  );
+  const nextMult = Number(fusionPowerMultFromParts(d.nextFusionStage, rarityFactor).toFixed(2));
   const rarityHint =
     rarityFactor < 1
-      ? ` · 素材稀有偏低×${rarityFactor}（仍可融）`
+      ? ` · 素材稀有偏低（獎勵×${rarityFactor}，出戰唔低過 ×1）`
       : " · 素材稀有達標";
   return `
     <div class="combat-modal-overlay release-modal-overlay" data-live="fuse-confirm-modal" role="dialog" aria-label="融合確認">
@@ -4083,10 +4088,10 @@ function petDetailStatsHtml(pet, detail, rarity) {
   const elEx = elementExplain(pet.elementId);
   const base = detail.baseline;
   const bonus = detail.innateBonus || { atk: 0, hp: 0, spd: 0 };
-  const bonusLine = (n) => (n > 0 ? ` <span class="muted">（天生＋${n}）</span>` : "");
+  const bonusLine = (n) => (n > 0 ? ` <span class="muted">（天生＋${fmtStat(n)}）</span>` : "");
   return `
     <ul class="skill-list pet-detail-block">
-      <li><strong>戰力</strong> — 攻${pet.atk}${bonusLine(bonus.atk)} · 血${pet.hp}${bonusLine(bonus.hp)} · 速${pet.spd}${bonusLine(bonus.spd)}</li>
+      <li><strong>戰力</strong> — 攻${fmtStat(pet.atk)}${bonusLine(bonus.atk)} · 血${fmtStat(pet.hp)}${bonusLine(bonus.hp)} · 速${fmtStat(pet.spd)}${bonusLine(bonus.spd)}</li>
       ${
         base
           ? `<li><strong>種族基準</strong> — 攻${base.atk} 血${base.hp} 速${base.spd}（未計等級／融階）</li>`
