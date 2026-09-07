@@ -200,7 +200,6 @@ import {
   isPartySubLocked,
   isDungeonSubLocked,
   tutorialLockReason,
-  areTrainSitesLocked,
   skipTutorial,
   tutorialQiReady,
   tutorialGlowClass,
