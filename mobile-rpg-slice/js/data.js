@@ -1,5 +1,8 @@
 /** Data tables — 靈寵修行 */
 
+/** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
+export const APP_BUILD = "20260907.1";
+
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
   { id: 1, name: "通靈初期", need: 55, rate: 1.35 },
@@ -67,7 +70,7 @@ export const BREAKTHROUGH_GATES = {
       { type: "cleared", dungeonId: "tide_3", label: "通關【心核】" },
       { type: "hybrid_owned", need: 1, label: "擁有雜交種 ≥ 1" },
       { type: "fusions", need: 1, label: "完成融合 ≥ 1" },
-      { type: "bestiary", need: 40, label: "圖鑑登錄 ≥ 40 格" },
+      { type: "bestiary", need: 18, label: "圖鑑登錄 ≥ 18 格（階段目標）" },
       { type: "min_gen", gen: 1, label: "擁有 ≥ 1 代寵" },
     ],
   },
@@ -78,7 +81,7 @@ export const BREAKTHROUGH_GATES = {
       { type: "min_gen", gen: 2, label: "擁有 ≥ 2 代寵" },
       { type: "breeds", need: 5, label: "繁殖次數 ≥ 5" },
       { type: "hybrid_owned", need: 2, label: "擁有雜交種 ≥ 2" },
-      { type: "bestiary", need: 100, label: "圖鑑登錄 ≥ 100 格" },
+      { type: "bestiary", need: 36, label: "圖鑑登錄 ≥ 36 格（階段目標）" },
       { type: "bloodmark_owned", need: 1, label: "擁有帶血脈紋靈寵 ≥ 1" },
     ],
   },
@@ -116,8 +119,8 @@ export function breakthroughGateFor(targetRealmId) {
       },
       {
         type: "bestiary",
-        need: 80 + extra * 40,
-        label: `圖鑑登錄 ≥ ${80 + extra * 40} 格`,
+        need: 30 + extra * 12,
+        label: `圖鑑登錄 ≥ ${30 + extra * 12} 格（階段目標）`,
       },
       {
         type: "breeds",
@@ -1490,9 +1493,9 @@ export function clampBreedBatchCount(count) {
  */
 export const RARITY = {
   0: { id: 0, name: "普通", mult: 1, color: "common" },
-  1: { id: 1, name: "稀有", mult: 1.12, color: "rare" },
-  2: { id: 2, name: "史詩", mult: 1.28, color: "epic" },
-  3: { id: 3, name: "傳說", mult: 1.5, color: "legendary" },
+  1: { id: 1, name: "稀有", mult: 1.18, color: "rare" },
+  2: { id: 2, name: "史詩", mult: 1.38, color: "epic" },
+  3: { id: 3, name: "傳說", mult: 1.65, color: "legendary" },
 };
 
 export const RARITY_MAX = 3;
@@ -1748,17 +1751,20 @@ export function rollBreedRarity(parentA, parentB, opts = {}) {
   const floor = Math.min(ra, rb);
   const ceil = Math.max(ra, rb);
   const genBoost = Math.round(((opts.genMult || 1) - 1) * 20);
+  const rarityLine = Math.max(ra, rb);
   let weights = { 0: 0, 1: 0, 2: 0, 3: 0 };
   weights[floor] += 55;
   weights[ceil] += 30;
   const up1 = Math.min(RARITY_MAX, ceil + 1);
-  weights[up1] += (opts.sameSpecies ? 18 : 12) + genBoost;
+  weights[up1] += (opts.sameSpecies ? 18 : 12) + genBoost + rarityLine * 4;
   const up2 = Math.min(RARITY_MAX, ceil + 2);
-  if (up2 > up1) weights[up2] += (opts.sameSpecies ? 6 : 3) + Math.floor(genBoost / 2);
+  if (up2 > up1) weights[up2] += (opts.sameSpecies ? 6 : 3) + Math.floor(genBoost / 2) + rarityLine * 2;
   if (opts.hybrid) {
     weights[Math.min(RARITY_MAX, ceil + 1)] += 8;
   }
   if (ra + rb >= 4) weights[Math.min(RARITY_MAX, ceil + 1)] += 10;
+  if (rarityLine >= 2) weights[ceil] += 12; // 高稀有父母更易保底
+  if (rarityLine >= 3) weights[Math.min(RARITY_MAX, ceil + 1)] += 14;
   const id = Number(pickWeighted(weights) ?? floor);
   return Math.max(0, Math.min(RARITY_MAX, id));
 }
@@ -1786,8 +1792,14 @@ export function rollBreedGenes(parentA, parentB) {
   const sameSpecies = ga.species === gb.species;
   const genA = petGeneration(parentA);
   const genB = petGeneration(parentB);
-  const generation = rollChildGeneration(genA, genB);
+  let generation = rollChildGeneration(genA, genB);
+  const parentMaxR = Math.max(parentA.rarity ?? 0, parentB.rarity ?? 0);
+  // 高稀有父母：略提高出更高代
+  if (parentMaxR >= 2 && generation < GEN_MAX && Math.random() < 0.12 + parentMaxR * 0.04) {
+    generation = Math.min(GEN_MAX, generation + 1);
+  }
   const genMult = genPowerMult(genA, genB);
+  const rarityMutMult = rarityBreedMutationMult(parentA, parentB);
 
   let species = Math.random() < 0.5 ? ga.species : gb.species;
   let element = Math.random() < 0.5 ? ga.element : gb.element;
@@ -1820,7 +1832,7 @@ export function rollBreedGenes(parentA, parentB) {
     }
   }
 
-  const elemRate = Math.min(0.35, BREED_ELEMENT_MUTATION_RATE * genMult);
+  const elemRate = Math.min(0.45, BREED_ELEMENT_MUTATION_RATE * genMult * rarityMutMult);
   if (Math.random() < elemRate) {
     const others = Object.keys(ELEMENTS).filter((e) => e !== element);
     element = pick(others);
@@ -1840,7 +1852,7 @@ export function rollBreedGenes(parentA, parentB) {
       ? ga.personality
       : gb.personality;
   // 主性格突變
-  if (Math.random() < 0.12 * genMult) {
+  if (Math.random() < 0.12 * genMult * rarityMutMult) {
     const others = Object.keys(PERSONALITIES).filter((p) => p !== personality);
     personality = pick(others);
     mutated = true;
@@ -1874,7 +1886,7 @@ export function rollBreedGenes(parentA, parentB) {
     ((PERSONALITIES[ga.personality]?.breedMutate || 1) +
       (PERSONALITIES[gb.personality]?.breedMutate || 1)) /
     2;
-  if (Math.random() < 0.28 * genMult * peBreedMut) {
+  if (Math.random() < 0.28 * genMult * peBreedMut * rarityMutMult) {
     const candidates = BLOODLINE_MARK_IDS.filter((id) => !bloodmarks.includes(id));
     if (candidates.length) {
       bloodmarks.push(pick(candidates));
@@ -2244,11 +2256,12 @@ export function genAwakenBonus(generation) {
 }
 
 /** 代數出戰攻／血倍率 */
+/** 代數出戰殘留（主軸已改成長斜率；呢度只留極小味） */
 export function genCombatMult(generation) {
   const g = Math.max(0, Math.min(3, generation | 0));
-  if (g >= 3) return 1.12;
-  if (g >= 2) return 1.08;
-  if (g >= 1) return 1.04;
+  if (g >= 3) return 1.03;
+  if (g >= 2) return 1.02;
+  if (g >= 1) return 1.01;
   return 1;
 }
 
@@ -2620,7 +2633,10 @@ export function dungeonDisplayName(tier) {
   if (tier === 2) return "潮汐廢墟 · 二層";
   if (tier === 3) return "潮汐廢墟 · 心核";
   if (tier === 4) return "潮汐廢墟 · 深層";
-  return `潮汐廢墟 · ${tier}層`;
+  if (tier === 5) return "潮汐廢墟 · 裂潮廊";
+  if (tier === 6) return "潮汐廢墟 · 沉淵殿";
+  if (tier === 7) return "潮汐廢墟 · 古潮墓";
+  return `潮汐廢墟 · 深淵${tier}層`;
 }
 
 function cloneDungeon(d) {
@@ -2643,7 +2659,7 @@ export function scaleDungeonForTier(base, tier) {
   d.name = dungeonDisplayName(tier);
   d.needRealm = Math.max(0, tier - 1);
   const extra = tier - 4;
-  const statMult = Math.pow(1.22, extra);
+  const statMult = Math.pow(1.26, extra);
   const rewardMult = Math.pow(1.18, extra);
   d.cooldownMs = Math.round(d.cooldownMs * (1 + extra * 0.12));
   for (const w of d.waves || []) {
@@ -2655,11 +2671,96 @@ export function scaleDungeonForTier(base, tier) {
   }
   d.reward = scaleReward(d.reward, rewardMult);
   d.firstClearBonus = scaleReward(d.firstClearBonus, rewardMult);
+  if (!d.firstClearBonus) d.firstClearBonus = {};
+  d.firstClearBonus.seal_ember = (d.firstClearBonus.seal_ember || 0) + Math.max(1, Math.ceil(extra / 2));
+  d.firstClearBonus.stones = (d.firstClearBonus.stones || 0) + 40 * extra;
   d.eliteBonus = scaleReward(d.eliteBonus, rewardMult);
   d.bossBonus = scaleReward(d.bossBonus, rewardMult);
   for (const c of d.conditions || []) {
     if (c.bonus) c.bonus = scaleReward(c.bonus, rewardMult);
   }
+  const themes = {
+    5: {
+      loreTag: "裂潮",
+      passive: {
+        id: "rift_flame",
+        type: "elem_atk",
+        element: "flame",
+        mult: 1.1,
+        label: "關卡：裂潮焰印 · 焰屬友方攻擊 +10%",
+      },
+      condition: {
+        id: "tide_5_elem",
+        type: "min_element",
+        element: "tide",
+        count: 1,
+        label: "條件：出戰含潮屬",
+        bonus: { stones: 55, scrap: 2 },
+      },
+      matBias: { mist_token: 2, temper_oil: 3, blood_catalyst: 2 },
+    },
+    6: {
+      loreTag: "沉淵",
+      passive: {
+        id: "abyss_gloom",
+        type: "elem_atk",
+        element: "gloom",
+        mult: 1.1,
+        label: "關卡：沉淵幽印 · 幽屬友方攻擊 +10%",
+      },
+      condition: {
+        id: "tide_6_gen",
+        type: "min_gen",
+        gen: 2,
+        label: "條件：出戰含≥2代寵",
+        bonus: { stones: 70, dust: 12 },
+      },
+      matBias: { breed_ticket: 3, blood_catalyst: 3, temper_oil: 1 },
+    },
+    7: {
+      loreTag: "古潮",
+      passive: {
+        id: "ancient_stone",
+        type: "elem_atk",
+        element: "stone",
+        mult: 1.12,
+        label: "關卡：古潮岩印 · 岩屬友方攻擊 +12%",
+      },
+      condition: {
+        id: "tide_7_hybrid",
+        type: "min_hybrid",
+        count: 1,
+        label: "條件：出戰含雜交種",
+        bonus: { stones: 90, scrap: 3 },
+      },
+      matBias: { seal_ember: 2, breed_ticket: 2, mist_token: 2 },
+    },
+  };
+  const theme = themes[tier] || {
+    loreTag: `深淵${tier}`,
+    passive: {
+      id: `deep_${tier}_gale`,
+      type: "elem_atk",
+      element: "gale",
+      mult: 1.08 + extra * 0.01,
+      label: `關卡：深層風印 · 風屬友方攻擊 +${Math.round((0.08 + extra * 0.01) * 100)}%`,
+    },
+    condition: {
+      id: `tide_${tier}_lean`,
+      type: "max_pets",
+      max: 2,
+      label: "條件：出戰≤2寵",
+      bonus: { stones: 50 + extra * 15, scrap: 1 + Math.floor(extra / 2) },
+    },
+    matBias: { seal_ember: 1 + Math.floor(extra / 2), blood_catalyst: 2, temper_oil: 2 },
+  };
+  d.loreTag = theme.loreTag;
+  d.passives = [...(d.passives || []).filter((p) => p.id !== theme.passive.id), theme.passive];
+  d.conditions = [...(d.conditions || []).filter((c) => c.id !== theme.condition.id), theme.condition];
+  d.matDropOverride = {
+    chance: Math.min(0.62, 0.48 + extra * 0.03),
+    weights: theme.matBias,
+  };
   return d;
 }
 
@@ -3274,7 +3375,7 @@ export const EGG_TIERS = {
     hatchMs: 120_000,
     shopCost: 40,
     label: "常見",
-    desc: "約 2 分鐘孵化 · 野生種",
+    desc: "約 2 分鐘起 · 繁殖蛋隨代數加長",
   },
   B: {
     id: "B",
@@ -3296,6 +3397,13 @@ export const EGG_TIERS = {
 
 export function eggTierInfo(tier) {
   return EGG_TIERS[tier] || EGG_TIERS.C;
+}
+
+/** 蛋孵化毫秒：階時間 × (1 + 代數×0.25)；教學短孵另計 */
+export function eggHatchMsFor(egg, tierInfo) {
+  const t = tierInfo || eggTierInfo(egg?.tier || "C");
+  const gen = Math.max(0, egg?.generation | 0);
+  return Math.round((t.hatchMs || 120_000) * (1 + gen * 0.25));
 }
 
 /** 生成一顆蛋（未開始孵化） */
@@ -3911,7 +4019,15 @@ export const DUNGEON_MAT_DROPS = {
 };
 
 export function rollDungeonMatDrop(dungeonId, opts = {}) {
-  const table = DUNGEON_MAT_DROPS[dungeonId] || DUNGEON_MAT_DROPS.tide_1;
+  let table = DUNGEON_MAT_DROPS[dungeonId];
+  if (!table) {
+    const tier = parseDungeonTier(dungeonId);
+    if (tier >= 5) {
+      const built = buildDungeonForTier(tier);
+      if (built?.matDropOverride) table = built.matDropOverride;
+    }
+  }
+  table = table || DUNGEON_MAT_DROPS.tide_1;
   if (!table) return null;
   let chance = table.chance || 0;
   if (opts.bossCleared) chance = Math.min(0.95, chance + 0.18);
@@ -4043,10 +4159,75 @@ export function breedStatInheritancePreview(parentA, parentB, childGenes) {
 }
 
 /** 融合吸收素材天生數值比例（隨融階升高） */
+/** 等級成長（代數＝斜率）：基礎 +2/+6/+1 × (1 + gen×0.1) */
+export function levelStatGains(generation = 0) {
+  const g = Math.max(0, Math.min(GEN_MAX, generation | 0));
+  const slope = 1 + g * 0.1;
+  return {
+    atk: Math.max(1, Math.round(2 * slope * 10) / 10),
+    hp: Math.max(1, Math.round(6 * slope * 10) / 10),
+    spd: Math.max(1, Math.round(1 * slope * 10) / 10),
+    slope,
+  };
+}
+
+/** 融合吸收（改細）：階1 14%、階2 19%、階3 24% — flat 唔再係主軸 */
 export function fusionAbsorbRate(targetStage) {
   const n = Math.max(1, Math.min(3, targetStage | 0));
-  return 0.18 + n * 0.1; // 階1 28%、階2 38%、階3 48%
+  return 0.09 + n * 0.05;
 }
+
+/** 融合出戰乘區（主軸） */
+export function fusionCombatMult(fusionLevel = 0) {
+  const f = Math.max(0, Math.min(FUSION_MAX_STAGE, fusionLevel | 0));
+  if (f >= 3) return 1.2;
+  if (f >= 2) return 1.12;
+  if (f >= 1) return 1.06;
+  return 1;
+}
+
+/**
+ * 融合素材稀有軟綁（唔硬鎖同稀有）
+ * 均稀有 ≥ 主體 → 1；低 1 階 → 0.8；再低 → 0.55
+ */
+export function fusionMaterialRarityFactor(baseRarity, matRarities = []) {
+  const base = Math.max(0, baseRarity | 0);
+  const mats = (matRarities || []).map((r) => Math.max(0, r | 0));
+  if (!mats.length) return 1;
+  const avg = mats.reduce((a, b) => a + b, 0) / mats.length;
+  const diff = base - avg;
+  if (diff <= 0) return 1;
+  if (diff <= 1) return 0.8;
+  return 0.55;
+}
+
+/** 寵物最終融合乘區（存檔可寫 fusionPowerMult） */
+export function petFusionCombatMult(pet) {
+  if (pet && typeof pet.fusionPowerMult === "number" && pet.fusionPowerMult > 0) {
+    return pet.fusionPowerMult;
+  }
+  return fusionCombatMult(pet?.fusionLevel ?? 0);
+}
+
+/** 父母最高稀有 → 繁殖 CD 倍率（高稀有略快） */
+export function rarityBreedCdMult(parentA, parentB) {
+  const r = Math.max(parentA?.rarity ?? 0, parentB?.rarity ?? 0);
+  if (r >= 3) return 0.78;
+  if (r >= 2) return 0.85;
+  if (r >= 1) return 0.92;
+  return 1;
+}
+
+/** 父母最高稀有 → 元素／血脈變異倍率 */
+export function rarityBreedMutationMult(parentA, parentB) {
+  const r = Math.max(parentA?.rarity ?? 0, parentB?.rarity ?? 0);
+  if (r >= 3) return 1.45;
+  if (r >= 2) return 1.28;
+  if (r >= 1) return 1.12;
+  return 1;
+}
+
+
 
 /**
  * 性格戰鬥被動（每寵獨立套用；唔改白板成長公式）
@@ -4256,30 +4437,44 @@ export const MATERIALS = {
 };
 
 /**
- * 精魂商人固定目錄（佔位貨；耗精魂，唔轉靈石）
+ * 精魂商人固定目錄（實用兌換；耗精魂，唔轉靈石）
  * grant: feed／materials／items 可並存
  */
 export const SOUL_SHOP_OFFERS = [
   {
     id: "feed_pouch",
     name: "飼料小包",
-    desc: "常用飼料一小包",
+    desc: "牧場救急 · 放生精魂回補飼料",
     cost: 8,
-    grant: { feed: 25 },
+    grant: { feed: 30 },
   },
   {
     id: "tide_dew_pack",
     name: "潮露小瓶",
-    desc: "常用升級材料",
+    desc: "靈寵升級催化（唔影響靈石經濟）",
     cost: 10,
-    grant: { materials: { tide_dew: 5 } },
+    grant: { materials: { tide_dew: 6 } },
   },
   {
-    id: "coral_shard_pack",
-    name: "珊瑚屑袋",
-    desc: "常用繁殖材料",
-    cost: 12,
-    grant: { materials: { coral_shard: 4 } },
+    id: "temper_oil_pack",
+    name: "淬鍊油壺",
+    desc: "秘境專用強化油 · 育成向",
+    cost: 14,
+    grant: { materials: { temper_oil: 3 } },
+  },
+  {
+    id: "mist_token_pack",
+    name: "潮霧令×2",
+    desc: "已通關秘境掃蕩入場（小量，防刷崩靈石）",
+    cost: 18,
+    grant: { materials: { mist_token: 2 } },
+  },
+  {
+    id: "breed_ticket_pack",
+    name: "催生符",
+    desc: "立即重置繁殖冷卻",
+    cost: 22,
+    grant: { materials: { breed_ticket: 1 } },
   },
   {
     id: "hatch_nest_token",
@@ -4779,8 +4974,17 @@ export const ABYSS_GRIT_ID = "abyss_grit";
 export const ABYSS_ENTRY_TOKEN_COST = 1;
 export const ABYSS_WIPE_KEEP_RATE = 0.4;
 export const ABYSS_MUTATION_EVERY = 3;
-/** @deprecated 突變唔再設活躍上限；保留常數以免舊引用爆 */
-export const ABYSS_MAX_ACTIVE_MUTATIONS = Infinity;
+/** 深潛活躍突變上限（超出時新突變會替換最舊一條） */
+export const ABYSS_MAX_ACTIVE_MUTATIONS = 3;
+
+/** 潮淵規則（UI 一次講清） */
+export const ABYSS_RULES_TEXT = [
+  "獨立編隊 5 寵（3 出戰 + 2 替補）；層間唔回滿血。",
+  `每 ${ABYSS_MUTATION_EVERY} 層疊加 1 條突變；同時最多 ${ABYSS_MAX_ACTIVE_MUTATIONS} 條，新突變會頂掉最舊。`,
+  "突變保險可略過當層新突變（商人物件／淵砂兌換）。",
+  "失敗保底帶走部分待結算淵砂；撤退可提早結算。",
+  "商人事件係 2 揀 1：買潛航增益，或隨機移除 1 條突變。",
+].join("\n");
 /** 深潛獨立編隊：5 寵（3 出戰 + 2 替補） */
 export const ABYSS_SQUAD_SIZE = 5;
 export const ABYSS_ACTIVE_SIZE = 3;
@@ -4908,8 +5112,12 @@ export const ABYSS_COSMETIC_IDS = Object.keys(ABYSS_COSMETICS);
 export const ABYSS_COSMETIC_BONUS_CAP = 0.05;
 
 export const ABYSS_INSURANCE_COST = 25;
-export const ABYSS_EGG_COST = 90;
+export const ABYSS_EGG_COST = 110;
 export const ABYSS_EGG_WEEKLY_LIMIT = 2;
+/** 淵核：永久小幅攻加成（有 cap；淵砂長期 sink） */
+export const ABYSS_POWER_NODE_COST = 55;
+export const ABYSS_POWER_NODE_MAX = 8;
+export const ABYSS_POWER_NODE_ATK = 0.01;
 /** 淵砂兌換潮轉符（永久轉屬道具） */
 export const ABYSS_TIDE_SHIFT_COST = 35;
 
@@ -4922,6 +5130,7 @@ export function emptyAbyssDive(now = Date.now()) {
     freeUsedDate: "",
     insuranceCharges: 0,
     cosmetics: {},
+    powerNodes: 0,
     eggsBoughtWeek: 0,
     eggsWeekKey: "",
     run: null,

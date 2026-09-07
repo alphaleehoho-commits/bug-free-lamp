@@ -3112,3 +3112,116 @@ button.pet-badge {
 .abyss-event-opt{text-align:left;display:flex;flex-direction:column;gap:.15rem;align-items:flex-start}
 .abyss-rearrange-block{margin:.4rem 0;padding:.45rem .5rem;border:1px solid rgba(100,140,160,.3);border-radius:8px;background:rgba(10,24,32,.4)}
 
+
+
+/* —— Soft launch / update / SW banners —— */
+.sys-banner {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 0.65rem 0.75rem;
+  margin: 0 0 0.45rem;
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(30, 58, 72, 0.92), rgba(18, 36, 48, 0.88)),
+    radial-gradient(ellipse at 0% 0%, rgba(126, 168, 160, 0.18), transparent 55%);
+  border: 1px solid rgba(126, 168, 160, 0.28);
+  animation: bannerIn 0.45s ease-out both;
+}
+.sys-banner .meta { margin: 0.2rem 0 0; font-size: 0.72rem; color: var(--fog); line-height: 1.35; }
+.sys-banner strong { font-family: var(--font-display); letter-spacing: 0.04em; }
+.soft-launch-banner { border-color: rgba(196, 92, 62, 0.35); }
+.update-notice-banner { border-color: rgba(126, 168, 160, 0.45); }
+.sw-refresh-banner { border-color: rgba(224, 138, 106, 0.5); box-shadow: inset 0 0 0 1px rgba(224, 138, 106, 0.15); }
+@keyframes bannerIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* —— Brand presence —— */
+.brand-row .brand {
+  background: linear-gradient(120deg, #d7ebe4 0%, #7ea8a0 45%, #e08a6a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: brandIn 0.75s ease-out both;
+}
+.brand-row .tag { opacity: 0.9; }
+
+/* —— Main loop: train / pet card / abyss settle —— */
+.cultivate-panel .train-idle-strip,
+.panel-train .train-idle-strip {
+  position: relative;
+  overflow: hidden;
+}
+.cultivate-panel .train-idle-strip::after {
+  content: "";
+  position: absolute;
+  inset: -20% auto -20% -30%;
+  width: 28%;
+  background: linear-gradient(90deg, transparent, rgba(183, 212, 204, 0.08), transparent);
+  animation: trainSheen 4.5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes trainSheen {
+  0%, 100% { transform: translateX(0); opacity: 0; }
+  35% { opacity: 1; }
+  70% { transform: translateX(380%); opacity: 0; }
+}
+
+.pet-card {
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+.pet-card:active { transform: scale(0.985); }
+.pet-card.is-starred {
+  border-color: rgba(224, 138, 106, 0.45);
+  background: linear-gradient(160deg, rgba(42, 28, 22, 0.35), rgba(18, 32, 44, 0.5));
+}
+
+.abyss-settle,
+.combat-report-card--abyss-settle {
+  animation: settleRise 0.4s ease-out both;
+}
+@keyframes settleRise {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.abyss-rules {
+  margin: 0.55rem 0 0.75rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 10px;
+  border: 1px dashed rgba(126, 168, 160, 0.35);
+  background: rgba(12, 22, 30, 0.55);
+}
+.abyss-rules summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  color: var(--jade-bright);
+}
+.abyss-rules-body {
+  margin: 0.45rem 0 0.15rem;
+  white-space: pre-wrap;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  color: var(--fog);
+  line-height: 1.45;
+}
+
+.save-tools {
+  margin-top: 0.85rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(126, 168, 160, 0.2);
+}
+.save-io {
+  width: 100%;
+  margin-top: 0.45rem;
+  min-height: 5rem;
+  border-radius: 8px;
+  border: 1px solid rgba(126, 168, 160, 0.3);
+  background: rgba(8, 14, 20, 0.85);
+  color: var(--text);
+  font-size: 0.72rem;
+  padding: 0.45rem;
+}

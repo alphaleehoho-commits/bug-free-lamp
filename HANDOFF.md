@@ -41,7 +41,7 @@
 | 路徑 | `mobile-rpg-slice/` |
 | Stack | Vanilla HTML/CSS/JS PWA（直向手機） |
 | Live | https://alphaleehoho-commits.github.io/bug-free-lamp/ |
-| SW cache | `void-tide-pets-v56`（任何改動後 bump `sw.js`） |
+| SW cache | `void-tide-pets-v95`（任何改動後 bump `sw.js`） |
 | Smoke test | `node mobile-rpg-slice/js/smoke-test.mjs` |
 | 用戶測試環境 | iPhone **Safari 瀏覽器**（非 PWA standalone 為主） |
 
@@ -160,7 +160,7 @@ git push -u origin cursor/week-a-gameplay-sweep-daily-50b5
 | A1 掃蕩 | ✅ 完成 | #19 | `runDungeonSweep` · 1/5/10/20 · batch modal · 掃蕩只觸發 1 次待契 |
 | A2 每日全清 + 一鍵領 | ✅ 完成 | #19 | 全清獎 60石+催生符+潮霧蛋 · hub／任務一鍵領 |
 | A3 任務 UI 全量 | ✅ 完成 | #19 | 7 daily + 全成就 scroll · 進行中成就排前 |
-| SW 版本 | v56 | | |
+| SW 版本 | v95 | | |
 
 ---
 
@@ -202,3 +202,12 @@ Week B agent 應另開 branch：`cursor/week-b-gameplay-polish-50b5`
 ## 歷史 PR
 
 - **#18** merged — mobile UX P1–P5 + retention baseline  
+
+
+---
+
+## 推出路線（2026-09）
+
+見 `mobile-rpg-slice/docs/`：`PHASE0_QA.md`、`SW_REFRESH.md`、`SOFT_LAUNCH.md`、`PUBLIC_GATE.md`。
+
+順序：穩定信任 → 邀請制軟啟動 → 內容／經濟 → 美化 → 公開。

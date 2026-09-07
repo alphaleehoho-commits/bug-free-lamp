@@ -149,11 +149,15 @@ import {
   buyAbyssInsurance,
   buyAbyssCosmetic,
   buyAbyssEgg,
+  buyAbyssPowerNode,
   buyAbyssTideShiftCharm,
   useTideShiftCharm,
   abyssSquadCandidates,
   rearrangeAbyssSquad,
   resolveAbyssEvent,
+  exportSaveJson,
+  importSaveJson,
+  updateNoticeView,
 } from "./engine.js";
 import {
   DUNGEON_SUMMON_MIN,
@@ -169,6 +173,10 @@ import {
   SECOND_SKILL_UNLOCK,
   OFFLINE_CLAIM_MIN_SEC,
   OFFLINE_HINT_SEC,
+  ABYSS_RULES_TEXT,
+  APP_BUILD,
+  fusionCombatMult,
+  fusionMaterialRarityFactor,
 } from "./data.js";
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
@@ -222,6 +230,8 @@ function formatMatBits(mats) {
     .join("／");
 }
 
+let softLaunchDismissed = sessionStorage.getItem("void-tide-soft-launch-dismiss") === "1";
+let updateNoticeDismissed = localStorage.getItem(`void-tide-update-seen:${APP_BUILD}`) === "1";
 let state = loadState();
 state = tickCultivation(state);
 saveState(state);
@@ -2113,8 +2123,8 @@ function render() {
   app.innerHTML = `
     <header class="top top-compact">
       <div class="brand-row">
-        <p class="brand">暗潮</p>
-        <p class="tag">靈寵修行 · <span data-live="wins">勝 ${state.combatsWon}</span></p>
+        <p class="brand" data-brand="void-tide">暗潮</p>
+        <p class="tag">Void Tide · 靈寵修行 · <span data-live="wins">勝 ${state.combatsWon}</span></p>
       </div>
     </header>
 
@@ -2477,7 +2487,7 @@ function offlineClaimModalHtml() {
     : "";
   const gateNote = canClaim
     ? `<p class="meta">已滿 30 分鐘，可以領取。</p>`
-    : `<p class="meta muted">滿 30 分鐘先可領取（而家 ${fmtOfflineDuration(sec)} · 仲差 ${fmtOfflineDuration(left)}）。</p>`;
+    : `<p class="meta muted">離線滿 30 分鐘先可領取（未滿唔係壞咗）（而家 ${fmtOfflineDuration(sec)} · 仲差 ${fmtOfflineDuration(left)}）。</p>`;
   return `
     <div class="combat-modal-overlay offline-claim-overlay" data-live="offline-claim" role="dialog" aria-label="離線收益">
       <div class="combat-modal-card offline-claim-card">
@@ -2562,13 +2572,28 @@ function fuseConfirmModalHtml() {
           .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
           .join("、")}`
       : "";
+  const matPets = mats
+    .map((uid) => [...(state.pets || []), ...(state.ranch || [])].find((p) => p.uid === uid))
+    .filter(Boolean);
+  const rarityFactor = fusionMaterialRarityFactor(
+    d.pet.rarity ?? 0,
+    matPets.map((p) => p.rarity ?? 0)
+  );
+  const nextMult = Number(
+    (fusionCombatMult(d.nextFusionStage) * rarityFactor).toFixed(2)
+  );
+  const rarityHint =
+    rarityFactor < 1
+      ? ` · 素材稀有偏低×${rarityFactor}（仍可融）`
+      : " · 素材稀有達標";
   return `
     <div class="combat-modal-overlay release-modal-overlay" data-live="fuse-confirm-modal" role="dialog" aria-label="融合確認">
       <div class="combat-modal-card release-modal-card">
         <div class="combat-modal-scroll">
           <h2>確認融合</h2>
           <p class="lead">將 ${mats.length} 隻素材融入 <strong>${escapeHtml(d.pet.name)}</strong></p>
-          <p class="meta">目標融階 ${d.nextFusionStage} · 繼承 Lv.${d.level} · 耗 ${escapeHtml(String(d.fuseCostHint))} 靈石${escapeHtml(matCost)}</p>
+          <p class="meta">目標融階 ${d.nextFusionStage} · 繼承 Lv.${d.level} · 出戰預計×${nextMult}${rarityHint}</p>
+          <p class="meta">耗 ${escapeHtml(String(d.fuseCostHint))} 靈石${escapeHtml(matCost)}</p>
           <p class="meta muted">素材會被消耗，此操作不可復原。</p>
         </div>
         <div class="combat-modal-actions row">
@@ -3025,15 +3050,19 @@ function cultivatePanel(qiPct, next, m) {
       const soulRows =
         soulShopView(state)
           .map((o) => {
+            const note = o.capped
+              ? o.capReason || "已達上限"
+              : `獲 ${escapeHtml(o.grantLabel)} · ${o.cost} 精魂`;
+            const label = o.capped ? "已滿" : "兌換";
             return `
-        <li class="card-row">
+        <li class="card-row${o.capped ? " is-capped" : ""}">
           <div>
             <strong>${escapeHtml(o.name)}</strong>
-            <span class="muted">${escapeHtml(o.desc || "")} · 獲 ${escapeHtml(o.grantLabel)} · ${o.cost} 精魂</span>
+            <span class="muted">${escapeHtml(o.desc || "")} · ${note}</span>
           </div>
           <button type="button" class="primary" data-soul-shop-buy="${escapeHtml(o.id)}" ${
-            o.canAfford ? "" : "disabled"
-          }>兌換</button>
+            o.canBuy ? "" : "disabled"
+          }>${label}</button>
         </li>`;
           })
           .join("") || `<li class="empty">暫無精魂貨物。</li>`;
@@ -3050,9 +3079,16 @@ function cultivatePanel(qiPct, next, m) {
       </li>`;
         })
         .join("");
+      const nodeMaxed = (gritV.powerNodes || 0) >= (gritV.powerNodeMax || 0);
       shopBody = `<h2>商肆 · 淵砂</h2>
       <p class="lead">淵砂 ${gritHave} · 潮淵深潛結算兌換</p>
       <ul class="list">
+      <li class="card-row">
+        <div><strong>淵核</strong><span class="muted"> · 永久全隊攻擊 +${gritV.powerNodeAtkPct || 1}%／級 · ${gritV.powerNodes || 0}/${gritV.powerNodeMax || 0}</span></div>
+        <button type="button" class="secondary" data-abyss-power-node ${nodeMaxed ? "disabled" : ""}>${
+          nodeMaxed ? "已滿" : `淵砂×${gritV.powerNodeCost}`
+        }</button>
+      </li>
       <li class="card-row">
         <div><strong>潮淵高階蛋</strong><span class="muted"> · 本週 ${gritV.eggsBoughtWeek}/${gritV.eggsWeeklyLimit} · 較易出稀有</span></div>
         <button type="button" class="secondary" data-abyss-egg ${gritV.eggsBoughtWeek >= gritV.eggsWeeklyLimit ? "disabled" : ""}>淵砂×${gritV.eggCost}</button>
@@ -4057,6 +4093,7 @@ function petDetailStatsHtml(pet, detail, rarity) {
           : ""
       }
       <li><strong>稀有</strong> — <span class="rarity rarity-${rarity.color}">${escapeHtml(rarity.name)}</span></li>
+      <li><strong>融合出戰</strong> — ×${fmtMult(detail.fusionPowerMult || 1)}（融階 ${detail.fusionLevel || 0}）</li>
     </ul>
     <div class="pet-explain">
       <h3>種類 · ${escapeHtml(pet.kind)}</h3>
@@ -4802,6 +4839,41 @@ function dungeonCondSheetHtml() {
 }
 
 
+
+function softLaunchBannerHtml() {
+  if (softLaunchDismissed) return "";
+  return `<div class="sys-banner soft-launch-banner" data-live="soft-launch">
+    <div>
+      <strong>軟啟動測試版</strong>
+      <p class="meta">10–30 人邀請制 · 請回報死掣／卡教學／舊快取。建置 ${escapeHtml(APP_BUILD)}</p>
+    </div>
+    <button type="button" class="ghost" data-act="dismiss-soft-launch">知道了</button>
+  </div>`;
+}
+
+function updateNoticeBannerHtml() {
+  if (updateNoticeDismissed) return "";
+  const n = updateNoticeView();
+  return `<div class="sys-banner update-notice-banner" data-live="update-notice">
+    <div>
+      <strong>${escapeHtml(n.title)} · ${escapeHtml(n.build)}</strong>
+      <p class="meta">${escapeHtml(n.body)}</p>
+      <p class="meta">若見舊版：iOS Safari 用「重新載入唔用快取」／Chrome 硬刷新。</p>
+    </div>
+    <button type="button" class="ghost" data-act="dismiss-update-notice">已更新</button>
+  </div>`;
+}
+
+function swRefreshBannerHtml() {
+  return `<div class="sys-banner sw-refresh-banner" data-live="sw-refresh" hidden>
+    <div>
+      <strong>有新版本</strong>
+      <p class="meta">已下載更新。請硬刷新以載入最新（否則可能仲係舊快取）。</p>
+    </div>
+    <button type="button" class="primary" data-act="hard-refresh">硬刷新</button>
+  </div>`;
+}
+
 function abyssPanelHtml() {
   const v = abyssDiveView(state);
   if (!v.unlocked) {
@@ -4876,6 +4948,10 @@ function abyssPanelHtml() {
   return `<h2>潮淵深潛</h2>
     <p class="lead">無限層 · 突變規則</p>
     <p class="meta">淵砂 <strong>${v.gritHave}</strong> · 最深 ${v.bestDepth} · 本週 ${v.weekBestDepth}</p>
+    <details class="abyss-rules">
+      <summary>潮淵規則（必讀）</summary>
+      <pre class="abyss-rules-body">${escapeHtml(ABYSS_RULES_TEXT)}</pre>
+    </details>
     ${runBlock}`;
 }
 
@@ -5151,6 +5227,15 @@ function logPanel() {
     `<div class="row log-tools">
       <button type="button" class="ghost" data-act="notify-perm">開啟通知</button>
       <button type="button" class="ghost" data-act="reset" ${busy ? "disabled" : ""}>重置存檔</button>
+    </div>
+    <div class="save-tools card-block">
+      <h3>存檔備份</h3>
+      <p class="meta">本機 localStorage · 換機／清瀏覽器前請匯出。建置 ${escapeHtml(APP_BUILD)}</p>
+      <div class="row log-tools">
+        <button type="button" class="secondary" data-act="export-save">匯出存檔</button>
+        <button type="button" class="ghost" data-act="import-save">匯入存檔</button>
+      </div>
+      <textarea class="save-io" data-save-io hidden rows="4" placeholder="貼上匯出嘅 JSON 存檔…"></textarea>
     </div>`
   );
 }
@@ -5552,6 +5637,58 @@ function bind() {
           panelSub = { ...panelSub, [gTab]: gSub };
         }
         render();
+
+      } else if (act === "dismiss-soft-launch") {
+        softLaunchDismissed = true;
+        sessionStorage.setItem("void-tide-soft-launch-dismiss", "1");
+        render();
+      } else if (act === "dismiss-update-notice") {
+        updateNoticeDismissed = true;
+        localStorage.setItem(`void-tide-update-seen:${APP_BUILD}`, "1");
+        render();
+      } else if (act === "hard-refresh") {
+        if (navigator.serviceWorker?.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: "SKIP_WAITING" });
+        }
+        const url = new URL(location.href);
+        url.searchParams.set("v", APP_BUILD);
+        location.href = url.toString();
+      } else if (act === "export-save") {
+        const json = exportSaveJson(state);
+        const ta = document.querySelector("[data-save-io]");
+        if (ta) {
+          ta.hidden = false;
+          ta.value = json;
+          ta.focus();
+          ta.select();
+        }
+        try {
+          const blob = new Blob([json], { type: "application/json" });
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `void-tide-save-${APP_BUILD}.json`;
+          a.click();
+          URL.revokeObjectURL(a.href);
+        } catch (_) {}
+        setFlash("已匯出存檔（可複製文字或下載檔）。");
+      } else if (act === "import-save") {
+        const ta = document.querySelector("[data-save-io]");
+        if (ta && ta.hidden) {
+          ta.hidden = false;
+          ta.focus();
+          setFlash("請貼上匯出嘅 JSON，再撳一次「匯入存檔」。");
+        } else {
+          const raw = ta?.value || "";
+          const r = importSaveJson(raw);
+          if (!r.ok) {
+            setFlash(r.msg);
+          } else {
+            state = r.state;
+            setFlash(r.msg);
+            render();
+          }
+        }
+
       } else if (act === "reset") {
         if (confirm("確定清除存檔？")) {
           stopPlayback();
@@ -6023,6 +6160,15 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = buyAbyssEgg(state);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-abyss-power-node]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = buyAbyssPowerNode(state);
       saveState(state);
       render();
       setFlash(r.msg);
@@ -6565,5 +6711,25 @@ function checkPushReminders() {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
+  navigator.serviceWorker.register("./sw.js").then((reg) => {
+    const showRefresh = () => {
+      const el = document.querySelector("[data-live=sw-refresh]");
+      if (el) el.hidden = false;
+    };
+    if (reg.waiting) showRefresh();
+    reg.addEventListener("updatefound", () => {
+      const nw = reg.installing;
+      if (!nw) return;
+      nw.addEventListener("statechange", () => {
+        if (nw.state === "installed" && navigator.serviceWorker.controller) showRefresh();
+      });
+    });
+    // 主動檢查更新（熱修後）
+    setInterval(() => reg.update().catch(() => {}), 5 * 60 * 1000);
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    // 新 SW 接管後提醒硬刷新一次
+    const el = document.querySelector("[data-live=sw-refresh]");
+    if (el) el.hidden = false;
+  });
 }
