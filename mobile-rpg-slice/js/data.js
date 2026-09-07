@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260906.1";
+export const APP_BUILD = "20260907.1";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -1493,9 +1493,9 @@ export function clampBreedBatchCount(count) {
  */
 export const RARITY = {
   0: { id: 0, name: "普通", mult: 1, color: "common" },
-  1: { id: 1, name: "稀有", mult: 1.12, color: "rare" },
-  2: { id: 2, name: "史詩", mult: 1.28, color: "epic" },
-  3: { id: 3, name: "傳說", mult: 1.5, color: "legendary" },
+  1: { id: 1, name: "稀有", mult: 1.18, color: "rare" },
+  2: { id: 2, name: "史詩", mult: 1.38, color: "epic" },
+  3: { id: 3, name: "傳說", mult: 1.65, color: "legendary" },
 };
 
 export const RARITY_MAX = 3;
@@ -1751,17 +1751,20 @@ export function rollBreedRarity(parentA, parentB, opts = {}) {
   const floor = Math.min(ra, rb);
   const ceil = Math.max(ra, rb);
   const genBoost = Math.round(((opts.genMult || 1) - 1) * 20);
+  const rarityLine = Math.max(ra, rb);
   let weights = { 0: 0, 1: 0, 2: 0, 3: 0 };
   weights[floor] += 55;
   weights[ceil] += 30;
   const up1 = Math.min(RARITY_MAX, ceil + 1);
-  weights[up1] += (opts.sameSpecies ? 18 : 12) + genBoost;
+  weights[up1] += (opts.sameSpecies ? 18 : 12) + genBoost + rarityLine * 4;
   const up2 = Math.min(RARITY_MAX, ceil + 2);
-  if (up2 > up1) weights[up2] += (opts.sameSpecies ? 6 : 3) + Math.floor(genBoost / 2);
+  if (up2 > up1) weights[up2] += (opts.sameSpecies ? 6 : 3) + Math.floor(genBoost / 2) + rarityLine * 2;
   if (opts.hybrid) {
     weights[Math.min(RARITY_MAX, ceil + 1)] += 8;
   }
   if (ra + rb >= 4) weights[Math.min(RARITY_MAX, ceil + 1)] += 10;
+  if (rarityLine >= 2) weights[ceil] += 12; // 高稀有父母更易保底
+  if (rarityLine >= 3) weights[Math.min(RARITY_MAX, ceil + 1)] += 14;
   const id = Number(pickWeighted(weights) ?? floor);
   return Math.max(0, Math.min(RARITY_MAX, id));
 }
@@ -1789,8 +1792,14 @@ export function rollBreedGenes(parentA, parentB) {
   const sameSpecies = ga.species === gb.species;
   const genA = petGeneration(parentA);
   const genB = petGeneration(parentB);
-  const generation = rollChildGeneration(genA, genB);
+  let generation = rollChildGeneration(genA, genB);
+  const parentMaxR = Math.max(parentA.rarity ?? 0, parentB.rarity ?? 0);
+  // 高稀有父母：略提高出更高代
+  if (parentMaxR >= 2 && generation < GEN_MAX && Math.random() < 0.12 + parentMaxR * 0.04) {
+    generation = Math.min(GEN_MAX, generation + 1);
+  }
   const genMult = genPowerMult(genA, genB);
+  const rarityMutMult = rarityBreedMutationMult(parentA, parentB);
 
   let species = Math.random() < 0.5 ? ga.species : gb.species;
   let element = Math.random() < 0.5 ? ga.element : gb.element;
@@ -1823,7 +1832,7 @@ export function rollBreedGenes(parentA, parentB) {
     }
   }
 
-  const elemRate = Math.min(0.35, BREED_ELEMENT_MUTATION_RATE * genMult);
+  const elemRate = Math.min(0.45, BREED_ELEMENT_MUTATION_RATE * genMult * rarityMutMult);
   if (Math.random() < elemRate) {
     const others = Object.keys(ELEMENTS).filter((e) => e !== element);
     element = pick(others);
@@ -1843,7 +1852,7 @@ export function rollBreedGenes(parentA, parentB) {
       ? ga.personality
       : gb.personality;
   // 主性格突變
-  if (Math.random() < 0.12 * genMult) {
+  if (Math.random() < 0.12 * genMult * rarityMutMult) {
     const others = Object.keys(PERSONALITIES).filter((p) => p !== personality);
     personality = pick(others);
     mutated = true;
@@ -1877,7 +1886,7 @@ export function rollBreedGenes(parentA, parentB) {
     ((PERSONALITIES[ga.personality]?.breedMutate || 1) +
       (PERSONALITIES[gb.personality]?.breedMutate || 1)) /
     2;
-  if (Math.random() < 0.28 * genMult * peBreedMut) {
+  if (Math.random() < 0.28 * genMult * peBreedMut * rarityMutMult) {
     const candidates = BLOODLINE_MARK_IDS.filter((id) => !bloodmarks.includes(id));
     if (candidates.length) {
       bloodmarks.push(pick(candidates));
@@ -2247,11 +2256,12 @@ export function genAwakenBonus(generation) {
 }
 
 /** 代數出戰攻／血倍率 */
+/** 代數出戰殘留（主軸已改成長斜率；呢度只留極小味） */
 export function genCombatMult(generation) {
   const g = Math.max(0, Math.min(3, generation | 0));
-  if (g >= 3) return 1.12;
-  if (g >= 2) return 1.08;
-  if (g >= 1) return 1.04;
+  if (g >= 3) return 1.03;
+  if (g >= 2) return 1.02;
+  if (g >= 1) return 1.01;
   return 1;
 }
 
@@ -2649,7 +2659,7 @@ export function scaleDungeonForTier(base, tier) {
   d.name = dungeonDisplayName(tier);
   d.needRealm = Math.max(0, tier - 1);
   const extra = tier - 4;
-  const statMult = Math.pow(1.22, extra);
+  const statMult = Math.pow(1.26, extra);
   const rewardMult = Math.pow(1.18, extra);
   d.cooldownMs = Math.round(d.cooldownMs * (1 + extra * 0.12));
   for (const w of d.waves || []) {
@@ -2661,6 +2671,9 @@ export function scaleDungeonForTier(base, tier) {
   }
   d.reward = scaleReward(d.reward, rewardMult);
   d.firstClearBonus = scaleReward(d.firstClearBonus, rewardMult);
+  if (!d.firstClearBonus) d.firstClearBonus = {};
+  d.firstClearBonus.seal_ember = (d.firstClearBonus.seal_ember || 0) + Math.max(1, Math.ceil(extra / 2));
+  d.firstClearBonus.stones = (d.firstClearBonus.stones || 0) + 40 * extra;
   d.eliteBonus = scaleReward(d.eliteBonus, rewardMult);
   d.bossBonus = scaleReward(d.bossBonus, rewardMult);
   for (const c of d.conditions || []) {
@@ -3362,7 +3375,7 @@ export const EGG_TIERS = {
     hatchMs: 120_000,
     shopCost: 40,
     label: "常見",
-    desc: "約 2 分鐘孵化 · 野生種",
+    desc: "約 2 分鐘起 · 繁殖蛋隨代數加長",
   },
   B: {
     id: "B",
@@ -3384,6 +3397,13 @@ export const EGG_TIERS = {
 
 export function eggTierInfo(tier) {
   return EGG_TIERS[tier] || EGG_TIERS.C;
+}
+
+/** 蛋孵化毫秒：階時間 × (1 + 代數×0.25)；教學短孵另計 */
+export function eggHatchMsFor(egg, tierInfo) {
+  const t = tierInfo || eggTierInfo(egg?.tier || "C");
+  const gen = Math.max(0, egg?.generation | 0);
+  return Math.round((t.hatchMs || 120_000) * (1 + gen * 0.25));
 }
 
 /** 生成一顆蛋（未開始孵化） */
@@ -4139,10 +4159,75 @@ export function breedStatInheritancePreview(parentA, parentB, childGenes) {
 }
 
 /** 融合吸收素材天生數值比例（隨融階升高） */
+/** 等級成長（代數＝斜率）：基礎 +2/+6/+1 × (1 + gen×0.1) */
+export function levelStatGains(generation = 0) {
+  const g = Math.max(0, Math.min(GEN_MAX, generation | 0));
+  const slope = 1 + g * 0.1;
+  return {
+    atk: Math.max(1, Math.round(2 * slope * 10) / 10),
+    hp: Math.max(1, Math.round(6 * slope * 10) / 10),
+    spd: Math.max(1, Math.round(1 * slope * 10) / 10),
+    slope,
+  };
+}
+
+/** 融合吸收（改細）：階1 14%、階2 19%、階3 24% — flat 唔再係主軸 */
 export function fusionAbsorbRate(targetStage) {
   const n = Math.max(1, Math.min(3, targetStage | 0));
-  return 0.18 + n * 0.1; // 階1 28%、階2 38%、階3 48%
+  return 0.09 + n * 0.05;
 }
+
+/** 融合出戰乘區（主軸） */
+export function fusionCombatMult(fusionLevel = 0) {
+  const f = Math.max(0, Math.min(FUSION_MAX_STAGE, fusionLevel | 0));
+  if (f >= 3) return 1.2;
+  if (f >= 2) return 1.12;
+  if (f >= 1) return 1.06;
+  return 1;
+}
+
+/**
+ * 融合素材稀有軟綁（唔硬鎖同稀有）
+ * 均稀有 ≥ 主體 → 1；低 1 階 → 0.8；再低 → 0.55
+ */
+export function fusionMaterialRarityFactor(baseRarity, matRarities = []) {
+  const base = Math.max(0, baseRarity | 0);
+  const mats = (matRarities || []).map((r) => Math.max(0, r | 0));
+  if (!mats.length) return 1;
+  const avg = mats.reduce((a, b) => a + b, 0) / mats.length;
+  const diff = base - avg;
+  if (diff <= 0) return 1;
+  if (diff <= 1) return 0.8;
+  return 0.55;
+}
+
+/** 寵物最終融合乘區（存檔可寫 fusionPowerMult） */
+export function petFusionCombatMult(pet) {
+  if (pet && typeof pet.fusionPowerMult === "number" && pet.fusionPowerMult > 0) {
+    return pet.fusionPowerMult;
+  }
+  return fusionCombatMult(pet?.fusionLevel ?? 0);
+}
+
+/** 父母最高稀有 → 繁殖 CD 倍率（高稀有略快） */
+export function rarityBreedCdMult(parentA, parentB) {
+  const r = Math.max(parentA?.rarity ?? 0, parentB?.rarity ?? 0);
+  if (r >= 3) return 0.78;
+  if (r >= 2) return 0.85;
+  if (r >= 1) return 0.92;
+  return 1;
+}
+
+/** 父母最高稀有 → 元素／血脈變異倍率 */
+export function rarityBreedMutationMult(parentA, parentB) {
+  const r = Math.max(parentA?.rarity ?? 0, parentB?.rarity ?? 0);
+  if (r >= 3) return 1.45;
+  if (r >= 2) return 1.28;
+  if (r >= 1) return 1.12;
+  return 1;
+}
+
+
 
 /**
  * 性格戰鬥被動（每寵獨立套用；唔改白板成長公式）
@@ -5027,8 +5112,12 @@ export const ABYSS_COSMETIC_IDS = Object.keys(ABYSS_COSMETICS);
 export const ABYSS_COSMETIC_BONUS_CAP = 0.05;
 
 export const ABYSS_INSURANCE_COST = 25;
-export const ABYSS_EGG_COST = 90;
+export const ABYSS_EGG_COST = 110;
 export const ABYSS_EGG_WEEKLY_LIMIT = 2;
+/** 淵核：永久小幅攻加成（有 cap；淵砂長期 sink） */
+export const ABYSS_POWER_NODE_COST = 55;
+export const ABYSS_POWER_NODE_MAX = 8;
+export const ABYSS_POWER_NODE_ATK = 0.01;
 /** 淵砂兌換潮轉符（永久轉屬道具） */
 export const ABYSS_TIDE_SHIFT_COST = 35;
 
@@ -5041,6 +5130,7 @@ export function emptyAbyssDive(now = Date.now()) {
     freeUsedDate: "",
     insuranceCharges: 0,
     cosmetics: {},
+    powerNodes: 0,
     eggsBoughtWeek: 0,
     eggsWeekKey: "",
     run: null,

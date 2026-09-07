@@ -149,6 +149,7 @@ import {
   buyAbyssInsurance,
   buyAbyssCosmetic,
   buyAbyssEgg,
+  buyAbyssPowerNode,
   buyAbyssTideShiftCharm,
   useTideShiftCharm,
   abyssSquadCandidates,
@@ -174,6 +175,8 @@ import {
   OFFLINE_HINT_SEC,
   ABYSS_RULES_TEXT,
   APP_BUILD,
+  fusionCombatMult,
+  fusionMaterialRarityFactor,
 } from "./data.js";
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
@@ -2569,13 +2572,28 @@ function fuseConfirmModalHtml() {
           .map(([id, n]) => `${MATERIALS[id]?.name || id}×${n}`)
           .join("、")}`
       : "";
+  const matPets = mats
+    .map((uid) => [...(state.pets || []), ...(state.ranch || [])].find((p) => p.uid === uid))
+    .filter(Boolean);
+  const rarityFactor = fusionMaterialRarityFactor(
+    d.pet.rarity ?? 0,
+    matPets.map((p) => p.rarity ?? 0)
+  );
+  const nextMult = Number(
+    (fusionCombatMult(d.nextFusionStage) * rarityFactor).toFixed(2)
+  );
+  const rarityHint =
+    rarityFactor < 1
+      ? ` · 素材稀有偏低×${rarityFactor}（仍可融）`
+      : " · 素材稀有達標";
   return `
     <div class="combat-modal-overlay release-modal-overlay" data-live="fuse-confirm-modal" role="dialog" aria-label="融合確認">
       <div class="combat-modal-card release-modal-card">
         <div class="combat-modal-scroll">
           <h2>確認融合</h2>
           <p class="lead">將 ${mats.length} 隻素材融入 <strong>${escapeHtml(d.pet.name)}</strong></p>
-          <p class="meta">目標融階 ${d.nextFusionStage} · 繼承 Lv.${d.level} · 耗 ${escapeHtml(String(d.fuseCostHint))} 靈石${escapeHtml(matCost)}</p>
+          <p class="meta">目標融階 ${d.nextFusionStage} · 繼承 Lv.${d.level} · 出戰預計×${nextMult}${rarityHint}</p>
+          <p class="meta">耗 ${escapeHtml(String(d.fuseCostHint))} 靈石${escapeHtml(matCost)}</p>
           <p class="meta muted">素材會被消耗，此操作不可復原。</p>
         </div>
         <div class="combat-modal-actions row">
@@ -3032,15 +3050,19 @@ function cultivatePanel(qiPct, next, m) {
       const soulRows =
         soulShopView(state)
           .map((o) => {
+            const note = o.capped
+              ? o.capReason || "已達上限"
+              : `獲 ${escapeHtml(o.grantLabel)} · ${o.cost} 精魂`;
+            const label = o.capped ? "已滿" : "兌換";
             return `
-        <li class="card-row">
+        <li class="card-row${o.capped ? " is-capped" : ""}">
           <div>
             <strong>${escapeHtml(o.name)}</strong>
-            <span class="muted">${escapeHtml(o.desc || "")} · 獲 ${escapeHtml(o.grantLabel)} · ${o.cost} 精魂</span>
+            <span class="muted">${escapeHtml(o.desc || "")} · ${note}</span>
           </div>
           <button type="button" class="primary" data-soul-shop-buy="${escapeHtml(o.id)}" ${
-            o.canAfford ? "" : "disabled"
-          }>兌換</button>
+            o.canBuy ? "" : "disabled"
+          }>${label}</button>
         </li>`;
           })
           .join("") || `<li class="empty">暫無精魂貨物。</li>`;
@@ -3057,9 +3079,16 @@ function cultivatePanel(qiPct, next, m) {
       </li>`;
         })
         .join("");
+      const nodeMaxed = (gritV.powerNodes || 0) >= (gritV.powerNodeMax || 0);
       shopBody = `<h2>商肆 · 淵砂</h2>
       <p class="lead">淵砂 ${gritHave} · 潮淵深潛結算兌換</p>
       <ul class="list">
+      <li class="card-row">
+        <div><strong>淵核</strong><span class="muted"> · 永久全隊攻擊 +${gritV.powerNodeAtkPct || 1}%／級 · ${gritV.powerNodes || 0}/${gritV.powerNodeMax || 0}</span></div>
+        <button type="button" class="secondary" data-abyss-power-node ${nodeMaxed ? "disabled" : ""}>${
+          nodeMaxed ? "已滿" : `淵砂×${gritV.powerNodeCost}`
+        }</button>
+      </li>
       <li class="card-row">
         <div><strong>潮淵高階蛋</strong><span class="muted"> · 本週 ${gritV.eggsBoughtWeek}/${gritV.eggsWeeklyLimit} · 較易出稀有</span></div>
         <button type="button" class="secondary" data-abyss-egg ${gritV.eggsBoughtWeek >= gritV.eggsWeeklyLimit ? "disabled" : ""}>淵砂×${gritV.eggCost}</button>
@@ -4064,6 +4093,7 @@ function petDetailStatsHtml(pet, detail, rarity) {
           : ""
       }
       <li><strong>稀有</strong> — <span class="rarity rarity-${rarity.color}">${escapeHtml(rarity.name)}</span></li>
+      <li><strong>融合出戰</strong> — ×${fmtMult(detail.fusionPowerMult || 1)}（融階 ${detail.fusionLevel || 0}）</li>
     </ul>
     <div class="pet-explain">
       <h3>種類 · ${escapeHtml(pet.kind)}</h3>
@@ -6130,6 +6160,15 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = buyAbyssEgg(state);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-abyss-power-node]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = buyAbyssPowerNode(state);
       saveState(state);
       render();
       setFlash(r.msg);

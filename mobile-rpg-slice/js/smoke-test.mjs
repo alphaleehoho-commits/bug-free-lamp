@@ -67,6 +67,18 @@ import {
   RECRUIT_POOL,
   HYBRID_SKILLS,
   genCombatMult,
+  levelStatGains,
+  fusionAbsorbRate,
+  fusionCombatMult,
+  fusionMaterialRarityFactor,
+  petFusionCombatMult,
+  rarityBreedCdMult,
+  eggHatchMsFor,
+  RARITY,
+  ABYSS_EGG_COST,
+  ABYSS_POWER_NODE_COST,
+  ABYSS_POWER_NODE_MAX,
+  ABYSS_POWER_NODE_ATK,
   TACTICS,
   petSkillIds,
   partySynergy,
@@ -249,6 +261,7 @@ import {
   buyAbyssInsurance,
   buyAbyssCosmetic,
   buyAbyssEgg,
+  buyAbyssPowerNode,
   buyAbyssTideShiftCharm,
   useTideShiftCharm,
   ranchCap,
@@ -716,7 +729,21 @@ assert(
   ),
   "hybrid second skill"
 );
-assert(genCombatMult(3) === 1.12 && genCombatMult(1) === 1.04, "gen combat");
+assert(genCombatMult(3) === 1.03 && genCombatMult(1) === 1.01, "gen combat residual");
+assert(RARITY[1].mult === 1.18 && RARITY[2].mult === 1.38 && RARITY[3].mult === 1.65, "rarity mults widened");
+assert(levelStatGains(0).atk === 2 && levelStatGains(3).atk === 2.6, "level gains gen slope");
+assert(Math.abs(fusionAbsorbRate(1) - 0.14) < 1e-9 && Math.abs(fusionAbsorbRate(3) - 0.24) < 1e-9, "fusion absorb reduced");
+assert(fusionCombatMult(1) === 1.06 && fusionCombatMult(3) === 1.2, "fusion combat mult");
+assert(fusionMaterialRarityFactor(2, [2, 2]) === 1, "fusion rarity ok");
+assert(fusionMaterialRarityFactor(2, [1, 1]) === 0.8, "fusion rarity soft -1");
+assert(fusionMaterialRarityFactor(3, [0, 0]) === 0.55, "fusion rarity soft worse");
+assert(petFusionCombatMult({ fusionLevel: 2 }) === 1.12, "pet fusion fallback");
+assert(petFusionCombatMult({ fusionLevel: 1, fusionPowerMult: 0.9 }) === 0.9, "pet fusion stored mult");
+assert(rarityBreedCdMult({ rarity: 3 }, { rarity: 0 }) === 0.78, "rarity breed cd");
+assert(eggHatchMsFor({ generation: 0 }, EGG_TIERS.C) === EGG_TIERS.C.hatchMs, "egg hatch gen0");
+assert(eggHatchMsFor({ generation: 2 }, EGG_TIERS.C) === Math.round(EGG_TIERS.C.hatchMs * 1.5), "egg hatch gen2");
+assert(ABYSS_EGG_COST === 110, "abyss egg cost");
+assert(ABYSS_POWER_NODE_MAX === 8 && ABYSS_POWER_NODE_COST === 55 && ABYSS_POWER_NODE_ATK === 0.01, "abyss power node");
 assert(pickDailyDungeonMod("2026-08-26")?.label, "daily mod");
 assert(DUNGEON_TRIALS.tide_4?.match === "all", "t4 trial");
 assert(BREAKTHROUGH_GATES[5].checks.some((c) => c.dungeonId === "tide_4"), "break needs t4");
@@ -2856,12 +2883,22 @@ assert(abyssSquadCandidates(abyssSt).every((p) => p.speciesId), "abyss candidate
     assert(!wipeSt.abyssDive.run, "wipe clears run");
   }
   // refresh grit for shop buys after possible retreat
-  abyssSt.materials.abyss_grit = Math.max(200, abyssSt.materials.abyss_grit | 0);
+  abyssSt.materials.abyss_grit = Math.max(400, abyssSt.materials.abyss_grit | 0);
   assert(buyAbyssInsurance(abyssSt).ok, "buy insurance");
   assert(buyAbyssCosmetic(abyssSt, "veil_mark").ok, "buy cosmetic");
   assert(abyssSt.abyssDive.cosmetics.veil_mark, "cosmetic owned");
   const eggR = buyAbyssEgg(abyssSt);
   assert(eggR.ok && eggR.egg?.source === "abyss_dive", "buy abyss egg");
+  abyssSt.materials.abyss_grit = Math.max(200, abyssSt.materials.abyss_grit | 0);
+  const gritBeforeNode = Math.floor(abyssSt.materials.abyss_grit || 0);
+  const nodeR = buyAbyssPowerNode(abyssSt);
+  assert(nodeR.ok && abyssSt.abyssDive.powerNodes === 1, "buy abyss power node");
+  assert(Math.floor(abyssSt.materials.abyss_grit) === gritBeforeNode - ABYSS_POWER_NODE_COST, "power node grit cost");
+  const avNode = abyssDiveView(abyssSt);
+  assert(avNode.powerNodes === 1 && avNode.powerNodeAtkMult === 1.01, "power node in view");
+  abyssSt.abyssDive.powerNodes = ABYSS_POWER_NODE_MAX;
+  assert(!buyAbyssPowerNode(abyssSt).ok, "power node capped");
+  abyssSt.materials.abyss_grit = Math.max(100, abyssSt.materials.abyss_grit | 0);
   const gritBeforeCharm = Math.floor(abyssSt.materials.abyss_grit || 0);
   const charmBuy = buyAbyssTideShiftCharm(abyssSt);
   assert(charmBuy.ok && abyssSt.items.tide_shift_charm >= 1, "buy tide shift charm in abyss shop");
@@ -3181,7 +3218,7 @@ assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize
   };
   const view = soulShopView(soulShopSt);
   assert(view.length === SOUL_SHOP_OFFERS.length, "soulShopView length");
-  assert(view.every((o) => o.canAfford), "view afford flags with 120 soul");
+  assert(view.every((o) => o.canAfford && o.canBuy && !o.capped), "view afford flags with 120 soul");
   const broke = buySoulShopOffer(
     { materials: { ...emptyMaterials(), soul_essence: 1 }, feed: 0, items: emptyItems(), log: [] },
     "feed_pouch"
@@ -3207,6 +3244,20 @@ assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize
   const nestBefore = Math.floor(soulShopSt.items.hatch_nest_token || 0);
   const buyNest = buySoulShopOffer(soulShopSt, "hatch_nest_token");
   assert(buyNest.ok && Math.floor(soulShopSt.items.hatch_nest_token) === nestBefore + 1, "nest token granted");
+  const cappedSt = {
+    materials: { ...emptyMaterials(), soul_essence: 200 },
+    feed: 0,
+    items: emptyItems(),
+    itemBonus: { ranchCap: RANCH_CAP_BONUS_MAX, hatchSlots: HATCH_SLOT_BONUS_MAX },
+    log: [],
+  };
+  const cappedView = soulShopView(cappedSt);
+  const fenceOffer = cappedView.find((o) => o.id === "ranch_fence");
+  const nestOffer = cappedView.find((o) => o.id === "hatch_nest_token");
+  assert(fenceOffer?.capped && !fenceOffer.canBuy, "fence capped in view");
+  assert(nestOffer?.capped && !nestOffer.canBuy, "nest capped in view");
+  assert(!buySoulShopOffer(cappedSt, "ranch_fence").ok, "fence buy blocked at ranch cap");
+  assert(!buySoulShopOffer(cappedSt, "hatch_nest_token").ok, "nest buy blocked at hatch cap");
 }
 assert(uiSrc2.includes("data-shop-inner") && uiSrc2.includes("精魂"), "ui shop inner soul tab");
 assert(uiSrc2.includes("data-soul-shop-buy"), "ui soul buy buttons");
@@ -3235,7 +3286,10 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v95"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v96"), "sw cache bumped");
+assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
+assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
+assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");
 assert(BREAKTHROUGH_GATES[4].checks.find((c) => c.type === "bestiary")?.need === 18, "bt4 bestiary staged");
 assert(BREAKTHROUGH_GATES[5].checks.find((c) => c.type === "bestiary")?.need === 36, "bt5 bestiary staged");
 

@@ -224,6 +224,16 @@ import {
   pickAbyssMutationId,
   rollAbyssFloorEvent,
   abyssCosmeticCombatMult,
+  levelStatGains,
+  fusionCombatMult,
+  fusionMaterialRarityFactor,
+  petFusionCombatMult,
+  rarityBreedCdMult,
+  rarityBreedMutationMult,
+  eggHatchMsFor,
+  ABYSS_POWER_NODE_COST,
+  ABYSS_POWER_NODE_MAX,
+  ABYSS_POWER_NODE_ATK,
 } from "./data.js";
 import {
   normalizeTutorial,
@@ -1317,13 +1327,15 @@ function buildTrainCombatAllies(state) {
   const dex = bestiaryStatus(state);
   const sealMult = tideSealCombatMult(state.tideSeals || 0);
   const cos = abyssCosmeticCombatMult(state.abyssDive?.cosmetics || {});
-  const atkMult = synergy.atkMult * dex.atkMult * sealMult * cos.atkMult;
+  const nodeMult = abyssPowerNodeAtkMult(state);
+  const atkMult = synergy.atkMult * dex.atkMult * sealMult * cos.atkMult * nodeMult;
   const hpMult = synergy.hpMult * dex.hpMult * sealMult * cos.hpMult;
   const allies = [];
   for (const p of state.pets) {
     const skills = petSkillIds(p);
     const gen = petGeneration(p);
     const gMult = genCombatMult(gen);
+    const fMult = petFusionCombatMult(p);
     const fAtk = formation.petAtkMult || 1;
     const fHp = formation.petHpMult || 1;
     const fSpd = formation.petSpdMult || 1;
@@ -1335,9 +1347,9 @@ function buildTrainCombatAllies(state) {
     allies.push({
       side: "ally",
       name: displayPetName(p),
-      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp),
-      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp),
-      atk: Math.round((p.atk + stageBonus) * atkMult * gMult * fAtk * pAtk * bm.atk),
+      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fMult * fHp * pHp * bm.hp),
+      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fMult * fHp * pHp * bm.hp),
+      atk: Math.round((p.atk + stageBonus) * atkMult * gMult * fMult * fAtk * pAtk * bm.atk),
       spd: Math.round(p.spd * synergy.spdMult * fSpd * pSpd * bm.spd),
       elementId: p.elementId,
       skillLevel: p.skillLevel ?? 1,
@@ -2842,6 +2854,7 @@ export function shopView(state) {
 export function soulShopView(state) {
   if (!state.materials) state.materials = emptyMaterials();
   const soul = Math.floor(state.materials.soul_essence || 0);
+  const bonus = state.itemBonus || emptyItemBonus();
   return SOUL_SHOP_OFFERS.map((o) => {
     const grantBits = [];
     if (o.grant?.feed) grantBits.push(`飼料×${o.grant.feed}`);
@@ -2857,10 +2870,23 @@ export function soulShopView(state) {
         grantBits.push(`${ITEMS[id]?.name || id}×${n}`);
       }
     }
+    let capped = false;
+    let capReason = "";
+    if (o.grant?.items?.ranch_fence && (bonus.ranchCap | 0) >= RANCH_CAP_BONUS_MAX) {
+      capped = true;
+      capReason = `牧場加成已達上限（+${RANCH_CAP_BONUS_MAX}）`;
+    } else if (o.grant?.items?.hatch_nest_token && (bonus.hatchSlots | 0) >= HATCH_SLOT_BONUS_MAX) {
+      capped = true;
+      capReason = `孵化欄加成已達上限（+${HATCH_SLOT_BONUS_MAX}）`;
+    }
+    const canAfford = soul >= o.cost;
     return {
       ...o,
       grantLabel: grantBits.join("／") || "—",
-      canAfford: soul >= o.cost,
+      canAfford,
+      capped,
+      capReason,
+      canBuy: canAfford && !capped,
       soul,
     };
   });
@@ -2871,6 +2897,13 @@ export function buySoulShopOffer(state, offerId) {
   const offer = soulShopOfferById(offerId);
   if (!offer) return { ok: false, msg: "商品不存在。" };
   if (!state.materials) state.materials = emptyMaterials();
+  const bonus = state.itemBonus || emptyItemBonus();
+  if (offer.grant?.items?.ranch_fence && (bonus.ranchCap | 0) >= RANCH_CAP_BONUS_MAX) {
+    return { ok: false, msg: `牧場加成已達上限（+${RANCH_CAP_BONUS_MAX}），無需再換欄柵。` };
+  }
+  if (offer.grant?.items?.hatch_nest_token && (bonus.hatchSlots | 0) >= HATCH_SLOT_BONUS_MAX) {
+    return { ok: false, msg: `孵化欄加成已達上限（+${HATCH_SLOT_BONUS_MAX}），無需再換暖巢箋。` };
+  }
   const have = Math.floor(state.materials.soul_essence || 0);
   if (have < offer.cost) {
     return { ok: false, msg: `精魂不足（需 ${offer.cost}，現有 ${have}）。` };
@@ -3583,7 +3616,7 @@ export function eggsView(state, now = Date.now()) {
   return state.eggs.map((e) => {
     const t = eggTierInfo(e.tier);
     const hatching = e.startedAt != null;
-    const left = hatching ? Math.max(0, (e.readyAt || 0) - now) : t.hatchMs;
+    const left = hatching ? Math.max(0, (e.readyAt || 0) - now) : eggHatchMsFor(e, t);
     const breedDesc =
       e.source === "breed"
         ? e.desc ||
@@ -3596,7 +3629,7 @@ export function eggsView(state, now = Date.now()) {
       name: e.name || t.name,
       label: e.source === "breed" ? genLabel(e.generation || 1) : t.label,
       desc: breedDesc || e.desc || t.desc,
-      hatchMs: t.hatchMs,
+      hatchMs: eggHatchMsFor(e, t),
       hatching,
       ready: hatching && left <= 0,
       leftMs: left,
@@ -3645,8 +3678,8 @@ export function startHatch(state, eggUid, now = Date.now()) {
   const tutShort =
     egg.source === "starter" ||
     egg.source === "tutorial_shop" ||
-    (state.tutorial && !state.tutorial.done && state.tutorial.step === "hatch_second");
-  const hatchMs = tutShort ? TUTORIAL_EGG_HATCH_MS : t.hatchMs;
+    (tutorialActive(state) && state.tutorial?.step === "hatch_second");
+  const hatchMs = tutShort ? TUTORIAL_EGG_HATCH_MS : eggHatchMsFor(egg, t);
   egg.startedAt = now;
   egg.readyAt = now + hatchMs;
   const hatchLabel = tutShort ? `${Math.round(hatchMs / 1000)} 秒` : `約 ${Math.round(hatchMs / 60000)} 分`;
@@ -3923,14 +3956,15 @@ export function upgradePet(state, uid, payWith = "stones") {
       return { ok: false, msg: `飼料不足（需 ${cost}）。` };
     }
     state.feed = Math.max(0, (state.feed || 0) - cost);
-    pet.atk += 2;
-    pet.hp += 6;
-    pet.spd += 1;
+    const gains = levelStatGains(petGeneration(pet));
+    pet.atk += gains.atk;
+    pet.hp += gains.hp;
+    pet.spd += gains.spd;
     pet.level = level + 1;
     const matNote = formatMats(matCost);
     pushLog(
       state,
-      `${pet.name} 以飼料×${cost} 升級至 Lv.${pet.level}（攻+2 血+6 速+1）${matNote ? `｜耗 ${matNote}` : ""}。`
+      `${pet.name} 以飼料×${cost} 升級至 Lv.${pet.level}（攻+${gains.atk} 血+${gains.hp} 速+${gains.spd}）${matNote ? `｜耗 ${matNote}` : ""}。`
     );
     maybeAnnounceSecondSkill(state, pet, level);
     return { ok: true, msg: `${pet.name} → Lv.${pet.level}（耗飼料×${cost}）` };
@@ -3941,14 +3975,15 @@ export function upgradePet(state, uid, payWith = "stones") {
     return { ok: false, msg: `靈石不足（需 ${cost}）。` };
   }
   state.stones -= cost;
-  pet.atk += 2;
-  pet.hp += 6;
-  pet.spd += 1;
+  const gains = levelStatGains(petGeneration(pet));
+  pet.atk += gains.atk;
+  pet.hp += gains.hp;
+  pet.spd += gains.spd;
   pet.level = level + 1;
   const matNote = formatMats(matCost);
   pushLog(
     state,
-    `${pet.name} 升級至 Lv.${pet.level}（攻+2 血+6 速+1）${matNote ? `｜耗 ${matNote}` : ""}。`
+    `${pet.name} 升級至 Lv.${pet.level}（攻+${gains.atk} 血+${gains.hp} 速+${gains.spd}）${matNote ? `｜耗 ${matNote}` : ""}。`
   );
   maybeAnnounceSecondSkill(state, pet, level);
   return { ok: true, msg: `${pet.name} → Lv.${pet.level}` };
@@ -4090,18 +4125,23 @@ export function fusePets(state, baseUid, matUids) {
   }
   state.stones -= cost;
 
-  // 融合主要吸收素材天生數值，寫入主體基礎
+  // 融合：吸收改細；出戰乘區為主；素材稀有軟綁
   const keepLevel = base.level ?? 1;
-  const rate = fusionAbsorbRate(targetStage);
+  const rarityFactor = fusionMaterialRarityFactor(
+    base.rarity ?? 0,
+    matFounds.map((f) => f.pet.rarity ?? 0)
+  );
+  const rate = fusionAbsorbRate(targetStage) * rarityFactor;
   for (const { pet: mat } of matFounds) {
-    base.atk += Math.max(2, Math.floor(mat.atk * rate)) + targetStage;
-    base.hp += Math.max(4, Math.floor(mat.hp * rate)) + targetStage * 3;
+    base.atk += Math.max(1, Math.floor(mat.atk * rate)) + Math.max(1, Math.floor(targetStage * rarityFactor));
+    base.hp += Math.max(2, Math.floor(mat.hp * rate)) + Math.max(1, Math.floor(targetStage * 2 * rarityFactor));
     base.spd += Math.max(1, Math.floor(mat.spd * rate * 0.85));
   }
-  base.atk += 1 + targetStage;
-  base.hp += 4 + targetStage * 2;
-  base.spd += targetStage;
+  base.atk += Math.max(1, Math.floor((1 + targetStage) * rarityFactor));
+  base.hp += Math.max(2, Math.floor((4 + targetStage * 2) * rarityFactor));
+  base.spd += Math.max(0, Math.floor(targetStage * rarityFactor));
   base.fusionLevel = targetStage;
+  base.fusionPowerMult = fusionCombatMult(targetStage) * rarityFactor;
   base.level = keepLevel;
 
   // 由高 index 開始刪，避免同 list 錯位
@@ -4119,9 +4159,9 @@ export function fusePets(state, baseUid, matUids) {
 
   pushLog(
     state,
-    `融合完成：${base.name} → 融階 ${targetStage}（繼承 Lv.${keepLevel}，耗 ${needMats} 素材／${cost} 靈石${
+    `融合完成：${base.name} → 融階 ${targetStage}（繼承 Lv.${keepLevel}，出戰×${Number(base.fusionPowerMult || 1).toFixed(2)}，耗 ${needMats} 素材／${cost} 靈石${
       formatMats(fuseMats) ? `／${formatMats(fuseMats)}` : ""
-    }）。`
+    }${rarityFactor < 1 ? `｜素材稀有不足×${rarityFactor}` : ""}）。`
   );
   if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
   state.stats.fusions += 1;
@@ -4182,6 +4222,7 @@ export function petDetail(state, uid) {
     fuseCostHint: target != null ? fusionStoneCost(target) : null,
     fuseMatCost: target != null ? fusionMatCost(target) : null,
     fuseMaxed: target == null,
+    fusionPowerMult: petFusionCombatMult(pet),
     skill: skillInfo(pet.skillId),
     skillIds,
     secondSkill: secondId ? skillInfo(secondId) : null,
@@ -4457,7 +4498,8 @@ function buildDungeonAllyUnits(state, d, { dailyMod = null, challenge = null } =
   const dex = bestiaryStatus(state);
   const sealMult = tideSealCombatMult(state.tideSeals || 0);
   const cos = abyssCosmeticCombatMult(state.abyssDive?.cosmetics || {});
-  const atkMult = synergy.atkMult * dex.atkMult * sealMult * cos.atkMult;
+  const nodeMult = abyssPowerNodeAtkMult(state);
+  const atkMult = synergy.atkMult * dex.atkMult * sealMult * cos.atkMult * nodeMult;
   const hpMult = synergy.hpMult * dex.hpMult * sealMult * cos.hpMult;
   const condEval = evaluateDungeonConditions(state.pets, d);
   const passives = condEval.filter((c) => c.passive);
@@ -4477,6 +4519,7 @@ function buildDungeonAllyUnits(state, d, { dailyMod = null, challenge = null } =
     const elemMult = dungeonElemAtkMult(combatPassives, p.elementId);
     const gen = petGeneration(p);
     const gMult = genCombatMult(gen);
+    const fMult = petFusionCombatMult(p);
     const fAtk = formation.petAtkMult || 1;
     const fHp = formation.petHpMult || 1;
     const fSpd = formation.petSpdMult || 1;
@@ -4488,9 +4531,9 @@ function buildDungeonAllyUnits(state, d, { dailyMod = null, challenge = null } =
     allies.push({
       side: "ally",
       name: displayPetName(p),
-      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp),
-      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp),
-      atk: Math.round((p.atk + stageBonus) * atkMult * elemMult * gMult * fAtk * pAtk * bm.atk),
+      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fMult * fHp * pHp * bm.hp),
+      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fMult * fHp * pHp * bm.hp),
+      atk: Math.round((p.atk + stageBonus) * atkMult * elemMult * gMult * fMult * fAtk * pAtk * bm.atk),
       spd: Math.round(p.spd * synergy.spdMult * fSpd * pSpd * bm.spd),
       elementId: p.elementId,
       elementName: p.elementName,
@@ -4605,8 +4648,10 @@ export function runDungeon(state, dungeonId, opts = {}) {
   const synergy = partySynergy(state.pets);
   const dex = bestiaryStatus(state);
   const sealMult = tideSealCombatMult(state.tideSeals || 0);
-  const atkMult = synergy.atkMult * dex.atkMult * sealMult;
-  const hpMult = synergy.hpMult * dex.hpMult * sealMult;
+  const cos = abyssCosmeticCombatMult(state.abyssDive?.cosmetics || {});
+  const nodeMult = abyssPowerNodeAtkMult(state);
+  const atkMult = synergy.atkMult * dex.atkMult * sealMult * cos.atkMult * nodeMult;
+  const hpMult = synergy.hpMult * dex.hpMult * sealMult * cos.hpMult;
   const condEval = evaluateDungeonConditions(state.pets, d);
   const passives = condEval.filter((c) => c.passive);
   const challenges = condEval.filter((c) => !c.passive);
@@ -4630,6 +4675,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
     const elemMult = dungeonElemAtkMult(combatPassives, p.elementId);
     const gen = petGeneration(p);
     const gMult = genCombatMult(gen);
+    const fMult = petFusionCombatMult(p);
     const fAtk = formation.petAtkMult || 1;
     const fHp = formation.petHpMult || 1;
     const fSpd = formation.petSpdMult || 1;
@@ -4642,9 +4688,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
     allies.push({
       side: "ally",
       name: displayPetName(p),
-      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp),
-      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp),
-      atk: Math.round((p.atk + stageBonus) * atkMult * elemMult * gMult * fAtk * pAtk * bm.atk),
+      hp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fMult * fHp * pHp * bm.hp),
+      maxHp: Math.round((p.hp + stageBonus * 2) * hpMult * gMult * fMult * fHp * pHp * bm.hp),
+      atk: Math.round((p.atk + stageBonus) * atkMult * elemMult * gMult * fMult * fAtk * pAtk * bm.atk),
       spd: Math.round(p.spd * synergy.spdMult * fSpd * pSpd * bm.spd),
       isMaster: false,
       elementId: p.elementId,
@@ -5896,16 +5942,18 @@ export function tryBreed(state, uidA, uidB, count = 1) {
   }
 
   const now = Date.now();
+  const cdMult = rarityBreedCdMult(a, b);
+  const cycleMs = Math.round(BREED_COOLDOWN_MS * cdMult);
   /** 每週期預 roll genes（領蛋時再結算天生寫入蛋） */
   const cycles = [];
   for (let i = 0; i < batch; i++) {
     cycles.push({
       genes: rollBreedGenes(a, b),
-      readyAt: now + BREED_COOLDOWN_MS * (i + 1),
+      readyAt: now + cycleMs * (i + 1),
     });
   }
   state.stones -= stoneCost;
-  const readyAt = now + BREED_COOLDOWN_MS * batch;
+  const readyAt = now + cycleMs * batch;
   const job = {
     id: `breed-${now}-${Math.floor(Math.random() * 9999)}`,
     uids: [a.uid, b.uid],
@@ -5913,6 +5961,7 @@ export function tryBreed(state, uidA, uidB, count = 1) {
     startedAt: now,
     readyAt,
     batch,
+    cycleMs,
     claimedCycles: 0,
     cycles,
     genes: cycles[0]?.genes || null,
@@ -5923,7 +5972,7 @@ export function tryBreed(state, uidA, uidB, count = 1) {
   state.breedPair = { uids: job.uids, names: job.names, readyAt };
 
   const matNote = formatMats(matCost);
-  const sec = Math.ceil((BREED_COOLDOWN_MS * batch) / 1000);
+  const sec = Math.ceil((cycleMs * batch) / 1000);
   pushLog(
     state,
     `開始交配×${batch}：${job.names[0]} × ${job.names[1]}（孕育約 ${sec}s｜耗 ${stoneCost} 石${matNote ? `／${matNote}` : ""}）。`
@@ -6218,12 +6267,12 @@ export function breedPairHint(petA, petB) {
 export function breedStatus(state) {
   ensureBreedJobs(state);
   const now = Date.now();
-  const cycleMs = BREED_COOLDOWN_MS;
   const jobs = state.breedJobs
     .filter((j) => !j.claimed && !j.legacy)
     .map((j) => {
       const batch = Math.max(1, j.batch || 1);
       const claimedCycles = Math.max(0, j.claimedCycles || 0);
+      const cycleMs = Math.max(1, j.cycleMs || BREED_COOLDOWN_MS);
       const totalMs = cycleMs * batch;
       const startedAt = j.startedAt || (j.readyAt || now) - totalMs;
       const left = Math.max(0, (j.readyAt || 0) - now);
@@ -6275,7 +6324,7 @@ export function breedStatus(state) {
     batchMax: BREED_BATCH_MAX,
     slotsUsed: jobs.length,
     cooldownLeftMs: next?.leftMs || 0,
-    cooldownTotalMs: cycleMs,
+    cooldownTotalMs: next?.cycleMs || BREED_COOLDOWN_MS,
     cooldownPct: next ? next.pct : 100,
     ready: jobs.length < BREED_QUEUE_MAX,
     pair: next ? { uids: next.uids, names: next.names, readyAt: next.readyAt } : null,
@@ -6325,6 +6374,8 @@ function ensureAbyssDive(state, now = Date.now()) {
   }
   const ad = state.abyssDive;
   if (!ad.cosmetics) ad.cosmetics = {};
+  if (typeof ad.powerNodes !== "number" || ad.powerNodes < 0) ad.powerNodes = 0;
+  ad.powerNodes = Math.min(ABYSS_POWER_NODE_MAX, Math.floor(ad.powerNodes || 0));
   const wk = weekKey(now);
   if (ad.weekKey !== wk) {
     ad.weekKey = wk;
@@ -6335,6 +6386,11 @@ function ensureAbyssDive(state, now = Date.now()) {
     ad.eggsBoughtWeek = 0;
   }
   return ad;
+}
+
+function abyssPowerNodeAtkMult(state) {
+  const n = Math.max(0, Math.min(ABYSS_POWER_NODE_MAX, state.abyssDive?.powerNodes | 0));
+  return 1 + n * ABYSS_POWER_NODE_ATK;
 }
 
 function abyssUnlocked(state) {
@@ -6470,11 +6526,13 @@ function abyssPetCombatStats(state, pet, diveBuffs) {
   const sealMult = tideSealCombatMult(state.tideSeals || 0);
   const cos = abyssCosmeticCombatMult(state.abyssDive?.cosmetics || {});
   const buff = abyssDiveBuffMult(diveBuffs);
-  const atkMult = synergy.atkMult * dex.atkMult * sealMult * cos.atkMult * buff.atkMult;
+  const nodeMult = abyssPowerNodeAtkMult(state);
+  const atkMult = synergy.atkMult * dex.atkMult * sealMult * cos.atkMult * buff.atkMult * nodeMult;
   const hpMult = synergy.hpMult * dex.hpMult * sealMult * cos.hpMult * buff.hpMult;
   const skills = petSkillIds(pet);
   const gen = petGeneration(pet);
   const gMult = genCombatMult(gen);
+  const fMult = petFusionCombatMult(pet);
   const fAtk = formation.petAtkMult || 1;
   const fHp = formation.petHpMult || 1;
   const fSpd = formation.petSpdMult || 1;
@@ -6483,8 +6541,8 @@ function abyssPetCombatStats(state, pet, diveBuffs) {
   const pHp = pe?.hpMult || 1;
   const pSpd = pe?.spdMult || 1;
   const bm = bloodmarkCombatMult(pet.bloodmarks);
-  const maxHp = Math.round((pet.hp + stageBonus * 2) * hpMult * gMult * fHp * pHp * bm.hp);
-  const atk = Math.round((pet.atk + stageBonus) * atkMult * gMult * fAtk * pAtk * bm.atk);
+  const maxHp = Math.round((pet.hp + stageBonus * 2) * hpMult * gMult * fMult * fHp * pHp * bm.hp);
+  const atk = Math.round((pet.atk + stageBonus) * atkMult * gMult * fMult * fAtk * pAtk * bm.atk);
   const spd = Math.round(pet.spd * synergy.spdMult * fSpd * pSpd * bm.spd);
   return {
     maxHp,
@@ -6770,6 +6828,11 @@ export function abyssDiveView(state, now = Date.now()) {
     eggCost: ABYSS_EGG_COST,
     tideShiftCost: ABYSS_TIDE_SHIFT_COST,
     tideShiftHave: Math.floor(state.items?.tide_shift_charm || 0),
+    powerNodes: ad.powerNodes | 0,
+    powerNodeMax: ABYSS_POWER_NODE_MAX,
+    powerNodeCost: ABYSS_POWER_NODE_COST,
+    powerNodeAtkPct: Math.round(ABYSS_POWER_NODE_ATK * 100),
+    powerNodeAtkMult: abyssPowerNodeAtkMult(state),
     squadSize: ABYSS_SQUAD_SIZE,
     activeSize: ABYSS_ACTIVE_SIZE,
     ownedCount,
@@ -7176,6 +7239,26 @@ export function buyAbyssEgg(state, now = Date.now()) {
   ad.eggsBoughtWeek = (ad.eggsBoughtWeek | 0) + 1;
   pushLog(state, "兌得潮淵高階蛋。");
   return { ok: true, egg, msg: "獲得潮淵高階蛋（A）。" };
+}
+
+/** 淵核：永久小幅攻擊加成（有 cap；淵砂長期 sink） */
+export function buyAbyssPowerNode(state, now = Date.now()) {
+  const ad = ensureAbyssDive(state, now);
+  const have = ad.powerNodes | 0;
+  if (have >= ABYSS_POWER_NODE_MAX) {
+    return { ok: false, msg: `淵核已達上限（${ABYSS_POWER_NODE_MAX}）。` };
+  }
+  if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_POWER_NODE_COST })) {
+    return { ok: false, msg: `需要淵砂×${ABYSS_POWER_NODE_COST}。` };
+  }
+  ad.powerNodes = have + 1;
+  const pct = Math.round(ad.powerNodes * ABYSS_POWER_NODE_ATK * 100);
+  pushLog(state, `點亮淵核 ${ad.powerNodes}/${ABYSS_POWER_NODE_MAX}（全隊攻擊 +${pct}%）。`);
+  return {
+    ok: true,
+    msg: `淵核 ${ad.powerNodes}/${ABYSS_POWER_NODE_MAX} · 攻擊 +${pct}%`,
+    powerNodes: ad.powerNodes,
+  };
 }
 
 /** 淵砂兌換潮轉符（入背包道具；永久轉屬） */
