@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260907.3";
+export const APP_BUILD = "20260907.4";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -3816,6 +3816,7 @@ export const DISPATCH_MISSIONS = [
     durationMs: 90_000,
     needPets: 1,
     needSite: null,
+    needSpineStage: 1,
     needElement: "tide",
     reward: { feed: 10, stones: 12, materials: { tide_dew: 2 } },
     eggChance: { tier: "C", rate: 0.12 },
@@ -3827,6 +3828,7 @@ export const DISPATCH_MISSIONS = [
     durationMs: 180_000,
     needPets: 1,
     needSite: null,
+    needSpineStage: 1,
     needKind: "鱗",
     reward: { stones: 8, feed: 4, materials: { tide_dew: 1 } },
     eggChance: { tier: "C", rate: 0.55 },
@@ -3837,100 +3839,109 @@ export const DISPATCH_MISSIONS = [
     name: "靈塵拾遺",
     durationMs: 150_000,
     needPets: 1,
-    needSite: "ruins",
+    needSite: null,
+    needSpineStage: 2,
     needElement: "gloom",
     reward: { dust: 12, stones: 10, materials: { coral_shard: 3 } },
     eggChance: { tier: "C", rate: 0.18 },
-    desc: "1 寵 · 需幽屬 · 廢墟影堂 · 靈塵／珊瑚屑 · 偶得蛋",
+    desc: "1 寵 · 需幽屬 · 主脊階段2 · 靈塵／珊瑚屑 · 偶得蛋",
   },
   {
     id: "egg_ruins",
     name: "廢墟巢穴",
     durationMs: 240_000,
     needPets: 1,
-    needSite: "ruins",
+    needSite: null,
+    needSpineStage: 2,
     needKind: "蟲",
     reward: { stones: 14, dust: 4, materials: { coral_shard: 2 } },
     eggChance: { tier: "B", rate: 0.35 },
-    desc: "1 寵 · 需蟲類 · 廢墟影堂 · 機率暗潮蛋",
+    desc: "1 寵 · 需蟲類 · 主脊階段2 · 機率暗潮蛋",
   },
   {
     id: "scrap_dive",
     name: "廢墟打撈",
     durationMs: 240_000,
     needPets: 2,
-    needSite: "deep",
+    needSite: null,
+    needSpineStage: 3,
     needKind: "甲",
     reward: { scrap: 2, stones: 25, feed: 4, materials: { mist_silk: 2 } },
     eggChance: { tier: "B", rate: 0.15 },
-    desc: "2 寵 · 需甲類 · 深層祭壇 · 霧絲",
+    desc: "2 寵 · 需甲類 · 主脊階段3 · 霧絲",
   },
   {
     id: "egg_deep",
     name: "深層孵巢",
     durationMs: 300_000,
     needPets: 2,
-    needSite: "deep",
+    needSite: null,
+    needSpineStage: 3,
     needElement: "gale",
     reward: { stones: 20, materials: { mist_silk: 1 } },
     eggChance: { tier: "B", rate: 0.45 },
-    desc: "2 寵 · 需嵐屬 · 深層祭壇 · 高機率暗潮蛋",
+    desc: "2 寵 · 需嵐屬 · 主脊階段3 · 高機率暗潮蛋",
   },
   {
     id: "resin_gather",
     name: "霧帷採脂",
     durationMs: 210_000,
     needPets: 1,
-    needSite: "mistveil",
+    needSite: null,
+    needSpineStage: 3,
     needKind: "禽",
     reward: { dust: 6, stones: 18, materials: { echo_resin: 3 } },
     eggChance: { tier: "B", rate: 0.12 },
-    desc: "1 寵 · 需禽類 · 霧帷練台 · 靈響脂",
+    desc: "1 寵 · 需禽類 · 主脊階段3 · 靈響脂",
   },
   {
     id: "ink_scout",
     name: "墨潮探查",
     durationMs: 300_000,
     needPets: 2,
-    needSite: "core",
+    needSite: null,
+    needSpineStage: 4,
     needElement: "gloom",
     needKind: "光",
     reward: { dust: 8, stones: 30, materials: { abyss_ink: 3 } },
     eggChance: { tier: "B", rate: 0.2 },
-    desc: "2 寵 · 需幽屬光類 · 心核道場 · 深淵墨",
+    desc: "2 寵 · 需幽屬光類 · 主脊階段4 · 深淵墨",
   },
   {
     id: "sand_haul",
     name: "融砂搬運",
     durationMs: 270_000,
     needPets: 2,
-    needSite: "fusehall",
+    needSite: null,
+    needSpineStage: 4,
     needElement: "stone",
     reward: { stones: 28, feed: 3, materials: { fuse_sand: 3 } },
     eggChance: { tier: "B", rate: 0.14 },
-    desc: "2 寵 · 需岩屬 · 融砂坊 · 融砂",
+    desc: "2 寵 · 需岩屬 · 主脊階段4 · 融砂",
   },
   {
     id: "ember_rite",
     name: "契火祭巡",
     durationMs: 360_000,
     needPets: 2,
-    needSite: "abyss",
+    needSite: null,
+    needSpineStage: 5,
     needElement: "flame",
     reward: { stones: 40, materials: { seal_ember: 3 } },
     eggChance: { tier: "A", rate: 0.1 },
-    desc: "2 寵 · 需焰屬 · 暗潮心壇 · 契火 · 低機率心核蛋",
+    desc: "2 寵 · 需焰屬 · 主脊階段5 · 契火 · 低機率心核蛋",
   },
   {
     id: "egg_abyss",
     name: "心核拾遺",
     durationMs: 420_000,
     needPets: 2,
-    needSite: "abyss",
+    needSite: null,
+    needSpineStage: 5,
     needKind: "獸",
     reward: { stones: 35, dust: 6, materials: { seal_ember: 1 } },
     eggChance: { tier: "A", rate: 0.28 },
-    desc: "2 寵 · 需獸類 · 暗潮心壇 · 機率心核蛋",
+    desc: "2 寵 · 需獸類 · 主脊階段5 · 機率心核蛋",
   },
 ];
 
@@ -4024,10 +4035,15 @@ export const DUNGEON_MAT_DROPS = {
 export function rollDungeonMatDrop(dungeonId, opts = {}) {
   let table = DUNGEON_MAT_DROPS[dungeonId];
   if (!table) {
-    const tier = parseDungeonTier(dungeonId);
-    if (tier >= 5) {
-      const built = buildDungeonForTier(tier);
+    if (isBranchDungeonId(dungeonId)) {
+      const built = resolveBranchDungeon(dungeonId);
       if (built?.matDropOverride) table = built.matDropOverride;
+    } else {
+      const tier = parseDungeonTier(dungeonId);
+      if (tier >= 5) {
+        const built = buildDungeonForTier(tier);
+        if (built?.matDropOverride) table = built.matDropOverride;
+      }
     }
   }
   table = table || DUNGEON_MAT_DROPS.tide_1;
@@ -4734,210 +4750,291 @@ export function spineStageMatBias(stage) {
 }
 
 /**
- * 練功地點：首通秘境解鎖；每地專精一種 bulk（唔再愈深愈全能）
- * focus: UI 短標；primaryMat: 專精主產物；drops: perSec 期望產出／秒
- * 秘境專屬料（洗劑／催化／催生符）永不進 AFK
- * 入場令（潮霧令）只走練功／每日／升階，永不進秘境掉落
+ * 練功／掛機＝主脊＋支線（取替舊七潮域揀地點）
+ * 秘境戰鬥仍獨立；主脊進度共用 clearedDungeons[tide_*]
+ * 秘境專屬料永不進 AFK；潮霧令只走練功／每日／升階
  */
 export const TRAIN_FOCUS_BONUS = 1.35;
 export const TRAIN_DAILY_SPOT_BONUS = 1.25;
 
+/** 唯一掛機區 id（舊 shore／ruins… 一律遷入） */
+export const SPINE_ZONE_ID = "spine";
+
+/** 最高已通主脊層（tide_N）；無則 0 */
+export function maxClearedTideTier(state) {
+  let max = 0;
+  for (const id of Object.keys(state?.clearedDungeons || {})) {
+    const t = parseDungeonTier(id);
+    if (t > max) max = t;
+  }
+  return max;
+}
+
+/** 掛機產出跟已通段；至少階段 1 */
+export function spineStageFromState(state) {
+  const cleared = maxClearedTideTier(state);
+  return spineStageForTier(Math.max(1, cleared || 1));
+}
+
+/** 下一未通主脊層（至少 1） */
+export function spineFrontierTier(state) {
+  return Math.max(1, maxClearedTideTier(state) + 1);
+}
+
+/** 段主潮鑰跟主脊階段 */
+export function spineKeyMatForStage(stage) {
+  const s = Math.max(1, stage | 0);
+  if (s >= 5) return "tide_key_4";
+  if (s >= 4) return "tide_key_3";
+  if (s >= 3) return "tide_key_2";
+  return "tide_key_1";
+}
+
+export function spineThreatBase(frontierTier) {
+  const t = Math.max(1, frontierTier | 0);
+  const stage = spineStageForTier(t);
+  return Math.round(28 + (t - 1) * 3.2 + (stage - 1) * 8);
+}
+
+/** AFK 產物表：跟 spineStageMatBias；總 mat 預算約舊七域合計量級 */
+export function spineAfkDropsForStage(stage) {
+  const bias = spineStageMatBias(stage);
+  const drops = [];
+  let totalW = 0;
+  for (const w of Object.values(bias)) totalW += Math.max(0, w | 0);
+  if (totalW <= 0) totalW = 1;
+  const MAT_BUDGET = 0.042;
+  for (const [mat, w] of Object.entries(bias)) {
+    if ((w | 0) <= 0) continue;
+    drops.push({ mat, perSec: MAT_BUDGET * (w / totalW) });
+  }
+  // 技能／舊融合料：中後段慢滴，避免完全斷線
+  if (stage >= 3) drops.push({ mat: "echo_resin", perSec: 0.006 });
+  if (stage >= 4) drops.push({ mat: "fuse_sand", perSec: 0.005 });
+  drops.push({ mat: "mist_token", perSec: 0.0034 + Math.min(0.0012, (stage - 1) * 0.00025) });
+  drops.push({ feed: 0.028 });
+  drops.push({ dust: 0.012 + Math.min(0.008, (stage - 1) * 0.0015) });
+  return drops;
+}
+
+export function spinePrimaryMatForStage(stage) {
+  const bias = spineStageMatBias(stage);
+  let best = null;
+  let bestW = -1;
+  for (const [mat, w] of Object.entries(bias)) {
+    if ((w | 0) > bestW) {
+      bestW = w | 0;
+      best = mat;
+    }
+  }
+  return best || "tide_dew";
+}
+
+const SPINE_STAGE_FOCUS = {
+  1: "潮露／原生",
+  2: "地階",
+  3: "雲階",
+  4: "火階",
+  5: "天階／終局",
+};
+
+/** 動態主脊掛機 profile（當 TRAIN_SITES[0] 用） */
+export function spineTrainProfile(state) {
+  const stage = spineStageFromState(state);
+  const frontier = spineFrontierTier(state);
+  const primaryMat = spinePrimaryMatForStage(stage);
+  const focus = SPINE_STAGE_FOCUS[Math.min(5, stage)] || SPINE_STAGE_FOCUS[5];
+  return {
+    id: SPINE_ZONE_ID,
+    name: "主脊潮脈",
+    needClear: null,
+    qiMult: 1 + Math.min(0.08, (stage - 1) * 0.015),
+    focus,
+    primaryMat,
+    desc: `階段${stage} · 前沿 tide_${frontier} · 掛機跟主脊進度`,
+    drops: spineAfkDropsForStage(stage),
+    spineStage: stage,
+    frontierTier: frontier,
+  };
+}
+
+/**
+ * 兼容舊 API：只得一站「主脊」。
+ * drops／primaryMat 為階段 1 靜態快照（來源索引）；執行時用 spineTrainProfile。
+ */
 export const TRAIN_SITES = [
   {
-    id: "shore",
-    name: "潮岸域",
+    id: SPINE_ZONE_ID,
+    name: "主脊潮脈",
     needClear: null,
     qiMult: 1,
-    focus: "升級",
+    focus: "主脊",
     primaryMat: "tide_dew",
-    desc: "專精升級 · 潮露／飼料／潮霧令",
-    drops: [
-      { mat: "tide_dew", perSec: 0.034 },
-      { mat: "mist_token", perSec: 0.0035 },
-      { feed: 0.038 },
-      { dust: 0.0085 },
-    ],
-  },
-  {
-    id: "ruins",
-    name: "廢墟域",
-    needClear: "tide_1",
-    qiMult: 1.02,
-    focus: "繁殖",
-    primaryMat: "coral_shard",
-    desc: "專精繁殖 · 珊瑚屑／潮霧令",
-    drops: [
-      { mat: "coral_shard", perSec: 0.031 },
-      { mat: "mist_token", perSec: 0.0028 },
-      { feed: 0.017 },
-      { dust: 0.013 },
-    ],
-  },
-  {
-    id: "deep",
-    name: "深層域",
-    needClear: "tide_2",
-    qiMult: 1.03,
-    focus: "高階升級",
-    primaryMat: "mist_silk",
-    desc: "專精高階升級 · 霧絲／潮霧令",
-    drops: [
-      { mat: "mist_silk", perSec: 0.026 },
-      { mat: "mist_token", perSec: 0.0032 },
-      { feed: 0.019 },
-      { dust: 0.01 },
-    ],
-  },
-  {
-    id: "mistveil",
-    name: "霧帷域",
-    needClear: "tide_2",
-    qiMult: 1.025,
-    focus: "技能",
-    primaryMat: "echo_resin",
-    desc: "專精技能 · 靈響脂／靈塵／潮霧令",
-    drops: [
-      { mat: "echo_resin", perSec: 0.017 },
-      { mat: "mist_token", perSec: 0.0032 },
-      { dust: 0.03 },
-      { feed: 0.01 },
-    ],
-  },
-  {
-    id: "core",
-    name: "心核域",
-    needClear: "tide_3",
-    qiMult: 1.04,
-    focus: "雜交",
-    primaryMat: "abyss_ink",
-    desc: "專精雜交繁殖 · 深淵墨／潮霧令",
-    drops: [
-      { mat: "abyss_ink", perSec: 0.025 },
-      { mat: "mist_token", perSec: 0.0035 },
-      { dust: 0.015 },
-    ],
-  },
-  {
-    id: "fusehall",
-    name: "融砂域",
-    needClear: "tide_3",
-    qiMult: 1.035,
-    focus: "融合",
-    primaryMat: "fuse_sand",
-    desc: "專精融合 · 融砂／潮霧令",
-    drops: [
-      { mat: "fuse_sand", perSec: 0.016 },
-      { mat: "mist_token", perSec: 0.0035 },
-      { feed: 0.013 },
-      { dust: 0.012 },
-    ],
-  },
-  {
-    id: "abyss",
-    name: "暗潮域",
-    needClear: "tide_4",
-    qiMult: 1.06,
-    focus: "突破",
-    primaryMat: "seal_ember",
-    desc: "專精突破 · 契火／潮霧令",
-    drops: [
-      { mat: "seal_ember", perSec: 0.015 },
-      { mat: "mist_token", perSec: 0.0042 },
-      { dust: 0.017 },
-    ],
+    desc: "掛機跟主脊進度 · 側枝專產階石",
+    drops: spineAfkDropsForStage(1),
   },
 ];
 
-/** 霧階數；深度倍率：霧階一～四／已通域主 */
+/** 霧階數；深度倍率：霧階一～四／已通段主 */
 export const TRAIN_TIER_COUNT = 4;
-/** 一層霧階＝多波敵人；域主關波數更多 */
+/** 一層霧階＝多波敵人；段主關波數更多 */
 export const TRAIN_MIST_WAVE_COUNT = 5;
 export const TRAIN_WARDEN_WAVE_COUNT = 7;
 export const TRAIN_DEPTH_MULT = [1.0, 1.1, 1.2, 1.35, 1.5];
 
 /**
- * 潮域鏈：prevZone 域主首通 → 解鎖本域
- * keyMatId／keyDungeonId：挑戰域主所需潮鑰（秘境高機率掉）
- * threatBase：霧階一掛機／推進基準威脅（隨階遞增）
+ * 主脊單區鏈（取替七潮域）
+ * threatBase 為保底；實戰用 spineThreatBase(frontier)
  */
 export const TRAIN_ZONE_CHAIN = [
   {
-    id: "shore",
+    id: SPINE_ZONE_ID,
     prevZone: null,
     keyMatId: "tide_key_1",
     keyDungeonId: "tide_1",
     threatBase: 28,
-    rematch: { stones: 10, materials: { tide_dew: 4, warden_echo: 1 } },
-  },
-  {
-    id: "ruins",
-    prevZone: "shore",
-    keyMatId: "tide_key_1",
-    keyDungeonId: "tide_1",
-    threatBase: 42,
-    rematch: { stones: 12, materials: { coral_shard: 4, warden_echo: 1 } },
-  },
-  {
-    id: "deep",
-    prevZone: "ruins",
-    keyMatId: "tide_key_2",
-    keyDungeonId: "tide_2",
-    threatBase: 58,
-    rematch: { stones: 14, materials: { mist_silk: 3, warden_echo: 1 } },
-  },
-  {
-    id: "mistveil",
-    prevZone: "deep",
-    keyMatId: "tide_key_2",
-    keyDungeonId: "tide_2",
-    threatBase: 64,
-    rematch: { stones: 14, materials: { echo_resin: 3, warden_echo: 1 } },
-  },
-  {
-    id: "core",
-    prevZone: "mistveil",
-    keyMatId: "tide_key_3",
-    keyDungeonId: "tide_3",
-    threatBase: 82,
-    rematch: { stones: 18, materials: { abyss_ink: 3, warden_echo: 1 } },
-  },
-  {
-    id: "fusehall",
-    prevZone: "core",
-    keyMatId: "tide_key_3",
-    keyDungeonId: "tide_3",
-    threatBase: 88,
-    rematch: { stones: 18, materials: { fuse_sand: 3, warden_echo: 1 } },
-  },
-  {
-    id: "abyss",
-    prevZone: "fusehall",
-    keyMatId: "tide_key_4",
-    keyDungeonId: "tide_4",
-    threatBase: 110,
-    rematch: { stones: 22, materials: { seal_ember: 3, warden_echo: 2 } },
+    rematch: {
+      stones: 14,
+      materials: { tide_dew: 3, warden_echo: 1 },
+    },
   },
 ];
 
 export function trainZoneMeta(zoneId) {
-  return TRAIN_ZONE_CHAIN.find((z) => z.id === zoneId) || TRAIN_ZONE_CHAIN[0];
+  const id = zoneId === SPINE_ZONE_ID || !zoneId ? SPINE_ZONE_ID : SPINE_ZONE_ID;
+  void zoneId;
+  return TRAIN_ZONE_CHAIN.find((z) => z.id === id) || TRAIN_ZONE_CHAIN[0];
 }
 
 export function trainZoneOrderIndex(zoneId) {
-  const i = TRAIN_ZONE_CHAIN.findIndex((z) => z.id === zoneId);
-  return i < 0 ? 0 : i;
+  void zoneId;
+  return 0;
 }
 
-/** 霧階／域主威脅值 */
-export function trainTierThreat(zoneId, tierIndex) {
-  const meta = trainZoneMeta(zoneId);
-  const base = meta.threatBase || 30;
+/** 霧階／段主威脅值；opts.frontierTier 提升基準 */
+export function trainTierThreat(zoneId, tierIndex, opts = {}) {
+  void zoneId;
+  const base =
+    opts.threatBase != null
+      ? opts.threatBase
+      : opts.frontierTier != null
+        ? spineThreatBase(opts.frontierTier)
+        : trainZoneMeta(SPINE_ZONE_ID).threatBase || 30;
   const t = Math.max(0, Math.min(TRAIN_TIER_COUNT, tierIndex | 0));
   return Math.round(base * (1 + t * 0.22));
 }
 
-export function trainWardenThreat(zoneId) {
-  return trainTierThreat(zoneId, TRAIN_TIER_COUNT);
+export function trainWardenThreat(zoneId, opts = {}) {
+  return trainTierThreat(zoneId, TRAIN_TIER_COUNT, opts);
+}
+
+/* ─── 練功側枝（地／火／天）；入口在練功樹，唔改秘境 UI ─── */
+
+export const SIDE_BRANCHES = [
+  {
+    id: "earth_vein",
+    name: "地脈",
+    needSpineStage: 2,
+    floors: 8,
+    specialty: "earth_grade_stone",
+    element: "stone",
+    prefix: "地脈",
+  },
+  {
+    id: "fire_vein",
+    name: "火脈",
+    needSpineStage: 4,
+    floors: 8,
+    specialty: "fire_grade_stone",
+    element: "flame",
+    prefix: "火脈",
+  },
+  {
+    id: "sky_vein",
+    name: "天脈",
+    needSpineStage: 5,
+    floors: 8,
+    specialty: "sky_grade_stone",
+    element: "gale",
+    prefix: "天脈",
+  },
+];
+
+export function sideBranchById(branchId) {
+  return SIDE_BRANCHES.find((b) => b.id === branchId) || null;
+}
+
+export function parseBranchDungeonId(dungeonId) {
+  const m = /^(earth_vein|fire_vein|sky_vein)_(\d+)$/.exec(String(dungeonId || ""));
+  if (!m) return null;
+  return { branchId: m[1], floor: parseInt(m[2], 10) };
+}
+
+export function isBranchDungeonId(dungeonId) {
+  return !!parseBranchDungeonId(dungeonId);
+}
+
+export function branchDungeonId(branchId, floor) {
+  return `${branchId}_${Math.max(1, floor | 0)}`;
+}
+
+export function branchFloors(branchId) {
+  const b = sideBranchById(branchId);
+  if (!b) return [];
+  const out = [];
+  for (let f = 1; f <= b.floors; f++) out.push(branchDungeonId(branchId, f));
+  return out;
+}
+
+export function isSideBranchUnlocked(state, branchId) {
+  const b = sideBranchById(branchId);
+  if (!b) return false;
+  return spineStageFromState(state) >= (b.needSpineStage | 0);
+}
+
+export function listSideBranches(state) {
+  return SIDE_BRANCHES.map((b) => ({
+    ...b,
+    unlocked: isSideBranchUnlocked(state, b.id),
+    lockHint: `主脊階段≥${b.needSpineStage} 解鎖`,
+  }));
+}
+
+/** 側枝關卡：短線農場；cleared 唔餵突破／主幹前沿 */
+export function buildBranchDungeon(branchId, floor) {
+  const b = sideBranchById(branchId);
+  if (!b) return null;
+  const f = Math.max(1, Math.min(b.floors, floor | 0));
+  const baseTier = Math.max(2, b.needSpineStage * 8 + f);
+  const base = buildDungeonForTier(Math.min(baseTier, 40)) || buildDungeonForTier(4);
+  if (!base) return null;
+  const d = JSON.parse(JSON.stringify(base));
+  d.id = branchDungeonId(branchId, f);
+  d.name = `${b.name} · ${f}層`;
+  d.needRealm = Math.max(0, b.needSpineStage - 1);
+  d.branchId = branchId;
+  d.branchFloor = f;
+  d.isSideBranch = true;
+  d.loreTag = `側枝·${b.name}`;
+  const weights = { [b.specialty]: 8, tide_dew: 1 };
+  if (b.id === "sky_vein" && f >= 6) weights.void_grade_stone = 2;
+  if (f >= 4) weights[b.specialty] = 10;
+  d.matDropOverride = {
+    chance: 0.72,
+    weights,
+  };
+  d.reward = d.reward || { stones: 20, scrap: 1 };
+  d.reward.stones = Math.max(12, Math.round((d.reward.stones || 20) * 0.55));
+  d.firstClearBonus = d.firstClearBonus || { stones: 30, scrap: 1 };
+  d.firstClearBonus.stones = Math.max(20, Math.round((d.firstClearBonus.stones || 30) * 0.5));
+  if (d.firstClearBonus.seal_ember) delete d.firstClearBonus.seal_ember;
+  return d;
+}
+
+export function resolveBranchDungeon(dungeonId) {
+  const parsed = parseBranchDungeonId(dungeonId);
+  if (!parsed) return null;
+  return buildBranchDungeon(parsed.branchId, parsed.floor);
 }
 
 /** 秘境→潮鑰對照 */
@@ -4986,7 +5083,9 @@ export function rollTideKeyDrop(dungeonId, opts = {}) {
 }
 
 export function trainSiteById(id) {
-  return TRAIN_SITES.find((s) => s.id === id) || TRAIN_SITES[0];
+  void id;
+  // 舊存檔 id（shore／ruins…）一律視為主脊
+  return TRAIN_SITES[0];
 }
 
 /** 練功地主產物（專精加成對象） */
@@ -4996,42 +5095,43 @@ export function trainSitePrimaryMat(site) {
   return (site.drops || []).find((d) => d.mat)?.mat || null;
 }
 
-/** 每日輪換一個練功地全產出強化（穩定 seed） */
+/** 每日強化：主脊全產出（單一掛機區） */
 export function pickDailyTrainSpotlight(dateKey) {
   if (!TRAIN_SITES.length) return null;
-  const idx = hashDayKey(`${dateKey || ""}:train-spot`) % TRAIN_SITES.length;
-  return TRAIN_SITES[idx];
+  void dateKey;
+  return TRAIN_SITES[0];
 }
 
-/** 單項 drop 的有效倍率（專精主產物 + 今日強化地） */
+/** 單項 drop 的有效倍率（專精主產物 + 今日強化） */
 export function trainDropMult(site, drop, dateKey) {
   if (!site || !drop) return 1;
   let mult = 1;
   const primary = trainSitePrimaryMat(site);
   if (drop.mat && drop.mat === primary) mult *= TRAIN_FOCUS_BONUS;
   const spot = pickDailyTrainSpotlight(dateKey);
-  if (spot?.id === site.id) mult *= TRAIN_DAILY_SPOT_BONUS;
+  if (spot?.id === site.id || spot?.id === SPINE_ZONE_ID) mult *= TRAIN_DAILY_SPOT_BONUS;
   return mult;
 }
 
-/** UI：今日強化練功地 */
+/** UI：今日強化練功 */
 export function trainDailySpotlightView(dateKey = todayKey()) {
   const site = pickDailyTrainSpotlight(dateKey);
   if (!site) return null;
   return {
-    siteId: site.id,
+    siteId: SPINE_ZONE_ID,
     siteName: site.name,
     focus: site.focus || "",
     bonusPct: Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100),
-    label: `今日強化【${site.name}】全產出 +${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%`,
+    label: `今日強化【主脊掛機】全產出 +${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%`,
   };
 }
 
-/** UI：每地有效產率（含加成） */
+/** UI：有效產率（含加成）；可傳動態 profile */
 export function trainSiteRatesView(site, dateKey = todayKey()) {
   const primary = trainSitePrimaryMat(site);
   const spot = pickDailyTrainSpotlight(dateKey);
-  const isSpot = spot?.id === site.id;
+  const isSpot = true; // 單一主脊＝每日強化對象
+  void spot;
   const lines = [];
   for (const drop of site.drops || []) {
     const mult = trainDropMult(site, drop, dateKey);
@@ -5050,29 +5150,60 @@ export function trainSiteRatesView(site, dateKey = todayKey()) {
       });
     } else if (drop.feed) {
       const perHr = ((drop.feed || 0) * mult * 3600).toFixed(0);
-      lines.push({ kind: "feed", name: "飼料", perHr, tag: isSpot ? `今日+${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%` : "" });
+      lines.push({
+        kind: "feed",
+        name: "飼料",
+        perHr,
+        tag: isSpot ? `今日+${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%` : "",
+      });
     } else if (drop.dust) {
       const perHr = ((drop.dust || 0) * mult * 3600).toFixed(0);
-      lines.push({ kind: "dust", name: "靈塵", perHr, tag: isSpot ? `今日+${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%` : "" });
+      lines.push({
+        kind: "dust",
+        name: "靈塵",
+        perHr,
+        tag: isSpot ? `今日+${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%` : "",
+      });
     }
   }
   return { primaryMat: primary, isDailySpot: isSpot, lines };
 }
 
+/** 主脊永遠解鎖；舊 site id 亦當解鎖（遷入後） */
 export function isTrainSiteUnlocked(state, siteId) {
-  const site = trainSiteById(siteId);
-  const meta = trainZoneMeta(siteId);
-  // 主路徑：上一潮域域主首通
-  if (!meta?.prevZone) return true;
-  if (state.trainMap?.wardenCleared?.[meta.prevZone]) return true;
-  // 舊存檔相容：仍認秘境首通
-  if (site.needClear && (state.clearedDungeons || {})[site.needClear]) return true;
-  return false;
+  void state;
+  void siteId;
+  return true;
 }
 
-/** 由通關狀態推算已解鎖地點 */
+/** 由通關狀態推算已解鎖地點（僅主脊） */
 export function unlockedTrainSiteIds(state) {
-  return TRAIN_SITES.filter((s) => isTrainSiteUnlocked(state, s.id)).map((s) => s.id);
+  void state;
+  return [SPINE_ZONE_ID];
+}
+
+/** 舊潮域 id → 需求主脊階段（派遣解鎖） */
+export const LEGACY_TRAIN_SITE_STAGE = {
+  shore: 1,
+  spine: 1,
+  ruins: 2,
+  deep: 3,
+  mistveil: 3,
+  core: 4,
+  fusehall: 4,
+  abyss: 5,
+};
+
+export function dispatchNeedStageMet(state, mission) {
+  if (!mission) return true;
+  if (mission.needSpineStage != null) {
+    return spineStageFromState(state) >= (mission.needSpineStage | 0);
+  }
+  if (mission.needSite) {
+    const need = LEGACY_TRAIN_SITE_STAGE[mission.needSite] || 1;
+    return spineStageFromState(state) >= need;
+  }
+  return true;
 }
 
 /* ─── P11：材料提示／解鎖回饋 ─── */
@@ -5095,11 +5226,11 @@ export const MATERIAL_USES = {
   blood_catalyst: "縮短繁殖冷卻",
   breed_ticket: "重置繁殖冷卻",
   mist_token: "秘境入場／掃蕩",
-  tide_key_1: "潮岸／廢墟域主",
-  tide_key_2: "深層／霧帷域主",
-  tide_key_3: "心核／融砂域主",
-  tide_key_4: "暗潮域主",
-  warden_echo: "域主複打殘響",
+  tide_key_1: "主脊段主（初段）",
+  tide_key_2: "主脊段主（中段）",
+  tide_key_3: "主脊段主（高段）",
+  tide_key_4: "主脊段主（終段）",
+  warden_echo: "段主複打殘響",
   abyss_grit: "潮淵兌換",
   soul_essence: "放生／精魂商店",
 };
@@ -5361,7 +5492,7 @@ export function abyssCosmeticCombatMult(unlockedMap = {}) {
   };
 }
 
-/** 材料來源索引（練功地／派遣） */
+/** 材料來源索引（練功主脊／側枝／派遣） */
 export function buildMaterialSourceIndex() {
   /** @type {Record<string, { sites: string[], missions: string[] }>} */
   const idx = {};
@@ -5369,13 +5500,17 @@ export function buildMaterialSourceIndex() {
     if (!idx[id]) idx[id] = { sites: [], missions: [] };
     return idx[id];
   };
-  for (const site of TRAIN_SITES) {
-    for (const drop of site.drops || []) {
+  for (let stage = 1; stage <= 6; stage++) {
+    for (const drop of spineAfkDropsForStage(stage)) {
       if (drop.mat) {
         const e = ensure(drop.mat);
-        if (!e.sites.includes(site.name)) e.sites.push(site.name);
+        if (!e.sites.includes("主脊潮脈")) e.sites.push("主脊潮脈");
       }
     }
+  }
+  for (const b of SIDE_BRANCHES) {
+    const e = ensure(b.specialty);
+    if (!e.sites.includes(b.name)) e.sites.push(b.name);
   }
   for (const m of DISPATCH_MISSIONS) {
     for (const id of Object.keys(m.reward?.materials || {})) {
@@ -5416,20 +5551,26 @@ export function dungeonNameForClear(clearId) {
 }
 
 export function trainSiteUnlockHint(site) {
-  if (!site) return null;
-  const meta = trainZoneMeta(site.id);
-  if (!meta?.prevZone) return null;
-  const prev = trainSiteById(meta.prevZone);
-  return `打通【${prev.name}】域主`;
+  void site;
+  return null;
 }
 
-/** 某 bulk 材料的主要練功地（第一個產出該料的專精地） */
+/** 某 bulk 材料的主要練功來源（主脊或側枝名） */
 export function primaryTrainSiteForMat(matId) {
   if (!matId || !MATERIALS[matId] || MATERIALS[matId].tier === "dungeon") return null;
-  return TRAIN_SITES.find((s) => (s.drops || []).some((d) => d.mat === matId)) || null;
+  const branch = SIDE_BRANCHES.find((b) => b.specialty === matId);
+  if (branch) {
+    return { id: branch.id, name: branch.name, focus: "側枝", isBranch: true };
+  }
+  for (let stage = 1; stage <= 6; stage++) {
+    if (spineAfkDropsForStage(stage).some((d) => d.mat === matId)) {
+      return { id: SPINE_ZONE_ID, name: "主脊潮脈", focus: "主脊", isBranch: false };
+    }
+  }
+  return null;
 }
 
-/** 缺料時建議去邊個練功地（或標明秘境專屬） */
+/** 缺料時建議去主脊掛機或側枝／標明秘境專屬 */
 export function suggestTrainForShortage(state, cost) {
   const items = Object.entries(cost || {})
     .filter(([, n]) => n > 0)
@@ -5450,7 +5591,6 @@ export function suggestTrainForShortage(state, cost) {
     }
     const site = primaryTrainSiteForMat(it.id);
     if (!site) continue;
-    const unlocked = isTrainSiteUnlocked(state, site.id);
     return {
       matId: it.id,
       matName: MATERIALS[it.id]?.name || it.id,
@@ -5458,9 +5598,12 @@ export function suggestTrainForShortage(state, cost) {
       siteId: site.id,
       siteName: site.name,
       focus: site.focus || "",
-      unlocked,
-      unlockHint: trainSiteUnlockHint(site),
-      alreadyThere: (state.trainSite || "shore") === site.id,
+      unlocked: site.isBranch ? isSideBranchUnlocked(state, site.id) : true,
+      unlockHint: site.isBranch
+        ? `主脊階段≥${sideBranchById(site.id)?.needSpineStage || "?"} 解鎖`
+        : null,
+      alreadyThere: !site.isBranch,
+      isBranch: !!site.isBranch,
     };
   }
   return null;
@@ -5764,6 +5907,11 @@ export const DUNGEON_ENTRY_MAT_ID = "mist_token";
  * 高階層略貴。
  */
 export function dungeonEntryTokenPerRun(dungeonId) {
+  if (isBranchDungeonId(dungeonId)) {
+    const parsed = parseBranchDungeonId(dungeonId);
+    const floor = parsed?.floor || 1;
+    return floor <= 3 ? 1 : 2;
+  }
   const tier = parseDungeonTier(dungeonId) || 1;
   if (tier <= 2) return 1;
   if (tier <= 4) return 2;
