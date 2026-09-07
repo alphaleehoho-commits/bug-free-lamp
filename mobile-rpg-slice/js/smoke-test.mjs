@@ -78,6 +78,10 @@ import {
   rarityBreedCdMult,
   eggHatchMsFor,
   RARITY,
+  spineStageForTier,
+  spineStageMatBias,
+  FUSION_MAX_STAGE,
+  FUSION_NEED_LEVEL,
   ABYSS_EGG_COST,
   ABYSS_POWER_NODE_COST,
   ABYSS_POWER_NODE_MAX,
@@ -95,6 +99,17 @@ import {
   tideSealGainForRealm,
   TIDE_SEAL_MIN_REALM,
   TRAIN_SITES,
+  SPINE_ZONE_ID,
+  SIDE_BRANCHES,
+  spineAfkDropsForStage,
+  spineTrainProfile,
+  spineStageFromState,
+  spineFrontierTier,
+  maxClearedTideTier,
+  isSideBranchUnlocked,
+  buildBranchDungeon,
+  isBranchDungeonId,
+  listSideBranches,
   MATERIALS,
   upgradeMatCost,
   breedMatCost,
@@ -487,16 +502,16 @@ assert(odds12[0].gen === 1 && odds12[0].pct === 70, "1+2 odds");
 assert(genLabel(0) === "原生" && genLabel(2) === "繁殖2代", "labels");
 assert(genEggPrefix(1) === "一代" && genEggPrefix(3) === "三代", "egg gen prefix");
 
-/* Gen mix cost：野生+2 唔平過／唔優過 1+2 */
+/* Gen mix cost：分代耗唔同階段料 */
 const cost02 = breedMatCost(0, 2);
 const cost12 = breedMatCost(1, 2);
 const cost00 = breedMatCost(0, 0);
 const cost11 = breedMatCost(1, 1);
-assert(cost00.coral_shard === 1 && cost00.abyss_ink === 0, "0+0 mats");
-assert(cost11.coral_shard === 2 && cost11.abyss_ink === 1, "1+1 mats");
-assert(cost12.coral_shard === 3 && cost12.abyss_ink === 2, "1+2 mats");
-assert(cost02.coral_shard === 3 && cost02.abyss_ink === 3, "0+2 costs more abyss than 1+2");
-assert(cost02.abyss_ink > cost12.abyss_ink, "wild+gen2 not cheaper abyss");
+assert(cost00.coral_shard === 2 && !cost00.earth_grade_stone, "0+0 native breed mats");
+assert(cost11.coral_shard === 3 && cost11.earth_grade_stone === 4, "1+1 gen1 breed mats");
+assert(cost12.cloud_grade_stone === 5 && cost12.abyss_ink === 2, "1+2 gen2 breed mats");
+assert(cost02.cloud_grade_stone === 5 && cost02.abyss_ink === 2, "0+2 uses gen2 band");
+assert(breedMatCost(2, 3).fire_grade_stone === 6, "gen3+ fire band");
 
 const fox = buildPetStats({
   id: "a",
@@ -691,11 +706,12 @@ assert(BREAKTHROUGH_GATES[1] && BREAKTHROUGH_GATES[5], "gates");
 assert(STAGES.length === 6, "stages");
 assert(STAGES[0].rate === 1.05 && STAGES[5].rate === 3.5, "qi rates mid-nerf");
 assert(stageAt(6).rate < 4.0, "post-tide qi growth softened");
-const shoreSite = TRAIN_SITES.find((s) => s.id === "shore");
-assert(shoreSite.drops.find((d) => d.mat === "mist_token")?.perSec === 0.0035, "token AFK nerfed");
-assert(shoreSite.drops.find((d) => d.mat === "tide_dew")?.perSec === 0.034, "dew AFK light nerf");
-assert(TRAIN_SITES.find((s) => s.id === "abyss")?.qiMult === 1.06, "abyss qiMult compressed");
-assert(TRAIN_SITES.find((s) => s.id === "mistveil")?.drops.find((d) => d.mat === "echo_resin")?.perSec === 0.017, "resin AFK nerfed");
+const spineSite = TRAIN_SITES.find((s) => s.id === SPINE_ZONE_ID);
+assert(spineSite?.drops.find((d) => d.mat === "mist_token")?.perSec > 0, "spine drips mist_token");
+assert(spineAfkDropsForStage(1).some((d) => d.mat === "tide_dew"), "stage1 dew AFK");
+assert(spineAfkDropsForStage(2).some((d) => d.mat === "earth_grade_stone"), "stage2 earth AFK");
+assert(TRAIN_SITES.length === 1, "single spine train site");
+assert(SIDE_BRANCHES.length === 3, "three side branches");
 const fakeState = {
   realm: 0,
   qi: 10,
@@ -736,23 +752,23 @@ assert(genCombatMult(3) === 1.03 && genCombatMult(1) === 1.01, "gen combat resid
 assert(RARITY[1].mult === 1.18 && RARITY[2].mult === 1.38 && RARITY[3].mult === 1.65, "rarity mults widened");
 assert(levelStatGains(0).atk === 2 && levelStatGains(3).atk === 2.6, "level gains gen slope");
 assert(Math.abs(fusionAbsorbRate(1) - 0.14) < 1e-9 && Math.abs(fusionAbsorbRate(3) - 0.24) < 1e-9, "fusion absorb reduced");
-assert(fusionCombatMult(1) === 1.06 && fusionCombatMult(3) === 1.2, "fusion combat mult");
+assert(fusionCombatMult(1) === 1.22 && fusionCombatMult(3) === 1.22, "fusion combat once mult");
 assert(fusionMaterialRarityFactor(2, [2, 2]) === 1, "fusion rarity ok");
 assert(fusionMaterialRarityFactor(2, [1, 1]) === 0.8, "fusion rarity soft -1");
 assert(fusionMaterialRarityFactor(3, [0, 0]) === 0.55, "fusion rarity soft worse");
-assert(fusionPowerMultFromParts(1, 1) === 1.06, "fusion mult full");
-assert(fusionPowerMultFromParts(1, 0.8) === 1.048, "fusion mult soft -1 bonus only");
-assert(fusionPowerMultFromParts(1, 0.55) === 1.033, "fusion mult soft worse still >=1");
-assert(petFusionCombatMult({ fusionLevel: 2 }) === 1.12, "pet fusion fallback");
+assert(fusionPowerMultFromParts(1, 1) === 1.22, "fusion mult full");
+assert(fusionPowerMultFromParts(1, 0.8) === 1.176, "fusion mult soft -1 bonus only");
+assert(fusionPowerMultFromParts(1, 0.55) === 1.121, "fusion mult soft worse still >=1");
+assert(petFusionCombatMult({ fusionLevel: 2 }) === 1.22, "pet fusion fallback");
 assert(petFusionCombatMult({ fusionLevel: 1, fusionPowerMult: 0.9 }) === 1, "pet fusion clamps below 1");
 {
   const healed = healFusionPowerMult({ fusionLevel: 1, fusionPowerMult: 0.58 });
-  assert(healed.fusionPowerMult === 1.033, "heal old 0.58 soft-bind product");
+  assert(healed.fusionPowerMult === 1.121, "heal old 0.58 soft-bind product");
   const healed85 = healFusionPowerMult({ fusionLevel: 1, fusionPowerMult: 0.85 });
-  assert(healed85.fusionPowerMult === 1.048, "heal old 0.85 soft-bind product");
+  assert(healed85.fusionPowerMult === 1.153, "heal old 0.85 soft-bind product");
 }
-assert(roundStat(63.400000000000006) === 63.4, "roundStat float noise");
-assert(String(roundStat(35.699999999999996)) === "35.7", "roundStat speed noise");
+assert(roundStat(63.400000000000006) === 64, "roundStat ceils");
+assert(roundStat(35.699999999999996) === 36, "roundStat ceils speed");
 assert(rarityBreedCdMult({ rarity: 3 }, { rarity: 0 }) === 0.78, "rarity breed cd");
 assert(eggHatchMsFor({ generation: 0 }, EGG_TIERS.C) === EGG_TIERS.C.hatchMs, "egg hatch gen0");
 assert(eggHatchMsFor({ generation: 2 }, EGG_TIERS.C) === Math.round(EGG_TIERS.C.hatchMs * 1.5), "egg hatch gen2");
@@ -876,35 +892,33 @@ assert(DISPATCH_SLOT_MAX === 3, "dispatch concurrent slots 3");
 assert(DISPATCH_BOARD_SIZE === 3, "dispatch board size 3");
 assert(DISPATCH_MISSIONS.some((m) => m.needElement), "dispatch needElement");
 assert(DISPATCH_MISSIONS.some((m) => m.needKind), "dispatch needKind");
-assert(tideSealGainForRealm(5) >= 1 && tideSealGainForRealm(4) === 0, "seal gain");
-assert(tideSealCombatMult(5) === 1.1, "seal mult");
-assert(TIDE_SEAL_MIN_REALM === 5, "seal min realm");
+assert(tideSealGainForRealm(5) === 0 && tideSealCombatMult(5) === 1, "tide seal retired");
+assert(TIDE_SEAL_MIN_REALM === 5, "seal min realm const kept");
 
-/* P10: train sites, materials, dual personality, shellmite */
-assert(TRAIN_SITES.length >= 7 && MATERIALS.tide_dew, "train+mats");
+/* P10: spine train + materials + dual personality */
+assert(TRAIN_SITES.length === 1 && MATERIALS.tide_dew, "train+mats");
 assert(TRAIN_SITES.every((s) => s.focus), "each site has focus");
 assert(
-  !TRAIN_SITES.some((s) => (s.drops || []).some((d) => MATERIALS[d.mat]?.tier === "dungeon")),
-  "no dungeon mats on AFK sites"
+  !spineAfkDropsForStage(1).some((d) => d.mat && MATERIALS[d.mat]?.tier === "dungeon"),
+  "no dungeon mats on AFK stage1"
 );
 assert(MATERIALS.echo_resin && MATERIALS.fuse_sand, "new bulk mats");
+assert(MATERIALS.earth_grade_stone && MATERIALS.fusion_core, "grade + fusion core");
 assert(skillMatCost(1) && Object.keys(skillMatCost(1)).length === 0, "skill lv1 no resin");
 assert(skillMatCost(2).echo_resin >= 1, "skill lv2 needs resin");
-assert(fusionMatCost(1).fuse_sand === 1 && fusionMatCost(3).fuse_sand === 3, "fuse sand cost");
+assert(fusionMatCost(1).fusion_core === 1, "fusion core cost");
 assert(materialSourceLabel("temper_oil") === "秘境專屬", "temper dungeon-only label");
-assert(materialSourceLabel("echo_resin").includes("霧帷"), "resin from mistveil");
-assert(unlockedTrainSiteIds({ clearedDungeons: {} }).includes("shore"), "shore free");
-assert(!unlockedTrainSiteIds({ clearedDungeons: {} }).includes("ruins"), "ruins locked");
-assert(unlockedTrainSiteIds({ clearedDungeons: { tide_1: true } }).includes("ruins"), "ruins unlock");
+assert(materialSourceLabel("echo_resin").includes("主脊"), "resin from spine");
+assert(unlockedTrainSiteIds({ clearedDungeons: {} }).includes(SPINE_ZONE_ID), "spine free");
+assert(unlockedTrainSiteIds({ clearedDungeons: {} }).length === 1, "only spine unlocked");
+assert(!isSideBranchUnlocked({ clearedDungeons: {} }, "earth_vein"), "earth locked early");
 assert(
-  unlockedTrainSiteIds({ clearedDungeons: { tide_2: true } }).includes("mistveil"),
-  "mistveil unlock t2"
+  isSideBranchUnlocked({ clearedDungeons: { tide_41: true } }, "earth_vein"),
+  "earth unlock stage2"
 );
-assert(
-  unlockedTrainSiteIds({ clearedDungeons: { tide_3: true } }).includes("fusehall"),
-  "fusehall unlock t3"
-);
-assert(upgradeMatCost(1).tide_dew >= 1, "upgrade mats");
+assert(upgradeMatCost(1).tide_dew >= 1 && !upgradeMatCost(1).earth_grade_stone, "upgrade early main only");
+assert(upgradeMatCost(12).earth_grade_stone > 0, "upgrade band earth");
+assert(upgradeMatCost(33).fire_grade_stone > 0, "upgrade band fire");
 assert(breedMatCost(0, 0).coral_shard >= 1, "breed mats");
 assert(clampBreedBatchCount(0) === 1 && clampBreedBatchCount(99) === 10, "breed batch clamp");
 assert(BREED_BATCH_MIN === 1 && BREED_BATCH_MAX === 10, "breed batch 1-10");
@@ -912,8 +926,8 @@ assert(!Number.isFinite(EGG_CAP), "egg cap removed (infinite)");
 assert(DISPATCH_MISSIONS.length >= 11, "more dispatch");
 assert(DISPATCH_MISSIONS.some((m) => m.eggChance), "dispatch egg chance");
 assert(DISPATCH_MISSIONS.some((m) => m.id === "egg_shore"), "shore egg mission");
-assert(DISPATCH_MISSIONS.some((m) => m.needSite === "mistveil"), "resin dispatch");
-assert(DISPATCH_MISSIONS.some((m) => m.needSite === "fusehall"), "sand dispatch");
+assert(DISPATCH_MISSIONS.some((m) => m.needSpineStage === 3), "dispatch stage gate");
+assert(DISPATCH_MISSIONS.every((m) => !m.needSite), "dispatch no legacy needSite");
 assert(SPECIES.shellmite?.breedOnly, "shellmite");
 fox.personality2Id = "steady";
 fin.personalityId = "wild";
@@ -935,72 +949,75 @@ const dual = buildPetStats({
 assert(dual.personality2Id === "gentle" && dual.personality2Name, "build dual pe");
 
 /* P11: material hints + unlock helpers */
-assert(MATERIAL_SOURCE_INDEX.tide_dew?.sites?.includes("潮岸域"), "tide_dew shore");
-assert(MATERIAL_SOURCE_INDEX.coral_shard?.sites?.includes("廢墟域"), "coral ruins only");
-assert(!MATERIAL_SOURCE_INDEX.coral_shard?.sites?.includes("潮岸域"), "coral not on shore");
-assert(MATERIAL_SOURCE_INDEX.seal_ember?.sites?.length === 1, "ember single site");
-assert(materialSourceLabel("seal_ember").includes("暗潮域"), "ember source");
-assert(!materialSourceLabel("seal_ember").includes("霧絲"), "ember not mixed");
-assert(trainSiteUnlockHint(TRAIN_SITES.find((s) => s.id === "ruins"))?.includes("域主"), "ruins hint");
+assert(MATERIAL_SOURCE_INDEX.tide_dew?.sites?.includes("主脊潮脈"), "tide_dew spine");
+assert(MATERIAL_SOURCE_INDEX.coral_shard?.sites?.includes("主脊潮脈"), "coral spine");
+assert(MATERIAL_SOURCE_INDEX.earth_grade_stone?.sites?.includes("地脈"), "earth branch source");
+assert(MATERIAL_SOURCE_INDEX.seal_ember?.sites?.includes("主脊潮脈"), "ember spine");
+assert(materialSourceLabel("seal_ember").includes("主脊"), "ember source");
+assert(trainSiteUnlockHint(TRAIN_SITES[0]) == null, "spine no unlock hint");
 assert(dungeonNameForClear("tide_1").includes("一層"), "dungeon name");
 const fakeMats = { materials: { tide_dew: 0, mist_silk: 2 } };
 const aff = affordMaterials(fakeMats, { tide_dew: 2, mist_silk: 1 });
 assert(!aff.ok && aff.items.find((i) => i.id === "tide_dew")?.short === 2, "afford short");
 
-/* P18: specialize — ruins primary is coral; mist_token is shared gate mat */
-const ruins = TRAIN_SITES.find((s) => s.id === "ruins");
-assert(
-  ruins.focus === "繁殖" &&
-    ruins.primaryMat === "coral_shard" &&
-    ruins.drops.every((d) => !d.mat || d.mat === "coral_shard" || d.mat === "mist_token"),
-  "ruins coral focus"
-);
-const abyssSite = TRAIN_SITES.find((s) => s.id === "abyss");
-assert(
-  abyssSite.focus === "突破" &&
-    abyssSite.primaryMat === "seal_ember" &&
-    abyssSite.drops.every((d) => !d.mat || d.mat === "seal_ember" || d.mat === "mist_token"),
-  "abyss ember focus"
-);
-assert(DUNGEON_MAT_DROPS.tide_4.weights.breed_ticket >= 2, "dungeon exclusive weight");
+/* P18: spine AFK profile */
+const spineProf = spineTrainProfile({ clearedDungeons: {} });
+assert(spineProf.id === SPINE_ZONE_ID && spineProf.primaryMat === "tide_dew", "spine early primary");
+const spineLate = spineTrainProfile({ clearedDungeons: { tide_41: true } });
+assert(spineLate.spineStage === 2 && spineLate.drops.some((d) => d.mat === "earth_grade_stone"), "spine stage2 drip");
+assert(DUNGEON_MAT_DROPS.tide_1.weights.tide_dew >= 1 && DUNGEON_MAT_DROPS.tide_1.weights.coral_shard >= 1, "stage1 dungeon mats");
+assert(DUNGEON_MAT_DROPS.tide_2.weights.earth_grade_stone >= 1, "stage2 earth grade");
+assert(!DUNGEON_MAT_DROPS.tide_1.weights.earth_grade_stone, "stage1 no earth grade");
 assert(!DUNGEON_MAT_DROPS.tide_1.weights.echo_resin, "no resin in dungeon");
 assert(!DUNGEON_MAT_DROPS.tide_1.weights.fuse_sand, "no fuse sand in dungeon");
-assert(!DUNGEON_MAT_DROPS.tide_1.weights.tide_dew, "no bulk tide_dew in dungeon");
-assert(!DUNGEON_MAT_DROPS.tide_4.weights.seal_ember, "no bulk seal_ember in dungeon");
 assert(!DUNGEON_MAT_DROPS.tide_1.weights.mist_token, "entry token never dungeon drop");
+assert(DUNGEON_MAT_DROPS.tide_4.weights.fire_grade_stone >= 1, "stage4 fire grade");
 assert(MATERIALS.mist_token?.tier === "gate", "mist_token is gate tier");
 assert(materialSourceLabel("mist_token").includes("秘境不掉"), "token source label");
-assert(TRAIN_SITES.every((s) => (s.drops || []).some((d) => d.mat === "mist_token")), "all sites drip tokens");
+assert(TRAIN_SITES.every((s) => (s.drops || []).some((d) => d.mat === "mist_token")), "spine drips tokens");
 
-/* P19: shortage → train site nav */
-assert(primaryTrainSiteForMat("coral_shard")?.id === "ruins", "coral → ruins");
-assert(primaryTrainSiteForMat("echo_resin")?.id === "mistveil", "resin → mistveil");
+/* P19: shortage → spine / branch nav */
+assert(primaryTrainSiteForMat("coral_shard")?.id === SPINE_ZONE_ID, "coral → spine");
+assert(primaryTrainSiteForMat("echo_resin")?.id === SPINE_ZONE_ID, "resin → spine");
+assert(primaryTrainSiteForMat("earth_grade_stone")?.id === "earth_vein", "earth → branch");
 assert(primaryTrainSiteForMat("temper_oil") == null, "temper no AFK site");
 const shortSt = {
   materials: { tide_dew: 0, coral_shard: 0 },
-  trainSite: "shore",
+  trainSite: SPINE_ZONE_ID,
   clearedDungeons: { tide_1: true, tide_2: true },
 };
 const sug = suggestTrainForShortage(shortSt, { coral_shard: 2 });
-assert(sug?.siteId === "ruins" && sug.unlocked && !sug.alreadyThere, "suggest ruins");
+assert(sug?.siteId === SPINE_ZONE_ID && sug.unlocked && sug.alreadyThere, "suggest spine");
 const dungSug = suggestTrainForShortage(shortSt, { temper_oil: 1 });
 assert(dungSug?.dungeonOnly, "temper dungeon suggest");
-const there = suggestTrainForShortage({ ...shortSt, trainSite: "ruins" }, { coral_shard: 1 });
-assert(there?.alreadyThere, "already at ruins");
+const earthSug = suggestTrainForShortage(
+  { ...shortSt, clearedDungeons: { tide_41: true } },
+  { earth_grade_stone: 1 }
+);
+assert(earthSug?.siteId === "earth_vein" && earthSug.isBranch, "suggest earth branch");
 
-/* P20: deepen train sites + daily spotlight */
+/* P20: spine spotlight */
 const spot = pickDailyTrainSpotlight("2026-08-30");
-assert(spot?.id && pickDailyTrainSpotlight("2026-08-30").id === spot.id, "train spot stable");
-const ruinsSite = trainSiteById("ruins");
-const dewMult = trainDropMult(ruinsSite, { mat: "coral_shard", perSec: 0.031 }, "2026-08-30");
+assert(spot?.id === SPINE_ZONE_ID, "train spot is spine");
+const spineForMult = trainSiteById("ruins");
+const dewMult = trainDropMult(spineForMult, { mat: spineForMult.primaryMat, perSec: 0.03 }, "2026-08-30");
 assert(dewMult >= TRAIN_FOCUS_BONUS, "focus mult on primary mat");
-const rates = trainSiteRatesView(ruinsSite, "2026-08-30");
-assert(rates.lines.some((l) => l.name === "珊瑚屑"), "rates include primary");
+const rates = trainSiteRatesView(spineTrainProfile({ clearedDungeons: {} }), "2026-08-30");
+assert(rates.lines.some((l) => l.name === "潮露"), "rates include dew");
 assert(DUNGEON_DAILY_MODS.length >= 10, "expanded daily mods");
 assert(DUNGEON_CHALLENGE_RULES.some((r) => r.minGeneration === 2), "gen2 challenge");
 const gen1Pet = makeStarterPet();
 const gen2Rule = DUNGEON_CHALLENGE_RULES.find((r) => r.id === "min_gen2");
 assert(!evaluateDungeonChallenge([gen1Pet], gen2Rule).ok, "gen2 challenge rejects gen1");
+
+/* Side branches */
+const earthD = buildBranchDungeon("earth_vein", 1);
+assert(earthD?.isSideBranch && earthD.matDropOverride?.weights?.earth_grade_stone >= 8, "earth branch mats");
+assert(isBranchDungeonId("earth_vein_3") && !isBranchDungeonId("tide_3"), "branch id parse");
+assert(listSideBranches({ clearedDungeons: { tide_161: true } }).every((b) => b.unlocked), "all branches late");
+assert(maxClearedTideTier({ clearedDungeons: { tide_5: true, earth_vein_1: true } }) === 5, "branch clears ignore max tide");
+assert(spineFrontierTier({ clearedDungeons: { tide_5: true } }) === 6, "frontier next");
+assert(spineStageFromState({ clearedDungeons: { tide_41: true } }) === 2, "stage from state");
 
 /* P12: combat events */
 const combatFox = buildPetStats({
@@ -1536,8 +1553,8 @@ assert(inh.atk >= 0 && inh.hp >= 0, "inherit preview");
 assert(BREED_STONE_COST === 45, "breed cost");
 assert(BREED_COOLDOWN_MS === 45_000, "breed cd");
 assert(FORGE_SCRAP_COST === 2, "forge scrap");
-assert(fusionStoneCost(2) === 192, "fuse stage2 cost");
-assert(upgradeStoneCost(1) === 19, "upgrade lv1");
+assert(fusionStoneCost(1) === 240, "fuse once stone cost");
+assert(upgradeStoneCost(1) >= 10 && upgradeStoneCost(8) > upgradeStoneCost(1), "upgrade stone curve");
 assert(BOND_COST_MAX === 42, "bond cap");
 const t1 = DUNGEONS.find((d) => d.id === "tide_1");
 assert(t1?.reward?.stones === 32, "t1 stones");
@@ -1788,7 +1805,7 @@ const fuseIntroSt = {
   stats: { fusions: 0 },
   pets: [fusePetA],
   ranch: [fusePetB],
-  materials: { fuse_sand: 2 },
+  materials: { fusion_core: 2, fuse_sand: 2 },
   stones: 999,
   tutorial: {
     done: false,
@@ -2283,7 +2300,7 @@ function mkBreedPet(uid, species, element, generation = 0) {
 }
 const breedQSt = {
   stones: 5000,
-  materials: { coral_shard: 80, abyss_ink: 40 },
+  materials: { coral_shard: 80, abyss_ink: 40, earth_grade_stone: 80, cloud_grade_stone: 80, fire_grade_stone: 80 },
   ranch: [
     mkBreedPet("bq-a", "reefox", "tide"),
     mkBreedPet("bq-b", "reefox", "tide"),
@@ -2359,7 +2376,7 @@ assert(claimTicket.ok && claimTicket.egg, "ticket claim yields egg");
 /* Batch ×10：時長×N、中途可領 */
 const batchSt = {
   stones: 5000,
-  materials: { coral_shard: 99, abyss_ink: 99 },
+  materials: { coral_shard: 99, abyss_ink: 99, earth_grade_stone: 99, cloud_grade_stone: 99, fire_grade_stone: 99 },
   ranch: [
     mkBreedPet("bx-a", "reefox", "tide"),
     mkBreedPet("bx-b", "reefox", "tide"),
@@ -2423,14 +2440,15 @@ assert(hatchedFromNamed.kind === "蟲" && hatchedFromNamed.generation === 1, "ha
 const breedG1 = mkBreedPet("g1", "reefox", "tide", 1);
 const breedG2 = mkBreedPet("g2", "reefox", "tide", 2);
 const prev12 = breedPreview(breedG1, breedG2);
-assert(prev12.matCost.coral_shard === 3 && prev12.matCost.abyss_ink === 2, "preview 1+2 mats");
+assert(prev12.matCost.cloud_grade_stone === 5 && prev12.matCost.abyss_ink === 2, "preview 1+2 mats");
 const wildParent = mkBreedPet("w0", "reefox", "tide", 0);
 const prev02 = breedPreview(wildParent, breedG2);
-assert(prev02.matCost.abyss_ink === 3, "preview 0+2 more abyss");
+assert(prev02.matCost.cloud_grade_stone === 5 && prev02.matCost.abyss_ink === 2, "preview 0+2 gen2 band");
 assert(prev02.genOdds[0].pct === 70 && prev02.genOdds[0].gen === 1, "preview 0+2 odds");
 
-/* Tide zones: mist tiers, depth yield, warden keys */
+/* Tide zones: mist tiers, depth yield, warden keys → spine */
 assert(TRAIN_ZONE_CHAIN.length === TRAIN_SITES.length, "zone chain matches sites");
+assert(TRAIN_ZONE_CHAIN[0].id === SPINE_ZONE_ID, "chain is spine");
 assert(TRAIN_DEPTH_MULT.length === TRAIN_TIER_COUNT + 1, "depth mult fog+warden");
 assert(TRAIN_MIST_WAVE_COUNT === 5, "mist layer wave count");
 assert(TRAIN_WARDEN_WAVE_COUNT >= TRAIN_MIST_WAVE_COUNT, "warden has more waves");
@@ -2464,8 +2482,8 @@ const strongPet = {
 const tzSt = {
   stones: 100,
   materials: { tide_key_1: 3, tide_dew: 0, coral_shard: 0, warden_echo: 0 },
-  trainSite: "shore",
-  trainMap: { zones: { shore: { tiersCleared: 0 } }, wardenCleared: {} },
+  trainSite: SPINE_ZONE_ID,
+  trainMap: { zones: { [SPINE_ZONE_ID]: { tiersCleared: 0 } }, wardenCleared: {} },
   pets: [strongPet],
   ranch: [],
   realm: 0,
@@ -2477,9 +2495,9 @@ const tzSt = {
   stats: {},
   achievements: {},
 };
-assert(trainDepthMultFor(tzSt, "shore") === 1, "depth mist1");
+assert(trainDepthMultFor(tzSt, SPINE_ZONE_ID) === 1, "depth mist1");
 const d0 = Math.floor(tzSt.materials.tide_dew);
-const tierCombat = runTrainLayerCombat(tzSt, { zoneId: "shore", tierIndex: 0, mode: "tier" });
+const tierCombat = runTrainLayerCombat(tzSt, { zoneId: SPINE_ZONE_ID, tierIndex: 0, mode: "tier" });
 assert(tierCombat.ok && tierCombat.won, "train tier combat win strong party");
 assert(tierCombat.waves === TRAIN_MIST_WAVE_COUNT, "train tier has 5 waves");
 assert(tierCombat.combatEvents?.some((e) => e.type === "wave"), "train tier wave events");
@@ -2488,7 +2506,7 @@ const weakSt = {
   ...tzSt,
   pets: [{ ...strongPet, atk: 2, hp: 20, spd: 2, uid: "weak-only" }],
 };
-const tierFail = runTrainLayerCombat(weakSt, { zoneId: "shore", tierIndex: 0, mode: "tier" });
+const tierFail = runTrainLayerCombat(weakSt, { zoneId: SPINE_ZONE_ID, tierIndex: 0, mode: "tier" });
 assert(tierFail.ok && !tierFail.won, "weak party fails train tier");
 const claimBlocked = claimTrainTierClear(tzSt);
 assert(!claimBlocked.ok, "cannot claim next without clearReady");
@@ -2518,36 +2536,28 @@ while (idleSteps < 500 && !idleWon) {
   if (step.status === "restart") break;
 }
 assert(idleWon, "idle session can clear with strong party");
-assert(tzSt.trainMap.zones.shore.clearReady, "clearReady persisted");
-assert(persistTrainIdleClearResult(tzSt, idleSess), "persist shore lastClear");
+assert(tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady, "clearReady persisted");
+assert(persistTrainIdleClearResult(tzSt, idleSess), "persist spine lastClear");
 assert(
-  /首次通關：\d+s/.test(tzSt.trainMap.zones.shore.lastClear?.line || ""),
-  "shore zone stores clear line"
+  /首次通關：\d+s/.test(tzSt.trainMap.zones[SPINE_ZONE_ID].lastClear?.line || ""),
+  "spine zone stores clear line"
 );
-assert(tzSt.trainMap.zones.shore.lastClear?.sec >= 90, "persisted clear sec wall clock");
+assert(tzSt.trainMap.zones[SPINE_ZONE_ID].lastClear?.sec >= 90, "persisted clear sec wall clock");
 assert(ACTIVE_PET_MAX === 3, "party size stays 3 for formation slots");
-// per-zone clear line: ruins empty until cleared; shore keeps its own
-tzSt.trainMap.zones.ruins = tzSt.trainMap.zones.ruins || { tiersCleared: 0 };
-assert(!tzSt.trainMap.zones.ruins.lastClear, "ruins has no clear yet");
-tzSt.trainSite = "ruins";
-const ruinsView = trainIdleCombatView(tzSt);
-assert(ruinsView.zoneId === "ruins", "train site switched to ruins");
-assert(!ruinsView.lastClearLine, "ruins view has no clear line after switch");
-tzSt.trainSite = "shore";
-const shoreView = trainIdleCombatView(tzSt);
-assert(
-  shoreView.lastClearLine === tzSt.trainMap.zones.shore.lastClear.line,
-  "shore clear line returns after switch back"
-);
-assert(typeof setTrainSite === "function", "setTrainSite exported for site switch");
+assert(typeof setTrainSite === "function", "setTrainSite exported");
+setTrainSite(tzSt, "ruins");
+assert(tzSt.trainSite === SPINE_ZONE_ID, "legacy site id remaps to spine");
+const spineView = trainIdleCombatView(tzSt);
+assert(spineView.zoneId === SPINE_ZONE_ID, "idle view is spine");
+assert(spineView.lastClearLine, "spine keeps clear line");
 // claim mist 1–3 manually; mist 4 auto-claims to warden gate
 for (let i = 0; i < 3; i++) {
-  tzSt.trainMap.zones.shore.clearReady = true;
+  tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady = true;
   const ar = claimTrainTierClear(tzSt);
   assert(ar.ok, `claim tier ${i + 1}`);
-  assert(!tzSt.trainMap.zones.shore.clearReady, `clearReady spent ${i + 1}`);
+  assert(!tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady, `clearReady spent ${i + 1}`);
 }
-assert(tzSt.trainMap.zones.shore.tiersCleared === 3, "3 mist tiers claimed");
+assert(tzSt.trainMap.zones[SPINE_ZONE_ID].tiersCleared === 3, "3 mist tiers claimed");
 const lastSess = createTrainIdleSession(tzSt);
 assert(lastSess && lastSess.tierIndex === 3, "last mist session at tier 4");
 let lastSteps = 0;
@@ -2564,40 +2574,38 @@ while (lastSteps < 500 && !lastWon) {
   if (step.status === "restart") break;
 }
 assert(lastWon, "last mist idle clear");
-assert(tzSt.trainMap.zones.shore.tiersCleared === 4, "4 mist tiers cleared");
-assert(!tzSt.trainMap.zones.shore.clearReady, "no clearReady after last mist");
+assert(tzSt.trainMap.zones[SPINE_ZONE_ID].tiersCleared === 4, "4 mist tiers cleared");
+assert(!tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady, "no clearReady after last mist");
 const sitesAfter = trainSitesView(tzSt);
-const shoreAfter = sitesAfter.find((s) => s.id === "shore");
-assert(shoreAfter?.canChallengeWarden, "warden challenge available after mist4");
-assert(!shoreAfter?.canClaimNext, "no go-next after mist4");
-assert(trainDepthMultFor(tzSt, "shore") === 1.35, "depth at mist4");
-assert(!unlockedTrainSiteIds(tzSt).includes("ruins"), "ruins locked until warden");
+const spineAfter = sitesAfter.find((s) => s.id === SPINE_ZONE_ID);
+assert(spineAfter?.canChallengeWarden, "warden challenge available after mist4");
+assert(!spineAfter?.canClaimNext, "no go-next after mist4");
+assert(trainDepthMultFor(tzSt, SPINE_ZONE_ID) === 1.35, "depth at mist4");
+assert(unlockedTrainSiteIds(tzSt).includes(SPINE_ZONE_ID), "spine always unlocked");
 const wFailKey = { ...tzSt, materials: { ...tzSt.materials, tide_key_1: 0 } };
 assert(!challengeTrainWarden(wFailKey).ok, "warden needs key");
 const w1 = challengeTrainWarden(tzSt);
 assert(w1.ok && w1.firstClear, "warden first clear");
-assert(tzSt.trainMap.wardenCleared.shore, "shore warden flagged");
-assert(trainDepthMultFor(tzSt, "shore") === 1.5, "depth after warden");
-assert(unlockedTrainSiteIds(tzSt).includes("ruins"), "ruins unlock via warden");
+assert(tzSt.trainMap.wardenCleared[SPINE_ZONE_ID], "spine warden flagged");
+assert(trainDepthMultFor(tzSt, SPINE_ZONE_ID) === 1.5, "depth after warden");
 assert(tzSt.materials.tide_key_1 === 2, "key spent on warden");
 // rematch rare
-tzSt.trainSite = "shore";
 const rem = challengeTrainWarden(tzSt);
 assert(rem.ok && rem.rematch, "warden rematch");
 assert((tzSt.materials.warden_echo || 0) >= 1, "rematch drops echo");
 assert(tzSt.materials.tide_key_1 === 1, "rematch spends key");
 const effStrong = trainClearEfficiency(
-  { ...tzSt, pets: [strongPet], trainSite: "shore", trainMap: tzSt.trainMap },
-  "shore"
+  { ...tzSt, pets: [strongPet], trainSite: SPINE_ZONE_ID, trainMap: tzSt.trainMap },
+  SPINE_ZONE_ID
 );
 const effWeak = trainClearEfficiency(
   {
     ...tzSt,
     pets: [{ ...strongPet, atk: 2, hp: 20, spd: 2, uid: "weak" }],
-    trainSite: "shore",
+    trainSite: SPINE_ZONE_ID,
     trainMap: tzSt.trainMap,
   },
-  "shore"
+  SPINE_ZONE_ID
 );
 assert(effStrong > effWeak, "strong party higher AFK efficiency");
 const idle = trainIdleCombatView(tzSt);
@@ -2606,8 +2614,15 @@ assert(DAILY_QUESTS.some((q) => q.id === "train_tier"), "daily train_tier");
 assert(DAILY_QUESTS.some((q) => q.id === "train_warden"), "daily train_warden");
 
 const setD = setTrainDepth(tzSt, 1);
-assert(setD.ok && trainDepthMultFor(tzSt, "shore") === TRAIN_DEPTH_MULT[1], "set depth to tier 2");
-const setDFail = setTrainDepth({ ...tzSt, trainMap: { ...tzSt.trainMap, wardenCleared: {} }, trainSite: "shore" }, 4);
+assert(setD.ok && trainDepthMultFor(tzSt, SPINE_ZONE_ID) === TRAIN_DEPTH_MULT[1], "set depth to tier 2");
+const setDFail = setTrainDepth(
+  {
+    ...tzSt,
+    trainMap: { zones: { [SPINE_ZONE_ID]: { tiersCleared: 1 } }, wardenCleared: {} },
+    trainSite: SPINE_ZONE_ID,
+  },
+  4
+);
 assert(!setDFail.ok, "cannot set depth beyond cleared");
 
 const uiSrc2 = readFileSync(join(__dir, "ui.js"), "utf8");
@@ -2652,6 +2667,9 @@ assert(uiSrc2.includes("visibilitychange"), "ui catch-up on tab visible");
 assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
 assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
+assert(uiSrc2.includes("data-train-branch"), "ui side branch chips");
+assert(uiSrc2.includes("data-train-branch-attack"), "ui branch combat from train");
+assert(!uiSrc2.includes("主脊｜支線") && !uiSrc2.includes("主脊 | 支線"), "no dungeon branch subnav");
 assert(uiSrc2.includes('id: "bag"'), "ui bag sub-tab");
 assert(uiSrc2.includes("data-bag-inner"), "ui bag inner mats/items tabs");
 assert(uiSrc2.includes("data-use-item"), "ui use bag item");
@@ -3285,7 +3303,11 @@ assert(ABYSS_MAX_ACTIVE_MUTATIONS === 3, "abyss mutation cap const");
 assert(String(ABYSS_RULES_TEXT || "").includes("突變"), "abyss rules text");
 const launchTide5 = buildDungeonForTier(5);
 assert(launchTide5 && launchTide5.loreTag === "裂潮" && launchTide5.name.includes("裂潮"), "tide_5 differentiated");
-assert(launchTide5.matDropOverride?.weights?.temper_oil > 0, "tide_5 mat override");
+assert(launchTide5.matDropOverride?.weights?.tide_dew > 0, "tide_5 spine stage1 mats");
+assert(spineStageForTier(1) === 1 && spineStageForTier(40) === 1 && spineStageForTier(41) === 2, "spine stages");
+assert(spineStageMatBias(1).coral_shard > 0 && !spineStageMatBias(1).earth_grade_stone, "spine1 native only");
+assert(spineStageMatBias(2).earth_grade_stone > 0, "spine2 earth");
+assert(FUSION_MAX_STAGE === 1 && FUSION_NEED_LEVEL === 50, "fusion once at 50");
 const launchTide6 = buildDungeonForTier(6);
 assert(launchTide6 && launchTide6.loreTag === "沉淵", "tide_6 differentiated");
 const fuseLockedDaily = dailyView({ clearedDungeons: {}, daily: { date: "t", progress: {}, claimed: {} } });
@@ -3300,7 +3322,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v97"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v99"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

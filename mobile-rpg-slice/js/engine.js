@@ -153,6 +153,20 @@ import {
   skillMatCost,
   fusionMatCost,
   TRAIN_SITES,
+  SPINE_ZONE_ID,
+  spineTrainProfile,
+  spineFrontierTier,
+  spineStageFromState,
+  spineKeyMatForStage,
+  spineThreatBase,
+  maxClearedTideTier,
+  isBranchDungeonId,
+  resolveBranchDungeon,
+  listSideBranches,
+  sideBranchById,
+  branchFloors,
+  isSideBranchUnlocked,
+  dispatchNeedStageMet,
   trainSiteById,
   makeStarterPet,
   makeStarterEgg,
@@ -218,6 +232,8 @@ import {
   ABYSS_EGG_COST,
   ABYSS_EGG_WEEKLY_LIMIT,
   ABYSS_TIDE_SHIFT_COST,
+  ABYSS_FUSION_CORE_COST,
+  ABYSS_FUSION_CORE_WEEKLY_LIMIT,
   emptyAbyssDive,
   abyssFloorGrit,
   abyssHash,
@@ -231,6 +247,7 @@ import {
   petFusionCombatMult,
   healFusionPowerMult,
   roundStat,
+  ceilStat,
   rarityBreedCdMult,
   rarityBreedMutationMult,
   eggHatchMsFor,
@@ -296,19 +313,51 @@ function emptyTrainMap() {
   return { zones: {}, wardenCleared: {} };
 }
 
-/** 舊存檔：用秘境首通補域主標記，避免已解鎖潮域被鎖返 */
+const LEGACY_TRAIN_ZONE_IDS = [
+  "shore",
+  "ruins",
+  "deep",
+  "mistveil",
+  "core",
+  "fusehall",
+  "abyss",
+];
+
+/** 舊七域／秘境首通 → 合併入單一主脊區 */
 function migrateTrainMap(parsed) {
   const base = emptyTrainMap();
   const from = parsed?.trainMap || {};
-  base.wardenCleared = { ...(from.wardenCleared || {}) };
-  base.zones = { ...(from.zones || {}) };
+  const oldZones = from.zones || {};
+  let maxTiers = 0;
+  let anyWarden = false;
+  let idleDepth = null;
+  for (const id of [...LEGACY_TRAIN_ZONE_IDS, SPINE_ZONE_ID]) {
+    const z = oldZones[id];
+    if (!z) continue;
+    maxTiers = Math.max(maxTiers, z.tiersCleared | 0);
+    if (z.idleDepth != null) idleDepth = z.idleDepth;
+    if (from.wardenCleared?.[id]) anyWarden = true;
+  }
+  for (const id of Object.keys(from.wardenCleared || {})) {
+    if (from.wardenCleared[id]) anyWarden = true;
+  }
+  // 舊存檔：通關對應秘境 → 視為已推進霧階
   const clears = parsed?.clearedDungeons || {};
-  // 依鏈推：通關對應秘境 → 視為已打通「開該域所需」之前的域主
-  for (const z of TRAIN_ZONE_CHAIN) {
-    if (!z.prevZone) continue;
-    const site = trainSiteById(z.id);
-    if (site?.needClear && clears[site.needClear]) {
-      base.wardenCleared[z.prevZone] = true;
+  if (clears.tide_1) maxTiers = Math.max(maxTiers, 1);
+  if (clears.tide_2) maxTiers = Math.max(maxTiers, 2);
+  if (clears.tide_3) maxTiers = Math.max(maxTiers, 3);
+  if (clears.tide_4) {
+    maxTiers = Math.max(maxTiers, TRAIN_TIER_COUNT);
+    anyWarden = true;
+  }
+  const spineZ = { tiersCleared: Math.min(TRAIN_TIER_COUNT, maxTiers) };
+  if (idleDepth != null) spineZ.idleDepth = idleDepth;
+  if (oldZones[SPINE_ZONE_ID]?.clearReady) spineZ.clearReady = true;
+  base.zones[SPINE_ZONE_ID] = spineZ;
+  if (anyWarden || (spineZ.tiersCleared | 0) >= TRAIN_TIER_COUNT) {
+    if (anyWarden) {
+      base.wardenCleared[SPINE_ZONE_ID] = true;
+      base.zones[SPINE_ZONE_ID].tiersCleared = TRAIN_TIER_COUNT;
     }
   }
   return base;
@@ -320,12 +369,18 @@ function ensureTrainMap(state) {
   }
   if (!state.trainMap.zones) state.trainMap.zones = {};
   if (!state.trainMap.wardenCleared) state.trainMap.wardenCleared = {};
+  // 強制單一主脊 id
+  if (state.trainSite !== SPINE_ZONE_ID) state.trainSite = SPINE_ZONE_ID;
+  if (!state.trainMap.zones[SPINE_ZONE_ID]) {
+    state.trainMap.zones[SPINE_ZONE_ID] = { tiersCleared: 0 };
+  }
   return state.trainMap;
 }
 
 function ensureZoneProgress(state, zoneId) {
   ensureTrainMap(state);
-  const id = zoneId || state.trainSite || "shore";
+  const id = SPINE_ZONE_ID;
+  void zoneId;
   if (!state.trainMap.zones[id]) {
     state.trainMap.zones[id] = { tiersCleared: 0 };
   }
@@ -350,10 +405,11 @@ export function partyCombatPower(pets) {
   return Math.round(sum);
 }
 
-/** 深度倍率索引：0–3 霧階；4＝已通域主。可手選已通霧階掛機 */
+/** 深度倍率索引：0–3 霧階；4＝已通段主。可手選已通霧階掛機 */
 export function trainDepthIndex(state, zoneId) {
   ensureTrainMap(state);
-  const id = zoneId || state.trainSite || "shore";
+  void zoneId;
+  const id = SPINE_ZONE_ID;
   const z = ensureZoneProgress(state, id);
   const maxIdx = state.trainMap.wardenCleared?.[id] ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0));
   const chosen = z.idleDepth;
@@ -361,10 +417,11 @@ export function trainDepthIndex(state, zoneId) {
   return maxIdx;
 }
 
-/** 手動選擇掛機深度（只能選已通關霧階或域主） */
+/** 手動選擇掛機深度（只能選已通關霧階或段主） */
 export function setTrainDepth(state, depthIdx) {
   ensureTrainMap(state);
-  const zoneId = state.trainSite || "shore";
+  const zoneId = SPINE_ZONE_ID;
+  state.trainSite = SPINE_ZONE_ID;
   const z = ensureZoneProgress(state, zoneId);
   const maxIdx = state.trainMap.wardenCleared?.[zoneId] ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0));
   const idx = depthIdx | 0;
@@ -372,7 +429,7 @@ export function setTrainDepth(state, depthIdx) {
     return { ok: false, msg: `只可選已通關霧階（0–${maxIdx}）。` };
   }
   z.idleDepth = idx;
-  const label = idx >= TRAIN_TIER_COUNT ? "域主" : `霧階${idx + 1}`;
+  const label = idx >= TRAIN_TIER_COUNT ? "段主" : `霧階${idx + 1}`;
   return { ok: true, msg: `掛機深度：${label} · ×${(TRAIN_DEPTH_MULT[idx] ?? 1).toFixed(2)}` };
 }
 
@@ -383,10 +440,12 @@ export function trainDepthMultFor(state, zoneId) {
 
 /** 出戰 vs 當前霧階威脅 → 掛機效率（0.35–1.35；無出戰保底 0.7） */
 export function trainClearEfficiency(state, zoneId = null) {
-  const id = zoneId || state.trainSite || "shore";
+  void zoneId;
+  const id = SPINE_ZONE_ID;
   const power = partyCombatPower(state.pets);
   const depthIdx = trainDepthIndex(state, id);
-  const threat = trainTierThreat(id, depthIdx);
+  const frontier = spineFrontierTier(state);
+  const threat = trainTierThreat(id, depthIdx, { frontierTier: frontier });
   if (threat <= 0) return 1;
   if (power <= 0) return 0.7;
   const ratio = power / threat;
@@ -418,7 +477,7 @@ function defaultState() {
     items: { ...emptyItems(), ranch_fence: 1, hatch_nest_token: 1 },
     /** 道具永久加成：ranchCap / hatchSlots（按使用次數，見 data.js 註解） */
     itemBonus: emptyItemBonus(),
-    trainSite: "shore",
+    trainSite: SPINE_ZONE_ID,
     trainMap: emptyTrainMap(),
     inventory: [],
     master: defaultMaster(),
@@ -507,7 +566,7 @@ function normalizePet(p) {
   const next = { ...p };
   if (next.level == null) next.level = 1;
   if (next.fusionLevel == null) next.fusionLevel = 0;
-  if (next.fusionLevel > FUSION_MAX_STAGE) next.fusionLevel = FUSION_MAX_STAGE;
+  // 舊存檔融2／3 保留；新規則終身一次靠 nextFusionStage 攔截
   if (next.skillLevel == null) next.skillLevel = 1;
   if (next.skillLevel > SKILL_MAX_LEVEL) next.skillLevel = SKILL_MAX_LEVEL;
   if (next.rarity == null) next.rarity = 0;
@@ -534,9 +593,9 @@ function normalizePet(p) {
   if (next.equip) delete next.equip;
   next.starred = !!next.starred;
   next.locked = !!next.locked;
-  next.atk = roundStat(next.atk);
-  next.hp = roundStat(next.hp);
-  next.spd = roundStat(next.spd);
+  next.atk = ceilStat(next.atk);
+  next.hp = ceilStat(next.hp);
+  next.spd = ceilStat(next.spd);
   healFusionPowerMult(next);
   return next;
 }
@@ -728,7 +787,7 @@ export function loadState() {
       materials: mergedMats,
       items: normalizeItems(parsed.items),
       itemBonus: normalizeItemBonus(parsed.itemBonus),
-      trainSite: TRAIN_SITES.some((s) => s.id === parsed.trainSite) ? parsed.trainSite : "shore",
+      trainSite: SPINE_ZONE_ID,
       trainMap: migrateTrainMap(parsed),
       inventory,
       pending: Array.isArray(parsed.pending) ? parsed.pending : [],
@@ -847,8 +906,11 @@ export function nextRealm(state) {
   return nextStageAt(state.realm);
 }
 
-/** 當日秘境完整定義（tier 公式 + 每日變體） */
+/** 當日秘境完整定義（tier 公式 + 每日變體）；側枝走獨立 builder */
 export function resolveDungeon(state, dungeonId) {
+  if (isBranchDungeonId(dungeonId)) {
+    return resolveBranchDungeon(dungeonId);
+  }
   ensureDungeonDaily(state);
   const key = state.dungeonDaily?.date || todayKey();
   return generateDailyDungeon(dungeonId, key) || buildDungeonForTier(parseDungeonTier(dungeonId));
@@ -968,18 +1030,15 @@ export function materialHintsView(state) {
   }));
 }
 
-/** 練功潮域掛機產材料（產物表不變；產量 × 深度 × 出戰效率） */
+/** 主脊掛機產材料（跟通關階段；產量 × 深度 × 出戰效率） */
 export function tickTrainSite(state, elapsedSec) {
   if (elapsedSec <= 0) return { mats: {}, feed: 0, dust: 0 };
   ensureTrainMap(state);
-  const site = trainSiteById(state.trainSite);
-  if (!isTrainSiteUnlocked(state, site.id)) {
-    state.trainSite = "shore";
-  }
-  const active = trainSiteById(state.trainSite);
+  state.trainSite = SPINE_ZONE_ID;
+  const active = spineTrainProfile(state);
   if (!state.materials) state.materials = emptyMaterials();
-  const depthMult = trainDepthMultFor(state, active.id);
-  const eff = trainClearEfficiency(state, active.id);
+  const depthMult = trainDepthMultFor(state, SPINE_ZONE_ID);
+  const eff = trainClearEfficiency(state, SPINE_ZONE_ID);
   const gained = {};
   let feed = 0;
   let dust = 0;
@@ -1014,90 +1073,84 @@ export function tickTrainSite(state, elapsedSec) {
   };
 }
 
+/** @deprecated 主脊單一區；保留 API 相容 */
 export function setTrainSite(state, siteId) {
-  if (!TRAIN_SITES.some((s) => s.id === siteId)) {
-    return { ok: false, msg: "未知潮域。" };
-  }
-  if (!isTrainSiteUnlocked(state, siteId)) {
-    const site = trainSiteById(siteId);
-    return { ok: false, msg: `尚未解鎖【${site.name}】（${trainSiteUnlockHint(site) || "需打通上一域主"}）。` };
-  }
-  state.trainSite = siteId;
-  ensureZoneProgress(state, siteId);
-  return { ok: true, msg: `潮域：${trainSiteById(siteId).name}` };
+  void siteId;
+  ensureTrainMap(state);
+  state.trainSite = SPINE_ZONE_ID;
+  ensureZoneProgress(state, SPINE_ZONE_ID);
+  return { ok: true, msg: "主脊潮脈" };
 }
 
 export function trainSitesView(state) {
   ensureTrainMap(state);
-  const cur = state.trainSite || "shore";
+  state.trainSite = SPINE_ZONE_ID;
   const spot = trainDailySpotlightView();
-  return TRAIN_SITES.map((s) => {
-    const z = ensureZoneProgress(state, s.id);
-    const wardenDone = !!state.trainMap.wardenCleared?.[s.id];
-    const depthIdx = trainDepthIndex(state, s.id);
-    const depthMult = TRAIN_DEPTH_MULT[depthIdx] ?? 1;
-    const eff = s.id === cur ? trainClearEfficiency(state, s.id) : null;
-    const meta = trainZoneMeta(s.id);
-    return {
-      ...s,
-      unlocked: isTrainSiteUnlocked(state, s.id),
-      selected: s.id === cur,
-      unlockHint: trainSiteUnlockHint(s),
-      isDailySpot: spot?.siteId === s.id,
-      rates: trainSiteRatesView(s),
+  const profile = spineTrainProfile(state);
+  const z = ensureZoneProgress(state, SPINE_ZONE_ID);
+  const wardenDone = !!state.trainMap.wardenCleared?.[SPINE_ZONE_ID];
+  const depthIdx = trainDepthIndex(state, SPINE_ZONE_ID);
+  const depthMult = TRAIN_DEPTH_MULT[depthIdx] ?? 1;
+  const eff = trainClearEfficiency(state, SPINE_ZONE_ID);
+  const stage = profile.spineStage;
+  const keyMatId = spineKeyMatForStage(stage);
+  return [
+    {
+      ...profile,
+      unlocked: true,
+      selected: true,
+      unlockHint: null,
+      isDailySpot: spot?.siteId === SPINE_ZONE_ID,
+      rates: trainSiteRatesView(profile),
       tiersCleared: z.tiersCleared | 0,
       tierCount: TRAIN_TIER_COUNT,
       wardenCleared: wardenDone,
       depthMult,
       depthLabel: wardenDone
-        ? "域主已通"
+        ? "段主已通"
         : `霧階 ${Math.min((z.tiersCleared | 0) + 1, TRAIN_TIER_COUNT)}/${TRAIN_TIER_COUNT}`,
       efficiency: eff,
-      keyMatId: meta.keyMatId,
-      keyName: MATERIALS[meta.keyMatId]?.name || "潮鑰",
-      keyHave: Math.floor(state.materials?.[meta.keyMatId] || 0),
+      keyMatId,
+      keyName: MATERIALS[keyMatId]?.name || "潮鑰",
+      keyHave: Math.floor(state.materials?.[keyMatId] || 0),
       canAdvance: !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT,
       clearReady: !!z.clearReady,
       canClaimNext:
-        !wardenDone &&
-        !!z.clearReady &&
-        (z.tiersCleared | 0) < TRAIN_TIER_COUNT - 1,
+        !wardenDone && !!z.clearReady && (z.tiersCleared | 0) < TRAIN_TIER_COUNT - 1,
       canChallengeWarden: !wardenDone && (z.tiersCleared | 0) >= TRAIN_TIER_COUNT,
       canRematchWarden: wardenDone,
-      idleDepth: trainDepthIndex(state, s.id),
+      idleDepth: trainDepthIndex(state, SPINE_ZONE_ID),
       maxDepth: wardenDone ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0)),
       lastClearLine: z.lastClear?.line || null,
       lastClear: z.lastClear || null,
-    };
-  });
+      branches: listSideBranches(state),
+    },
+  ];
 }
 
 /**
  * 領取霧階推進：需掛機戰鬥先清完一輪五波（z.clearReady）。
- * 唔再開即時戰鬥／彈窗。
  */
 export function claimTrainTierClear(state) {
   ensureTrainMap(state);
-  const zoneId = state.trainSite || "shore";
-  if (!isTrainSiteUnlocked(state, zoneId)) {
-    return { ok: false, msg: "潮域未解鎖。" };
-  }
+  const zoneId = SPINE_ZONE_ID;
+  state.trainSite = SPINE_ZONE_ID;
   const z = ensureZoneProgress(state, zoneId);
   if (state.trainMap.wardenCleared?.[zoneId]) {
-    return { ok: false, msg: "域主已通——可複打域主刷稀有材，或切換其他潮域。" };
+    return { ok: false, msg: "段主已通——可複打段主刷稀有材。" };
   }
   if ((z.tiersCleared | 0) >= TRAIN_TIER_COUNT) {
-    return { ok: false, msg: "霧階已清——請挑戰域主關。" };
+    return { ok: false, msg: "霧階已清——請挑戰段主關。" };
   }
   if (!z.clearReady) {
     return { ok: false, msg: `需先掛機清完一輪 ${TRAIN_MIST_WAVE_COUNT} 波，先可去下一層。` };
   }
   const tier = z.tiersCleared | 0;
-  const site = trainSiteById(zoneId);
+  const profile = spineTrainProfile(state);
   z.clearReady = false;
   z.tiersCleared = tier + 1;
   bumpDaily(state, "train_tier", 1);
-  const primary = site.primaryMat;
+  const primary = profile.primaryMat;
   const reward = {};
   if (primary) {
     if (!state.materials) state.materials = emptyMaterials();
@@ -1107,11 +1160,12 @@ export function claimTrainTierClear(state) {
   state.stones = (state.stones || 0) + 5;
   pushLog(
     state,
-    `【${site.name}】推進至霧階${tier + 1}通關！產量上限升至 ×${trainDepthMultFor(state, zoneId).toFixed(2)}。`
+    `【主脊】推進至霧階${tier + 1}通關！產量上限升至 ×${trainDepthMultFor(state, zoneId).toFixed(2)}。`
   );
+  const keyId = spineKeyMatForStage(profile.spineStage);
   const msg =
     z.tiersCleared >= TRAIN_TIER_COUNT
-      ? `霧階全破 · 可挑戰域主（需${MATERIALS[trainZoneMeta(zoneId).keyMatId]?.name || "潮鑰"}）`
+      ? `霧階全破 · 可挑戰段主（需${MATERIALS[keyId]?.name || "潮鑰"}）`
       : `已進霧階${tier + 1} · 深度 ×${trainDepthMultFor(state, zoneId).toFixed(2)}`;
   return {
     ok: true,
@@ -1126,16 +1180,13 @@ export function advanceTrainTier(state) {
   return claimTrainTierClear(state);
 }
 
-/** 挑戰／複打域主（扣潮鑰；首次開下一潮域；複打掉稀有材） */
+/** 挑戰／複打段主（扣潮鑰；複打掉稀有材） */
 export function challengeTrainWarden(state) {
   ensureTrainMap(state);
-  const zoneId = state.trainSite || "shore";
-  if (!isTrainSiteUnlocked(state, zoneId)) {
-    return { ok: false, msg: "潮域未解鎖。" };
-  }
+  const zoneId = SPINE_ZONE_ID;
+  state.trainSite = SPINE_ZONE_ID;
   const z = ensureZoneProgress(state, zoneId);
-  const meta = trainZoneMeta(zoneId);
-  const site = trainSiteById(zoneId);
+  const profile = spineTrainProfile(state);
   const rematch = !!state.trainMap.wardenCleared?.[zoneId];
   if (!rematch && (z.tiersCleared | 0) < TRAIN_TIER_COUNT) {
     return { ok: false, msg: "請先攻破全部霧階。" };
@@ -1143,7 +1194,7 @@ export function challengeTrainWarden(state) {
   if (!(state.pets || []).length) {
     return { ok: false, msg: "請先派出至少一隻靈寵。" };
   }
-  const keyId = meta.keyMatId;
+  const keyId = spineKeyMatForStage(profile.spineStage);
   if (!state.materials) state.materials = emptyMaterials();
   if (Math.floor(state.materials[keyId] || 0) < 1) {
     return {
@@ -1151,19 +1202,17 @@ export function challengeTrainWarden(state) {
       msg: `潮鑰不足（需【${MATERIALS[keyId]?.name || keyId}】· 秘境高機率掉落）。`,
     };
   }
-  // 勝負都扣
   state.materials[keyId] -= 1;
   bumpDaily(state, "train_warden", 1);
   const combat = runTrainLayerCombat(state, { zoneId, tierIndex: TRAIN_TIER_COUNT, mode: "warden" });
   if (!combat.ok) {
-    // 已扣鑰但戰鬥無法開打（理論上僅無出戰）
     return combat;
   }
   if (!combat.won) {
-    pushLog(state, `【${site.name}】域主未破——出戰隊未能清完 ${TRAIN_WARDEN_WAVE_COUNT} 波，潮鑰已耗。`);
+    pushLog(state, `【主脊】段主未破——出戰隊未能清完 ${TRAIN_WARDEN_WAVE_COUNT} 波，潮鑰已耗。`);
     return {
       ok: false,
-      msg: `域主未破 · 已扣潮鑰 · ${TRAIN_WARDEN_WAVE_COUNT} 波未清或全滅`,
+      msg: `段主未破 · 已扣潮鑰 · ${TRAIN_WARDEN_WAVE_COUNT} 波未清或全滅`,
       combatKind: "train",
       keySpent: true,
       rematch,
@@ -1173,30 +1222,26 @@ export function challengeTrainWarden(state) {
 
   if (!rematch) {
     state.trainMap.wardenCleared[zoneId] = true;
-    const nextMeta = TRAIN_ZONE_CHAIN.find((x) => x.prevZone === zoneId);
-    let unlockMsg = "";
-    if (nextMeta) {
-      unlockMsg = ` · 解鎖【${trainSiteById(nextMeta.id).name}】`;
-      // 自動切入下一潮域
-      if (isTrainSiteUnlocked(state, nextMeta.id)) {
-        state.trainSite = nextMeta.id;
-        ensureZoneProgress(state, nextMeta.id);
-      }
-    }
-    pushLog(state, `打通【${site.name}】域主！本域掛機深度拉滿${unlockMsg}。`);
+    pushLog(state, `打通【主脊】段主！本段掛機深度拉滿。`);
     return {
       ok: true,
-      msg: `域主已破 · 深度 ×${trainDepthMultFor(state, zoneId).toFixed(2)}${unlockMsg}`,
+      msg: `段主已破 · 深度 ×${trainDepthMultFor(state, zoneId).toFixed(2)}`,
       combatKind: "train",
       firstClear: true,
-      unlockedZoneId: nextMeta?.id || null,
+      unlockedZoneId: null,
       keySpent: true,
       ...combat,
     };
   }
 
-  // 複打獎勵
-  const rem = meta.rematch || {};
+  const remBase = trainZoneMeta(zoneId).rematch || {};
+  const rem = {
+    stones: remBase.stones || 14,
+    materials: {
+      ...(remBase.materials || {}),
+      [profile.primaryMat]: Math.max(2, remBase.materials?.[profile.primaryMat] || 2),
+    },
+  };
   if (rem.stones) state.stones = (state.stones || 0) + rem.stones;
   if (rem.materials) addMaterials(state, rem.materials);
   const bits = [];
@@ -1204,7 +1249,7 @@ export function challengeTrainWarden(state) {
   for (const [id, n] of Object.entries(rem.materials || {})) {
     bits.push(`${MATERIALS[id]?.name || id}×${n}`);
   }
-  pushLog(state, `複打【${site.name}】域主成功，獲 ${bits.join("／")}。`);
+  pushLog(state, `複打【主脊】段主成功，獲 ${bits.join("／")}。`);
   return {
     ok: true,
     msg: `複打成功 · ${bits.join("／")}`,
@@ -1217,16 +1262,18 @@ export function challengeTrainWarden(state) {
 }
 
 const TRAIN_FOE_PREFIX = {
-  shore: "潮霧",
-  ruins: "廢墟",
-  deep: "深層",
-  mistveil: "霧帷",
-  core: "心核",
-  fusehall: "融砂",
-  abyss: "暗潮",
+  spine: "主脊",
+  shore: "主脊",
+  ruins: "主脊",
+  deep: "主脊",
+  mistveil: "主脊",
+  core: "主脊",
+  fusehall: "主脊",
+  abyss: "主脊",
 };
 
 const TRAIN_FOE_ELEMENT = {
+  spine: "tide",
   shore: "tide",
   ruins: "stone",
   deep: "gloom",
@@ -1236,12 +1283,13 @@ const TRAIN_FOE_ELEMENT = {
   abyss: "gloom",
 };
 
-/** 依潮域／霧階組成多波敵陣（一層霧階 = TRAIN_MIST_WAVE_COUNT 波） */
-function buildTrainCombatWaves(zoneId, tierIndex, { warden = false } = {}) {
-  const threat = warden ? trainWardenThreat(zoneId) : trainTierThreat(zoneId, tierIndex);
-  const site = trainSiteById(zoneId);
-  const prefix = TRAIN_FOE_PREFIX[zoneId] || "潮域";
-  const elem = TRAIN_FOE_ELEMENT[zoneId] || "gloom";
+/** 依主脊／霧階組成多波敵陣（一層霧階 = TRAIN_MIST_WAVE_COUNT 波） */
+function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier = 1 } = {}) {
+  const threat = warden
+    ? trainWardenThreat(SPINE_ZONE_ID, { frontierTier })
+    : trainTierThreat(SPINE_ZONE_ID, tierIndex, { frontierTier });
+  const prefix = TRAIN_FOE_PREFIX[zoneId] || TRAIN_FOE_PREFIX.spine;
+  const elem = TRAIN_FOE_ELEMENT[zoneId] || "tide";
   const tier = tierIndex | 0;
   const tierScale = 1 + tier * 0.06;
 
@@ -1305,8 +1353,8 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false } = {}) {
     const scale = 0.88 + w * 0.07;
     if (w === TRAIN_WARDEN_WAVE_COUNT - 2) {
       waves.push({
-        label: `${site.name}精英`,
-        enemies: [mkElite(`${prefix}域衛`, scale + 0.18)],
+        label: `主脊精英`,
+        enemies: [mkElite(`${prefix}段衛`, scale + 0.18)],
       });
     } else if (w % 2 === 0) {
       waves.push({
@@ -1320,7 +1368,7 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false } = {}) {
       });
     }
   }
-  waves.push({ label: `${site.name}域主`, enemies: [mkBoss(`${site.name}域主`)] });
+  waves.push({ label: `主脊段主`, enemies: [mkBoss(`主脊段主`)] });
   return waves;
 }
 
@@ -1381,9 +1429,11 @@ export function runTrainLayerCombat(state, { zoneId, tierIndex = 0, mode = "tier
     return { ok: false, msg: "請先派出至少一隻靈寵。" };
   }
   const warden = mode === "warden";
-  const site = trainSiteById(zoneId);
+  const site = spineTrainProfile(state);
   const tier = tierIndex | 0;
-  const waves = buildTrainCombatWaves(zoneId, tier, { warden });
+  const frontier = spineFrontierTier(state);
+  const waves = buildTrainCombatWaves(SPINE_ZONE_ID, tier, { warden, frontierTier: frontier });
+  void zoneId;
   const ctx = buildTrainCombatAllies(state);
   const { allies, synergy, formation, tactics } = ctx;
   if (!allies.length) {
@@ -1422,8 +1472,8 @@ export function runTrainLayerCombat(state, { zoneId, tierIndex = 0, mode = "tier
     combatEvents.push({ type: "round", text: roundLine, round: r });
   };
 
-  const layerLabel = warden ? `${site.name}域主關` : `霧階${tier + 1}`;
-  transcript.push(`御靈師進入【${site.name}】${layerLabel}（${waves.length} 波）。`);
+  const layerLabel = warden ? `段主關` : `霧階${tier + 1}`;
+  transcript.push(`御靈師進入【主脊潮脈】${layerLabel}（${waves.length} 波）。`);
   transcript.push(
     `戰術【${TACTICS[tactics]?.name || tactics}】· 陣型【${formation.name}】· 自動戰鬥。`
   );
@@ -1480,14 +1530,14 @@ export function runTrainLayerCombat(state, { zoneId, tierIndex = 0, mode = "tier
       const down = checkSideDown();
       if (down === "lose") {
         ended = true;
-        say(`折戟【${site.name}】${layerLabel}……出戰隊全滅。`);
+        say(`折戟【主脊潮脈】${layerLabel}……出戰隊全滅。`);
         break;
       }
       if (down === "wave") {
         if (advanceOrWin()) {
           won = true;
           ended = true;
-          say(`清完 ${waves.length} 波，攻破【${site.name}】${layerLabel}！`);
+          say(`清完 ${waves.length} 波，攻破【主脊潮脈】${layerLabel}！`);
           break;
         }
       }
@@ -1522,21 +1572,22 @@ export function runTrainLayerCombat(state, { zoneId, tierIndex = 0, mode = "tier
 export function createTrainIdleSession(state) {
   ensureTrainMap(state);
   if (!(state.pets || []).length) return null;
-  const zoneId = state.trainSite || "shore";
-  if (!isTrainSiteUnlocked(state, zoneId)) return null;
+  const zoneId = SPINE_ZONE_ID;
+  state.trainSite = SPINE_ZONE_ID;
   const z = ensureZoneProgress(state, zoneId);
   const wardenDone = !!state.trainMap.wardenCleared?.[zoneId];
   const canUnlockNext = !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT;
   const tierIndex = canUnlockNext
     ? z.tiersCleared | 0
     : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, trainDepthIndex(state, zoneId)));
-  const waves = buildTrainCombatWaves(zoneId, tierIndex, { warden: false });
+  const frontier = spineFrontierTier(state);
+  const waves = buildTrainCombatWaves(zoneId, tierIndex, { warden: false, frontierTier: frontier });
   const { allies, tactics } = buildTrainCombatAllies(state);
   if (!allies.length) return null;
   _combatUid = 0;
   tagCombatUnits(allies, "a");
   const foes = tagCombatUnits(spawnWaveFoes(waves[0]), "f");
-  const site = trainSiteById(zoneId);
+  const site = spineTrainProfile(state);
   const petSig = (state.pets || []).map((p) => `${p.uid}:${p.atk}:${p.hp}:${p.spd}`).join("|");
   return {
     zoneId,
@@ -1741,8 +1792,8 @@ export function markTrainIdleClearReady(state, session) {
 /** UI：閒置掛機戰場摘要（建立 session 用） */
 export function trainIdleCombatView(state) {
   ensureTrainMap(state);
-  const zoneId = state.trainSite || "shore";
-  const site = trainSiteById(zoneId);
+  const zoneId = SPINE_ZONE_ID;
+  const site = spineTrainProfile(state);
   const z = ensureZoneProgress(state, zoneId);
   const depthIdx = trainDepthIndex(state, zoneId);
   const eff = trainClearEfficiency(state, zoneId);
@@ -1755,13 +1806,15 @@ export function trainIdleCombatView(state) {
   return {
     zoneId,
     zoneName: site.name,
+    spineStage: site.spineStage,
+    frontierTier: site.frontierTier,
     tierIndex,
     canUnlockNext,
     clearReady: !!z.clearReady,
     lastClearLine: z.lastClear?.line || null,
     lastClear: z.lastClear || null,
     depthLabel: wardenDone
-      ? "域主已通"
+      ? "段主已通"
       : `霧階 ${Math.min((z.tiersCleared | 0) + 1, TRAIN_TIER_COUNT)}/${TRAIN_TIER_COUNT}`,
     depthMult,
     efficiency: eff,
@@ -2153,8 +2206,8 @@ export function teamBondBarView(state) {
 function applyOnlineIdleTick(state, elapsed) {
   const ranchBonus = (state.ranch?.length || 0) * 0.02;
   const bondBonus = 1 + state.pets.length * 0.18 + ranchBonus;
-  const site = trainSiteById(state.trainSite);
-  const siteMult = isTrainSiteUnlocked(state, site.id) ? site.qiMult || 1 : 1;
+  const site = spineTrainProfile(state);
+  const siteMult = site.qiMult || 1;
   const rate = realmInfo(state).rate * bondBonus * siteMult;
   state.qi += rate * elapsed;
   tickRanchIdle(state, elapsed);
@@ -2166,7 +2219,7 @@ export function tickCultivation(state, now = Date.now()) {
   ensureLoginStreak(state, now);
   ensureOfflineBank(state);
   const elapsed = Math.min(Math.max(0, now - state.lastTick) / 1000, 3600 * 8);
-  const site = trainSiteById(state.trainSite);
+  const site = spineTrainProfile(state);
 
   if (elapsed >= OFFLINE_HINT_SEC) {
     // 離線時段：收益進庫，待「領取」才入帳；未領可繼續累積至上限
@@ -3078,7 +3131,7 @@ export function petMatchesDispatchMission(pet, mission) {
 
 function dispatchMissionUnlocked(state, mission) {
   if (!mission) return false;
-  if (mission.needSite && !isTrainSiteUnlocked(state, mission.needSite)) return false;
+  if (!dispatchNeedStageMet(state, mission)) return false;
   return true;
 }
 
@@ -3284,9 +3337,9 @@ export function startDispatch(state, missionId, petUids) {
   if (!state.dispatchBoard.includes(missionId)) {
     return { ok: false, msg: "此任務唔喺可接列表。" };
   }
-  if (mission.needSite && !isTrainSiteUnlocked(state, mission.needSite)) {
-    const site = trainSiteById(mission.needSite);
-    return { ok: false, msg: `需解鎖練功地【${site.name}】。` };
+  if (!dispatchNeedStageMet(state, mission)) {
+    const need = mission.needSpineStage || 1;
+    return { ok: false, msg: `需主脊階段≥${need}（通關更多秘境）。` };
   }
   if (active.some((d) => d.missionId === missionId)) {
     return { ok: false, msg: "此任務已在進行中。" };
@@ -3453,41 +3506,20 @@ export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
  * Soft prestige：潮主後鑄潮印，重置階段／靈契，保留寵／裝／圖鑑／通關
  */
 export function tryTideSeal(state) {
-  const seals = state.tideSeals || 0;
-  if (seals >= TIDE_SEAL_MAX) return { ok: false, msg: `潮印已達上限（${TIDE_SEAL_MAX}）。` };
-  if ((state.realm || 0) < TIDE_SEAL_MIN_REALM) {
-    return { ok: false, msg: `需達潮主（階段 ${TIDE_SEAL_MIN_REALM}）方可鑄印。` };
-  }
-  const gain = tideSealGainForRealm(state.realm);
-  if (gain <= 0) return { ok: false, msg: "無法鑄印。" };
-  const from = realmInfo(state).name;
-  state.tideSeals = Math.min(TIDE_SEAL_MAX, seals + gain);
-  state.realm = 0;
-  state.qi = 0;
-  state.master.skillIds = masterSkillsForStage(0);
-  if (!state.stats) state.stats = {};
-  state.stats.seals = (state.stats.seals || 0) + gain;
-  pushLog(
-    state,
-    `潮印鑄成 +${gain}（現 ${state.tideSeals}）。自【${from}】重歸初契；靈寵／裝備／圖鑑保留。`
-  );
-  checkAchievements(state);
-  return {
-    ok: true,
-    msg: `鑄潮印 +${gain}（共 ${state.tideSeals}）· 階段已重置`,
-  };
+  void state;
+  return { ok: false, msg: "鑄潮印已廢除——潮主階段本身即無限指標。" };
 }
 
 export function tideSealView(state) {
-  const seals = state.tideSeals || 0;
-  const gain = tideSealGainForRealm(state.realm);
+  void state;
   return {
-    seals,
-    max: TIDE_SEAL_MAX,
-    mult: tideSealCombatMult(seals),
-    canSeal: (state.realm || 0) >= TIDE_SEAL_MIN_REALM && seals < TIDE_SEAL_MAX,
-    nextGain: gain,
+    seals: 0,
+    max: 0,
+    mult: 1,
+    canSeal: false,
+    nextGain: 0,
     minRealm: TIDE_SEAL_MIN_REALM,
+    retired: true,
   };
 }
 
@@ -3964,14 +3996,14 @@ export function upgradePet(state, uid, payWith = "stones") {
     }
     state.feed = Math.max(0, (state.feed || 0) - cost);
     const gains = levelStatGains(petGeneration(pet));
-    pet.atk = roundStat(pet.atk + gains.atk);
-    pet.hp = roundStat(pet.hp + gains.hp);
-    pet.spd = roundStat(pet.spd + gains.spd);
+    pet.atk = ceilStat(pet.atk + gains.atk);
+    pet.hp = ceilStat(pet.hp + gains.hp);
+    pet.spd = ceilStat(pet.spd + gains.spd);
     pet.level = level + 1;
     const matNote = formatMats(matCost);
     pushLog(
       state,
-      `${pet.name} 以飼料×${cost} 升級至 Lv.${pet.level}（攻+${gains.atk} 血+${gains.hp} 速+${gains.spd}）${matNote ? `｜耗 ${matNote}` : ""}。`
+      `${pet.name} 以飼料×${cost} 升級至 Lv.${pet.level}（攻+${ceilStat(gains.atk)} 血+${ceilStat(gains.hp)} 速+${ceilStat(gains.spd)}）${matNote ? `｜耗 ${matNote}` : ""}。`
     );
     maybeAnnounceSecondSkill(state, pet, level);
     return { ok: true, msg: `${pet.name} → Lv.${pet.level}（耗飼料×${cost}）` };
@@ -3983,14 +4015,14 @@ export function upgradePet(state, uid, payWith = "stones") {
   }
   state.stones -= cost;
   const gains = levelStatGains(petGeneration(pet));
-  pet.atk = roundStat(pet.atk + gains.atk);
-  pet.hp = roundStat(pet.hp + gains.hp);
-  pet.spd = roundStat(pet.spd + gains.spd);
+  pet.atk = ceilStat(pet.atk + gains.atk);
+  pet.hp = ceilStat(pet.hp + gains.hp);
+  pet.spd = ceilStat(pet.spd + gains.spd);
   pet.level = level + 1;
   const matNote = formatMats(matCost);
   pushLog(
     state,
-    `${pet.name} 升級至 Lv.${pet.level}（攻+${gains.atk} 血+${gains.hp} 速+${gains.spd}）${matNote ? `｜耗 ${matNote}` : ""}。`
+    `${pet.name} 升級至 Lv.${pet.level}（攻+${ceilStat(gains.atk)} 血+${ceilStat(gains.hp)} 速+${ceilStat(gains.spd)}）${matNote ? `｜耗 ${matNote}` : ""}。`
   );
   maybeAnnounceSecondSkill(state, pet, level);
   return { ok: true, msg: `${pet.name} → Lv.${pet.level}` };
@@ -4090,14 +4122,14 @@ export function fusePets(state, baseUid, matUids) {
   const base = baseFound.pet;
   const curFusion = base.fusionLevel ?? 0;
   const targetStage = nextFusionStage(curFusion);
-  if (targetStage == null) return { ok: false, msg: "已達融合上限（融階 3）。" };
+  if (targetStage == null) return { ok: false, msg: "此寵已融合過（終身一次）。" };
 
   const rule = FUSION_RULES[targetStage];
   const baseLevel = base.level ?? 1;
   if (baseLevel < rule.needLevel) {
     return {
       ok: false,
-      msg: `融階 ${targetStage} 需要主體至少 Lv.${rule.needLevel}（現 Lv.${baseLevel}）。`,
+      msg: `融合需要主體至少 Lv.${rule.needLevel}（現 Lv.${baseLevel}）。`,
     };
   }
 
@@ -4105,7 +4137,7 @@ export function fusePets(state, baseUid, matUids) {
   if (mats.length !== needMats) {
     return {
       ok: false,
-      msg: `融階 ${targetStage} 需要 ${rule.totalPets} 隻同種族（主體+${needMats} 素材），目前選了 ${mats.length} 隻素材。`,
+      msg: `融合需要主體 + ${needMats} 隻同種族滿級素材（現選 ${mats.length}）。`,
     };
   }
 
@@ -4115,6 +4147,12 @@ export function fusePets(state, baseUid, matUids) {
     if (!f) return { ok: false, msg: "找不到素材靈寵。" };
     if (f.pet.speciesId !== base.speciesId) {
       return { ok: false, msg: "只能融合同種族靈寵。" };
+    }
+    if ((f.pet.level ?? 1) < rule.needLevel) {
+      return {
+        ok: false,
+        msg: `素材「${f.pet.name}」需達 Lv.${rule.needLevel}（現 Lv.${f.pet.level ?? 1}）。`,
+      };
     }
     matFounds.push(f);
   }
@@ -4147,9 +4185,9 @@ export function fusePets(state, baseUid, matUids) {
   base.atk += Math.max(1, Math.floor((1 + targetStage) * rarityFactor));
   base.hp += Math.max(2, Math.floor((4 + targetStage * 2) * rarityFactor));
   base.spd += Math.max(0, Math.floor(targetStage * rarityFactor));
-  base.atk = roundStat(base.atk);
-  base.hp = roundStat(base.hp);
-  base.spd = roundStat(base.spd);
+  base.atk = ceilStat(base.atk);
+  base.hp = ceilStat(base.hp);
+  base.spd = ceilStat(base.spd);
   base.fusionLevel = targetStage;
   base.fusionPowerMult = fusionPowerMultFromParts(targetStage, rarityFactor);
   base.level = keepLevel;
@@ -4947,18 +4985,16 @@ export function runDungeon(state, dungeonId, opts = {}) {
         state.stones += bonusStones;
         state.scrap += bonusScrap;
         state.clearedDungeons[dungeonId] = true;
-        // 主線：首通仍提示舊練功解鎖（潮域主路徑改走域主）
-        for (const site of TRAIN_SITES) {
-          if (site.needClear === dungeonId) {
-            unlockedSites.push(site.name);
-            pushLog(state, `秘境回響：【${site.name}】相關潮鑰機率提升。`);
-          }
+        // 主脊掛機跟 cleared tide；側枝唔提示解鎖潮域
+        if (!d.isSideBranch && !isBranchDungeonId(dungeonId)) {
+          const stage = spineStageFromState(state);
+          pushLog(state, `主脊回響：掛機產出已對齊階段${stage}。`);
         }
         note(
           `攻克【${d.name}】，獲靈石 ${d.reward.stones}、碎片 ${d.reward.scrap}。首通額外 +${bonusStones} 石／+${bonusScrap} 碎片！`
         );
-        // 首通保底潮鑰 1
-        {
+        // 首通保底潮鑰 1（側枝唔掉潮鑰）
+        if (!d.isSideBranch && !isBranchDungeonId(dungeonId)) {
           const keyDrop = rollTideKeyDrop(dungeonId, { guaranteed: true, bossCleared });
           if (keyDrop) {
             addMaterials(state, { [keyDrop.matId]: keyDrop.amount || 1 });
@@ -5071,8 +5107,8 @@ export function runDungeon(state, dungeonId, opts = {}) {
         const why = bossCleared ? "（BOSS 掉落加成）" : eliteCleared ? "（精英掉落加成）" : "";
         say(`拾獲【${mname}】×${drop.amount || 1}${why}！`);
       }
-      // 潮鑰：高機率、非必然（首通已另給保底）
-      if (!first) {
+      // 潮鑰：高機率、非必然（首通已另給保底；側枝唔掉）
+      if (!first && !d.isSideBranch && !isBranchDungeonId(dungeonId)) {
         const keyDrop = rollTideKeyDrop(dungeonId, { bossCleared });
         if (keyDrop) {
           addMaterials(state, { [keyDrop.matId]: keyDrop.amount || 1 });
@@ -6395,6 +6431,10 @@ function ensureAbyssDive(state, now = Date.now()) {
     ad.eggsWeekKey = wk;
     ad.eggsBoughtWeek = 0;
   }
+  if (ad.fusionCoreWeekKey !== wk) {
+    ad.fusionCoreWeekKey = wk;
+    ad.fusionCoresBoughtWeek = 0;
+  }
   return ad;
 }
 
@@ -6843,6 +6883,9 @@ export function abyssDiveView(state, now = Date.now()) {
     powerNodeCost: ABYSS_POWER_NODE_COST,
     powerNodeAtkPct: Math.round(ABYSS_POWER_NODE_ATK * 100),
     powerNodeAtkMult: abyssPowerNodeAtkMult(state),
+    fusionCoreCost: ABYSS_FUSION_CORE_COST,
+    fusionCoresBoughtWeek: ad.fusionCoresBoughtWeek | 0,
+    fusionCoreWeeklyLimit: ABYSS_FUSION_CORE_WEEKLY_LIMIT,
     squadSize: ABYSS_SQUAD_SIZE,
     activeSize: ABYSS_ACTIVE_SIZE,
     ownedCount,
@@ -7251,6 +7294,26 @@ export function buyAbyssEgg(state, now = Date.now()) {
   return { ok: true, egg, msg: "獲得潮淵高階蛋（A）。" };
 }
 
+/** 潮淵每週限兌融合核 */
+export function buyAbyssFusionCore(state, now = Date.now()) {
+  const ad = ensureAbyssDive(state, now);
+  if ((ad.fusionCoresBoughtWeek | 0) >= ABYSS_FUSION_CORE_WEEKLY_LIMIT) {
+    return { ok: false, msg: `本週融合核已達上限（${ABYSS_FUSION_CORE_WEEKLY_LIMIT}）。` };
+  }
+  if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_FUSION_CORE_COST })) {
+    return { ok: false, msg: `需要淵砂×${ABYSS_FUSION_CORE_COST}。` };
+  }
+  if (!state.materials) state.materials = emptyMaterials();
+  state.materials.fusion_core = Math.floor(state.materials.fusion_core || 0) + 1;
+  ad.fusionCoresBoughtWeek = (ad.fusionCoresBoughtWeek | 0) + 1;
+  pushLog(state, `淵砂兌換融合核×1（本週 ${ad.fusionCoresBoughtWeek}/${ABYSS_FUSION_CORE_WEEKLY_LIMIT}）。`);
+  return {
+    ok: true,
+    msg: `獲得融合核×1（持有 ${state.materials.fusion_core}）`,
+    have: state.materials.fusion_core,
+  };
+}
+
 /** 淵核：永久小幅攻擊加成（有 cap；淵砂長期 sink） */
 export function buyAbyssPowerNode(state, now = Date.now()) {
   const ad = ensureAbyssDive(state, now);
@@ -7381,6 +7444,7 @@ export {
   HATCH_SLOT_BASE,
   HATCH_SLOT_BONUS_MAX,
   TRAIN_SITES,
+  SPINE_ZONE_ID,
   TRAIN_TIER_COUNT,
   TRAIN_DEPTH_MULT,
   TRAIN_ZONE_CHAIN,
@@ -7397,6 +7461,16 @@ export {
   TRAIN_FOCUS_BONUS,
   TRAIN_DAILY_SPOT_BONUS,
   pickDailyTrainSpotlight,
+  spineTrainProfile,
+  spineFrontierTier,
+  spineStageFromState,
+  maxClearedTideTier,
+  listSideBranches,
+  isBranchDungeonId,
+  resolveBranchDungeon,
+  branchFloors,
+  isSideBranchUnlocked,
+  sideBranchById,
   EGG_TIERS,
   stageAt,
   nextStageAt,
