@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260907.1";
+export const APP_BUILD = "20260907.2";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -4201,10 +4201,49 @@ export function fusionMaterialRarityFactor(baseRarity, matRarities = []) {
   return 0.55;
 }
 
+/**
+ * 融合出戰乘區（軟綁只折「融合獎勵」；永遠 ≥ 1）
+ * full=1.06／factor=0.55 → 1.033；唔會再寫出 0.58／0.85
+ */
+export function fusionPowerMultFromParts(fusionLevel = 0, rarityFactor = 1) {
+  const full = fusionCombatMult(fusionLevel);
+  const factor = Math.max(0.55, Math.min(1, Number(rarityFactor) || 1));
+  return Math.round((1 + (full - 1) * factor) * 1000) / 1000;
+}
+
+/** 數值寫入／顯示：最多 1 位小數，避免 IEEE 回響 */
+export function roundStat(n, places = 1) {
+  const p = 10 ** Math.max(0, places | 0);
+  return Math.round((Number(n) || 0) * p) / p;
+}
+
+/**
+ * 修正舊存檔：曾用 full×factor 寫入導致 fusionPowerMult < 1
+ */
+export function healFusionPowerMult(pet) {
+  if (!pet || typeof pet !== "object") return pet;
+  const stage = pet.fusionLevel ?? 0;
+  const full = fusionCombatMult(stage);
+  const stored = pet.fusionPowerMult;
+  if (stage <= 0) {
+    if (stored != null && stored !== 1) pet.fusionPowerMult = 1;
+    return pet;
+  }
+  if (typeof stored !== "number" || !(stored > 0)) {
+    pet.fusionPowerMult = full;
+    return pet;
+  }
+  if (stored < 1) {
+    const factor = Math.max(0.55, Math.min(1, stored / full));
+    pet.fusionPowerMult = fusionPowerMultFromParts(stage, factor);
+  }
+  return pet;
+}
+
 /** 寵物最終融合乘區（存檔可寫 fusionPowerMult） */
 export function petFusionCombatMult(pet) {
   if (pet && typeof pet.fusionPowerMult === "number" && pet.fusionPowerMult > 0) {
-    return pet.fusionPowerMult;
+    return Math.max(1, pet.fusionPowerMult);
   }
   return fusionCombatMult(pet?.fusionLevel ?? 0);
 }

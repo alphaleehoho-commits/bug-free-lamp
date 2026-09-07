@@ -227,7 +227,10 @@ import {
   levelStatGains,
   fusionCombatMult,
   fusionMaterialRarityFactor,
+  fusionPowerMultFromParts,
   petFusionCombatMult,
+  healFusionPowerMult,
+  roundStat,
   rarityBreedCdMult,
   rarityBreedMutationMult,
   eggHatchMsFor,
@@ -531,6 +534,10 @@ function normalizePet(p) {
   if (next.equip) delete next.equip;
   next.starred = !!next.starred;
   next.locked = !!next.locked;
+  next.atk = roundStat(next.atk);
+  next.hp = roundStat(next.hp);
+  next.spd = roundStat(next.spd);
+  healFusionPowerMult(next);
   return next;
 }
 
@@ -3957,9 +3964,9 @@ export function upgradePet(state, uid, payWith = "stones") {
     }
     state.feed = Math.max(0, (state.feed || 0) - cost);
     const gains = levelStatGains(petGeneration(pet));
-    pet.atk += gains.atk;
-    pet.hp += gains.hp;
-    pet.spd += gains.spd;
+    pet.atk = roundStat(pet.atk + gains.atk);
+    pet.hp = roundStat(pet.hp + gains.hp);
+    pet.spd = roundStat(pet.spd + gains.spd);
     pet.level = level + 1;
     const matNote = formatMats(matCost);
     pushLog(
@@ -3976,9 +3983,9 @@ export function upgradePet(state, uid, payWith = "stones") {
   }
   state.stones -= cost;
   const gains = levelStatGains(petGeneration(pet));
-  pet.atk += gains.atk;
-  pet.hp += gains.hp;
-  pet.spd += gains.spd;
+  pet.atk = roundStat(pet.atk + gains.atk);
+  pet.hp = roundStat(pet.hp + gains.hp);
+  pet.spd = roundStat(pet.spd + gains.spd);
   pet.level = level + 1;
   const matNote = formatMats(matCost);
   pushLog(
@@ -4140,8 +4147,11 @@ export function fusePets(state, baseUid, matUids) {
   base.atk += Math.max(1, Math.floor((1 + targetStage) * rarityFactor));
   base.hp += Math.max(2, Math.floor((4 + targetStage * 2) * rarityFactor));
   base.spd += Math.max(0, Math.floor(targetStage * rarityFactor));
+  base.atk = roundStat(base.atk);
+  base.hp = roundStat(base.hp);
+  base.spd = roundStat(base.spd);
   base.fusionLevel = targetStage;
-  base.fusionPowerMult = fusionCombatMult(targetStage) * rarityFactor;
+  base.fusionPowerMult = fusionPowerMultFromParts(targetStage, rarityFactor);
   base.level = keepLevel;
 
   // 由高 index 開始刪，避免同 list 錯位
@@ -4199,9 +4209,9 @@ export function petDetail(state, uid) {
     fusion >= SECOND_SKILL_UNLOCK.fusionLevel || level >= SECOND_SKILL_UNLOCK.level;
   const baseline = petSpeciesBaseline(pet.speciesId, pet.elementId, pet.personalityId);
   const innateBonus = {
-    atk: Math.max(0, (pet.atk || 0) - baseline.atk),
-    hp: Math.max(0, (pet.hp || 0) - baseline.hp),
-    spd: Math.max(0, (pet.spd || 0) - baseline.spd),
+    atk: roundStat(Math.max(0, (pet.atk || 0) - baseline.atk)),
+    hp: roundStat(Math.max(0, (pet.hp || 0) - baseline.hp)),
+    spd: roundStat(Math.max(0, (pet.spd || 0) - baseline.spd)),
   };
   return {
     pet,
