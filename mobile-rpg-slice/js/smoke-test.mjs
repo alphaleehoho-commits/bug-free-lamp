@@ -78,6 +78,10 @@ import {
   rarityBreedCdMult,
   eggHatchMsFor,
   RARITY,
+  spineStageForTier,
+  spineStageMatBias,
+  FUSION_MAX_STAGE,
+  FUSION_NEED_LEVEL,
   ABYSS_EGG_COST,
   ABYSS_POWER_NODE_COST,
   ABYSS_POWER_NODE_MAX,
@@ -487,16 +491,16 @@ assert(odds12[0].gen === 1 && odds12[0].pct === 70, "1+2 odds");
 assert(genLabel(0) === "原生" && genLabel(2) === "繁殖2代", "labels");
 assert(genEggPrefix(1) === "一代" && genEggPrefix(3) === "三代", "egg gen prefix");
 
-/* Gen mix cost：野生+2 唔平過／唔優過 1+2 */
+/* Gen mix cost：分代耗唔同階段料 */
 const cost02 = breedMatCost(0, 2);
 const cost12 = breedMatCost(1, 2);
 const cost00 = breedMatCost(0, 0);
 const cost11 = breedMatCost(1, 1);
-assert(cost00.coral_shard === 1 && cost00.abyss_ink === 0, "0+0 mats");
-assert(cost11.coral_shard === 2 && cost11.abyss_ink === 1, "1+1 mats");
-assert(cost12.coral_shard === 3 && cost12.abyss_ink === 2, "1+2 mats");
-assert(cost02.coral_shard === 3 && cost02.abyss_ink === 3, "0+2 costs more abyss than 1+2");
-assert(cost02.abyss_ink > cost12.abyss_ink, "wild+gen2 not cheaper abyss");
+assert(cost00.coral_shard === 2 && !cost00.earth_grade_stone, "0+0 native breed mats");
+assert(cost11.coral_shard === 3 && cost11.earth_grade_stone === 4, "1+1 gen1 breed mats");
+assert(cost12.cloud_grade_stone === 5 && cost12.abyss_ink === 2, "1+2 gen2 breed mats");
+assert(cost02.cloud_grade_stone === 5 && cost02.abyss_ink === 2, "0+2 uses gen2 band");
+assert(breedMatCost(2, 3).fire_grade_stone === 6, "gen3+ fire band");
 
 const fox = buildPetStats({
   id: "a",
@@ -736,23 +740,23 @@ assert(genCombatMult(3) === 1.03 && genCombatMult(1) === 1.01, "gen combat resid
 assert(RARITY[1].mult === 1.18 && RARITY[2].mult === 1.38 && RARITY[3].mult === 1.65, "rarity mults widened");
 assert(levelStatGains(0).atk === 2 && levelStatGains(3).atk === 2.6, "level gains gen slope");
 assert(Math.abs(fusionAbsorbRate(1) - 0.14) < 1e-9 && Math.abs(fusionAbsorbRate(3) - 0.24) < 1e-9, "fusion absorb reduced");
-assert(fusionCombatMult(1) === 1.06 && fusionCombatMult(3) === 1.2, "fusion combat mult");
+assert(fusionCombatMult(1) === 1.22 && fusionCombatMult(3) === 1.22, "fusion combat once mult");
 assert(fusionMaterialRarityFactor(2, [2, 2]) === 1, "fusion rarity ok");
 assert(fusionMaterialRarityFactor(2, [1, 1]) === 0.8, "fusion rarity soft -1");
 assert(fusionMaterialRarityFactor(3, [0, 0]) === 0.55, "fusion rarity soft worse");
-assert(fusionPowerMultFromParts(1, 1) === 1.06, "fusion mult full");
-assert(fusionPowerMultFromParts(1, 0.8) === 1.048, "fusion mult soft -1 bonus only");
-assert(fusionPowerMultFromParts(1, 0.55) === 1.033, "fusion mult soft worse still >=1");
-assert(petFusionCombatMult({ fusionLevel: 2 }) === 1.12, "pet fusion fallback");
+assert(fusionPowerMultFromParts(1, 1) === 1.22, "fusion mult full");
+assert(fusionPowerMultFromParts(1, 0.8) === 1.176, "fusion mult soft -1 bonus only");
+assert(fusionPowerMultFromParts(1, 0.55) === 1.121, "fusion mult soft worse still >=1");
+assert(petFusionCombatMult({ fusionLevel: 2 }) === 1.22, "pet fusion fallback");
 assert(petFusionCombatMult({ fusionLevel: 1, fusionPowerMult: 0.9 }) === 1, "pet fusion clamps below 1");
 {
   const healed = healFusionPowerMult({ fusionLevel: 1, fusionPowerMult: 0.58 });
-  assert(healed.fusionPowerMult === 1.033, "heal old 0.58 soft-bind product");
+  assert(healed.fusionPowerMult === 1.121, "heal old 0.58 soft-bind product");
   const healed85 = healFusionPowerMult({ fusionLevel: 1, fusionPowerMult: 0.85 });
-  assert(healed85.fusionPowerMult === 1.048, "heal old 0.85 soft-bind product");
+  assert(healed85.fusionPowerMult === 1.153, "heal old 0.85 soft-bind product");
 }
-assert(roundStat(63.400000000000006) === 63.4, "roundStat float noise");
-assert(String(roundStat(35.699999999999996)) === "35.7", "roundStat speed noise");
+assert(roundStat(63.400000000000006) === 64, "roundStat ceils");
+assert(roundStat(35.699999999999996) === 36, "roundStat ceils speed");
 assert(rarityBreedCdMult({ rarity: 3 }, { rarity: 0 }) === 0.78, "rarity breed cd");
 assert(eggHatchMsFor({ generation: 0 }, EGG_TIERS.C) === EGG_TIERS.C.hatchMs, "egg hatch gen0");
 assert(eggHatchMsFor({ generation: 2 }, EGG_TIERS.C) === Math.round(EGG_TIERS.C.hatchMs * 1.5), "egg hatch gen2");
@@ -876,9 +880,8 @@ assert(DISPATCH_SLOT_MAX === 3, "dispatch concurrent slots 3");
 assert(DISPATCH_BOARD_SIZE === 3, "dispatch board size 3");
 assert(DISPATCH_MISSIONS.some((m) => m.needElement), "dispatch needElement");
 assert(DISPATCH_MISSIONS.some((m) => m.needKind), "dispatch needKind");
-assert(tideSealGainForRealm(5) >= 1 && tideSealGainForRealm(4) === 0, "seal gain");
-assert(tideSealCombatMult(5) === 1.1, "seal mult");
-assert(TIDE_SEAL_MIN_REALM === 5, "seal min realm");
+assert(tideSealGainForRealm(5) === 0 && tideSealCombatMult(5) === 1, "tide seal retired");
+assert(TIDE_SEAL_MIN_REALM === 5, "seal min realm const kept");
 
 /* P10: train sites, materials, dual personality, shellmite */
 assert(TRAIN_SITES.length >= 7 && MATERIALS.tide_dew, "train+mats");
@@ -888,9 +891,10 @@ assert(
   "no dungeon mats on AFK sites"
 );
 assert(MATERIALS.echo_resin && MATERIALS.fuse_sand, "new bulk mats");
+assert(MATERIALS.earth_grade_stone && MATERIALS.fusion_core, "grade + fusion core");
 assert(skillMatCost(1) && Object.keys(skillMatCost(1)).length === 0, "skill lv1 no resin");
 assert(skillMatCost(2).echo_resin >= 1, "skill lv2 needs resin");
-assert(fusionMatCost(1).fuse_sand === 1 && fusionMatCost(3).fuse_sand === 3, "fuse sand cost");
+assert(fusionMatCost(1).fusion_core === 1, "fusion core cost");
 assert(materialSourceLabel("temper_oil") === "秘境專屬", "temper dungeon-only label");
 assert(materialSourceLabel("echo_resin").includes("霧帷"), "resin from mistveil");
 assert(unlockedTrainSiteIds({ clearedDungeons: {} }).includes("shore"), "shore free");
@@ -904,7 +908,9 @@ assert(
   unlockedTrainSiteIds({ clearedDungeons: { tide_3: true } }).includes("fusehall"),
   "fusehall unlock t3"
 );
-assert(upgradeMatCost(1).tide_dew >= 1, "upgrade mats");
+assert(upgradeMatCost(1).tide_dew >= 1 && !upgradeMatCost(1).earth_grade_stone, "upgrade early main only");
+assert(upgradeMatCost(12).earth_grade_stone > 0, "upgrade band earth");
+assert(upgradeMatCost(33).fire_grade_stone > 0, "upgrade band fire");
 assert(breedMatCost(0, 0).coral_shard >= 1, "breed mats");
 assert(clampBreedBatchCount(0) === 1 && clampBreedBatchCount(99) === 10, "breed batch clamp");
 assert(BREED_BATCH_MIN === 1 && BREED_BATCH_MAX === 10, "breed batch 1-10");
@@ -962,12 +968,13 @@ assert(
     abyssSite.drops.every((d) => !d.mat || d.mat === "seal_ember" || d.mat === "mist_token"),
   "abyss ember focus"
 );
-assert(DUNGEON_MAT_DROPS.tide_4.weights.breed_ticket >= 2, "dungeon exclusive weight");
+assert(DUNGEON_MAT_DROPS.tide_1.weights.tide_dew >= 1 && DUNGEON_MAT_DROPS.tide_1.weights.coral_shard >= 1, "stage1 dungeon mats");
+assert(DUNGEON_MAT_DROPS.tide_2.weights.earth_grade_stone >= 1, "stage2 earth grade");
+assert(!DUNGEON_MAT_DROPS.tide_1.weights.earth_grade_stone, "stage1 no earth grade");
 assert(!DUNGEON_MAT_DROPS.tide_1.weights.echo_resin, "no resin in dungeon");
 assert(!DUNGEON_MAT_DROPS.tide_1.weights.fuse_sand, "no fuse sand in dungeon");
-assert(!DUNGEON_MAT_DROPS.tide_1.weights.tide_dew, "no bulk tide_dew in dungeon");
-assert(!DUNGEON_MAT_DROPS.tide_4.weights.seal_ember, "no bulk seal_ember in dungeon");
 assert(!DUNGEON_MAT_DROPS.tide_1.weights.mist_token, "entry token never dungeon drop");
+assert(DUNGEON_MAT_DROPS.tide_4.weights.fire_grade_stone >= 1, "stage4 fire grade");
 assert(MATERIALS.mist_token?.tier === "gate", "mist_token is gate tier");
 assert(materialSourceLabel("mist_token").includes("秘境不掉"), "token source label");
 assert(TRAIN_SITES.every((s) => (s.drops || []).some((d) => d.mat === "mist_token")), "all sites drip tokens");
@@ -1536,8 +1543,8 @@ assert(inh.atk >= 0 && inh.hp >= 0, "inherit preview");
 assert(BREED_STONE_COST === 45, "breed cost");
 assert(BREED_COOLDOWN_MS === 45_000, "breed cd");
 assert(FORGE_SCRAP_COST === 2, "forge scrap");
-assert(fusionStoneCost(2) === 192, "fuse stage2 cost");
-assert(upgradeStoneCost(1) === 19, "upgrade lv1");
+assert(fusionStoneCost(1) === 240, "fuse once stone cost");
+assert(upgradeStoneCost(1) >= 10 && upgradeStoneCost(8) > upgradeStoneCost(1), "upgrade stone curve");
 assert(BOND_COST_MAX === 42, "bond cap");
 const t1 = DUNGEONS.find((d) => d.id === "tide_1");
 assert(t1?.reward?.stones === 32, "t1 stones");
@@ -1788,7 +1795,7 @@ const fuseIntroSt = {
   stats: { fusions: 0 },
   pets: [fusePetA],
   ranch: [fusePetB],
-  materials: { fuse_sand: 2 },
+  materials: { fusion_core: 2, fuse_sand: 2 },
   stones: 999,
   tutorial: {
     done: false,
@@ -2283,7 +2290,7 @@ function mkBreedPet(uid, species, element, generation = 0) {
 }
 const breedQSt = {
   stones: 5000,
-  materials: { coral_shard: 80, abyss_ink: 40 },
+  materials: { coral_shard: 80, abyss_ink: 40, earth_grade_stone: 80, cloud_grade_stone: 80, fire_grade_stone: 80 },
   ranch: [
     mkBreedPet("bq-a", "reefox", "tide"),
     mkBreedPet("bq-b", "reefox", "tide"),
@@ -2359,7 +2366,7 @@ assert(claimTicket.ok && claimTicket.egg, "ticket claim yields egg");
 /* Batch ×10：時長×N、中途可領 */
 const batchSt = {
   stones: 5000,
-  materials: { coral_shard: 99, abyss_ink: 99 },
+  materials: { coral_shard: 99, abyss_ink: 99, earth_grade_stone: 99, cloud_grade_stone: 99, fire_grade_stone: 99 },
   ranch: [
     mkBreedPet("bx-a", "reefox", "tide"),
     mkBreedPet("bx-b", "reefox", "tide"),
@@ -2423,10 +2430,10 @@ assert(hatchedFromNamed.kind === "蟲" && hatchedFromNamed.generation === 1, "ha
 const breedG1 = mkBreedPet("g1", "reefox", "tide", 1);
 const breedG2 = mkBreedPet("g2", "reefox", "tide", 2);
 const prev12 = breedPreview(breedG1, breedG2);
-assert(prev12.matCost.coral_shard === 3 && prev12.matCost.abyss_ink === 2, "preview 1+2 mats");
+assert(prev12.matCost.cloud_grade_stone === 5 && prev12.matCost.abyss_ink === 2, "preview 1+2 mats");
 const wildParent = mkBreedPet("w0", "reefox", "tide", 0);
 const prev02 = breedPreview(wildParent, breedG2);
-assert(prev02.matCost.abyss_ink === 3, "preview 0+2 more abyss");
+assert(prev02.matCost.cloud_grade_stone === 5 && prev02.matCost.abyss_ink === 2, "preview 0+2 gen2 band");
 assert(prev02.genOdds[0].pct === 70 && prev02.genOdds[0].gen === 1, "preview 0+2 odds");
 
 /* Tide zones: mist tiers, depth yield, warden keys */
@@ -3285,7 +3292,11 @@ assert(ABYSS_MAX_ACTIVE_MUTATIONS === 3, "abyss mutation cap const");
 assert(String(ABYSS_RULES_TEXT || "").includes("突變"), "abyss rules text");
 const launchTide5 = buildDungeonForTier(5);
 assert(launchTide5 && launchTide5.loreTag === "裂潮" && launchTide5.name.includes("裂潮"), "tide_5 differentiated");
-assert(launchTide5.matDropOverride?.weights?.temper_oil > 0, "tide_5 mat override");
+assert(launchTide5.matDropOverride?.weights?.tide_dew > 0, "tide_5 spine stage1 mats");
+assert(spineStageForTier(1) === 1 && spineStageForTier(40) === 1 && spineStageForTier(41) === 2, "spine stages");
+assert(spineStageMatBias(1).coral_shard > 0 && !spineStageMatBias(1).earth_grade_stone, "spine1 native only");
+assert(spineStageMatBias(2).earth_grade_stone > 0, "spine2 earth");
+assert(FUSION_MAX_STAGE === 1 && FUSION_NEED_LEVEL === 50, "fusion once at 50");
 const launchTide6 = buildDungeonForTier(6);
 assert(launchTide6 && launchTide6.loreTag === "沉淵", "tide_6 differentiated");
 const fuseLockedDaily = dailyView({ clearedDungeons: {}, daily: { date: "t", progress: {}, claimed: {} } });
@@ -3300,7 +3311,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v97"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v98"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

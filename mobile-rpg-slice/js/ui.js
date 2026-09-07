@@ -149,6 +149,7 @@ import {
   buyAbyssInsurance,
   buyAbyssCosmetic,
   buyAbyssEgg,
+  buyAbyssFusionCore,
   buyAbyssPowerNode,
   buyAbyssTideShiftCharm,
   useTideShiftCharm,
@@ -178,6 +179,7 @@ import {
   fusionMaterialRarityFactor,
   fusionPowerMultFromParts,
   roundStat,
+  ceilStat,
 } from "./data.js";
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
@@ -221,8 +223,7 @@ function fmtMult(n) {
 
 /** 戰力／天生顯示：最多 1 位小數，唔出 IEEE 回響 */
 function fmtStat(n) {
-  const x = roundStat(n, 1);
-  return Number.isInteger(x) ? String(x) : x.toFixed(1);
+  return String(ceilStat(n));
 }
 
 /** 材料／離線收益顯示（四捨五入到個位） */
@@ -2595,11 +2596,12 @@ function fuseConfirmModalHtml() {
     <div class="combat-modal-overlay release-modal-overlay" data-live="fuse-confirm-modal" role="dialog" aria-label="融合確認">
       <div class="combat-modal-card release-modal-card">
         <div class="combat-modal-scroll">
-          <h2>確認融合</h2>
+          <h2>確認融合（終身一次）</h2>
           <p class="lead">將 ${mats.length} 隻素材融入 <strong>${escapeHtml(d.pet.name)}</strong></p>
-          <p class="meta">目標融階 ${d.nextFusionStage} · 繼承 Lv.${d.level} · 出戰預計×${nextMult}${rarityHint}</p>
+          <p class="meta warn">每隻寵物只有一次融合機會；素材能力愈高，融合結果愈好；請謹慎選擇。</p>
+          <p class="meta">需主體＋素材皆 ≥ Lv.${d.fuseNeedLevel || 50} · 出戰預計×${nextMult}${rarityHint}</p>
           <p class="meta">耗 ${escapeHtml(String(d.fuseCostHint))} 靈石${escapeHtml(matCost)}</p>
-          <p class="meta muted">素材會被消耗，此操作不可復原。</p>
+          <p class="meta muted">素材與融合核會被消耗，此操作不可復原。</p>
         </div>
         <div class="combat-modal-actions row">
           <button type="button" class="ghost" data-act="close-fuse-confirm">取消</button>
@@ -2953,7 +2955,6 @@ function trainIdleStripHtml() {
 
 function cultivatePanel(qiPct, next, m) {
   const br = breakthroughView(state);
-  const seal = tideSealView(state);
   const map = trainMapView(state);
   const sites = map.sites || trainSitesView(state);
   const siteBtns = sites
@@ -3095,6 +3096,10 @@ function cultivatePanel(qiPct, next, m) {
         }</button>
       </li>
       <li class="card-row">
+        <div><strong>融合核</strong><span class="muted"> · 終身融合一次必需 · 本週 ${gritV.fusionCoresBoughtWeek || 0}/${gritV.fusionCoreWeeklyLimit || 1}</span></div>
+        <button type="button" class="secondary" data-abyss-fusion-core ${(gritV.fusionCoresBoughtWeek || 0) >= (gritV.fusionCoreWeeklyLimit || 1) ? "disabled" : ""}>淵砂×${gritV.fusionCoreCost || 180}</button>
+      </li>
+      <li class="card-row">
         <div><strong>潮淵高階蛋</strong><span class="muted"> · 本週 ${gritV.eggsBoughtWeek}/${gritV.eggsWeeklyLimit} · 較易出稀有</span></div>
         <button type="button" class="secondary" data-abyss-egg ${gritV.eggsBoughtWeek >= gritV.eggsWeeklyLimit ? "disabled" : ""}>淵砂×${gritV.eggCost}</button>
       </li>
@@ -3141,12 +3146,11 @@ function cultivatePanel(qiPct, next, m) {
     return wrapStage(
       nav,
       `<h2>契壇修行 · 進階</h2>
-      <p class="lead">→【${escapeHtml(br.next.name)}】潮印 ${seal.seals}/${seal.max} · 全隊 ×${seal.mult.toFixed(2)}</p>
+      <p class="lead">→【${escapeHtml(br.next.name)}】</p>
       ${missNote}
       <ul class="cond-list breakthrough-gates${compactCls}">${gateRows}</ul>`,
       `<div class="row">
         <button type="button" class="primary${tutGlow({ type: "act", act: "break" })}" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
-        <button type="button" data-act="tide-seal" ${seal.canSeal ? "" : "disabled"}>鑄潮印${seal.canSeal ? `+${seal.nextGain}` : ""}</button>
       </div>`
     );
   }
@@ -4340,8 +4344,9 @@ function petsFuseView() {
   const ready = lvOk && selected.size === needMats;
   return wrapStage(
     "",
-    `<h2>融合 · 融階 ${target}</h2>
-    <p class="lead">主體 ${escapeHtml(base.name)} Lv.${baseLv}${lvOk ? "" : `（需 ≥${needLv}）`} · 已選素材 ${selected.size}/${needMats} · 耗 ${cost} 靈石 · 結果繼承主體等級</p>
+    `<h2>融合（終身一次）</h2>
+    <p class="lead">主體 ${escapeHtml(base.name)} Lv.${baseLv}${lvOk ? "" : `（需 ≥${needLv}）`} · 素材 ${selected.size}/${needMats}（皆需 Lv≥${needLv}）· 耗融合核×1</p>
+    <p class="meta muted">每隻寵物只有一次融合機會；素材能力愈高結果愈好。</p>
     <ul class="pet-pick-grid fuse-mat-list">${mats}</ul>`,
     `<div class="row">
       <button type="button" class="primary" data-fuse-confirm ${ready ? "" : "disabled"}>確認融合</button>
@@ -6165,6 +6170,15 @@ function bind() {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = buyAbyssEgg(state);
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-abyss-fusion-core]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = buyAbyssFusionCore(state);
       saveState(state);
       render();
       setFlash(r.msg);

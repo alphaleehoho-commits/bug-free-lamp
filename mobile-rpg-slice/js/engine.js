@@ -218,6 +218,8 @@ import {
   ABYSS_EGG_COST,
   ABYSS_EGG_WEEKLY_LIMIT,
   ABYSS_TIDE_SHIFT_COST,
+  ABYSS_FUSION_CORE_COST,
+  ABYSS_FUSION_CORE_WEEKLY_LIMIT,
   emptyAbyssDive,
   abyssFloorGrit,
   abyssHash,
@@ -231,6 +233,7 @@ import {
   petFusionCombatMult,
   healFusionPowerMult,
   roundStat,
+  ceilStat,
   rarityBreedCdMult,
   rarityBreedMutationMult,
   eggHatchMsFor,
@@ -507,7 +510,7 @@ function normalizePet(p) {
   const next = { ...p };
   if (next.level == null) next.level = 1;
   if (next.fusionLevel == null) next.fusionLevel = 0;
-  if (next.fusionLevel > FUSION_MAX_STAGE) next.fusionLevel = FUSION_MAX_STAGE;
+  // 舊存檔融2／3 保留；新規則終身一次靠 nextFusionStage 攔截
   if (next.skillLevel == null) next.skillLevel = 1;
   if (next.skillLevel > SKILL_MAX_LEVEL) next.skillLevel = SKILL_MAX_LEVEL;
   if (next.rarity == null) next.rarity = 0;
@@ -534,9 +537,9 @@ function normalizePet(p) {
   if (next.equip) delete next.equip;
   next.starred = !!next.starred;
   next.locked = !!next.locked;
-  next.atk = roundStat(next.atk);
-  next.hp = roundStat(next.hp);
-  next.spd = roundStat(next.spd);
+  next.atk = ceilStat(next.atk);
+  next.hp = ceilStat(next.hp);
+  next.spd = ceilStat(next.spd);
   healFusionPowerMult(next);
   return next;
 }
@@ -3453,41 +3456,20 @@ export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
  * Soft prestige：潮主後鑄潮印，重置階段／靈契，保留寵／裝／圖鑑／通關
  */
 export function tryTideSeal(state) {
-  const seals = state.tideSeals || 0;
-  if (seals >= TIDE_SEAL_MAX) return { ok: false, msg: `潮印已達上限（${TIDE_SEAL_MAX}）。` };
-  if ((state.realm || 0) < TIDE_SEAL_MIN_REALM) {
-    return { ok: false, msg: `需達潮主（階段 ${TIDE_SEAL_MIN_REALM}）方可鑄印。` };
-  }
-  const gain = tideSealGainForRealm(state.realm);
-  if (gain <= 0) return { ok: false, msg: "無法鑄印。" };
-  const from = realmInfo(state).name;
-  state.tideSeals = Math.min(TIDE_SEAL_MAX, seals + gain);
-  state.realm = 0;
-  state.qi = 0;
-  state.master.skillIds = masterSkillsForStage(0);
-  if (!state.stats) state.stats = {};
-  state.stats.seals = (state.stats.seals || 0) + gain;
-  pushLog(
-    state,
-    `潮印鑄成 +${gain}（現 ${state.tideSeals}）。自【${from}】重歸初契；靈寵／裝備／圖鑑保留。`
-  );
-  checkAchievements(state);
-  return {
-    ok: true,
-    msg: `鑄潮印 +${gain}（共 ${state.tideSeals}）· 階段已重置`,
-  };
+  void state;
+  return { ok: false, msg: "鑄潮印已廢除——潮主階段本身即無限指標。" };
 }
 
 export function tideSealView(state) {
-  const seals = state.tideSeals || 0;
-  const gain = tideSealGainForRealm(state.realm);
+  void state;
   return {
-    seals,
-    max: TIDE_SEAL_MAX,
-    mult: tideSealCombatMult(seals),
-    canSeal: (state.realm || 0) >= TIDE_SEAL_MIN_REALM && seals < TIDE_SEAL_MAX,
-    nextGain: gain,
+    seals: 0,
+    max: 0,
+    mult: 1,
+    canSeal: false,
+    nextGain: 0,
     minRealm: TIDE_SEAL_MIN_REALM,
+    retired: true,
   };
 }
 
@@ -3964,14 +3946,14 @@ export function upgradePet(state, uid, payWith = "stones") {
     }
     state.feed = Math.max(0, (state.feed || 0) - cost);
     const gains = levelStatGains(petGeneration(pet));
-    pet.atk = roundStat(pet.atk + gains.atk);
-    pet.hp = roundStat(pet.hp + gains.hp);
-    pet.spd = roundStat(pet.spd + gains.spd);
+    pet.atk = ceilStat(pet.atk + gains.atk);
+    pet.hp = ceilStat(pet.hp + gains.hp);
+    pet.spd = ceilStat(pet.spd + gains.spd);
     pet.level = level + 1;
     const matNote = formatMats(matCost);
     pushLog(
       state,
-      `${pet.name} 以飼料×${cost} 升級至 Lv.${pet.level}（攻+${gains.atk} 血+${gains.hp} 速+${gains.spd}）${matNote ? `｜耗 ${matNote}` : ""}。`
+      `${pet.name} 以飼料×${cost} 升級至 Lv.${pet.level}（攻+${ceilStat(gains.atk)} 血+${ceilStat(gains.hp)} 速+${ceilStat(gains.spd)}）${matNote ? `｜耗 ${matNote}` : ""}。`
     );
     maybeAnnounceSecondSkill(state, pet, level);
     return { ok: true, msg: `${pet.name} → Lv.${pet.level}（耗飼料×${cost}）` };
@@ -3983,14 +3965,14 @@ export function upgradePet(state, uid, payWith = "stones") {
   }
   state.stones -= cost;
   const gains = levelStatGains(petGeneration(pet));
-  pet.atk = roundStat(pet.atk + gains.atk);
-  pet.hp = roundStat(pet.hp + gains.hp);
-  pet.spd = roundStat(pet.spd + gains.spd);
+  pet.atk = ceilStat(pet.atk + gains.atk);
+  pet.hp = ceilStat(pet.hp + gains.hp);
+  pet.spd = ceilStat(pet.spd + gains.spd);
   pet.level = level + 1;
   const matNote = formatMats(matCost);
   pushLog(
     state,
-    `${pet.name} 升級至 Lv.${pet.level}（攻+${gains.atk} 血+${gains.hp} 速+${gains.spd}）${matNote ? `｜耗 ${matNote}` : ""}。`
+    `${pet.name} 升級至 Lv.${pet.level}（攻+${ceilStat(gains.atk)} 血+${ceilStat(gains.hp)} 速+${ceilStat(gains.spd)}）${matNote ? `｜耗 ${matNote}` : ""}。`
   );
   maybeAnnounceSecondSkill(state, pet, level);
   return { ok: true, msg: `${pet.name} → Lv.${pet.level}` };
@@ -4090,14 +4072,14 @@ export function fusePets(state, baseUid, matUids) {
   const base = baseFound.pet;
   const curFusion = base.fusionLevel ?? 0;
   const targetStage = nextFusionStage(curFusion);
-  if (targetStage == null) return { ok: false, msg: "已達融合上限（融階 3）。" };
+  if (targetStage == null) return { ok: false, msg: "此寵已融合過（終身一次）。" };
 
   const rule = FUSION_RULES[targetStage];
   const baseLevel = base.level ?? 1;
   if (baseLevel < rule.needLevel) {
     return {
       ok: false,
-      msg: `融階 ${targetStage} 需要主體至少 Lv.${rule.needLevel}（現 Lv.${baseLevel}）。`,
+      msg: `融合需要主體至少 Lv.${rule.needLevel}（現 Lv.${baseLevel}）。`,
     };
   }
 
@@ -4105,7 +4087,7 @@ export function fusePets(state, baseUid, matUids) {
   if (mats.length !== needMats) {
     return {
       ok: false,
-      msg: `融階 ${targetStage} 需要 ${rule.totalPets} 隻同種族（主體+${needMats} 素材），目前選了 ${mats.length} 隻素材。`,
+      msg: `融合需要主體 + ${needMats} 隻同種族滿級素材（現選 ${mats.length}）。`,
     };
   }
 
@@ -4115,6 +4097,12 @@ export function fusePets(state, baseUid, matUids) {
     if (!f) return { ok: false, msg: "找不到素材靈寵。" };
     if (f.pet.speciesId !== base.speciesId) {
       return { ok: false, msg: "只能融合同種族靈寵。" };
+    }
+    if ((f.pet.level ?? 1) < rule.needLevel) {
+      return {
+        ok: false,
+        msg: `素材「${f.pet.name}」需達 Lv.${rule.needLevel}（現 Lv.${f.pet.level ?? 1}）。`,
+      };
     }
     matFounds.push(f);
   }
@@ -4147,9 +4135,9 @@ export function fusePets(state, baseUid, matUids) {
   base.atk += Math.max(1, Math.floor((1 + targetStage) * rarityFactor));
   base.hp += Math.max(2, Math.floor((4 + targetStage * 2) * rarityFactor));
   base.spd += Math.max(0, Math.floor(targetStage * rarityFactor));
-  base.atk = roundStat(base.atk);
-  base.hp = roundStat(base.hp);
-  base.spd = roundStat(base.spd);
+  base.atk = ceilStat(base.atk);
+  base.hp = ceilStat(base.hp);
+  base.spd = ceilStat(base.spd);
   base.fusionLevel = targetStage;
   base.fusionPowerMult = fusionPowerMultFromParts(targetStage, rarityFactor);
   base.level = keepLevel;
@@ -6395,6 +6383,10 @@ function ensureAbyssDive(state, now = Date.now()) {
     ad.eggsWeekKey = wk;
     ad.eggsBoughtWeek = 0;
   }
+  if (ad.fusionCoreWeekKey !== wk) {
+    ad.fusionCoreWeekKey = wk;
+    ad.fusionCoresBoughtWeek = 0;
+  }
   return ad;
 }
 
@@ -6843,6 +6835,9 @@ export function abyssDiveView(state, now = Date.now()) {
     powerNodeCost: ABYSS_POWER_NODE_COST,
     powerNodeAtkPct: Math.round(ABYSS_POWER_NODE_ATK * 100),
     powerNodeAtkMult: abyssPowerNodeAtkMult(state),
+    fusionCoreCost: ABYSS_FUSION_CORE_COST,
+    fusionCoresBoughtWeek: ad.fusionCoresBoughtWeek | 0,
+    fusionCoreWeeklyLimit: ABYSS_FUSION_CORE_WEEKLY_LIMIT,
     squadSize: ABYSS_SQUAD_SIZE,
     activeSize: ABYSS_ACTIVE_SIZE,
     ownedCount,
@@ -7249,6 +7244,26 @@ export function buyAbyssEgg(state, now = Date.now()) {
   ad.eggsBoughtWeek = (ad.eggsBoughtWeek | 0) + 1;
   pushLog(state, "兌得潮淵高階蛋。");
   return { ok: true, egg, msg: "獲得潮淵高階蛋（A）。" };
+}
+
+/** 潮淵每週限兌融合核 */
+export function buyAbyssFusionCore(state, now = Date.now()) {
+  const ad = ensureAbyssDive(state, now);
+  if ((ad.fusionCoresBoughtWeek | 0) >= ABYSS_FUSION_CORE_WEEKLY_LIMIT) {
+    return { ok: false, msg: `本週融合核已達上限（${ABYSS_FUSION_CORE_WEEKLY_LIMIT}）。` };
+  }
+  if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_FUSION_CORE_COST })) {
+    return { ok: false, msg: `需要淵砂×${ABYSS_FUSION_CORE_COST}。` };
+  }
+  if (!state.materials) state.materials = emptyMaterials();
+  state.materials.fusion_core = Math.floor(state.materials.fusion_core || 0) + 1;
+  ad.fusionCoresBoughtWeek = (ad.fusionCoresBoughtWeek | 0) + 1;
+  pushLog(state, `淵砂兌換融合核×1（本週 ${ad.fusionCoresBoughtWeek}/${ABYSS_FUSION_CORE_WEEKLY_LIMIT}）。`);
+  return {
+    ok: true,
+    msg: `獲得融合核×1（持有 ${state.materials.fusion_core}）`,
+    have: state.materials.fusion_core,
+  };
 }
 
 /** 淵核：永久小幅攻擊加成（有 cap；淵砂長期 sink） */

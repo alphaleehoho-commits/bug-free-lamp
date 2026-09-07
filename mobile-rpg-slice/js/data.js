@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260907.2";
+export const APP_BUILD = "20260907.3";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -1397,24 +1397,23 @@ export function ranchCapForStage(stageId) {
   return 6 + Math.max(0, stageId) * 3;
 }
 
-/** 升級耗靈石（獨立於融合，只跟寵物自身等級） */
+/** 升級耗靈石（無等級上限；平滑曲線，中後期明顯變貴） */
 export function upgradeStoneCost(level) {
   const lv = Math.max(1, level | 0);
-  return 8 + lv * 10 + Math.floor(lv * lv * 1.8);
+  // 早期平：~10（Lv1）、~120（Lv8）；中後期加速，50+ 繼續二次增長
+  return Math.max(8, Math.ceil(6 + lv * 8 + lv * lv * 1.35 + Math.pow(lv, 2.15) * 0.08));
 }
 
-/** 融合最高階 */
-export const FUSION_MAX_STAGE = 3;
+/** 融合最高階（終身一次終局） */
+export const FUSION_MAX_STAGE = 1;
+/** 融合開放等級（主體＋素材） */
+export const FUSION_NEED_LEVEL = 50;
 
 /**
- * 融階規則（目標融階 → 主體最低等級、同種族總隻數含主體）
- * 階1: Lv≥10、2隻｜階2: Lv≥20、4隻｜階3: Lv≥30、8隻
- * 素材不計等級；數量倍增 2→4→8
+ * 融階規則：只保留階1；主體+1 素材，雙方 Lv≥50
  */
 export const FUSION_RULES = {
-  1: { needLevel: 10, totalPets: 2 },
-  2: { needLevel: 20, totalPets: 4 },
-  3: { needLevel: 30, totalPets: 8 },
+  1: { needLevel: FUSION_NEED_LEVEL, totalPets: 2 },
 };
 
 export function nextFusionStage(currentFusionLevel) {
@@ -1430,13 +1429,13 @@ export function fusionMaterialNeed(targetStage) {
 }
 
 /**
- * 融合耗靈石（隨目標融階＋所需隻數遞增）
- * 階1→32, 階2→192, 階3→768
+ * 融合耗靈石
  */
 export function fusionStoneCost(targetStage) {
   const n = Math.max(1, Math.min(FUSION_MAX_STAGE, targetStage | 0));
   const rule = FUSION_RULES[n];
-  return 8 * n * (n + 1) * rule.totalPets;
+  if (!rule) return 9999;
+  return 120 * n * rule.totalPets;
 }
 
 /** 性格 → 契約成功率（由 PERSONALITIES.bond 匯出） */
@@ -2679,6 +2678,7 @@ export function scaleDungeonForTier(base, tier) {
   for (const c of d.conditions || []) {
     if (c.bonus) c.bonus = scaleReward(c.bonus, rewardMult);
   }
+  const spineStage = spineStageForTier(tier);
   const themes = {
     5: {
       loreTag: "裂潮",
@@ -2697,7 +2697,6 @@ export function scaleDungeonForTier(base, tier) {
         label: "條件：出戰含潮屬",
         bonus: { stones: 55, scrap: 2 },
       },
-      matBias: { mist_token: 2, temper_oil: 3, blood_catalyst: 2 },
     },
     6: {
       loreTag: "沉淵",
@@ -2715,7 +2714,6 @@ export function scaleDungeonForTier(base, tier) {
         label: "條件：出戰含≥2代寵",
         bonus: { stones: 70, dust: 12 },
       },
-      matBias: { breed_ticket: 3, blood_catalyst: 3, temper_oil: 1 },
     },
     7: {
       loreTag: "古潮",
@@ -2733,17 +2731,16 @@ export function scaleDungeonForTier(base, tier) {
         label: "條件：出戰含雜交種",
         bonus: { stones: 90, scrap: 3 },
       },
-      matBias: { seal_ember: 2, breed_ticket: 2, mist_token: 2 },
     },
   };
   const theme = themes[tier] || {
-    loreTag: `深淵${tier}`,
+    loreTag: spineStage <= 5 ? `主脊·階段${spineStage}` : `深淵${tier}`,
     passive: {
       id: `deep_${tier}_gale`,
       type: "elem_atk",
       element: "gale",
-      mult: 1.08 + extra * 0.01,
-      label: `關卡：深層風印 · 風屬友方攻擊 +${Math.round((0.08 + extra * 0.01) * 100)}%`,
+      mult: 1.08 + Math.min(0.2, extra * 0.01),
+      label: `關卡：深層風印 · 風屬友方攻擊 +${Math.round((0.08 + Math.min(0.2, extra * 0.01)) * 100)}%`,
     },
     condition: {
       id: `tide_${tier}_lean`,
@@ -2752,14 +2749,16 @@ export function scaleDungeonForTier(base, tier) {
       label: "條件：出戰≤2寵",
       bonus: { stones: 50 + extra * 15, scrap: 1 + Math.floor(extra / 2) },
     },
-    matBias: { seal_ember: 1 + Math.floor(extra / 2), blood_catalyst: 2, temper_oil: 2 },
   };
+  const matBiasRaw = spineStageMatBias(spineStage);
+  const matBias = Object.fromEntries(Object.entries(matBiasRaw).filter(([, w]) => w > 0));
   d.loreTag = theme.loreTag;
+  d.spineStage = spineStage;
   d.passives = [...(d.passives || []).filter((p) => p.id !== theme.passive.id), theme.passive];
   d.conditions = [...(d.conditions || []).filter((c) => c.id !== theme.condition.id), theme.condition];
   d.matDropOverride = {
-    chance: Math.min(0.62, 0.48 + extra * 0.03),
-    weights: theme.matBias,
+    chance: Math.min(0.62, 0.42 + Math.min(extra, 40) * 0.004),
+    weights: matBias,
   };
   return d;
 }
@@ -2772,11 +2771,16 @@ export function buildDungeonForTier(tier) {
   return scaleDungeonForTier(DUNGEONS[3], t);
 }
 
-/** 可見秘境 tier 列表：至少 4 層，隨階段 +1 層預覽 */
+/** 可見秘境 tier：主脊預覽至多 200，之後仍可隨 realm 延伸 */
 export function dungeonsForRealm(realm) {
-  const count = Math.max(4, (realm | 0) + 1);
+  const r = realm | 0;
+  const count = Math.min(200, Math.max(4, r + 1));
   const out = [];
   for (let t = 1; t <= count; t++) out.push(dungeonIdForTier(t));
+  // 201+：已過 200 仍跟 realm 開更深（無限）
+  if (r + 1 > 200) {
+    for (let t = 201; t <= r + 1; t++) out.push(dungeonIdForTier(t));
+  }
   return out;
 }
 
@@ -3943,14 +3947,13 @@ export const TIDE_SEAL_MAX = 12;
 export const TIDE_SEAL_MIN_REALM = 5;
 
 export function tideSealCombatMult(seals) {
-  const n = Math.max(0, Math.min(TIDE_SEAL_MAX, seals | 0));
-  return 1 + n * 0.02;
+  void seals;
+  return 1; // 鑄潮印已廢除
 }
 
 export function tideSealGainForRealm(realm) {
-  const r = realm | 0;
-  if (r < TIDE_SEAL_MIN_REALM) return 0;
-  return 1 + Math.floor((r - TIDE_SEAL_MIN_REALM) / 2);
+  void realm;
+  return 0;
 }
 
 /** 秘境掉落（僅人物裝） */
@@ -3998,23 +4001,23 @@ export function rollGearDrop(dungeonId, opts = {}) {
   return null;
 }
 
-/** 秘境勝利掉落：只出專屬催化（bulk／入場令永不進秘境池） */
+/** 秘境勝利掉落：主脊階段解鎖制（1–4 層對應階段一至四） */
 export const DUNGEON_MAT_DROPS = {
   tide_1: {
-    chance: 0.36,
-    weights: { temper_oil: 5 },
+    chance: 0.42,
+    weights: { tide_dew: 5, coral_shard: 4 },
   },
   tide_2: {
-    chance: 0.4,
-    weights: { temper_oil: 2, blood_catalyst: 4 },
+    chance: 0.45,
+    weights: { tide_dew: 2, coral_shard: 2, earth_grade_stone: 5 },
   },
   tide_3: {
-    chance: 0.44,
-    weights: { blood_catalyst: 3, breed_ticket: 3 },
+    chance: 0.48,
+    weights: { tide_dew: 2, earth_grade_stone: 1, cloud_grade_stone: 5, mist_silk: 2 },
   },
   tide_4: {
-    chance: 0.48,
-    weights: { breed_ticket: 3, temper_oil: 2, blood_catalyst: 3 },
+    chance: 0.5,
+    weights: { cloud_grade_stone: 1, fire_grade_stone: 5, abyss_ink: 3, temper_oil: 1 },
   },
 };
 
@@ -4177,12 +4180,10 @@ export function fusionAbsorbRate(targetStage) {
   return 0.09 + n * 0.05;
 }
 
-/** 融合出戰乘區（主軸） */
+/** 融合出戰乘區（終身一次；階1 加大） */
 export function fusionCombatMult(fusionLevel = 0) {
   const f = Math.max(0, Math.min(FUSION_MAX_STAGE, fusionLevel | 0));
-  if (f >= 3) return 1.2;
-  if (f >= 2) return 1.12;
-  if (f >= 1) return 1.06;
+  if (f >= 1) return 1.22;
   return 1;
 }
 
@@ -4203,7 +4204,7 @@ export function fusionMaterialRarityFactor(baseRarity, matRarities = []) {
 
 /**
  * 融合出戰乘區（軟綁只折「融合獎勵」；永遠 ≥ 1）
- * full=1.06／factor=0.55 → 1.033；唔會再寫出 0.58／0.85
+ * full=1.22／factor=0.55 → 約 1.121；唔會再寫出 0.58／0.85
  */
 export function fusionPowerMultFromParts(fusionLevel = 0, rarityFactor = 1) {
   const full = fusionCombatMult(fusionLevel);
@@ -4211,8 +4212,14 @@ export function fusionPowerMultFromParts(fusionLevel = 0, rarityFactor = 1) {
   return Math.round((1 + (full - 1) * factor) * 1000) / 1000;
 }
 
-/** 數值寫入／顯示：最多 1 位小數，避免 IEEE 回響 */
-export function roundStat(n, places = 1) {
+/** 面板／獎勵／消耗：進位成整數（內乘區除外） */
+export function ceilStat(n) {
+  return Math.ceil(Number(n) || 0);
+}
+
+/** 數值寫入／顯示：整數優先；保留相容 roundStat */
+export function roundStat(n, places = 0) {
+  if ((places | 0) <= 0) return ceilStat(n);
   const p = 10 ** Math.max(0, places | 0);
   return Math.round((Number(n) || 0) * p) / p;
 }
@@ -4396,13 +4403,51 @@ export function personalityExplain(personalityId) {
 /* ─── P10：材料／練功地點／主線解鎖 ─── */
 
 export const MATERIALS = {
-  tide_dew: { id: "tide_dew", name: "潮露", desc: "寵物升級催化", tier: "bulk" },
-  coral_shard: { id: "coral_shard", name: "珊瑚屑", desc: "繁殖必需", tier: "bulk" },
-  mist_silk: { id: "mist_silk", name: "霧絲", desc: "高階升級", tier: "bulk" },
-  abyss_ink: { id: "abyss_ink", name: "深淵墨", desc: "雜交／高代繁殖", tier: "bulk" },
+  tide_dew: { id: "tide_dew", name: "潮露", desc: "升級主材（全程）", tier: "bulk" },
+  coral_shard: { id: "coral_shard", name: "珊瑚屑", desc: "原生繁殖", tier: "bulk" },
+  mist_silk: { id: "mist_silk", name: "霧絲", desc: "中階養成", tier: "bulk" },
+  abyss_ink: { id: "abyss_ink", name: "深淵墨", desc: "高代繁殖", tier: "bulk" },
   seal_ember: { id: "seal_ember", name: "契火", desc: "突破與進化", tier: "bulk" },
-  echo_resin: { id: "echo_resin", name: "靈響脂", desc: "技能升級（練功專精）", tier: "bulk" },
-  fuse_sand: { id: "fuse_sand", name: "融砂", desc: "融合催化（練功專精）", tier: "bulk" },
+  echo_resin: { id: "echo_resin", name: "靈響脂", desc: "技能升級", tier: "bulk" },
+  fuse_sand: { id: "fuse_sand", name: "融砂", desc: "舊融合催化（兼容）", tier: "bulk" },
+  /** 升級副材：每 10 級一帶 */
+  earth_grade_stone: {
+    id: "earth_grade_stone",
+    name: "地階石",
+    desc: "升級副材 · 約 Lv10–19 · 主脊階段二／地脈",
+    tier: "grade",
+  },
+  cloud_grade_stone: {
+    id: "cloud_grade_stone",
+    name: "雲階石",
+    desc: "升級副材 · 約 Lv20–29 · 主脊階段三",
+    tier: "grade",
+  },
+  fire_grade_stone: {
+    id: "fire_grade_stone",
+    name: "火階石",
+    desc: "升級副材 · 約 Lv30–39 · 主脊階段四／火脈",
+    tier: "grade",
+  },
+  sky_grade_stone: {
+    id: "sky_grade_stone",
+    name: "天階石",
+    desc: "升級副材 · 約 Lv40–49 · 主脊階段五／天脈",
+    tier: "grade",
+  },
+  void_grade_stone: {
+    id: "void_grade_stone",
+    name: "虛階石",
+    desc: "升級副材 · Lv50+ 無限帶",
+    tier: "grade",
+  },
+  /** 極罕：終身融合一次消耗 */
+  fusion_core: {
+    id: "fusion_core",
+    name: "融合核",
+    desc: "極罕 · 寵物終身融合一次必需 · 主脊末段／潮淵每週",
+    tier: "rare",
+  },
   temper_oil: {
     id: "temper_oil",
     name: "性格洗劑",
@@ -4593,39 +4638,55 @@ export function emptyItemBonus() {
   return { ranchCap: 0, hatchSlots: 0 };
 }
 
-/** 升級耗材料（隨等級） */
+/** 升級副材帶（每 10 級；50+ 用虛階石撐無限） */
+export const UPGRADE_SUB_BANDS = [
+  { minLv: 10, maxLv: 19, id: "earth_grade_stone" },
+  { minLv: 20, maxLv: 29, id: "cloud_grade_stone" },
+  { minLv: 30, maxLv: 39, id: "fire_grade_stone" },
+  { minLv: 40, maxLv: 49, id: "sky_grade_stone" },
+];
+
+export function upgradeSubMatId(level) {
+  const lv = Math.max(1, level | 0);
+  for (const b of UPGRADE_SUB_BANDS) {
+    if (lv >= b.minLv && lv <= b.maxLv) return b.id;
+  }
+  if (lv >= 50) return "void_grade_stone";
+  return null;
+}
+
+/** 升級耗材料：主材潮露（全程遞增）+ 每10級副材 */
 export function upgradeMatCost(level) {
   const lv = Math.max(1, level | 0);
-  return {
-    tide_dew: 1 + Math.floor(lv / 4),
-    mist_silk: lv >= 10 ? 1 + Math.floor((lv - 10) / 8) : 0,
+  const out = {
+    tide_dew: Math.max(1, Math.ceil(1 + lv * 0.55 + Math.floor(lv / 5))),
   };
+  const sub = upgradeSubMatId(lv);
+  if (sub) {
+    // 帶內愈高愈貴；跨帶重置起點
+    const bandBase = sub === "void_grade_stone" ? 50 : UPGRADE_SUB_BANDS.find((b) => b.id === sub)?.minLv || 10;
+    const into = Math.max(0, lv - bandBase);
+    out[sub] = Math.max(2, Math.ceil(4 + into * 3 + Math.floor(lv / 8)));
+  }
+  return out;
 }
 
 /**
- * 繁殖耗材料（按雙親代數）
- *
- * 規則：以 max 代拉高珊瑚屑；深淵墨跟「代數參與度」走，原生掛高代要多付，
- * 唔好再出現「野生+2代＝必出2代且比 1+2 更平」嘅倒掛。
- * - coral_shard = 1 + max(genA, genB)
- * - abyss_ink   = maxGen==0 → 0；否則 maxGen + (有原生親且 maxGen≥2 ? 1 : 0)
- *   例：0+0→屑1墨0｜0+1→屑2墨1｜1+1→屑2墨1｜0+2→屑3墨3｜1+2→屑3墨2｜2+2→屑3墨2
+ * 繁殖耗材料（按雙親最高代 → 對應階段料）
+ * 0：原生（珊瑚）｜1：一代（+地階）｜2：二代（+雲階／墨）｜3+：三代（+火階／墨）
  */
 export function breedMatCost(genA, genB) {
-  const a = Math.max(0, genA | 0);
-  const b = Math.max(0, genB | 0);
-  const maxGen = Math.max(a, b);
-  const minGen = Math.min(a, b);
-  const coral = 1 + maxGen;
-  let abyss = 0;
-  if (maxGen >= 1) {
-    abyss = maxGen;
-    if (minGen === 0 && maxGen >= 2) abyss += 1;
+  const maxGen = Math.max(0, genA | 0, genB | 0);
+  if (maxGen <= 0) {
+    return { coral_shard: 2 };
   }
-  return {
-    coral_shard: coral,
-    abyss_ink: abyss,
-  };
+  if (maxGen === 1) {
+    return { coral_shard: 3, earth_grade_stone: 4 };
+  }
+  if (maxGen === 2) {
+    return { coral_shard: 4, cloud_grade_stone: 5, abyss_ink: 2 };
+  }
+  return { coral_shard: 5, fire_grade_stone: 6, abyss_ink: 3 };
 }
 
 /** 技能升級額外材料（Lv≥2 起；練功專精） */
@@ -4635,10 +4696,41 @@ export function skillMatCost(skillLevel) {
   return { echo_resin: 1 + Math.floor((lv - 2) / 2) };
 }
 
-/** 融合額外材料（練功專精） */
+/** 融合：耗極罕融合核（終身一次） */
 export function fusionMatCost(targetStage) {
-  const st = Math.max(1, targetStage | 0);
-  return { fuse_sand: st };
+  void targetStage;
+  return { fusion_core: 1 };
+}
+
+/** 主脊階段：每 40 關一段（1–40=1 … 161–200=5；201+ 仍用 5+ 曲線） */
+export function spineStageForTier(tier) {
+  const t = Math.max(1, tier | 0);
+  return Math.floor((t - 1) / 40) + 1;
+}
+
+/** 各主脊階段掉落權重（解鎖制：後段加新帶，前帶可少量） */
+export function spineStageMatBias(stage) {
+  const s = Math.max(1, stage | 0);
+  if (s <= 1) {
+    return { tide_dew: 5, coral_shard: 4 };
+  }
+  if (s === 2) {
+    return { tide_dew: 2, coral_shard: 2, earth_grade_stone: 5 };
+  }
+  if (s === 3) {
+    return { tide_dew: 2, earth_grade_stone: 1, cloud_grade_stone: 5, mist_silk: 2 };
+  }
+  if (s === 4) {
+    return { cloud_grade_stone: 1, fire_grade_stone: 5, abyss_ink: 3, temper_oil: 1 };
+  }
+  // 5+：天階／契火／極低權重融合核
+  return {
+    fire_grade_stone: 1,
+    sky_grade_stone: 4,
+    void_grade_stone: s >= 6 ? 3 : 0,
+    seal_ember: 2,
+    fusion_core: 1,
+  };
 }
 
 /**
@@ -4986,13 +5078,19 @@ export function unlockedTrainSiteIds(state) {
 /* ─── P11：材料提示／解鎖回饋 ─── */
 
 export const MATERIAL_USES = {
-  tide_dew: "升級",
-  coral_shard: "繁殖",
-  mist_silk: "高階升級",
-  abyss_ink: "繁殖／雜交",
+  tide_dew: "升級主材",
+  coral_shard: "原生繁殖",
+  mist_silk: "中階養成",
+  abyss_ink: "高代繁殖",
   seal_ember: "突破",
   echo_resin: "技能升級",
-  fuse_sand: "融合",
+  fuse_sand: "舊融合催化",
+  earth_grade_stone: "升級副材·地",
+  cloud_grade_stone: "升級副材·雲",
+  fire_grade_stone: "升級副材·火",
+  sky_grade_stone: "升級副材·天",
+  void_grade_stone: "升級副材·虛",
+  fusion_core: "終身融合",
   temper_oil: "洗性格",
   blood_catalyst: "縮短繁殖冷卻",
   breed_ticket: "重置繁殖冷卻",
@@ -5159,6 +5257,9 @@ export const ABYSS_POWER_NODE_MAX = 8;
 export const ABYSS_POWER_NODE_ATK = 0.01;
 /** 淵砂兌換潮轉符（永久轉屬道具） */
 export const ABYSS_TIDE_SHIFT_COST = 35;
+/** 潮淵每週兌換融合核（極罕） */
+export const ABYSS_FUSION_CORE_COST = 180;
+export const ABYSS_FUSION_CORE_WEEKLY_LIMIT = 1;
 
 export function emptyAbyssDive(now = Date.now()) {
   return {
@@ -5172,6 +5273,8 @@ export function emptyAbyssDive(now = Date.now()) {
     powerNodes: 0,
     eggsBoughtWeek: 0,
     eggsWeekKey: "",
+    fusionCoresBoughtWeek: 0,
+    fusionCoreWeekKey: "",
     run: null,
   };
 }
