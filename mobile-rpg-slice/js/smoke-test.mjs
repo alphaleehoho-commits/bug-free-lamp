@@ -270,6 +270,7 @@ import {
   setTrainDepth,
   navTrainIdleFloor,
   trainIdleFloor,
+  trainFloorNavGates,
   trainClearEfficiency,
   trainDepthMultFor,
   partyCombatPower,
@@ -2648,8 +2649,26 @@ const effWeak = trainClearEfficiency(
 assert(effStrong > effWeak, "strong party higher AFK efficiency");
 assert(trainIdleCombatView(tzSt).waveCount === TRAIN_MIST_WAVE_COUNT, "idle combat strip data");
 assert(DAILY_QUESTS.some((q) => q.id === "train_tier"), "daily train_tier");
-tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady = true;
-assert(navTrainIdleFloor(tzSt, -1).ok && trainIdleFloor(tzSt) === 4, "prev floor to 4");
+// 上一層唔使 clearReady；已通範圍下一層亦唔使
+assert(navTrainIdleFloor(tzSt, -1).ok && trainIdleFloor(tzSt) === 4, "prev floor free without clearReady");
+tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady = false;
+assert(trainFloorNavGates(tzSt).canPrev, "canPrev on floor>1");
+assert(trainFloorNavGates(tzSt).canNext, "canNext inside cleared range");
+// frontier 未贏 → 下一層 disable
+{
+  const frontSt = {
+    ...tzSt,
+    clearedDungeons: { tide_1: true, tide_2: true },
+    trainMap: { zones: { [SPINE_ZONE_ID]: { tiersCleared: 2, idleFloor: 3, clearReady: false } }, wardenCleared: {} },
+  };
+  const g = trainFloorNavGates(frontSt);
+  assert(g.floor === 3 && g.frontier === 3 && !g.canNext && g.canPrev, "frontier next locked until win");
+  assert(!navTrainIdleFloor(frontSt, 1).ok, "cannot next on frontier without win");
+  assert(navTrainIdleFloor(frontSt, -1).ok && trainIdleFloor(frontSt) === 2, "can retreat from frontier");
+  // 返去已通層：上下都開
+  const backGates = trainFloorNavGates(frontSt);
+  assert(backGates.canPrev && backGates.canNext, "cleared range both nav enabled");
+}
 const setD = setTrainDepth(tzSt, 1);
 assert(setD.ok && trainIdleFloor(tzSt) === 2, "set depth to floor 2");
 assert(
@@ -2691,6 +2710,7 @@ assert(!uiSrc2.includes("offline-toast"), "ui no floating offline toast");
 assert(!uiSrc2.includes("clear-offline"), "ui no dismiss-offline toast act");
 assert(uiSrc2.includes("visibilitychange"), "ui catch-up on tab visible");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
+assert(uiSrc2.includes("trainFloorNavGates"), "ui uses trainFloorNavGates");
 assert(uiSrc2.includes("data-train-floor-prev"), "ui floor prev");
 assert(uiSrc2.includes("data-train-floor-next"), "ui floor next");
 assert(uiSrc2.includes("navTrainIdleFloor"), "ui uses navTrainIdleFloor");
@@ -3354,7 +3374,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v102"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v103"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

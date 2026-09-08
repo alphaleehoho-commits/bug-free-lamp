@@ -470,8 +470,30 @@ export function trainDepthMultFor(state, zoneId) {
 }
 
 /**
- * 上一層／下一層。需本層五波已清（clearReady）。
- * 喺 frontier 撳下一層會寫入 clearedDungeons 並推進主脊。
+ * 上一層／下一層按鈕狀態：
+ * - 上一層：層 > 1 永遠可返（即使 frontier 打唔贏）
+ * - 下一層：喺已通範圍（floor < frontier）永遠可去；frontier 要打贏本層五波（clearReady）
+ */
+export function trainFloorNavGates(state) {
+  ensureTrainMap(state);
+  syncMistProgressIntoSpine(state);
+  const floor = trainIdleFloor(state);
+  const cleared = maxClearedTideTier(state);
+  const frontier = spineFrontierTier(state);
+  const z = ensureZoneProgress(state, SPINE_ZONE_ID);
+  const wonReady = !!z.clearReady;
+  return {
+    floor,
+    cleared,
+    frontier,
+    canPrev: floor > 1,
+    canNext: floor < frontier || (floor === frontier && wonReady),
+  };
+}
+
+/**
+ * 上一層／下一層。
+ * 上一層唔使清波；下一層喺已通範圍可自由行，frontier 要 clearReady（打贏五波）先推進並紀錄已通。
  */
 export function navTrainIdleFloor(state, delta) {
   ensureTrainMap(state);
@@ -479,10 +501,8 @@ export function navTrainIdleFloor(state, delta) {
   const zoneId = SPINE_ZONE_ID;
   state.trainSite = SPINE_ZONE_ID;
   const z = ensureZoneProgress(state, zoneId);
-  if (!z.clearReady) {
-    return { ok: false, msg: `需先掛機清完本層 ${TRAIN_MIST_WAVE_COUNT} 波。` };
-  }
   const floor = trainIdleFloor(state);
+  const frontier = spineFrontierTier(state);
   const d = delta | 0;
   if (d < 0) {
     if (floor <= 1) return { ok: false, msg: "已係第 1 層。" };
@@ -492,9 +512,12 @@ export function navTrainIdleFloor(state, delta) {
     return { ok: true, msg: `上一層 · 第 ${z.idleFloor} 層`, floor: z.idleFloor };
   }
   if (d > 0) {
-    const frontier = spineFrontierTier(state);
+    // frontier 未打贏五波 → 唔畀衝下一層
+    if (floor >= frontier && !z.clearReady) {
+      return { ok: false, msg: `需先掛機打贏本層 ${TRAIN_MIST_WAVE_COUNT} 波，先可去下一層。` };
+    }
     let firstClear = false;
-    if (floor === frontier) {
+    if (floor === frontier && z.clearReady) {
       if (!state.clearedDungeons) state.clearedDungeons = {};
       const id = dungeonIdForTier(floor);
       firstClear = !state.clearedDungeons[id];
@@ -1203,9 +1226,9 @@ export function trainSitesView(state) {
       keyMatId,
       keyName: MATERIALS[keyMatId]?.name || "潮鑰",
       keyHave: Math.floor(state.materials?.[keyMatId] || 0),
-      canAdvance: !!z.clearReady,
+      canAdvance: trainFloorNavGates(state).canNext,
       clearReady: !!z.clearReady,
-      canClaimNext: !!z.clearReady,
+      canClaimNext: trainFloorNavGates(state).canNext,
       canChallengeWarden: false,
       canRematchWarden: false,
       idleDepth: floor - 1,
@@ -1814,7 +1837,7 @@ export function persistTrainIdleClearResult(state, session) {
 }
 
 /**
- * 掛機清完一輪後標記 clearReady，解鎖上一層／下一層。
+ * 掛機清完一輪後標記 clearReady（frontier 先解鎖「下一層」）。
  */
 export function markTrainIdleClearReady(state, session) {
   if (!session?.won) {

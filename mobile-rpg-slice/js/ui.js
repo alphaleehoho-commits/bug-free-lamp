@@ -109,6 +109,7 @@ import {
   persistTrainIdleClearResult,
   navTrainIdleFloor,
   trainIdleFloor,
+  trainFloorNavGates,
   listSideBranches,
   branchFloors,
   isSideBranchUnlocked,
@@ -2909,13 +2910,14 @@ function idleUnitBarHtml(u, slotIndex = 0, lane = "front") {
 
 function trainIdleStripHtml() {
   const wrap = ensureIdleCombat();
-  const floor = trainIdleFloor(state);
-  const canNav = !!(wrap?.clearReady || (wrap?.session?.ended && wrap?.session?.won));
+  const gates = trainFloorNavGates(state);
   const floorNav = `<div class="row train-floor-nav">
     <button type="button" class="secondary" data-train-floor-prev ${
-      !canNav || floor <= 1 ? "disabled" : ""
+      gates.canPrev ? "" : "disabled"
     }>上一層</button>
-    <button type="button" class="secondary" data-train-floor-next ${!canNav ? "disabled" : ""}>下一層</button>
+    <button type="button" class="secondary" data-train-floor-next ${
+      gates.canNext ? "" : "disabled"
+    }>下一層</button>
   </div>`;
   if (!wrap?.session) {
     return `<div class="train-idle-strip" data-live="train-idle">
@@ -6685,13 +6687,12 @@ setInterval(() => {
           hitEl.classList.toggle("is-fail", resultLine === "挑戰失敗");
           hitEl.classList.toggle("is-clear", !!resultLine && resultLine !== "挑戰失敗");
         }
-        // 通關後解鎖上一層／下一層
-        const canNav = !!(wrap.clearReady || (s.ended && s.won));
-        const floor = trainIdleFloor(state);
+        // 上一層永遠可返；下一層喺已通範圍常開，frontier 要打贏五波
+        const gates = trainFloorNavGates(state);
         const prevBtn = strip.querySelector("[data-train-floor-prev]");
         const nextBtn = strip.querySelector("[data-train-floor-next]");
-        if (prevBtn) prevBtn.disabled = !canNav || floor <= 1;
-        if (nextBtn) nextBtn.disabled = !canNav;
+        if (prevBtn) prevBtn.disabled = !gates.canPrev;
+        if (nextBtn) nextBtn.disabled = !gates.canNext;
         strip.querySelector(".train-idle-claim")?.remove();
       }
     }
