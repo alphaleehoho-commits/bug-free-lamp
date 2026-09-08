@@ -7,7 +7,7 @@
 - Android Chrome（次）
 
 ## 硬刷新
-1. 確認 `sw.js` cache 已 bump（而家 `void-tide-pets-v100`）
+1. 確認 `sw.js` cache 已 bump（而家 `void-tide-pets-v101`）
 2. Safari：設定 → Safari → 進階 → 網站資料 → 刪除此站，或「重新載入唔用快取」
 3. 畫面頂若出現「有新版本」→ 撳「硬刷新」
 

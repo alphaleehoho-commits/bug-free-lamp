@@ -108,16 +108,12 @@ import {
   markTrainIdleClearReady,
   persistTrainIdleClearResult,
   claimTrainTierClear,
-  challengeTrainWarden,
-  setTrainDepth,
-  trainDailySpotlightView,
   listSideBranches,
   branchFloors,
   isSideBranchUnlocked,
   sideBranchById,
   isBranchDungeonId,
   SPINE_ZONE_ID,
-  SPINE_THEME_FLOORS,
   spineTrunkView,
   materialHintsView,
   itemsView,
@@ -172,7 +168,6 @@ import {
   DUNGEON_SUMMON_MIN,
   DUNGEON_SUMMON_MAX,
   clampDungeonSummonCount,
-  TRAIN_DEPTH_MULT,
   TRAIN_TIER_COUNT,
   elementExplain,
   kindExplain,
@@ -2915,7 +2910,7 @@ function trainIdleStripHtml() {
   const wrap = ensureIdleCombat();
   if (!wrap?.session) {
     return `<div class="train-idle-strip" data-live="train-idle">
-      <p class="meta train-idle-log muted">未出戰——掛機效率最低</p>
+      <p class="meta train-idle-log muted">掛機清場中（請先出戰）</p>
     </div>`;
   }
   const s = wrap.session;
@@ -2940,7 +2935,6 @@ function trainIdleStripHtml() {
   const resultCls =
     resultLine === "挑戰失敗" ? " is-fail" : resultLine ? " is-clear" : "";
   return `<div class="train-idle-strip" data-live="train-idle">
-    <p class="meta train-idle-log">${escapeHtml(wrap.logLine || "")}</p>
     <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
     <div class="bar combat-bar train-idle-bar"><i data-live="train-idle-bar" style="width:${pct}%"></i></div>
     <div class="combat-roster train-idle-roster combat-formation" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}">
@@ -2967,10 +2961,6 @@ function cultivatePanel(qiPct, next, m) {
   const map = trainMapView(state);
   const sites = map.sites || trainSitesView(state);
   const siteCur = sites.find((s) => s.selected) || sites[0];
-  const trainSpot = trainDailySpotlightView();
-  const spotNote = trainSpot
-    ? `<p class="train-daily-spot">${escapeHtml(trainSpot.label)}${trainSpot.focus ? ` · ${escapeHtml(trainSpot.focus)}` : ""}</p>`
-    : "";
   const rateLines = (siteCur?.rates?.lines || [])
     .slice(0, 6)
     .map((r) => {
@@ -2979,7 +2969,7 @@ function cultivatePanel(qiPct, next, m) {
       const adj = (Number(r.perHr) * dm * em).toFixed(r.kind === "mat" ? 1 : 0);
       return `<li class="train-rate ${r.tag ? "is-boosted" : ""}"><span>${escapeHtml(r.name)}</span><span class="muted">≈${adj}/時${
         r.tag ? ` · ${escapeHtml(r.tag)}` : ""
-      } ·深×${fmtMult(dm)}·效×${fmtMult(em)}</span></li>`;
+      }</span></li>`;
     })
     .join("");
 
@@ -3151,52 +3141,20 @@ function cultivatePanel(qiPct, next, m) {
     );
   }
 
-  const depthMax = siteCur?.maxDepth ?? 0;
-  const depthCur = siteCur?.idleDepth ?? 0;
-  const depthBtns = depthMax > 0
-    ? Array.from({ length: depthMax + 1 }, (_, i) => {
-        const label = i >= TRAIN_TIER_COUNT ? "段主" : `霧${i + 1}`;
-        const mult = (TRAIN_DEPTH_MULT[i] ?? 1).toFixed(2);
-        return `<button type="button" class="${i === depthCur ? "primary" : "secondary"} train-depth-btn" data-set-depth="${i}" title="×${mult}">${label}</button>`;
-      }).join("")
-    : "";
-  const depthRow = depthBtns
-    ? `<div class="row train-depth-row"><span class="muted">掛機層：</span>${depthBtns}</div>`
-    : "";
-
-  const tierActionBtns = [];
-  if (siteCur?.canClaimNext) {
-    tierActionBtns.push(`<button type="button" class="primary" data-claim-tier>去下一層</button>`);
-  }
-  if (siteCur?.canChallengeWarden) tierActionBtns.push(`<button type="button" class="primary" data-challenge-warden>挑戰段主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`);
-  if (siteCur?.canRematchWarden) tierActionBtns.push(`<button type="button" class="secondary" data-challenge-warden>複打段主（${escapeHtml(siteCur.keyName)} ${siteCur.keyHave}）</button>`);
-  if ((state.materials?.breed_ticket || 0) >= 1) tierActionBtns.push(`<button type="button" class="secondary" data-act="use-breed-ticket">催生符</button>`);
-  if ((state.materials?.blood_catalyst || 0) >= 1) tierActionBtns.push(`<button type="button" class="secondary" data-act="use-blood-catalyst">血統催化</button>`);
-
   const trunk = spineTrunkView(state);
   const frontierGate = dungeonGateView(state, trunk.frontierId);
   const frontierCleared = !!(state.clearedDungeons || {})[trunk.frontierId];
   let frontierAction = "";
   if (!frontierGate.needsSummon || frontierGate.phase === "ready") {
     frontierAction = `<button type="button" class="primary" data-train-spine-attack="${escapeHtml(trunk.frontierId)}">${
-      frontierCleared ? "再戰本關" : "挑戰本關"
+      frontierCleared ? "再戰" : "挑戰本關"
     }</button>`;
   } else if (frontierGate.summoning) {
     const sec = Math.ceil((frontierGate.summonLeftMs || 0) / 1000);
     frontierAction = `<span class="muted">凝聚中 ${sec}s…</span>`;
   } else {
-    frontierAction = `<button type="button" class="secondary" data-train-spine-summon="${escapeHtml(trunk.frontierId)}">召喚本關</button>`;
+    frontierAction = `<button type="button" class="secondary" data-train-spine-summon="${escapeHtml(trunk.frontierId)}">召喚</button>`;
   }
-  const spineFloorCard = `<div class="train-spine-floor card-block">
-    <p class="lead">主脊第 <strong>${trunk.frontier}</strong> 關 · ${escapeHtml(trunk.frontierName)}</p>
-    <p class="meta">${escapeHtml(trunk.progressLabel)} · 階段${trunk.stage}${
-      trunk.cleared > 0 ? ` · 剛通第${trunk.cleared}關` : " · 尚未通關"
-    }</p>
-    <p class="meta muted">打通後解鎖第 ${trunk.nextAfterClear} 關${
-      trunk.frontier <= SPINE_THEME_FLOORS ? ` · 主題主脊至 ${SPINE_THEME_FLOORS}` : " · 已過主題段，無限延伸"
-    }</p>
-    <div class="row train-spine-actions">${frontierAction}</div>
-  </div>`;
 
   const branches = listSideBranches(state);
   const branchChips = branches
@@ -3247,25 +3205,19 @@ function cultivatePanel(qiPct, next, m) {
 
   return wrapStage(
     nav,
-        `<h2>契壇修行 · 主脊</h2>
-    <p class="lead">御靈師【${escapeHtml(m.name)}】· 階段${trunk.stage} · 第${trunk.frontier}關</p>
+        `<h2>第${trunk.frontier}關 · ${escapeHtml(trunk.frontierName)}</h2>
+    <p class="meta">${escapeHtml(trunk.progressLabel)}</p>
     ${
       tutorialQiReady(state)
         ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
         : ""
     }
-    ${spineFloorCard}
+    <div class="row train-spine-actions">${frontierAction}</div>
     ${trainIdleStripHtml()}
-    ${depthRow}
-    <div class="row train-tier-actions">${tierActionBtns.join("")}</div>
-    <h3>掛機 · ${escapeHtml(siteCur?.focus || "主脊")}${siteCur?.isDailySpot ? " · 今日強化" : ""}</h3>
-    ${spotNote}
-    <p class="meta">${escapeHtml(siteCur?.depthLabel || "")} · 深度 ×${fmtMult(siteCur?.depthMult || 1)} · 效率 ×${fmtMult(siteCur?.efficiency || 1)} · ${escapeHtml(siteCur?.keyName || "潮鑰")} ${siteCur?.keyHave ?? 0}</p>
     ${trainRatesBlockHtml(rateLines)}
     <h3>側枝</h3>
     <div class="row tactics-row train-branch-row">${branchChips}</div>
-    ${branchDetail}
-    <p class="meta muted">主脊關卡喺練功推進（同秘境共用進度）· 潮鑰由主脊／秘境掉落 · 段主消耗潮鑰</p>`
+    ${branchDetail}`
   );
 }
 
@@ -6176,14 +6128,6 @@ function bind() {
       executeDungeonAttack(id, "challenge", { trainSpine: true });
     });
   });
-  app.querySelectorAll("[data-set-depth]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const r = setTrainDepth(state, Number(btn.dataset.setDepth));
-      saveState(state);
-      render();
-      setFlash(r.msg);
-    });
-  });
   app.querySelectorAll("[data-claim-tier]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const r = claimTrainTierClear(state);
@@ -6321,19 +6265,6 @@ function bind() {
       saveState(state);
       render();
       setFlash(r.msg);
-    });
-  });
-  app.querySelectorAll("[data-challenge-warden]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const r = challengeTrainWarden(state);
-      saveState(state);
-      panelSub = { ...panelSub, cultivate: "train" };
-      if (r.combatEvents?.length) {
-        startPlayback(r);
-        return;
-      }
-      render();
-      setFlash(r.msg, r.ok ? (r.firstClear ? "unlock" : "celebrate") : "");
     });
   });
   app.querySelectorAll("[data-open-dispatch]").forEach((btn) => {
@@ -6721,7 +6652,7 @@ setInterval(() => {
       const s = wrap?.session;
       if (s) {
         const log = strip.querySelector(".train-idle-log");
-        if (log) log.textContent = wrap.logLine || "";
+        if (log) log.textContent = wrap.session ? "" : "掛機清場中（請先出戰）";
         const meta = strip.querySelector("[data-live=train-idle-meta]");
         if (meta) {
           meta.textContent =

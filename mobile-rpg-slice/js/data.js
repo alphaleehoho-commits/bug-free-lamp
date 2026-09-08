@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260908.1";
+export const APP_BUILD = "20260908.2";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
