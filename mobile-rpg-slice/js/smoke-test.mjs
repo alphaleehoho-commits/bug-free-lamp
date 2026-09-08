@@ -100,12 +100,14 @@ import {
   TIDE_SEAL_MIN_REALM,
   TRAIN_SITES,
   SPINE_ZONE_ID,
+  SPINE_THEME_FLOORS,
   SIDE_BRANCHES,
   spineAfkDropsForStage,
   spineTrainProfile,
   spineStageFromState,
   spineFrontierTier,
   maxClearedTideTier,
+  spineTrunkView,
   isSideBranchUnlocked,
   buildBranchDungeon,
   isBranchDungeonId,
@@ -1018,12 +1020,20 @@ assert(listSideBranches({ clearedDungeons: { tide_161: true } }).every((b) => b.
 assert(maxClearedTideTier({ clearedDungeons: { tide_5: true, earth_vein_1: true } }) === 5, "branch clears ignore max tide");
 assert(spineFrontierTier({ clearedDungeons: { tide_5: true } }) === 6, "frontier next");
 assert(spineStageFromState({ clearedDungeons: { tide_41: true } }) === 2, "stage from state");
+assert(SPINE_THEME_FLOORS === 200, "theme spine 200");
+const trunk0 = spineTrunkView({ clearedDungeons: {} });
+assert(trunk0.frontier === 1 && trunk0.cleared === 0 && trunk0.progressLabel.includes("0／200"), "trunk start floor1");
+const trunk4 = spineTrunkView({ clearedDungeons: { tide_4: true } });
+assert(trunk4.frontier === 5 && trunk4.cleared === 4 && trunk4.nextAfterClear === 6, "trunk after 4");
+assert(trunk4.frontierName && trunk4.progressLabel.includes("4／200"), "trunk progress label");
+const trunk200 = spineTrunkView({ clearedDungeons: { tide_200: true } });
+assert(trunk200.frontier === 201 && trunk200.progressLabel.includes("無限"), "trunk beyond theme");
 
 /* P12: combat events */
 const combatFox = buildPetStats({
   id: "p1",
   species: "reefox",
-  element: "tide",
+  element: "flame",
   personality: "gentle",
   cost: 1,
 });
@@ -1067,6 +1077,35 @@ assert(
   firstEv?.type === "wave" || firstEv?.type === "round",
   "combat log starts at wave/round"
 );
+
+/* Train spine: sequential floor push waives realm gate */
+const spinePushSt = {
+  ...combatSt,
+  pets: [{ ...combatFox, atk: 200, hp: 800, spd: 40, uid: "spine-push" }],
+  realm: 0,
+  clearedDungeons: { tide_1: true, tide_2: true, tide_3: true, tide_4: true },
+  materials: emptyMaterials(),
+  stones: 500,
+};
+assert(!runDungeon({ ...spinePushSt, materials: emptyMaterials() }, "tide_5").ok, "秘境 path still realm-gates tide_5");
+const stFrontier = {
+  ...spinePushSt,
+  materials: emptyMaterials(),
+  clearedDungeons: { ...spinePushSt.clearedDungeons },
+};
+const spinePush = runDungeon(stFrontier, "tide_5", { trainSpine: true });
+assert(spinePush.ok, "trainSpine can challenge frontier regardless of realm");
+const skipAhead = runDungeon(
+  {
+    ...spinePushSt,
+    materials: emptyMaterials(),
+    clearedDungeons: { tide_1: true },
+  },
+  "tide_5",
+  { trainSpine: true }
+);
+assert(!skipAhead.ok, "trainSpine cannot skip floors");
+assert(spineTrunkView(stFrontier).frontier >= 5, "trunk view after attempt");
 assert(
   !combatRes.combatEvents.some((e) => /關卡條件|雜交試煉|挑戰.*條件/.test(e.text || "")),
   "no condition checks in combat events"
@@ -2669,6 +2708,9 @@ assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
 assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
 assert(uiSrc2.includes("data-train-branch"), "ui side branch chips");
 assert(uiSrc2.includes("data-train-branch-attack"), "ui branch combat from train");
+assert(uiSrc2.includes("data-train-spine-attack"), "ui spine floor challenge");
+assert(uiSrc2.includes("主脊第"), "ui spine floor card");
+assert(uiSrc2.includes("trainSpine: true") || uiSrc2.includes("{ trainSpine: true }"), "ui trainSpine attack opts");
 assert(!uiSrc2.includes("主脊｜支線") && !uiSrc2.includes("主脊 | 支線"), "no dungeon branch subnav");
 assert(uiSrc2.includes('id: "bag"'), "ui bag sub-tab");
 assert(uiSrc2.includes("data-bag-inner"), "ui bag inner mats/items tabs");
@@ -3322,7 +3364,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v99"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v100"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

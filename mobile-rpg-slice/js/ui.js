@@ -117,6 +117,8 @@ import {
   sideBranchById,
   isBranchDungeonId,
   SPINE_ZONE_ID,
+  SPINE_THEME_FLOORS,
+  spineTrunkView,
   materialHintsView,
   itemsView,
   useBagItem,
@@ -3171,8 +3173,31 @@ function cultivatePanel(qiPct, next, m) {
   if ((state.materials?.breed_ticket || 0) >= 1) tierActionBtns.push(`<button type="button" class="secondary" data-act="use-breed-ticket">催生符</button>`);
   if ((state.materials?.blood_catalyst || 0) >= 1) tierActionBtns.push(`<button type="button" class="secondary" data-act="use-blood-catalyst">血統催化</button>`);
 
-  const stageN = siteCur?.spineStage || 1;
-  const frontier = siteCur?.frontierTier || 1;
+  const trunk = spineTrunkView(state);
+  const frontierGate = dungeonGateView(state, trunk.frontierId);
+  const frontierCleared = !!(state.clearedDungeons || {})[trunk.frontierId];
+  let frontierAction = "";
+  if (!frontierGate.needsSummon || frontierGate.phase === "ready") {
+    frontierAction = `<button type="button" class="primary" data-train-spine-attack="${escapeHtml(trunk.frontierId)}">${
+      frontierCleared ? "再戰本關" : "挑戰本關"
+    }</button>`;
+  } else if (frontierGate.summoning) {
+    const sec = Math.ceil((frontierGate.summonLeftMs || 0) / 1000);
+    frontierAction = `<span class="muted">凝聚中 ${sec}s…</span>`;
+  } else {
+    frontierAction = `<button type="button" class="secondary" data-train-spine-summon="${escapeHtml(trunk.frontierId)}">召喚本關</button>`;
+  }
+  const spineFloorCard = `<div class="train-spine-floor card-block">
+    <p class="lead">主脊第 <strong>${trunk.frontier}</strong> 關 · ${escapeHtml(trunk.frontierName)}</p>
+    <p class="meta">${escapeHtml(trunk.progressLabel)} · 階段${trunk.stage}${
+      trunk.cleared > 0 ? ` · 剛通第${trunk.cleared}關` : " · 尚未通關"
+    }</p>
+    <p class="meta muted">打通後解鎖第 ${trunk.nextAfterClear} 關${
+      trunk.frontier <= SPINE_THEME_FLOORS ? ` · 主題主脊至 ${SPINE_THEME_FLOORS}` : " · 已過主題段，無限延伸"
+    }</p>
+    <div class="row train-spine-actions">${frontierAction}</div>
+  </div>`;
+
   const branches = listSideBranches(state);
   const branchChips = branches
     .map((b) => {
@@ -3223,12 +3248,13 @@ function cultivatePanel(qiPct, next, m) {
   return wrapStage(
     nav,
         `<h2>契壇修行 · 主脊</h2>
-    <p class="lead">御靈師【${escapeHtml(m.name)}】· 階段${stageN} · 前沿 tide_${frontier}</p>
+    <p class="lead">御靈師【${escapeHtml(m.name)}】· 階段${trunk.stage} · 第${trunk.frontier}關</p>
     ${
       tutorialQiReady(state)
         ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
         : ""
     }
+    ${spineFloorCard}
     ${trainIdleStripHtml()}
     ${depthRow}
     <div class="row train-tier-actions">${tierActionBtns.join("")}</div>
@@ -3239,7 +3265,7 @@ function cultivatePanel(qiPct, next, m) {
     <h3>側枝</h3>
     <div class="row tactics-row train-branch-row">${branchChips}</div>
     ${branchDetail}
-    <p class="meta muted">產出跟秘境主脊通關段 · 潮鑰由秘境掉落 · 段主消耗潮鑰</p>`
+    <p class="meta muted">主脊關卡喺練功推進（同秘境共用進度）· 潮鑰由主脊／秘境掉落 · 段主消耗潮鑰</p>`
   );
 }
 
@@ -5234,7 +5260,7 @@ function dungeonPanel() {
   );
 }
 
-function executeDungeonAttack(dungeonId, mode) {
+function executeDungeonAttack(dungeonId, mode, opts = {}) {
   attackPreview = null;
   if (playback && !playback.done) return;
   tutMisclickCount = 0;
@@ -5257,7 +5283,7 @@ function executeDungeonAttack(dungeonId, mode) {
     render();
     return;
   }
-  const r = runDungeon(state, dungeonId);
+  const r = runDungeon(state, dungeonId, opts);
   saveState(state);
   if (!r.ok) {
     setFlash(r.msg);
@@ -5269,6 +5295,11 @@ function executeDungeonAttack(dungeonId, mode) {
     adv = advanceTutorialIfReady(state);
   }
   if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+  // 練功主脊打完後留喺練功，睇到下一關
+  if (opts.trainSpine) {
+    tab = "cultivate";
+    panelSub = { ...panelSub, cultivate: "train" };
+  }
   startPlayback(r);
 }
 
@@ -6125,6 +6156,24 @@ function bind() {
       const id = btn.dataset.trainBranchAttack;
       if (!isBranchDungeonId(id)) return;
       executeDungeonAttack(id, "challenge");
+    });
+  });
+  app.querySelectorAll("[data-train-spine-summon]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.trainSpineSummon;
+      const r = startDungeonSummon(state, id);
+      saveState(state);
+      panelSub = { ...panelSub, cultivate: "train" };
+      setFlash(r.msg);
+      render();
+    });
+  });
+  app.querySelectorAll("[data-train-spine-attack]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.trainSpineAttack;
+      if (!id || isBranchDungeonId(id)) return;
+      panelSub = { ...panelSub, cultivate: "train" };
+      executeDungeonAttack(id, "challenge", { trainSpine: true });
     });
   });
   app.querySelectorAll("[data-set-depth]").forEach((btn) => {
