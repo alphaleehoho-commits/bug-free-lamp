@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260907.4";
+export const APP_BUILD = "20260908.1";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -4760,6 +4760,9 @@ export const TRAIN_DAILY_SPOT_BONUS = 1.25;
 /** 唯一掛機區 id（舊 shore／ruins… 一律遷入） */
 export const SPINE_ZONE_ID = "spine";
 
+/** 主脊有主題分段上限；之後仍可無限延伸 */
+export const SPINE_THEME_FLOORS = 200;
+
 /** 最高已通主脊層（tide_N）；無則 0 */
 export function maxClearedTideTier(state) {
   let max = 0;
@@ -4779,6 +4782,35 @@ export function spineStageFromState(state) {
 /** 下一未通主脊層（至少 1） */
 export function spineFrontierTier(state) {
   return Math.max(1, maxClearedTideTier(state) + 1);
+}
+
+/**
+ * 練功主脊關卡視圖：打完當前關 → 下一關（共用 clearedDungeons[tide_*]）
+ * 秘境同一條進度；練功頁要睇到關卡推進。
+ */
+export function spineTrunkView(state) {
+  const cleared = maxClearedTideTier(state);
+  const frontier = spineFrontierTier(state);
+  const stage = spineStageFromState(state);
+  const frontierId = dungeonIdForTier(frontier);
+  const clearedId = cleared > 0 ? dungeonIdForTier(cleared) : null;
+  const themeCap = SPINE_THEME_FLOORS;
+  const progressLabel =
+    cleared >= themeCap
+      ? `已通 ${cleared} 關 · 無限延伸`
+      : `已通 ${cleared}／${themeCap}`;
+  return {
+    cleared,
+    frontier,
+    stage,
+    frontierId,
+    clearedId,
+    themeCap,
+    progressLabel,
+    frontierName: dungeonDisplayName(frontier),
+    clearedName: cleared > 0 ? dungeonDisplayName(cleared) : null,
+    nextAfterClear: frontier + 1,
+  };
 }
 
 /** 段主潮鑰跟主脊階段 */

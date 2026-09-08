@@ -154,12 +154,14 @@ import {
   fusionMatCost,
   TRAIN_SITES,
   SPINE_ZONE_ID,
+  SPINE_THEME_FLOORS,
   spineTrainProfile,
   spineFrontierTier,
   spineStageFromState,
   spineKeyMatForStage,
   spineThreatBase,
   maxClearedTideTier,
+  spineTrunkView,
   isBranchDungeonId,
   resolveBranchDungeon,
   listSideBranches,
@@ -4640,10 +4642,20 @@ export function dungeonTeamPreview(state, dungeonId) {
  * 含關卡條件獎、雜交試煉、首通、冷卻。
  */
 export function runDungeon(state, dungeonId, opts = {}) {
-  const { sweepInternal = false, deferEncounter = false } = opts;
+  const { sweepInternal = false, deferEncounter = false, trainSpine = false } = opts;
   const d = resolveDungeon(state, dungeonId);
   if (!d) return { ok: false, msg: "秘境不存在。" };
-  if (state.realm < d.needRealm) {
+  if (trainSpine) {
+    const tier = parseDungeonTier(dungeonId);
+    if (!tier || isBranchDungeonId(dungeonId)) {
+      return { ok: false, msg: "非主脊關卡。" };
+    }
+    const frontier = spineFrontierTier(state);
+    const already = !!(state.clearedDungeons || {})[dungeonId];
+    if (!already && tier !== frontier) {
+      return { ok: false, msg: `請先打通主脊第 ${frontier} 關。` };
+    }
+  } else if (state.realm < d.needRealm) {
     return { ok: false, msg: `需要階段：${stageAt(d.needRealm).name}` };
   }
   if (!state.dungeonReadyAt) state.dungeonReadyAt = {};
@@ -7445,6 +7457,7 @@ export {
   HATCH_SLOT_BONUS_MAX,
   TRAIN_SITES,
   SPINE_ZONE_ID,
+  SPINE_THEME_FLOORS,
   TRAIN_TIER_COUNT,
   TRAIN_DEPTH_MULT,
   TRAIN_ZONE_CHAIN,
@@ -7465,6 +7478,7 @@ export {
   spineFrontierTier,
   spineStageFromState,
   maxClearedTideTier,
+  spineTrunkView,
   listSideBranches,
   isBranchDungeonId,
   resolveBranchDungeon,
