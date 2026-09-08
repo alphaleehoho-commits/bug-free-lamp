@@ -920,8 +920,8 @@ assert(unlockedTrainSiteIds({ clearedDungeons: {} }).includes(SPINE_ZONE_ID), "s
 assert(unlockedTrainSiteIds({ clearedDungeons: {} }).length === 1, "only spine unlocked");
 assert(!isSideBranchUnlocked({ clearedDungeons: {} }, "earth_vein"), "earth locked early");
 assert(
-  isSideBranchUnlocked({ clearedDungeons: { tide_41: true } }, "earth_vein"),
-  "earth unlock stage2"
+  isSideBranchUnlocked({ clearedDungeons: { tide_21: true } }, "earth_vein"),
+  "earth unlock stage2 at floor21"
 );
 assert(upgradeMatCost(1).tide_dew >= 1 && !upgradeMatCost(1).earth_grade_stone, "upgrade early main only");
 assert(upgradeMatCost(12).earth_grade_stone > 0, "upgrade band earth");
@@ -970,7 +970,7 @@ assert(!aff.ok && aff.items.find((i) => i.id === "tide_dew")?.short === 2, "affo
 /* P18: spine AFK profile */
 const spineProf = spineTrainProfile({ clearedDungeons: {} });
 assert(spineProf.id === SPINE_ZONE_ID && spineProf.primaryMat === "tide_dew", "spine early primary");
-const spineLate = spineTrainProfile({ clearedDungeons: { tide_41: true } });
+const spineLate = spineTrainProfile({ clearedDungeons: { tide_21: true } });
 assert(spineLate.spineStage === 2 && spineLate.drops.some((d) => d.mat === "earth_grade_stone"), "spine stage2 drip");
 assert(DUNGEON_MAT_DROPS.tide_1.weights.tide_dew >= 1 && DUNGEON_MAT_DROPS.tide_1.weights.coral_shard >= 1, "stage1 dungeon mats");
 assert(DUNGEON_MAT_DROPS.tide_2.weights.earth_grade_stone >= 1, "stage2 earth grade");
@@ -998,7 +998,7 @@ assert(sug?.siteId === SPINE_ZONE_ID && sug.unlocked && sug.alreadyThere, "sugge
 const dungSug = suggestTrainForShortage(shortSt, { temper_oil: 1 });
 assert(dungSug?.dungeonOnly, "temper dungeon suggest");
 const earthSug = suggestTrainForShortage(
-  { ...shortSt, clearedDungeons: { tide_41: true } },
+  { ...shortSt, clearedDungeons: { tide_21: true } },
   { earth_grade_stone: 1 }
 );
 assert(earthSug?.siteId === "earth_vein" && earthSug.isBranch, "suggest earth branch");
@@ -1024,7 +1024,7 @@ assert(isBranchDungeonId("earth_vein_3") && !isBranchDungeonId("tide_3"), "branc
 assert(listSideBranches({ clearedDungeons: { tide_161: true } }).every((b) => b.unlocked), "all branches late");
 assert(maxClearedTideTier({ clearedDungeons: { tide_5: true, earth_vein_1: true } }) === 5, "branch clears ignore max tide");
 assert(spineFrontierTier({ clearedDungeons: { tide_5: true } }) === 6, "frontier next");
-assert(spineStageFromState({ clearedDungeons: { tide_41: true } }) === 2, "stage from state");
+assert(spineStageFromState({ clearedDungeons: { tide_21: true } }) === 2, "stage from state");
 assert(SPINE_THEME_FLOORS === 200, "theme spine 200");
 const trunk0 = spineTrunkView({ clearedDungeons: {} });
 assert(trunk0.frontier === 1 && trunk0.cleared === 0 && trunk0.progressLabel.includes("0／200"), "trunk start floor1");
@@ -1386,10 +1386,11 @@ const tickMatSt = {
   log: [],
 };
 tickCultivation(tickMatSt);
-// ≥ OFFLINE_HINT_SEC 缺口入離線庫；材料應在 bank 而非錢包
+// ≥ OFFLINE_HINT_SEC 缺口入離線庫；材料應在 bank 而非錢包（整數入庫）
 const tickMatBank = offlineBankView(tickMatSt);
 assert(
-  Math.floor(tickMatBank.materials?.tide_dew || 0) >= 1 || Math.floor(tickMatSt.materials.tide_dew || 0) >= 1,
+  Math.floor(tickMatBank.materials?.tide_dew || 0) >= 1 ||
+    Math.floor(tickMatSt.materials.tide_dew || 0) >= 1,
   "deterministic train mats over 40s (wallet or offline bank)"
 );
 // 短 tick（< hint）仍即時入帳
@@ -3356,9 +3357,18 @@ assert(String(ABYSS_RULES_TEXT || "").includes("突變"), "abyss rules text");
 const launchTide5 = buildDungeonForTier(5);
 assert(launchTide5 && launchTide5.loreTag === "裂潮" && launchTide5.name.includes("裂潮"), "tide_5 differentiated");
 assert(launchTide5.matDropOverride?.weights?.tide_dew > 0, "tide_5 spine stage1 mats");
-assert(spineStageForTier(1) === 1 && spineStageForTier(40) === 1 && spineStageForTier(41) === 2, "spine stages");
-assert(spineStageMatBias(1).coral_shard > 0 && !spineStageMatBias(1).earth_grade_stone, "spine1 native only");
-assert(spineStageMatBias(2).earth_grade_stone > 0, "spine2 earth");
+assert(spineStageForTier(1) === 1 && spineStageForTier(20) === 1 && spineStageForTier(21) === 2, "spine stages 20/band");
+assert(spineStageForTier(40) === 2 && spineStageForTier(41) === 3, "spine mid bands");
+assert(spineStageMatBias(1).coral_shard > 0 && !spineStageMatBias(1).earth_grade_stone, "spine1 bias main mats only");
+assert(
+  spineAfkDropsForStage(1).some((d) => d.mat === "earth_grade_stone" && d.perSec > 0),
+  "spine1 soft-gate earth drip outside bias"
+);
+assert(spineStageMatBias(2).earth_grade_stone > 0, "spine2 earth heavier in bias");
+assert(
+  trainTierThreat(SPINE_ZONE_ID, 19, { frontierTier: 20 }) < 350,
+  "floor20 threat softened for early party"
+);
 assert(FUSION_MAX_STAGE === 1 && FUSION_NEED_LEVEL === 50, "fusion once at 50");
 const launchTide6 = buildDungeonForTier(6);
 assert(launchTide6 && launchTide6.loreTag === "沉淵", "tide_6 differentiated");
@@ -3374,7 +3384,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v103"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v104"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

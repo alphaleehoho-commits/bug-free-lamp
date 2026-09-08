@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260908.4";
+export const APP_BUILD = "20260908.5";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -4718,16 +4718,20 @@ export function fusionMatCost(targetStage) {
   return { fusion_core: 1 };
 }
 
-/** 主脊階段：每 40 關一段（1–40=1 … 161–200=5；201+ 仍用 5+ 曲線） */
+/** 主脊每段關數（階段長度）；愈短愈早開副材／側枝 */
+export const SPINE_STAGE_FLOORS = 20;
+
+/** 主脊階段：每 20 關一段（1–20=1，21–40=2 …；201+ 仍延伸） */
 export function spineStageForTier(tier) {
   const t = Math.max(1, tier | 0);
-  return Math.floor((t - 1) / 40) + 1;
+  return Math.floor((t - 1) / SPINE_STAGE_FLOORS) + 1;
 }
 
 /** 各主脊階段掉落權重（解鎖制：後段加新帶，前帶可少量） */
 export function spineStageMatBias(stage) {
   const s = Math.max(1, stage | 0);
   if (s <= 1) {
+    // 主預算仍潮露／珊瑚；地階石喺 spineAfkDropsForStage 外加慢滴（唔搶主產）
     return { tide_dew: 5, coral_shard: 4 };
   }
   if (s === 2) {
@@ -4825,7 +4829,8 @@ export function spineKeyMatForStage(stage) {
 export function spineThreatBase(frontierTier) {
   const t = Math.max(1, frontierTier | 0);
   const stage = spineStageForTier(t);
-  return Math.round(28 + (t - 1) * 3.2 + (stage - 1) * 8);
+  // 放緩層數成長，避免 Lv10 隊喺十層後完全斷線
+  return Math.round(26 + (t - 1) * 2.35 + (stage - 1) * 6);
 }
 
 /** AFK 產物表：跟 spineStageMatBias；總 mat 預算約舊七域合計量級 */
@@ -4840,6 +4845,8 @@ export function spineAfkDropsForStage(stage) {
     if ((w | 0) <= 0) continue;
     drops.push({ mat, perSec: MAT_BUDGET * (w / totalW) });
   }
+  // 階段一：外加極慢地階石，打破 Lv10↔階段二循環；地脈仍係主刷
+  if (stage <= 1) drops.push({ mat: "earth_grade_stone", perSec: 0.0032 });
   // 技能／舊融合料：中後段慢滴，避免完全斷線
   if (stage >= 3) drops.push({ mat: "echo_resin", perSec: 0.006 });
   if (stage >= 4) drops.push({ mat: "fuse_sand", perSec: 0.005 });
@@ -4954,7 +4961,7 @@ export function trainZoneOrderIndex(zoneId) {
   return 0;
 }
 
-/** 霧階／主脊層威脅值；tierIndex 0＝第1層（舊霧1），可超過4無限延伸 */
+/** 霧階／主脊層威脅值；tierIndex 0＝第1層，可無限延伸（早期斜率放緩） */
 export function trainTierThreat(zoneId, tierIndex, opts = {}) {
   void zoneId;
   const base =
@@ -4964,7 +4971,8 @@ export function trainTierThreat(zoneId, tierIndex, opts = {}) {
         ? spineThreatBase(opts.frontierTier)
         : trainZoneMeta(SPINE_ZONE_ID).threatBase || 30;
   const t = Math.max(0, tierIndex | 0);
-  return Math.round(base * (1 + t * 0.22));
+  // 舊 0.22 令第20層已遠超 Lv10 隊；改 0.11 保留層數壓迫但可跟寵
+  return Math.round(base * (1 + t * 0.11));
 }
 
 export function trainWardenThreat(zoneId, opts = {}) {
