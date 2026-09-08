@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260908.1";
+export const APP_BUILD = "20260908.3";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -4907,12 +4907,23 @@ export const TRAIN_SITES = [
   },
 ];
 
-/** 霧階數；深度倍率：霧階一～四／已通段主 */
+/** 舊霧階數（兼容）；主脊層已無限延伸 */
 export const TRAIN_TIER_COUNT = 4;
-/** 一層霧階＝多波敵人；段主關波數更多 */
+/** 一層＝多波敵人；段主關波數更多 */
 export const TRAIN_MIST_WAVE_COUNT = 5;
 export const TRAIN_WARDEN_WAVE_COUNT = 7;
+/** 深度倍率：第1–4層＝舊霧1–4，第5＝舊段主；之後見 trainDepthMultForFloor */
 export const TRAIN_DEPTH_MULT = [1.0, 1.1, 1.2, 1.35, 1.5];
+
+/**
+ * 主脊層深度倍率：第1層＝舊霧1，第4層＝舊霧4，第6層≈舊霧4+2（陣列後每層 +0.1）
+ */
+export function trainDepthMultForFloor(floor) {
+  const idx = Math.max(0, (floor | 0) - 1);
+  if (idx < TRAIN_DEPTH_MULT.length) return TRAIN_DEPTH_MULT[idx];
+  const last = TRAIN_DEPTH_MULT[TRAIN_DEPTH_MULT.length - 1];
+  return Math.round((last + (idx - (TRAIN_DEPTH_MULT.length - 1)) * 0.1) * 100) / 100;
+}
 
 /**
  * 主脊單區鏈（取替七潮域）
@@ -4943,7 +4954,7 @@ export function trainZoneOrderIndex(zoneId) {
   return 0;
 }
 
-/** 霧階／段主威脅值；opts.frontierTier 提升基準 */
+/** 霧階／主脊層威脅值；tierIndex 0＝第1層（舊霧1），可超過4無限延伸 */
 export function trainTierThreat(zoneId, tierIndex, opts = {}) {
   void zoneId;
   const base =
@@ -4952,7 +4963,7 @@ export function trainTierThreat(zoneId, tierIndex, opts = {}) {
       : opts.frontierTier != null
         ? spineThreatBase(opts.frontierTier)
         : trainZoneMeta(SPINE_ZONE_ID).threatBase || 30;
-  const t = Math.max(0, Math.min(TRAIN_TIER_COUNT, tierIndex | 0));
+  const t = Math.max(0, tierIndex | 0);
   return Math.round(base * (1 + t * 0.22));
 }
 

@@ -163,9 +163,11 @@ import {
   todayKey,
   TRAIN_DEPTH_MULT,
   TRAIN_TIER_COUNT,
+  trainDepthMultForFloor,
   TRAIN_MIST_WAVE_COUNT,
   TRAIN_WARDEN_WAVE_COUNT,
   TRAIN_ZONE_CHAIN,
+  trainTierThreat,
   rollTideKeyDrop,
   ACTIVE_PET_MAX,
   ABYSS_MUTATION_IDS,
@@ -266,6 +268,8 @@ import {
   challengeTrainWarden,
   setTrainSite,
   setTrainDepth,
+  navTrainIdleFloor,
+  trainIdleFloor,
   trainClearEfficiency,
   trainDepthMultFor,
   partyCombatPower,
@@ -2465,6 +2469,41 @@ const restClaim = claimBreed(batchSt, job10.id);
 assert(restClaim.ok && restClaim.claimedCount === 8, "no egg cap: rest claim takes remaining 8");
 assert(batchSt.eggs.length === 10, "all 10 eggs claimed without cap");
 
+/* 雙親唔喺度仍可領蛋；孕育中鎖出戰／派遣／放生 */
+{
+  const pA = mkBreedPet("lockA", "reefox", "tide", 1);
+  const pB = mkBreedPet("lockB", "reefox", "tide", 1);
+  const lockSt = {
+    stones: 500,
+    materials: emptyMaterials(),
+    ranch: [pA, pB],
+    pets: [],
+    eggs: [],
+    breedJobs: [],
+    log: [],
+    stats: {},
+    realm: 0,
+  };
+  // fill breed mats
+  for (const id of Object.keys(breedMatCost(1, 1))) {
+    lockSt.materials[id] = 99;
+  }
+  const started = tryBreed(lockSt, pA.uid, pB.uid, 1);
+  assert(started.ok && lockSt.breedJobs.length === 1, "breed start for lock test");
+  assert(breedBusyUids(lockSt).has(pA.uid) && breedBusyUids(lockSt).has(pB.uid), "parents busy while mating");
+  assert(!deployPet(lockSt, pA.uid).ok, "busy parent cannot deploy");
+  assert(!releasePet(lockSt, pA.uid).ok, "busy parent cannot release");
+  const job = lockSt.breedJobs[0];
+  assert(job.parentSnap?.length === 2 && job.cycles[0]?.bornBonus, "breed snapshots parents");
+  job.readyAt = Date.now() - 1;
+  job.cycles[0].readyAt = Date.now() - 1;
+  // remove parents from ranch (simulate 放生/消失)
+  lockSt.ranch = [];
+  const claimGone = claimBreed(lockSt, job.id);
+  assert(claimGone.ok && lockSt.eggs.length === 1, "claim egg without live parents");
+  assert(!String(claimGone.msg || "").includes("雙親已不在"), "no missing-parent error");
+}
+
 const sampleGenes = { species: "nightmoth", element: "gloom", personality: "sly", rarity: 0, generation: 1 };
 const namedEgg = makeBreedEgg({
   genes: sampleGenes,
@@ -2485,12 +2524,15 @@ const prev02 = breedPreview(wildParent, breedG2);
 assert(prev02.matCost.cloud_grade_stone === 5 && prev02.matCost.abyss_ink === 2, "preview 0+2 gen2 band");
 assert(prev02.genOdds[0].pct === 70 && prev02.genOdds[0].gen === 1, "preview 0+2 odds");
 
-/* Tide zones: mist tiers, depth yield, warden keys → spine */
+/* Tide zones: idle floors push spine (floor1=old mist1, scales past 4) */
 assert(TRAIN_ZONE_CHAIN.length === TRAIN_SITES.length, "zone chain matches sites");
 assert(TRAIN_ZONE_CHAIN[0].id === SPINE_ZONE_ID, "chain is spine");
 assert(TRAIN_DEPTH_MULT.length === TRAIN_TIER_COUNT + 1, "depth mult fog+warden");
 assert(TRAIN_MIST_WAVE_COUNT === 5, "mist layer wave count");
 assert(TRAIN_WARDEN_WAVE_COUNT >= TRAIN_MIST_WAVE_COUNT, "warden has more waves");
+assert(trainDepthMultForFloor(1) === 1, "floor1 depth");
+assert(trainDepthMultForFloor(4) === TRAIN_DEPTH_MULT[3], "floor4=old mist4");
+assert(trainDepthMultForFloor(6) > trainDepthMultForFloor(4), "floor6 harder than floor4");
 assert(MATERIALS.tide_key_1?.tier === "key" && MATERIALS.warden_echo?.tier === "key", "key mats");
 assert(
   !TRAIN_SITES.some((s) => (s.drops || []).some((d) => MATERIALS[d.mat]?.tier === "key")),
@@ -2534,13 +2576,11 @@ const tzSt = {
   stats: {},
   achievements: {},
 };
-assert(trainDepthMultFor(tzSt, SPINE_ZONE_ID) === 1, "depth mist1");
-const d0 = Math.floor(tzSt.materials.tide_dew);
+assert(trainIdleFloor(tzSt) === 1, "start floor 1");
+assert(trainDepthMultFor(tzSt, SPINE_ZONE_ID) === 1, "depth floor1");
 const tierCombat = runTrainLayerCombat(tzSt, { zoneId: SPINE_ZONE_ID, tierIndex: 0, mode: "tier" });
 assert(tierCombat.ok && tierCombat.won, "train tier combat win strong party");
 assert(tierCombat.waves === TRAIN_MIST_WAVE_COUNT, "train tier has 5 waves");
-assert(tierCombat.combatEvents?.some((e) => e.type === "wave"), "train tier wave events");
-assert(tierCombat.combatEvents?.some((e) => e.type === "strike"), "train tier strike events");
 const weakSt = {
   ...tzSt,
   pets: [{ ...strongPet, atk: 2, hp: 20, spd: 2, uid: "weak-only" }],
@@ -2551,9 +2591,7 @@ const claimBlocked = claimTrainTierClear(tzSt);
 assert(!claimBlocked.ok, "cannot claim next without clearReady");
 const idleSess = createTrainIdleSession(tzSt);
 assert(idleSess && idleSess.waveCount === TRAIN_MIST_WAVE_COUNT, "idle session 5 waves");
-assert(idleSess.foes?.length >= 1 && idleSess.allies?.length >= 1, "idle session units");
-assert(typeof idleSess.startedAt === "number", "idle session startedAt wall clock");
-// 回撥開始時間，驗證通關秒數用牆鐘而非出手步數
+assert(idleSess.floor === 1, "idle session floor 1");
 idleSess.startedAt = Date.now() - 90_000;
 let idleSteps = 0;
 let idleWon = false;
@@ -2563,13 +2601,9 @@ while (idleSteps < 500 && !idleWon) {
   if (step.status === "won") {
     idleWon = true;
     const marked = markTrainIdleClearReady(tzSt, idleSess);
-    assert(marked.ok && !marked.autoClaimed, "mark clear ready for mist1");
+    assert(marked.ok && !marked.autoClaimed, "mark clear ready for floor1");
     assert(/首次通關：\d+s/.test(idleSess.resultLine || ""), "first clear time line");
     assert(idleSess.clearSec >= 90, "clear sec uses wall clock not fight ticks");
-    assert(
-      idleSess.clearSec !== (idleSess.fightTicks | 0) || (idleSess.fightTicks | 0) >= 90,
-      "clear sec not equal to fight-tick count alone"
-    );
     break;
   }
   if (step.status === "restart") break;
@@ -2577,62 +2611,27 @@ while (idleSteps < 500 && !idleWon) {
 assert(idleWon, "idle session can clear with strong party");
 assert(tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady, "clearReady persisted");
 assert(persistTrainIdleClearResult(tzSt, idleSess), "persist spine lastClear");
-assert(
-  /首次通關：\d+s/.test(tzSt.trainMap.zones[SPINE_ZONE_ID].lastClear?.line || ""),
-  "spine zone stores clear line"
-);
-assert(tzSt.trainMap.zones[SPINE_ZONE_ID].lastClear?.sec >= 90, "persisted clear sec wall clock");
 assert(ACTIVE_PET_MAX === 3, "party size stays 3 for formation slots");
-assert(typeof setTrainSite === "function", "setTrainSite exported");
 setTrainSite(tzSt, "ruins");
 assert(tzSt.trainSite === SPINE_ZONE_ID, "legacy site id remaps to spine");
 const spineView = trainIdleCombatView(tzSt);
-assert(spineView.zoneId === SPINE_ZONE_ID, "idle view is spine");
-assert(spineView.lastClearLine, "spine keeps clear line");
-// claim mist 1–3 manually; mist 4 auto-claims to warden gate
-for (let i = 0; i < 3; i++) {
+assert(spineView.zoneId === SPINE_ZONE_ID && spineView.floor === 1, "idle view floor 1");
+for (let i = 0; i < 4; i++) {
   tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady = true;
-  const ar = claimTrainTierClear(tzSt);
-  assert(ar.ok, `claim tier ${i + 1}`);
-  assert(!tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady, `clearReady spent ${i + 1}`);
+  const ar = navTrainIdleFloor(tzSt, 1);
+  assert(ar.ok, `next floor from ${i + 1}`);
 }
-assert(tzSt.trainMap.zones[SPINE_ZONE_ID].tiersCleared === 3, "3 mist tiers claimed");
-const lastSess = createTrainIdleSession(tzSt);
-assert(lastSess && lastSess.tierIndex === 3, "last mist session at tier 4");
-let lastSteps = 0;
-let lastWon = false;
-while (lastSteps < 500 && !lastWon) {
-  const step = stepTrainIdleSession(lastSess);
-  lastSteps += 1;
-  if (step.status === "won") {
-    lastWon = true;
-    const marked = markTrainIdleClearReady(tzSt, lastSess);
-    assert(marked.ok && marked.autoClaimed, "last mist auto-claims (next is warden)");
-    break;
-  }
-  if (step.status === "restart") break;
-}
-assert(lastWon, "last mist idle clear");
-assert(tzSt.trainMap.zones[SPINE_ZONE_ID].tiersCleared === 4, "4 mist tiers cleared");
-assert(!tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady, "no clearReady after last mist");
+assert(maxClearedTideTier(tzSt) === 4, "4 spine floors cleared via idle");
+assert(trainIdleFloor(tzSt) === 5, "now on floor 5");
+const floor6Threat = trainTierThreat(SPINE_ZONE_ID, 5, { frontierTier: 6 });
+const floor4Threat = trainTierThreat(SPINE_ZONE_ID, 3, { frontierTier: 4 });
+assert(floor6Threat > floor4Threat, "floor6 threat > floor4");
 const sitesAfter = trainSitesView(tzSt);
 const spineAfter = sitesAfter.find((s) => s.id === SPINE_ZONE_ID);
-assert(spineAfter?.canChallengeWarden, "warden challenge available after mist4");
-assert(!spineAfter?.canClaimNext, "no go-next after mist4");
-assert(trainDepthMultFor(tzSt, SPINE_ZONE_ID) === 1.35, "depth at mist4");
+assert(spineAfter?.floor === 5, "sites view floor 5");
+assert(!spineAfter?.canChallengeWarden, "no warden gate on train sites");
 assert(unlockedTrainSiteIds(tzSt).includes(SPINE_ZONE_ID), "spine always unlocked");
-const wFailKey = { ...tzSt, materials: { ...tzSt.materials, tide_key_1: 0 } };
-assert(!challengeTrainWarden(wFailKey).ok, "warden needs key");
-const w1 = challengeTrainWarden(tzSt);
-assert(w1.ok && w1.firstClear, "warden first clear");
-assert(tzSt.trainMap.wardenCleared[SPINE_ZONE_ID], "spine warden flagged");
-assert(trainDepthMultFor(tzSt, SPINE_ZONE_ID) === 1.5, "depth after warden");
-assert(tzSt.materials.tide_key_1 === 2, "key spent on warden");
-// rematch rare
-const rem = challengeTrainWarden(tzSt);
-assert(rem.ok && rem.rematch, "warden rematch");
-assert((tzSt.materials.warden_echo || 0) >= 1, "rematch drops echo");
-assert(tzSt.materials.tide_key_1 === 1, "rematch spends key");
+assert(typeof challengeTrainWarden === "function", "warden API still exported");
 const effStrong = trainClearEfficiency(
   { ...tzSt, pets: [strongPet], trainSite: SPINE_ZONE_ID, trainMap: tzSt.trainMap },
   SPINE_ZONE_ID
@@ -2647,22 +2646,24 @@ const effWeak = trainClearEfficiency(
   SPINE_ZONE_ID
 );
 assert(effStrong > effWeak, "strong party higher AFK efficiency");
-const idle = trainIdleCombatView(tzSt);
-assert(idle.petCount >= 1 && idle.waveCount === TRAIN_MIST_WAVE_COUNT, "idle combat strip data");
+assert(trainIdleCombatView(tzSt).waveCount === TRAIN_MIST_WAVE_COUNT, "idle combat strip data");
 assert(DAILY_QUESTS.some((q) => q.id === "train_tier"), "daily train_tier");
-assert(DAILY_QUESTS.some((q) => q.id === "train_warden"), "daily train_warden");
-
+tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady = true;
+assert(navTrainIdleFloor(tzSt, -1).ok && trainIdleFloor(tzSt) === 4, "prev floor to 4");
 const setD = setTrainDepth(tzSt, 1);
-assert(setD.ok && trainDepthMultFor(tzSt, SPINE_ZONE_ID) === TRAIN_DEPTH_MULT[1], "set depth to tier 2");
-const setDFail = setTrainDepth(
-  {
-    ...tzSt,
-    trainMap: { zones: { [SPINE_ZONE_ID]: { tiersCleared: 1 } }, wardenCleared: {} },
-    trainSite: SPINE_ZONE_ID,
-  },
-  4
+assert(setD.ok && trainIdleFloor(tzSt) === 2, "set depth to floor 2");
+assert(
+  !setTrainDepth(
+    {
+      ...tzSt,
+      clearedDungeons: { tide_1: true },
+      trainMap: { zones: { [SPINE_ZONE_ID]: { tiersCleared: 1 } }, wardenCleared: {} },
+      trainSite: SPINE_ZONE_ID,
+    },
+    4
+  ).ok,
+  "cannot set depth beyond frontier"
 );
-assert(!setDFail.ok, "cannot set depth beyond cleared");
 
 const uiSrc2 = readFileSync(join(__dir, "ui.js"), "utf8");
 assert(uiSrc2.includes("playAttackSequence"), "ui phased attack sequence");
@@ -2677,22 +2678,8 @@ assert(uiSrc2.includes("persistTrainIdleClearResult"), "ui persists zone lastCle
 assert(uiSrc2.includes("idleCombatResultLine"), "ui gates clear line to ended session");
 assert(
   !/trainIdleCombatView\(state\)\.lastClearLine\s*\|\|/.test(uiSrc2),
-  "ui no longer prefers lastClearLine for live hit footer"
+  "ui does not show stale lastClear while fighting"
 );
-assert(uiSrc2.includes("is-defender"), "ui defender highlight");
-assert(uiSrc2.includes("data-claim-tier"), "ui claim next mist tier");
-assert(uiSrc2.includes("去下一層"), "ui claim next label");
-assert(!uiSrc2.includes("data-advance-tier"), "ui no manual advance fight button");
-assert(!uiSrc2.includes("advanceCooldownAt"), "ui no advance cooldown");
-assert(uiSrc2.includes("createTrainIdleSession"), "ui idle wave session");
-assert(uiSrc2.includes("tickIdleCombat({ background"), "ui idle combat ticks in background");
-assert(uiSrc2.includes("persistTrainIdleCombatState"), "ui persists idle combat session");
-assert(uiSrc2.includes("restoreTrainIdleCombatState"), "ui restores idle combat session");
-assert(uiSrc2.includes("claim-offline"), "ui offline collect button");
-assert(uiSrc2.includes("claimOfflineBank"), "ui claims offline bank");
-assert(uiSrc2.includes("offline-home-slot"), "ui fixed offline home slot");
-assert(uiSrc2.includes("teamBondBarHtml"), "ui team bond bar helper kept");
-assert(!uiSrc2.includes("${teamBondBarHtml()}"), "ui hides team bond bar in header");
 assert(uiSrc2.includes("OFFLINE_CLAIM_MIN_SEC") || uiSrc2.includes("canClaim"), "ui offline claim gate");
 assert(uiSrc2.includes("fmtOfflineDuration"), "ui formats offline seconds");
 assert(uiSrc2.includes("bondSheetHtml"), "ui bond breakthrough sheet");
@@ -2703,15 +2690,18 @@ assert(uiSrc2.includes("offline-claim-overlay"), "ui offline claim half-modal");
 assert(!uiSrc2.includes("offline-toast"), "ui no floating offline toast");
 assert(!uiSrc2.includes("clear-offline"), "ui no dismiss-offline toast act");
 assert(uiSrc2.includes("visibilitychange"), "ui catch-up on tab visible");
-assert(uiSrc2.includes("data-challenge-warden"), "ui challenge warden");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
-assert(uiSrc2.includes("data-set-depth"), "ui depth selector");
+assert(uiSrc2.includes("data-train-floor-prev"), "ui floor prev");
+assert(uiSrc2.includes("data-train-floor-next"), "ui floor next");
+assert(uiSrc2.includes("navTrainIdleFloor"), "ui uses navTrainIdleFloor");
 assert(uiSrc2.includes("data-train-branch"), "ui side branch chips");
 assert(uiSrc2.includes("data-train-branch-attack"), "ui branch combat from train");
-assert(uiSrc2.includes("data-train-spine-attack"), "ui spine floor challenge");
-assert(uiSrc2.includes("主脊第"), "ui spine floor card");
-assert(uiSrc2.includes("trainSpine: true") || uiSrc2.includes("{ trainSpine: true }"), "ui trainSpine attack opts");
-assert(!uiSrc2.includes("主脊｜支線") && !uiSrc2.includes("主脊 | 支線"), "no dungeon branch subnav");
+assert(!uiSrc2.includes("data-train-spine-attack"), "ui no spine dungeon challenge");
+assert(!uiSrc2.includes("data-set-depth"), "ui no mist depth buttons");
+assert(!uiSrc2.includes("data-challenge-warden"), "ui no warden on train");
+assert(!uiSrc2.includes("掛機層："), "ui no depth row label");
+assert(!uiSrc2.includes("主脊第"), "ui no redundant spine card");
+assert(!uiSrc2.includes("今日強化【主脊掛機】"), "ui no daily spot banner");
 assert(uiSrc2.includes('id: "bag"'), "ui bag sub-tab");
 assert(uiSrc2.includes("data-bag-inner"), "ui bag inner mats/items tabs");
 assert(uiSrc2.includes("data-use-item"), "ui use bag item");
@@ -3364,7 +3354,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v100"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v102"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

@@ -162,6 +162,7 @@ import {
   spineThreatBase,
   maxClearedTideTier,
   spineTrunkView,
+  dungeonIdForTier,
   isBranchDungeonId,
   resolveBranchDungeon,
   listSideBranches,
@@ -207,6 +208,7 @@ import {
   TRAIN_MIST_WAVE_COUNT,
   TRAIN_WARDEN_WAVE_COUNT,
   TRAIN_DEPTH_MULT,
+  trainDepthMultForFloor,
   TRAIN_ZONE_CHAIN,
   trainZoneMeta,
   trainTierThreat,
@@ -407,47 +409,132 @@ export function partyCombatPower(pets) {
   return Math.round(sum);
 }
 
-/** 深度倍率索引：0–3 霧階；4＝已通段主。可手選已通霧階掛機 */
-export function trainDepthIndex(state, zoneId) {
+/** 舊霧進度／段主通關 → 寫入 clearedDungeons，統一主脊層 */
+function syncMistProgressIntoSpine(state) {
   ensureTrainMap(state);
-  void zoneId;
-  const id = SPINE_ZONE_ID;
-  const z = ensureZoneProgress(state, id);
-  const maxIdx = state.trainMap.wardenCleared?.[id] ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0));
-  const chosen = z.idleDepth;
-  if (chosen != null && chosen >= 0 && chosen <= maxIdx) return chosen;
-  return maxIdx;
+  const z = ensureZoneProgress(state, SPINE_ZONE_ID);
+  let mist = z.tiersCleared | 0;
+  if (state.trainMap.wardenCleared?.[SPINE_ZONE_ID]) mist = Math.max(mist, TRAIN_TIER_COUNT);
+  if (mist <= 0) return;
+  if (!state.clearedDungeons) state.clearedDungeons = {};
+  const cleared = maxClearedTideTier(state);
+  if (cleared >= mist) return;
+  for (let i = cleared + 1; i <= mist; i++) {
+    state.clearedDungeons[dungeonIdForTier(i)] = true;
+  }
 }
 
-/** 手動選擇掛機深度（只能選已通關霧階或段主） */
+/** 當前掛機主脊層（1-based）；預設＝ frontier */
+export function trainIdleFloor(state) {
+  ensureTrainMap(state);
+  syncMistProgressIntoSpine(state);
+  const z = ensureZoneProgress(state, SPINE_ZONE_ID);
+  const frontier = spineFrontierTier(state);
+  let floor = z.idleFloor | 0;
+  if (floor < 1 || floor > frontier) {
+    floor = frontier;
+    z.idleFloor = floor;
+  }
+  return floor;
+}
+
+/** 深度倍率索引：兼容舊 API；對應主脊層 - 1 */
+export function trainDepthIndex(state, zoneId) {
+  void zoneId;
+  return Math.max(0, trainIdleFloor(state) - 1);
+}
+
+/** @deprecated 改用 navTrainIdleFloor；兼容舊深度選擇 */
 export function setTrainDepth(state, depthIdx) {
   ensureTrainMap(state);
   const zoneId = SPINE_ZONE_ID;
   state.trainSite = SPINE_ZONE_ID;
   const z = ensureZoneProgress(state, zoneId);
-  const maxIdx = state.trainMap.wardenCleared?.[zoneId] ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0));
-  const idx = depthIdx | 0;
-  if (idx < 0 || idx > maxIdx) {
-    return { ok: false, msg: `只可選已通關霧階（0–${maxIdx}）。` };
+  const frontier = spineFrontierTier(state);
+  const floor = Math.max(1, (depthIdx | 0) + 1);
+  if (floor > frontier) {
+    return { ok: false, msg: `只可選已解鎖層（1–${frontier}）。` };
   }
-  z.idleDepth = idx;
-  const label = idx >= TRAIN_TIER_COUNT ? "段主" : `霧階${idx + 1}`;
-  return { ok: true, msg: `掛機深度：${label} · ×${(TRAIN_DEPTH_MULT[idx] ?? 1).toFixed(2)}` };
+  z.idleFloor = floor;
+  z.clearReady = false;
+  clearTrainIdleCombatState(state);
+  return {
+    ok: true,
+    msg: `第 ${floor} 層 · ×${trainDepthMultForFloor(floor).toFixed(2)}`,
+  };
 }
 
 export function trainDepthMultFor(state, zoneId) {
-  const idx = trainDepthIndex(state, zoneId);
-  return TRAIN_DEPTH_MULT[idx] ?? 1;
+  void zoneId;
+  return trainDepthMultForFloor(trainIdleFloor(state));
 }
 
-/** 出戰 vs 當前霧階威脅 → 掛機效率（0.35–1.35；無出戰保底 0.7） */
+/**
+ * 上一層／下一層。需本層五波已清（clearReady）。
+ * 喺 frontier 撳下一層會寫入 clearedDungeons 並推進主脊。
+ */
+export function navTrainIdleFloor(state, delta) {
+  ensureTrainMap(state);
+  syncMistProgressIntoSpine(state);
+  const zoneId = SPINE_ZONE_ID;
+  state.trainSite = SPINE_ZONE_ID;
+  const z = ensureZoneProgress(state, zoneId);
+  if (!z.clearReady) {
+    return { ok: false, msg: `需先掛機清完本層 ${TRAIN_MIST_WAVE_COUNT} 波。` };
+  }
+  const floor = trainIdleFloor(state);
+  const d = delta | 0;
+  if (d < 0) {
+    if (floor <= 1) return { ok: false, msg: "已係第 1 層。" };
+    z.idleFloor = floor - 1;
+    z.clearReady = false;
+    clearTrainIdleCombatState(state);
+    return { ok: true, msg: `上一層 · 第 ${z.idleFloor} 層`, floor: z.idleFloor };
+  }
+  if (d > 0) {
+    const frontier = spineFrontierTier(state);
+    let firstClear = false;
+    if (floor === frontier) {
+      if (!state.clearedDungeons) state.clearedDungeons = {};
+      const id = dungeonIdForTier(floor);
+      firstClear = !state.clearedDungeons[id];
+      state.clearedDungeons[id] = true;
+      z.tiersCleared = Math.max(z.tiersCleared | 0, floor);
+      bumpDaily(state, "train_tier", 1);
+      const profile = spineTrainProfile(state);
+      const primary = profile.primaryMat;
+      if (primary) {
+        if (!state.materials) state.materials = emptyMaterials();
+        state.materials[primary] = (state.materials[primary] || 0) + 1;
+      }
+      state.stones = (state.stones || 0) + 5;
+      pushLog(state, `【主脊】掛機打通第 ${floor} 層！`);
+    }
+    const next = floor + 1;
+    const newFrontier = spineFrontierTier(state);
+    if (next > newFrontier) {
+      return { ok: false, msg: "已到最前層。" };
+    }
+    z.idleFloor = next;
+    z.clearReady = false;
+    clearTrainIdleCombatState(state);
+    return {
+      ok: true,
+      msg: firstClear ? `通關第 ${floor} 層 · 前往第 ${next} 層` : `下一層 · 第 ${next} 層`,
+      floor: next,
+      firstClear,
+    };
+  }
+  return { ok: false, msg: "無效操作。" };
+}
+
+/** 出戰 vs 當前層威脅 → 掛機效率（0.35–1.35；無出戰保底 0.7） */
 export function trainClearEfficiency(state, zoneId = null) {
   void zoneId;
   const id = SPINE_ZONE_ID;
   const power = partyCombatPower(state.pets);
-  const depthIdx = trainDepthIndex(state, id);
-  const frontier = spineFrontierTier(state);
-  const threat = trainTierThreat(id, depthIdx, { frontierTier: frontier });
+  const floor = trainIdleFloor(state);
+  const threat = trainTierThreat(id, floor - 1, { frontierTier: floor });
   if (threat <= 0) return 1;
   if (power <= 0) return 0.7;
   const ratio = power / threat;
@@ -1086,13 +1173,14 @@ export function setTrainSite(state, siteId) {
 
 export function trainSitesView(state) {
   ensureTrainMap(state);
+  syncMistProgressIntoSpine(state);
   state.trainSite = SPINE_ZONE_ID;
   const spot = trainDailySpotlightView();
   const profile = spineTrainProfile(state);
   const z = ensureZoneProgress(state, SPINE_ZONE_ID);
-  const wardenDone = !!state.trainMap.wardenCleared?.[SPINE_ZONE_ID];
-  const depthIdx = trainDepthIndex(state, SPINE_ZONE_ID);
-  const depthMult = TRAIN_DEPTH_MULT[depthIdx] ?? 1;
+  const floor = trainIdleFloor(state);
+  const frontier = spineFrontierTier(state);
+  const depthMult = trainDepthMultForFloor(floor);
   const eff = trainClearEfficiency(state, SPINE_ZONE_ID);
   const stage = profile.spineStage;
   const keyMatId = spineKeyMatForStage(stage);
@@ -1104,25 +1192,25 @@ export function trainSitesView(state) {
       unlockHint: null,
       isDailySpot: spot?.siteId === SPINE_ZONE_ID,
       rates: trainSiteRatesView(profile),
-      tiersCleared: z.tiersCleared | 0,
-      tierCount: TRAIN_TIER_COUNT,
-      wardenCleared: wardenDone,
+      floor,
+      frontier,
+      tiersCleared: maxClearedTideTier(state),
+      tierCount: SPINE_THEME_FLOORS,
+      wardenCleared: false,
       depthMult,
-      depthLabel: wardenDone
-        ? "段主已通"
-        : `霧階 ${Math.min((z.tiersCleared | 0) + 1, TRAIN_TIER_COUNT)}/${TRAIN_TIER_COUNT}`,
+      depthLabel: `第 ${floor} 層`,
       efficiency: eff,
       keyMatId,
       keyName: MATERIALS[keyMatId]?.name || "潮鑰",
       keyHave: Math.floor(state.materials?.[keyMatId] || 0),
-      canAdvance: !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT,
+      canAdvance: !!z.clearReady,
       clearReady: !!z.clearReady,
-      canClaimNext:
-        !wardenDone && !!z.clearReady && (z.tiersCleared | 0) < TRAIN_TIER_COUNT - 1,
-      canChallengeWarden: !wardenDone && (z.tiersCleared | 0) >= TRAIN_TIER_COUNT,
-      canRematchWarden: wardenDone,
-      idleDepth: trainDepthIndex(state, SPINE_ZONE_ID),
-      maxDepth: wardenDone ? 4 : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, z.tiersCleared | 0)),
+      canClaimNext: !!z.clearReady,
+      canChallengeWarden: false,
+      canRematchWarden: false,
+      idleDepth: floor - 1,
+      idleFloor: floor,
+      maxDepth: frontier - 1,
       lastClearLine: z.lastClear?.line || null,
       lastClear: z.lastClear || null,
       branches: listSideBranches(state),
@@ -1131,50 +1219,11 @@ export function trainSitesView(state) {
 }
 
 /**
- * 領取霧階推進：需掛機戰鬥先清完一輪五波（z.clearReady）。
+ * 領取層推進：需掛機戰鬥先清完一輪五波（z.clearReady）。
+ * 而家等同「下一層」（寫入主脊 clearedDungeons）。
  */
 export function claimTrainTierClear(state) {
-  ensureTrainMap(state);
-  const zoneId = SPINE_ZONE_ID;
-  state.trainSite = SPINE_ZONE_ID;
-  const z = ensureZoneProgress(state, zoneId);
-  if (state.trainMap.wardenCleared?.[zoneId]) {
-    return { ok: false, msg: "段主已通——可複打段主刷稀有材。" };
-  }
-  if ((z.tiersCleared | 0) >= TRAIN_TIER_COUNT) {
-    return { ok: false, msg: "霧階已清——請挑戰段主關。" };
-  }
-  if (!z.clearReady) {
-    return { ok: false, msg: `需先掛機清完一輪 ${TRAIN_MIST_WAVE_COUNT} 波，先可去下一層。` };
-  }
-  const tier = z.tiersCleared | 0;
-  const profile = spineTrainProfile(state);
-  z.clearReady = false;
-  z.tiersCleared = tier + 1;
-  bumpDaily(state, "train_tier", 1);
-  const primary = profile.primaryMat;
-  const reward = {};
-  if (primary) {
-    if (!state.materials) state.materials = emptyMaterials();
-    state.materials[primary] = (state.materials[primary] || 0) + 1;
-    reward[primary] = 1;
-  }
-  state.stones = (state.stones || 0) + 5;
-  pushLog(
-    state,
-    `【主脊】推進至霧階${tier + 1}通關！產量上限升至 ×${trainDepthMultFor(state, zoneId).toFixed(2)}。`
-  );
-  const keyId = spineKeyMatForStage(profile.spineStage);
-  const msg =
-    z.tiersCleared >= TRAIN_TIER_COUNT
-      ? `霧階全破 · 可挑戰段主（需${MATERIALS[keyId]?.name || "潮鑰"}）`
-      : `已進霧階${tier + 1} · 深度 ×${trainDepthMultFor(state, zoneId).toFixed(2)}`;
-  return {
-    ok: true,
-    msg,
-    tiersCleared: z.tiersCleared,
-    reward,
-  };
+  return navTrainIdleFloor(state, 1);
 }
 
 /** @deprecated 改用 claimTrainTierClear；掛機五波循環後再領取 */
@@ -1340,11 +1389,11 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
         enemies: [mkNormal(`${prefix}獸`, 1.02), mkNormal(`${prefix}衛`, 0.98)],
       },
       {
-        label: `霧階${tier + 1}·精英`,
+        label: `第${tier + 1}層·精英`,
         enemies: [mkElite(`${prefix}精英`, 1.08 + tier * 0.04)],
       },
       {
-        label: `霧階${tier + 1}·守門`,
+        label: `第${tier + 1}層·守門`,
         enemies: [mkElite(`${prefix}守門`, 1.22 + tier * 0.06)],
       },
     ];
@@ -1573,17 +1622,16 @@ export function runTrainLayerCombat(state, { zoneId, tierIndex = 0, mode = "tier
 /** 掛機五波戰場：建立一輪實戰 session（逐步 tick） */
 export function createTrainIdleSession(state) {
   ensureTrainMap(state);
+  syncMistProgressIntoSpine(state);
   if (!(state.pets || []).length) return null;
   const zoneId = SPINE_ZONE_ID;
   state.trainSite = SPINE_ZONE_ID;
   const z = ensureZoneProgress(state, zoneId);
-  const wardenDone = !!state.trainMap.wardenCleared?.[zoneId];
-  const canUnlockNext = !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT;
-  const tierIndex = canUnlockNext
-    ? z.tiersCleared | 0
-    : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, trainDepthIndex(state, zoneId)));
+  const floor = trainIdleFloor(state);
+  const tierIndex = Math.max(0, floor - 1);
   const frontier = spineFrontierTier(state);
-  const waves = buildTrainCombatWaves(zoneId, tierIndex, { warden: false, frontierTier: frontier });
+  const canUnlockNext = floor === frontier;
+  const waves = buildTrainCombatWaves(zoneId, tierIndex, { warden: false, frontierTier: floor });
   const { allies, tactics } = buildTrainCombatAllies(state);
   if (!allies.length) return null;
   _combatUid = 0;
@@ -1593,9 +1641,10 @@ export function createTrainIdleSession(state) {
   const petSig = (state.pets || []).map((p) => `${p.uid}:${p.atk}:${p.hp}:${p.spd}`).join("|");
   return {
     zoneId,
+    floor,
     tierIndex,
     canUnlockNext,
-    /** 本輪是否首次挑戰當前未通霧階（首通文案用） */
+    /** 本輪是否首次挑戰當前未通層（首通文案用） */
     isFirstClear: canUnlockNext && !z.clearReady,
     clearReady: !!z.clearReady,
     petSig,
@@ -1620,10 +1669,10 @@ export function createTrainIdleSession(state) {
     resultLine: null,
     lastText: `—— 第 1 波・${waves[0].label} ——`,
     waveLabel: `第 1／${waves.length} 波・${waves[0].label}`,
-    layerLabel: `霧階${tierIndex + 1}`,
+    layerLabel: `第${floor}層`,
     siteName: site.name,
     efficiency: trainClearEfficiency(state, zoneId),
-    depthMult: trainDepthMultFor(state, zoneId),
+    depthMult: trainDepthMultForFloor(floor),
   };
 }
 
@@ -1737,10 +1786,7 @@ export function stepTrainIdleSession(session) {
     }
     session.ended = true;
     session.won = true;
-    const isLastMist = (session.tierIndex | 0) >= TRAIN_TIER_COUNT - 1;
-    session.lastText = isLastMist
-      ? `清完 ${session.waves.length} 波！霧階全破`
-      : `清完 ${session.waves.length} 波！可去下一層`;
+    session.lastText = `清完 ${session.waves.length} 波！可換層`;
     finishIdleResult(true);
     session.phase = "pause";
     session.pauseLeft = 2;
@@ -1768,24 +1814,13 @@ export function persistTrainIdleClearResult(state, session) {
 }
 
 /**
- * 掛機清完一輪後：
- * - 仲有下一霧階 → 標記 clearReady，顯示「去下一層」
- * - 已係最後霧階（下一關係域主）→ 自動領取，唔顯示「去下一層」
+ * 掛機清完一輪後標記 clearReady，解鎖上一層／下一層。
  */
 export function markTrainIdleClearReady(state, session) {
-  if (!session?.canUnlockNext || !session.won) {
+  if (!session?.won) {
     return { ok: false, autoClaimed: false };
   }
-  const isLastMist = (session.tierIndex | 0) >= TRAIN_TIER_COUNT - 1;
-  if (isLastMist) {
-    const z = ensureZoneProgress(state, session.zoneId);
-    z.clearReady = true;
-    const claim = claimTrainTierClear(state);
-    session.clearReady = false;
-    session.canUnlockNext = false;
-    return { ok: !!claim.ok, autoClaimed: true, claim };
-  }
-  const z = ensureZoneProgress(state, session.zoneId);
+  const z = ensureZoneProgress(state, session.zoneId || SPINE_ZONE_ID);
   z.clearReady = true;
   session.clearReady = true;
   return { ok: true, autoClaimed: false };
@@ -1794,30 +1829,27 @@ export function markTrainIdleClearReady(state, session) {
 /** UI：閒置掛機戰場摘要（建立 session 用） */
 export function trainIdleCombatView(state) {
   ensureTrainMap(state);
+  syncMistProgressIntoSpine(state);
   const zoneId = SPINE_ZONE_ID;
   const site = spineTrainProfile(state);
   const z = ensureZoneProgress(state, zoneId);
-  const depthIdx = trainDepthIndex(state, zoneId);
+  const floor = trainIdleFloor(state);
+  const frontier = spineFrontierTier(state);
   const eff = trainClearEfficiency(state, zoneId);
-  const depthMult = trainDepthMultFor(state, zoneId);
-  const wardenDone = !!state.trainMap.wardenCleared?.[zoneId];
-  const canUnlockNext = !wardenDone && (z.tiersCleared | 0) < TRAIN_TIER_COUNT;
-  const tierIndex = canUnlockNext
-    ? z.tiersCleared | 0
-    : Math.min(TRAIN_TIER_COUNT - 1, Math.max(0, depthIdx));
+  const depthMult = trainDepthMultForFloor(floor);
+  const canUnlockNext = floor === frontier;
   return {
     zoneId,
     zoneName: site.name,
     spineStage: site.spineStage,
-    frontierTier: site.frontierTier,
-    tierIndex,
+    frontierTier: frontier,
+    floor,
+    tierIndex: floor - 1,
     canUnlockNext,
     clearReady: !!z.clearReady,
     lastClearLine: z.lastClear?.line || null,
     lastClear: z.lastClear || null,
-    depthLabel: wardenDone
-      ? "段主已通"
-      : `霧階 ${Math.min((z.tiersCleared | 0) + 1, TRAIN_TIER_COUNT)}/${TRAIN_TIER_COUNT}`,
+    depthLabel: `第 ${floor} 層`,
     depthMult,
     efficiency: eff,
     power: partyCombatPower(state.pets),
@@ -1826,9 +1858,7 @@ export function trainIdleCombatView(state) {
     logLine:
       !(state.pets || []).length
         ? "未出戰——掛機效率最低（請編成出戰隊）"
-        : canUnlockNext
-          ? `掛機清場 · ${TRAIN_MIST_WAVE_COUNT} 波循環 · 效率 ×${eff.toFixed(2)}`
-          : `掛機清場中 · 效率 ×${eff.toFixed(2)} · 深度 ×${depthMult.toFixed(2)}`,
+        : `掛機清場 · ${TRAIN_MIST_WAVE_COUNT} 波 · 第 ${floor} 層`,
   };
 }
 
@@ -3352,8 +3382,10 @@ export function startDispatch(state, missionId, petUids) {
   }
   const busy = dispatchBusyUids(state);
   const reqLabel = dispatchMissionReqLabel(mission);
+  const matingBusy = breedBusyUids(state);
   for (const uid of uids) {
     if (busy.has(uid)) return { ok: false, msg: "有靈寵已在派遣中。" };
+    if (matingBusy.has(uid)) return { ok: false, msg: "交配孕育中的靈寵不能派遣。" };
     if (state.pets.some((p) => p.uid === uid)) {
       return { ok: false, msg: "請先將靈寵撤回牧場再派遣。" };
     }
@@ -3635,6 +3667,9 @@ export function deployPet(state, uid) {
   if (state.pets.length >= ACTIVE_PET_MAX) {
     return { ok: false, msg: `出戰欄已滿（最多 ${ACTIVE_PET_MAX} 隻）。` };
   }
+  if (breedBusyUids(state).has(uid)) {
+    return { ok: false, msg: "該靈寵交配孕育中，無法出戰。" };
+  }
   if (dispatchBusyUids(state).has(uid)) {
     return { ok: false, msg: "該靈寵派遣中，無法出戰。" };
   }
@@ -3850,6 +3885,9 @@ export function releasePet(state, uid) {
   if (!state.ranch) state.ranch = [];
   const found = findOwnedPet(state, uid);
   if (!found) return { ok: false, msg: "不在靈寵欄／牧場。" };
+  if (breedBusyUids(state).has(uid)) {
+    return { ok: false, msg: "交配孕育中，唔可以放生。領蛋後先得。" };
+  }
   if (found.pet.locked) {
     return { ok: false, msg: "已上鎖，唔可以放生。請先解鎖。" };
   }
@@ -5902,16 +5940,25 @@ function breedPendingEggCount(state) {
   return n;
 }
 
-/**
- * 單次交配結果：在領蛋當下用預存 genes 結算天生／覺醒，寫入蛋。
- * （genes 於開始交配時已 roll，繼承／突變機率不變）
- */
-function prepareBreedEggOutcome(state, job, genes) {
-  const [uidA, uidB] = job.uids || [];
-  const a = findOwnedPet(state, uidA)?.pet;
-  const b = findOwnedPet(state, uidB)?.pet;
-  if (!a || !b) return { ok: false, msg: "雙親已不在，無法領取蛋。" };
-  const g = genes || job.genes || rollBreedGenes(a, b);
+/** 交配開始時快照雙親（領蛋唔再依賴雙親仍在場） */
+function snapshotBreedParent(p) {
+  return {
+    uid: p.uid,
+    name: displayPetName(p),
+    kind: p.kind,
+    speciesId: p.speciesId,
+    elementId: p.elementId,
+    personalityId: p.personalityId,
+    atk: p.atk,
+    hp: p.hp,
+    spd: p.spd,
+  };
+}
+
+/** 用雙親（或快照）＋genes 結算天生／覺醒 */
+function computeBreedEggOutcomeFromParents(a, b, genes, job) {
+  const g = genes || job?.genes;
+  if (!a || !b || !g) return { ok: false, msg: "交配資料缺失，無法領取蛋。" };
   const born = breedStatInheritance(a, b, g);
   const awaken = genAwakenBonus(g.generation);
   const bornBonus = {
@@ -5926,10 +5973,40 @@ function prepareBreedEggOutcome(state, job, genes) {
     awakenSkillLevel: awaken?.skillLevel || null,
     awaken,
     born,
-    parentUids: [a.uid, b.uid],
-    parentNames: [displayPetName(a), displayPetName(b)],
+    parentUids: [a.uid || job?.uids?.[0], b.uid || job?.uids?.[1]].filter(Boolean),
+    parentNames: [
+      a.name || displayPetName(a) || job?.names?.[0] || "？",
+      b.name || displayPetName(b) || job?.names?.[1] || "？",
+    ],
     kind: SPECIES[g.species]?.kind || a.kind,
   };
+}
+
+/**
+ * 單次交配結果：優先用開始交配時預存嘅天生；否則用快照／在場雙親。
+ * （genes 於開始交配時已 roll；舊 job 兼容現場結算）
+ */
+function prepareBreedEggOutcome(state, job, genes, cycle = null) {
+  const g = genes || cycle?.genes || job.genes;
+  if (cycle?.bornBonus && g) {
+    return {
+      ok: true,
+      genes: g,
+      bornBonus: cycle.bornBonus,
+      awakenSkillLevel: cycle.awakenSkillLevel || null,
+      awaken: cycle.awaken || null,
+      born: cycle.born || null,
+      parentUids: job.uids || [],
+      parentNames: job.names || [],
+      kind: cycle.kind || SPECIES[g.species]?.kind || "獸",
+    };
+  }
+  const [uidA, uidB] = job.uids || [];
+  const liveA = findOwnedPet(state, uidA)?.pet;
+  const liveB = findOwnedPet(state, uidB)?.pet;
+  const a = liveA || job.parentSnap?.[0] || null;
+  const b = liveB || job.parentSnap?.[1] || null;
+  return computeBreedEggOutcomeFromParents(a, b, g, job);
 }
 
 function applyBreedEggClaimStats(state, egg, genes, parents) {
@@ -6002,12 +6079,23 @@ export function tryBreed(state, uidA, uidB, count = 1) {
   const now = Date.now();
   const cdMult = rarityBreedCdMult(a, b);
   const cycleMs = Math.round(BREED_COOLDOWN_MS * cdMult);
-  /** 每週期預 roll genes（領蛋時再結算天生寫入蛋） */
+  const parentSnap = [snapshotBreedParent(a), snapshotBreedParent(b)];
+  /** 每週期預 roll genes，並即時結算天生（領蛋唔依賴雙親仍在） */
   const cycles = [];
   for (let i = 0; i < batch; i++) {
+    const genes = rollBreedGenes(a, b);
+    const prep = computeBreedEggOutcomeFromParents(a, b, genes, {
+      uids: [a.uid, b.uid],
+      names: [displayPetName(a), displayPetName(b)],
+    });
     cycles.push({
-      genes: rollBreedGenes(a, b),
+      genes,
       readyAt: now + cycleMs * (i + 1),
+      bornBonus: prep.bornBonus,
+      awakenSkillLevel: prep.awakenSkillLevel,
+      awaken: prep.awaken,
+      born: prep.born,
+      kind: prep.kind,
     });
   }
   state.stones -= stoneCost;
@@ -6016,6 +6104,7 @@ export function tryBreed(state, uidA, uidB, count = 1) {
     id: `breed-${now}-${Math.floor(Math.random() * 9999)}`,
     uids: [a.uid, b.uid],
     names: [displayPetName(a), displayPetName(b)],
+    parentSnap,
     startedAt: now,
     readyAt,
     batch,
@@ -6089,12 +6178,14 @@ export function claimBreed(state, jobId) {
   let lastGenes = null;
   for (let i = 0; i < take; i++) {
     const cycle = job.cycles[claimedCycles + i];
-    const prep = prepareBreedEggOutcome(state, job, cycle?.genes);
+    const prep = prepareBreedEggOutcome(state, job, cycle?.genes, cycle);
     if (!prep.ok) return prep;
     const egg = makeBreedEgg(prep, now + i);
     state.eggs.push(egg);
     eggs.push(egg);
-    applyBreedEggClaimStats(state, egg, prep.genes, [parentA, parentB]);
+    const snapA = job.parentSnap?.[0] || parentA;
+    const snapB = job.parentSnap?.[1] || parentB;
+    applyBreedEggClaimStats(state, egg, prep.genes, [parentA || snapA, parentB || snapB]);
     lastGenes = prep.genes;
     if (
       prep.genes.hybrid ||
