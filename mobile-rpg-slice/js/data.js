@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260909.1";
+export const APP_BUILD = "20260909.2";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -4427,9 +4427,9 @@ export function personalityExplain(personalityId) {
 
 export const MATERIALS = {
   tide_dew: { id: "tide_dew", name: "潮露", desc: "升級主材（全程）", tier: "bulk" },
-  coral_shard: { id: "coral_shard", name: "珊瑚屑", desc: "原生繁殖", tier: "bulk" },
-  mist_silk: { id: "mist_silk", name: "霧絲", desc: "中階養成", tier: "bulk" },
-  abyss_ink: { id: "abyss_ink", name: "深淵墨", desc: "高代繁殖", tier: "bulk" },
+  coral_shard: { id: "coral_shard", name: "珊瑚屑", desc: "繁殖主材（各代）", tier: "bulk" },
+  mist_silk: { id: "mist_silk", name: "霧絲", desc: "一代／二代繁殖 · Stage2 起慢滴", tier: "bulk" },
+  abyss_ink: { id: "abyss_ink", name: "深淵墨", desc: "二代＋／三代繁殖 · Stage4 主產", tier: "bulk" },
   seal_ember: { id: "seal_ember", name: "契火", desc: "突破與進化", tier: "bulk" },
   echo_resin: { id: "echo_resin", name: "靈響脂", desc: "技能升級", tier: "bulk" },
   fuse_sand: { id: "fuse_sand", name: "融砂", desc: "舊融合催化（兼容）", tier: "bulk" },
@@ -4695,8 +4695,9 @@ export function upgradeMatCost(level) {
 }
 
 /**
- * 繁殖耗材料（按雙親最高代 → 對應階段料）
- * 0：原生（珊瑚）｜1：一代（+地階）｜2：二代（+雲階／墨）｜3+：三代（+火階／墨）
+ * 繁殖耗材料（按雙親最高代；同升級階石拆開）
+ * 0：原生珊瑚｜1：一代（珊瑚＋霧絲）｜2：二代（＋墨）｜3+：三代（墨加重）
+ * 階石（地／雲／火／天／虛）只服務升級。
  */
 export function breedMatCost(genA, genB) {
   const maxGen = Math.max(0, genA | 0, genB | 0);
@@ -4704,12 +4705,15 @@ export function breedMatCost(genA, genB) {
     return { coral_shard: 2 };
   }
   if (maxGen === 1) {
-    return { coral_shard: 3, earth_grade_stone: 4 };
+    // Stage2 尾起跳二代：珊瑚＋霧絲（唔搶地階石）
+    return { coral_shard: 4, mist_silk: 2 };
   }
   if (maxGen === 2) {
-    return { coral_shard: 4, cloud_grade_stone: 5, abyss_ink: 2 };
+    // Stage3 二代養成；墨開始入場
+    return { coral_shard: 5, mist_silk: 3, abyss_ink: 2 };
   }
-  return { coral_shard: 5, fire_grade_stone: 6, abyss_ink: 3 };
+  // Stage4+ 三代：墨主耗
+  return { coral_shard: 6, mist_silk: 2, abyss_ink: 4 };
 }
 
 /** 技能升級額外材料（Lv≥2 起；練功專精） */
@@ -4741,8 +4745,8 @@ export function spineStageMatBias(stage) {
     return { tide_dew: 5, coral_shard: 4 };
   }
   if (s === 2) {
-    // 地階主產（已無側枝專刷，權重偏專精）
-    return { tide_dew: 2, coral_shard: 1, earth_grade_stone: 7 };
+    // 地階主產；少量霧絲令一代繁殖（Stage2 尾→二代）唔死等 Stage3
+    return { tide_dew: 2, coral_shard: 1, earth_grade_stone: 6, mist_silk: 1 };
   }
   if (s === 3) {
     // 雲霧章：雲階＋霧絲；階段三解鎖第 4 出戰位
@@ -5278,9 +5282,9 @@ export function dispatchNeedStageMet(state, mission) {
 
 export const MATERIAL_USES = {
   tide_dew: "升級主材",
-  coral_shard: "原生繁殖",
-  mist_silk: "中階養成",
-  abyss_ink: "高代繁殖",
+  coral_shard: "繁殖主材",
+  mist_silk: "一代／二代繁殖",
+  abyss_ink: "二代＋／三代繁殖",
   seal_ember: "突破",
   echo_resin: "技能升級",
   fuse_sand: "舊融合催化",

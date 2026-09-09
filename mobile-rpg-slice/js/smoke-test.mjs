@@ -519,10 +519,16 @@ const cost12 = breedMatCost(1, 2);
 const cost00 = breedMatCost(0, 0);
 const cost11 = breedMatCost(1, 1);
 assert(cost00.coral_shard === 2 && !cost00.earth_grade_stone, "0+0 native breed mats");
-assert(cost11.coral_shard === 3 && cost11.earth_grade_stone === 4, "1+1 gen1 breed mats");
-assert(cost12.cloud_grade_stone === 5 && cost12.abyss_ink === 2, "1+2 gen2 breed mats");
-assert(cost02.cloud_grade_stone === 5 && cost02.abyss_ink === 2, "0+2 uses gen2 band");
-assert(breedMatCost(2, 3).fire_grade_stone === 6, "gen3+ fire band");
+assert(cost11.coral_shard === 4 && cost11.mist_silk === 2 && !cost11.earth_grade_stone, "1+1 gen1 silk breed mats");
+assert(cost12.mist_silk === 3 && cost12.abyss_ink === 2 && !cost12.cloud_grade_stone, "1+2 gen2 silk+ink");
+assert(cost02.mist_silk === 3 && cost02.abyss_ink === 2 && !cost02.cloud_grade_stone, "0+2 uses gen2 band");
+assert(breedMatCost(2, 3).abyss_ink === 4 && !breedMatCost(2, 3).fire_grade_stone, "gen3+ ink no grade stone");
+assert(
+  !Object.keys(breedMatCost(1, 1)).some((k) => k.includes("grade_stone")) &&
+    !Object.keys(breedMatCost(2, 2)).some((k) => k.includes("grade_stone")) &&
+    !Object.keys(breedMatCost(3, 3)).some((k) => k.includes("grade_stone")),
+  "breed never spends grade stones"
+);
 
 const fox = buildPetStats({
   id: "a",
@@ -2527,10 +2533,10 @@ assert(hatchedFromNamed.kind === "蟲" && hatchedFromNamed.generation === 1, "ha
 const breedG1 = mkBreedPet("g1", "reefox", "tide", 1);
 const breedG2 = mkBreedPet("g2", "reefox", "tide", 2);
 const prev12 = breedPreview(breedG1, breedG2);
-assert(prev12.matCost.cloud_grade_stone === 5 && prev12.matCost.abyss_ink === 2, "preview 1+2 mats");
+assert(prev12.matCost.mist_silk === 3 && prev12.matCost.abyss_ink === 2 && !prev12.matCost.cloud_grade_stone, "preview 1+2 mats");
 const wildParent = mkBreedPet("w0", "reefox", "tide", 0);
 const prev02 = breedPreview(wildParent, breedG2);
-assert(prev02.matCost.cloud_grade_stone === 5 && prev02.matCost.abyss_ink === 2, "preview 0+2 gen2 band");
+assert(prev02.matCost.mist_silk === 3 && prev02.matCost.abyss_ink === 2 && !prev02.matCost.cloud_grade_stone, "preview 0+2 gen2 band");
 assert(prev02.genOdds[0].pct === 70 && prev02.genOdds[0].gen === 1, "preview 0+2 odds");
 
 /* Tide zones: idle floors push spine (floor1=old mist1, scales past 4) */
@@ -3375,7 +3381,10 @@ assert(
   "spine1 no earth AFK until stage2"
 );
 assert(spineStageMatBias(2).earth_grade_stone > 0, "spine2 earth in bias");
+assert(spineStageMatBias(2).mist_silk > 0, "spine2 mist silk drip for gen1 breed");
 assert(spineAfkDropsForStage(2).some((d) => d.mat === "earth_grade_stone"), "spine2 earth AFK");
+assert(spineAfkDropsForStage(2).some((d) => d.mat === "mist_silk"), "spine2 silk AFK");
+assert(upgradeMatCost(12).earth_grade_stone > 0 && !upgradeMatCost(12).mist_silk, "upgrade still grade stones");
 assert(spineStageMatBias(3).cloud_grade_stone > 0, "spine3 cloud chapter");
 assert(ACTIVE_PET_UNLOCK_STAGE === 3, "4th slot at stage3");
 assert(
@@ -3397,7 +3406,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v105"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v106"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");
