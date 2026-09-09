@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260908.1";
+export const APP_BUILD = "20260909.1";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -1386,8 +1386,12 @@ export const WILD_PETS = [
 /** 待契約佇列上限；滿咗打本唔會再新遇 */
 export const PENDING_BOND_MAX = 5;
 
-/** 出戰欄上限 */
-export const ACTIVE_PET_MAX = 3;
+/** 出戰欄硬上限（含階段解鎖） */
+export const ACTIVE_PET_MAX = 4;
+/** 預設出戰欄（階段三前） */
+export const ACTIVE_PET_BASE = 3;
+/** 已通主脊階段 ≥ 此值 → 出戰欄升至 ACTIVE_PET_MAX */
+export const ACTIVE_PET_UNLOCK_STAGE = 3;
 
 /**
  * 牧場待命上限：隨人物階段提升
@@ -2026,27 +2030,28 @@ export const FORMATIONS = {
 
 export const FORMATION_IDS = ["vanguard", "balanced", "rear"];
 
-/** 每側固定 3 企位（列）；前／後排用 lane 分欄 */
-export const FORMATION_SLOT_COUNT = 3;
+/** 每側企位列上限（與 ACTIVE_PET_MAX 對齊）；前／後排用 lane 分欄 */
+export const FORMATION_SLOT_COUNT = 4;
 
 /**
- * 友方陣型企位：slot=列(0上…2下)，lane=front|rear（對敵遠近）
+ * 友方陣型企位：slot=列(0上…)，lane=front|rear（對敵遠近）
+ * @param {number} [slotCount] 實際列數（預設滿欄）
  * @returns {{ slot: number, lane: "front"|"rear", unitIndex: number|null }[]}
  */
-export function formationAllyPlacement(formationId, unitCount = 0) {
+export function formationAllyPlacement(formationId, unitCount = 0, slotCount = FORMATION_SLOT_COUNT) {
   const id = FORMATION_IDS.includes(formationId) ? formationId : "balanced";
-  const n = Math.max(0, Math.min(FORMATION_SLOT_COUNT, unitCount | 0));
-  const lanes =
-    id === "vanguard"
-      ? ["front", "front", "front"]
-      : id === "rear"
-        ? ["rear", "rear", "rear"]
-        : ["rear", "front", "rear"];
+  const slots = Math.max(1, Math.min(FORMATION_SLOT_COUNT, slotCount | 0));
+  const n = Math.max(0, Math.min(slots, unitCount | 0));
+  const laneFor = (slot) => {
+    if (id === "vanguard") return "front";
+    if (id === "rear") return "rear";
+    return slot % 2 === 0 ? "rear" : "front";
+  };
   const out = [];
-  for (let slot = 0; slot < FORMATION_SLOT_COUNT; slot += 1) {
+  for (let slot = 0; slot < slots; slot += 1) {
     out.push({
       slot,
-      lane: lanes[slot],
+      lane: laneFor(slot),
       unitIndex: slot < n ? slot : null,
     });
   }
@@ -2055,12 +2060,14 @@ export function formationAllyPlacement(formationId, unitCount = 0) {
 
 /**
  * 敵方企位：波次順序填 slot，一律前排（對準友軍）
+ * @param {number} [slotCount] 實際列數（預設滿欄）
  * @returns {{ slot: number, lane: "front"|"rear", unitIndex: number|null }[]}
  */
-export function formationFoePlacement(unitCount = 0) {
-  const n = Math.max(0, Math.min(FORMATION_SLOT_COUNT, unitCount | 0));
+export function formationFoePlacement(unitCount = 0, slotCount = FORMATION_SLOT_COUNT) {
+  const slots = Math.max(1, Math.min(FORMATION_SLOT_COUNT, slotCount | 0));
+  const n = Math.max(0, Math.min(slots, unitCount | 0));
   const out = [];
-  for (let slot = 0; slot < FORMATION_SLOT_COUNT; slot += 1) {
+  for (let slot = 0; slot < slots; slot += 1) {
     out.push({
       slot,
       lane: "front",
@@ -4430,7 +4437,7 @@ export const MATERIALS = {
   earth_grade_stone: {
     id: "earth_grade_stone",
     name: "地階石",
-    desc: "升級副材 · 約 Lv10–19 · 主脊階段二／地脈",
+    desc: "升級副材 · 約 Lv10–19 · 主脊階段二掛機",
     tier: "grade",
   },
   cloud_grade_stone: {
@@ -4442,13 +4449,13 @@ export const MATERIALS = {
   fire_grade_stone: {
     id: "fire_grade_stone",
     name: "火階石",
-    desc: "升級副材 · 約 Lv30–39 · 主脊階段四／火脈",
+    desc: "升級副材 · 約 Lv30–39 · 主脊階段四掛機",
     tier: "grade",
   },
   sky_grade_stone: {
     id: "sky_grade_stone",
     name: "天階石",
-    desc: "升級副材 · 約 Lv40–49 · 主脊階段五／天脈",
+    desc: "升級副材 · 約 Lv40–49 · 主脊階段五掛機",
     tier: "grade",
   },
   void_grade_stone: {
@@ -4718,31 +4725,36 @@ export function fusionMatCost(targetStage) {
   return { fusion_core: 1 };
 }
 
-/** 主脊階段：每 40 關一段（1–40=1 … 161–200=5；201+ 仍用 5+ 曲線） */
+/** 主脊每段關數（階段長度）；愈短愈早開副材／側枝 */
+export const SPINE_STAGE_FLOORS = 20;
+
+/** 主脊階段：每 20 關一段（1–20=1，21–40=2 …；201+ 仍延伸） */
 export function spineStageForTier(tier) {
   const t = Math.max(1, tier | 0);
-  return Math.floor((t - 1) / 40) + 1;
+  return Math.floor((t - 1) / SPINE_STAGE_FLOORS) + 1;
 }
 
-/** 各主脊階段掉落權重（解鎖制：後段加新帶，前帶可少量） */
+/** 各主脊階段掉落權重（解鎖制：後段加新帶；階石唔提前產） */
 export function spineStageMatBias(stage) {
   const s = Math.max(1, stage | 0);
   if (s <= 1) {
     return { tide_dew: 5, coral_shard: 4 };
   }
   if (s === 2) {
-    return { tide_dew: 2, coral_shard: 2, earth_grade_stone: 5 };
+    // 地階主產（已無側枝專刷，權重偏專精）
+    return { tide_dew: 2, coral_shard: 1, earth_grade_stone: 7 };
   }
   if (s === 3) {
-    return { tide_dew: 2, earth_grade_stone: 1, cloud_grade_stone: 5, mist_silk: 2 };
+    // 雲霧章：雲階＋霧絲；階段三解鎖第 4 出戰位
+    return { tide_dew: 2, earth_grade_stone: 1, cloud_grade_stone: 6, mist_silk: 3 };
   }
   if (s === 4) {
-    return { cloud_grade_stone: 1, fire_grade_stone: 5, abyss_ink: 3, temper_oil: 1 };
+    return { cloud_grade_stone: 1, fire_grade_stone: 7, abyss_ink: 2, temper_oil: 1 };
   }
   // 5+：天階／契火／極低權重融合核
   return {
     fire_grade_stone: 1,
-    sky_grade_stone: 4,
+    sky_grade_stone: 6,
     void_grade_stone: s >= 6 ? 3 : 0,
     seal_ember: 2,
     fusion_core: 1,
@@ -4750,7 +4762,7 @@ export function spineStageMatBias(stage) {
 }
 
 /**
- * 練功／掛機＝主脊＋支線（取替舊七潮域揀地點）
+ * 練功／掛機＝主脊（階石跟階段掛機產；已無地／火／天脈戰鬥側枝）
  * 秘境戰鬥仍獨立；主脊進度共用 clearedDungeons[tide_*]
  * 秘境專屬料永不進 AFK；潮霧令只走練功／每日／升階
  */
@@ -4777,6 +4789,17 @@ export function maxClearedTideTier(state) {
 export function spineStageFromState(state) {
   const cleared = maxClearedTideTier(state);
   return spineStageForTier(Math.max(1, cleared || 1));
+}
+
+/** 出戰欄上限（階段三＝已通≥41 解鎖第 4 位） */
+export function activePetMaxForState(state) {
+  return spineStageFromState(state) >= ACTIVE_PET_UNLOCK_STAGE ? ACTIVE_PET_MAX : ACTIVE_PET_BASE;
+}
+
+/** 第 N 關是否階段頭目層（每 SPINE_STAGE_FLOORS 關：20／40／60…） */
+export function isSpineStageBossFloor(floor) {
+  const f = Math.max(1, floor | 0);
+  return f % SPINE_STAGE_FLOORS === 0;
 }
 
 /** 下一未通主脊層（至少 1） */
@@ -4825,7 +4848,8 @@ export function spineKeyMatForStage(stage) {
 export function spineThreatBase(frontierTier) {
   const t = Math.max(1, frontierTier | 0);
   const stage = spineStageForTier(t);
-  return Math.round(28 + (t - 1) * 3.2 + (stage - 1) * 8);
+  // 放緩層數成長，避免 Lv10 隊喺十層後完全斷線
+  return Math.round(26 + (t - 1) * 2.35 + (stage - 1) * 6);
 }
 
 /** AFK 產物表：跟 spineStageMatBias；總 mat 預算約舊七域合計量級 */
@@ -4865,7 +4889,7 @@ export function spinePrimaryMatForStage(stage) {
 const SPINE_STAGE_FOCUS = {
   1: "潮露／原生",
   2: "地階",
-  3: "雲階",
+  3: "雲階／霧絲 · 第4出戰",
   4: "火階",
   5: "天階／終局",
 };
@@ -4907,12 +4931,23 @@ export const TRAIN_SITES = [
   },
 ];
 
-/** 霧階數；深度倍率：霧階一～四／已通段主 */
+/** 舊霧階數（兼容）；主脊層已無限延伸 */
 export const TRAIN_TIER_COUNT = 4;
-/** 一層霧階＝多波敵人；段主關波數更多 */
+/** 一層＝多波敵人；段主關波數更多 */
 export const TRAIN_MIST_WAVE_COUNT = 5;
 export const TRAIN_WARDEN_WAVE_COUNT = 7;
+/** 深度倍率：第1–4層＝舊霧1–4，第5＝舊段主；之後見 trainDepthMultForFloor */
 export const TRAIN_DEPTH_MULT = [1.0, 1.1, 1.2, 1.35, 1.5];
+
+/**
+ * 主脊層深度倍率：第1層＝舊霧1，第4層＝舊霧4，第6層≈舊霧4+2（陣列後每層 +0.1）
+ */
+export function trainDepthMultForFloor(floor) {
+  const idx = Math.max(0, (floor | 0) - 1);
+  if (idx < TRAIN_DEPTH_MULT.length) return TRAIN_DEPTH_MULT[idx];
+  const last = TRAIN_DEPTH_MULT[TRAIN_DEPTH_MULT.length - 1];
+  return Math.round((last + (idx - (TRAIN_DEPTH_MULT.length - 1)) * 0.1) * 100) / 100;
+}
 
 /**
  * 主脊單區鏈（取替七潮域）
@@ -4943,7 +4978,7 @@ export function trainZoneOrderIndex(zoneId) {
   return 0;
 }
 
-/** 霧階／段主威脅值；opts.frontierTier 提升基準 */
+/** 霧階／主脊層威脅值；tierIndex 0＝第1層，可無限延伸（早期斜率放緩） */
 export function trainTierThreat(zoneId, tierIndex, opts = {}) {
   void zoneId;
   const base =
@@ -4952,8 +4987,9 @@ export function trainTierThreat(zoneId, tierIndex, opts = {}) {
       : opts.frontierTier != null
         ? spineThreatBase(opts.frontierTier)
         : trainZoneMeta(SPINE_ZONE_ID).threatBase || 30;
-  const t = Math.max(0, Math.min(TRAIN_TIER_COUNT, tierIndex | 0));
-  return Math.round(base * (1 + t * 0.22));
+  const t = Math.max(0, tierIndex | 0);
+  // 舊 0.22 令第20層已遠超 Lv10 隊；改 0.11 保留層數壓迫但可跟寵
+  return Math.round(base * (1 + t * 0.11));
 }
 
 export function trainWardenThreat(zoneId, opts = {}) {
@@ -5540,10 +5576,7 @@ export function buildMaterialSourceIndex() {
       }
     }
   }
-  for (const b of SIDE_BRANCHES) {
-    const e = ensure(b.specialty);
-    if (!e.sites.includes(b.name)) e.sites.push(b.name);
-  }
+  // 側枝戰鬥已從練功移除；階石來源只記主脊掛機
   for (const m of DISPATCH_MISSIONS) {
     for (const id of Object.keys(m.reward?.materials || {})) {
       const e = ensure(id);
@@ -5587,13 +5620,9 @@ export function trainSiteUnlockHint(site) {
   return null;
 }
 
-/** 某 bulk 材料的主要練功來源（主脊或側枝名） */
+/** 某 bulk 材料的主要練功來源（主脊掛機；階石跟階段解鎖） */
 export function primaryTrainSiteForMat(matId) {
   if (!matId || !MATERIALS[matId] || MATERIALS[matId].tier === "dungeon") return null;
-  const branch = SIDE_BRANCHES.find((b) => b.specialty === matId);
-  if (branch) {
-    return { id: branch.id, name: branch.name, focus: "側枝", isBranch: true };
-  }
   for (let stage = 1; stage <= 6; stage++) {
     if (spineAfkDropsForStage(stage).some((d) => d.mat === matId)) {
       return { id: SPINE_ZONE_ID, name: "主脊潮脈", focus: "主脊", isBranch: false };
@@ -5602,7 +5631,7 @@ export function primaryTrainSiteForMat(matId) {
   return null;
 }
 
-/** 缺料時建議去主脊掛機或側枝／標明秘境專屬 */
+/** 缺料時建議去主脊掛機／標明秘境專屬 */
 export function suggestTrainForShortage(state, cost) {
   const items = Object.entries(cost || {})
     .filter(([, n]) => n > 0)
@@ -5630,12 +5659,10 @@ export function suggestTrainForShortage(state, cost) {
       siteId: site.id,
       siteName: site.name,
       focus: site.focus || "",
-      unlocked: site.isBranch ? isSideBranchUnlocked(state, site.id) : true,
-      unlockHint: site.isBranch
-        ? `主脊階段≥${sideBranchById(site.id)?.needSpineStage || "?"} 解鎖`
-        : null,
-      alreadyThere: !site.isBranch,
-      isBranch: !!site.isBranch,
+      unlocked: true,
+      unlockHint: null,
+      alreadyThere: true,
+      isBranch: false,
     };
   }
   return null;
