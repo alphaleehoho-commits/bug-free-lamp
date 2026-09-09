@@ -125,6 +125,7 @@ import {
   formationAllyPlacement,
   formationFoePlacement,
   HYBRID_SKILLS,
+  secondSkillIdForPet,
   genCombatMult,
   genAwakenBonus,
   BREED_ELEMENT_MUTATION_RATE,
@@ -4282,7 +4283,7 @@ export function upgradePet(state, uid, payWith = "stones") {
 function maybeAnnounceSecondSkill(state, pet, prevLevel) {
   if (prevLevel < SECOND_SKILL_UNLOCK.level && (pet.level ?? 1) >= SECOND_SKILL_UNLOCK.level) {
     if ((pet.fusionLevel ?? 0) < SECOND_SKILL_UNLOCK.fusionLevel) {
-      const secondId = KIND_SECOND_SKILLS[pet.kind];
+      const secondId = secondSkillIdForPet(pet);
       const sn = SKILLS[secondId]?.name;
       if (sn) pushLog(state, `${pet.name} 因等級覺醒第二技能【${sn}】！`);
     }
@@ -4468,7 +4469,7 @@ export function fusePets(state, baseUid, matUids) {
   if (state.tutorial && !state.tutorial.flags) state.tutorial.flags = {};
   if (state.tutorial?.flags) state.tutorial.flags.fuseDone = true;
   if (targetStage === SECOND_SKILL_UNLOCK.fusionLevel) {
-    const secondId = KIND_SECOND_SKILLS[base.kind];
+    const secondId = secondSkillIdForPet(base);
     const sn = SKILLS[secondId]?.name;
     if (sn) pushLog(state, `${base.name} 覺醒第二技能【${sn}】！`);
   }
@@ -4492,8 +4493,7 @@ export function petDetail(state, uid) {
   const rule = target != null ? FUSION_RULES[target] : null;
   const skillIds = petSkillIds(pet);
   const skillLv = pet.skillLevel ?? 1;
-  const secondId =
-    HYBRID_SKILLS[pet.speciesId] || KIND_SECOND_SKILLS[pet.kind];
+  const secondId = secondSkillIdForPet(pet);
   const secondUnlocked =
     fusion >= SECOND_SKILL_UNLOCK.fusionLevel || level >= SECOND_SKILL_UNLOCK.level;
   const baseline = petSpeciesBaseline(pet.speciesId, pet.elementId, pet.personalityId);
@@ -4587,7 +4587,7 @@ function dealStrike(actor, target, power, transcript, events, skillName) {
   if (!target || target.hp <= 0) return;
   const pMult = skillPowerMult(actor.skillLevel || 1);
   let dmg = Math.max(1, Math.floor(actor.atk * power * pMult) + Math.floor(Math.random() * 4) - 1);
-  if (skillName === "嵐擊" || skillName === "穿空" || skillName === "礁襲") {
+  if (skillName === "嵐擊" || skillName === "穿空" || skillName === "礁襲" || skillName === "珊嵐槍" || skillName === "嵐虛斬") {
     dmg += Math.floor(actor.spd / 4);
   }
   const { mult, tag } = elementMatchup(actor.elementId, target.elementId);

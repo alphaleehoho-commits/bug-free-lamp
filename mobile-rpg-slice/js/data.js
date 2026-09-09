@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260909.4";
+export const APP_BUILD = "20260909.5";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -1365,6 +1365,79 @@ export const SKILLS = {
     power: 0.48,
     desc: "稜背專屬：稜光護盾",
   },
+  // —— 三代種專屬（唔 reuse 雜交二技）——
+  abyss_reign_surge: {
+    id: "abyss_reign_surge",
+    name: "淵君潮壓",
+    owner: "pet",
+    type: "cleave",
+    cd: 3,
+    power: 0.95,
+    desc: "淵君專屬：深淵潮壓濺射",
+  },
+  void_glint_ray: {
+    id: "void_glint_ray",
+    name: "虛耀裂光",
+    owner: "pet",
+    type: "strike",
+    cd: 2,
+    power: 2.05,
+    desc: "虛耀專屬：虛空裂光貫穿",
+  },
+  dusk_iron_plate: {
+    id: "dusk_iron_plate",
+    name: "暮鐵甲",
+    owner: "pet",
+    type: "guard",
+    cd: 3,
+    power: 0.55,
+    desc: "暮鐵專屬：暮色鐵甲減傷回血",
+  },
+  coral_storm_lance: {
+    id: "coral_storm_lance",
+    name: "珊嵐槍",
+    owner: "pet",
+    type: "strike",
+    cd: 2,
+    power: 1.95,
+    desc: "珊嵐專屬：珊嵐槍刺（＋速）",
+  },
+  deep_fang_toxin: {
+    id: "deep_fang_toxin",
+    name: "深牙蝕",
+    owner: "pet",
+    type: "debuff",
+    cd: 2,
+    power: 1.5,
+    desc: "深牙專屬：深淵毒牙削攻",
+  },
+  tide_prism_howl: {
+    id: "tide_prism_howl",
+    name: "潮稜嚎",
+    owner: "pet",
+    type: "buff",
+    cd: 4,
+    power: 0.15,
+    desc: "潮稜專屬：潮稜嚎鼓舞全隊",
+  },
+  night_scale_veil: {
+    id: "night_scale_veil",
+    name: "夜鱗帷",
+    owner: "pet",
+    type: "heal",
+    cd: 3,
+    power: 0.28,
+    desc: "夜鱗專屬：夜鱗帷癒傷",
+  },
+  gale_void_slash: {
+    id: "gale_void_slash",
+    name: "嵐虛斬",
+    owner: "pet",
+    type: "strike",
+    cd: 2,
+    power: 1.8,
+    desc: "嵐虛專屬：虛空嵐斬（＋速）",
+  },
 };
 
 /** 人物依階段解鎖技能 */
@@ -2238,16 +2311,22 @@ export const HYBRID_SKILLS = {
   shellmite: "shell_spike",
   glintfox: "glint_beam",
   prismback: "prism_shell",
-  /* 三代種沿用相近技能 */
-  abyssreign: "mist_surge",
-  voidglint: "glint_beam",
-  duskiron: "iron_bulwark",
-  coralstorm: "storm_lance",
-  deepfang: "fang_burst",
-  tideprism: "tide_beast_rush",
-  nightscale: "scale_glide",
-  galevoid: "reef_dive",
+  /* 三代種專屬二技 */
+  abyssreign: "abyss_reign_surge",
+  voidglint: "void_glint_ray",
+  duskiron: "dusk_iron_plate",
+  coralstorm: "coral_storm_lance",
+  deepfang: "deep_fang_toxin",
+  tideprism: "tide_prism_howl",
+  nightscale: "night_scale_veil",
+  galevoid: "gale_void_slash",
 };
+
+/** 第二技能 id：雜交／三代專屬優先，否則 kind 二技 */
+export function secondSkillIdForPet(pet) {
+  if (!pet) return null;
+  return HYBRID_SKILLS[pet.speciesId] || KIND_SECOND_SKILLS[pet.kind] || null;
+}
 
 /** 高代子代出生加成（P15B） */
 export function genAwakenBonus(generation) {
@@ -3646,8 +3725,7 @@ export function petSkillIds(pet) {
     (pet.fusionLevel ?? 0) >= SECOND_SKILL_UNLOCK.fusionLevel ||
     (pet.level ?? 1) >= SECOND_SKILL_UNLOCK.level;
   if (unlocked) {
-    const hybridId = HYBRID_SKILLS[pet.speciesId];
-    const second = hybridId || KIND_SECOND_SKILLS[pet.kind];
+    const second = secondSkillIdForPet(pet);
     if (second) ids.push(second);
   }
   return ids;
