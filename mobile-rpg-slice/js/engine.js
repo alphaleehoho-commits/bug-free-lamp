@@ -73,6 +73,7 @@ import {
   bestiaryEntries,
   bestiaryCombatBonus,
   releaseSoulGain,
+  eggDissolveSoul,
   releaseRefund,
   NICK_MAX_LEN,
   DAILY_QUESTS,
@@ -3756,6 +3757,7 @@ export function eggsView(state, now = Date.now()) {
       ready: hatching && left <= 0,
       leftMs: left,
       leftSec: Math.ceil(left / 1000),
+      dissolveSoul: eggDissolveSoul(e),
     };
   });
 }
@@ -3832,7 +3834,11 @@ export function claimHatch(state, eggUid) {
   // 蛋入牧場欄；出戰欄唔佔牧場容量（同契約／繁殖／撤回一致）
   const cap = ranchCap(state);
   if (state.ranch.length >= cap) {
-    return { ok: false, msg: `牧場已滿（${state.ranch.length}/${cap}），無法領取。可先出戰或放歸。` };
+    return {
+      ok: false,
+      msg: `牧場已滿（${state.ranch.length}/${cap}），無法領取。可先清倉放生或出戰。`,
+      ranchFull: true,
+    };
   }
   const pet = normalizePet(hatchPetFromEgg(egg, { realm: state.realm, starter: egg.source === "starter" }));
   state.eggs.splice(i, 1);
@@ -3945,6 +3951,7 @@ export function claimAllReadyHatches(state, now = Date.now()) {
   let maxRarity = 0;
   let tutorialUnlock = null;
   let stopMsg = null;
+  let ranchFull = false;
   for (const uid of readyUids) {
     const r = claimHatch(state, uid);
     if (r.ok && r.pet) {
@@ -3956,10 +3963,13 @@ export function claimAllReadyHatches(state, now = Date.now()) {
       if (r.tutorialUnlock) tutorialUnlock = r.tutorialUnlock;
     } else {
       stopMsg = r.msg || "領取中斷。";
+      if (r.ranchFull) ranchFull = true;
       break;
     }
   }
-  if (!pets.length) return { ok: false, msg: stopMsg || "無法領取。", pets: [] };
+  if (!pets.length) {
+    return { ok: false, msg: stopMsg || "無法領取。", pets: [], ranchFull };
+  }
   const msg =
     pets.length === 1
       ? `孵出 ${pets[0].name}`
@@ -3973,6 +3983,7 @@ export function claimAllReadyHatches(state, now = Date.now()) {
     hybrid,
     rarity: maxRarity,
     tutorialUnlock,
+    ranchFull,
   };
   if (stopMsg) {
     return { ...payload, msg: `${msg}（其後：${stopMsg}）`, partial: true };
@@ -4099,6 +4110,92 @@ export function previewReleaseSoul(state, uids) {
   }
   if (!pets.length) return { ok: false, msg: "找不到靈寵。", soul: 0, pets: [] };
   return { ok: true, soul, pets };
+}
+
+/**
+ * 建議清倉對象：牧場內未上鎖、非星標、非交配／派遣中，優先低等級／低稀有。
+ * limit 預設騰出 1 格（牧場滿時領孵用）。
+ */
+export function suggestRanchCullUids(state, limit = 1) {
+  const need = Math.max(1, Math.min(12, limit | 0));
+  const mating = breedBusyUids(state);
+  const dispatchBusy = dispatchBusyUids(state);
+  const rows = (state.ranch || [])
+    .filter((p) => p && !p.locked && !p.starred && !mating.has(p.uid) && !dispatchBusy.has(p.uid))
+    .map((p) => ({
+      uid: p.uid,
+      score:
+        (p.level ?? 1) * 10 +
+        (p.rarity ?? 0) * 40 +
+        (p.fusionLevel ?? 0) * 60 +
+        petGeneration(p) * 5,
+    }))
+    .sort((a, b) => a.score - b.score);
+  return rows.slice(0, need).map((r) => r.uid);
+}
+
+/** 牧場容量視圖（UI 滿倉提示） */
+export function ranchCapView(state) {
+  const cap = ranchCap(state);
+  const used = state.ranch?.length || 0;
+  const free = Math.max(0, cap - used);
+  return {
+    used,
+    cap,
+    free,
+    full: free <= 0,
+    nearlyFull: free > 0 && free <= 2,
+  };
+}
+
+/**
+ * 未孵蛋化精（潮還）：只接受庫存蛋（未開始孵化）。
+ */
+export function dissolveEgg(state, eggUid) {
+  if (!state.eggs) state.eggs = [];
+  const i = state.eggs.findIndex((e) => e.uid === eggUid);
+  if (i < 0) return { ok: false, msg: "找不到這枚蛋。" };
+  const egg = state.eggs[i];
+  if (egg.startedAt != null) {
+    return { ok: false, msg: "孵化中唔可以化精。先等完成或領取。" };
+  }
+  const soul = eggDissolveSoul(egg);
+  state.eggs.splice(i, 1);
+  if (!state.materials) state.materials = emptyMaterials();
+  state.materials.soul_essence = (state.materials.soul_essence || 0) + soul;
+  if (!state.stats) state.stats = {};
+  state.stats.eggDissolves = (state.stats.eggDissolves || 0) + 1;
+  const label = egg.name || eggTierInfo(egg.tier).name;
+  pushLog(state, `潮還【${label}】，獲精魂 ${soul}。`);
+  return { ok: true, msg: `潮還 ${label}，精魂 +${soul}`, soul, egg };
+}
+
+/** 批量潮還庫存蛋 */
+export function dissolveEggs(state, eggUids) {
+  const ids = Array.isArray(eggUids) ? eggUids.filter(Boolean) : [];
+  if (!ids.length) return { ok: false, msg: "未揀蛋。", soul: 0, count: 0 };
+  let total = 0;
+  let count = 0;
+  for (const uid of ids) {
+    const r = dissolveEgg(state, uid);
+    if (!r.ok) {
+      return {
+        ok: false,
+        msg: count ? `${r.msg}（已潮還 ${count} 枚，精魂 +${total}）` : r.msg,
+        soul: total,
+        count,
+        partial: count > 0,
+      };
+    }
+    total += r.soul || 0;
+    count += 1;
+  }
+  return {
+    ok: true,
+    msg: count === 1 ? `潮還 1 枚，精魂 +${total}` : `潮還 ${count} 枚，精魂 +${total}`,
+    soul: total,
+    count,
+  };
 }
 
 /** 為靈寵命名（最多 NICK_MAX_LEN 字） */
@@ -7692,6 +7789,7 @@ export {
   hybridRecipeSummary,
   hybridRecipeMatrix,
   releaseSoulGain,
+  eggDissolveSoul,
   releaseRefund,
   DUNGEON_TRIALS,
   KINDS,
