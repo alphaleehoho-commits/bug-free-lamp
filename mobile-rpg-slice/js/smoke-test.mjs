@@ -57,6 +57,7 @@ import {
   FORMATION_SLOT_COUNT,
   formationAllyPlacement,
   formationFoePlacement,
+  LANE_COMBAT,
   DUNGEON_CHALLENGE_RULES,
   pickDailyChallenge,
   DUNGEON_DAILY_MODS,
@@ -309,6 +310,7 @@ import {
   exportSaveJson,
   importSaveJson,
   dailyView,
+  probeLaneSkillEffects,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -877,6 +879,24 @@ assert(FORMATION_SLOT_COUNT === 4, "formation slot count max 4");
 }
 assert(FORMATIONS.vanguard.desc.includes("前排"), "vanguard desc mentions front");
 assert(FORMATIONS.rear.desc.includes("後排"), "rear desc mentions rear");
+assert(FORMATIONS.vanguard.desc.includes("多傷") || FORMATIONS.vanguard.desc.includes("前排多"), "vanguard combat lane flavor");
+assert(FORMATIONS.rear.desc.includes("減傷"), "rear combat lane flavor");
+assert(FORMATIONS.balanced.desc.includes("前排") && FORMATIONS.balanced.desc.includes("後排"), "balanced mentions lanes");
+assert(LANE_COMBAT.front.dmgDealtMult > 1 && LANE_COMBAT.rear.dmgTakenMult < 1, "lane combat mults");
+assert(LANE_COMBAT.rear.healOutMult > 1, "rear heal stronger");
+assert(SKILLS.shell_guard.counter && SKILLS.venom_bite.dot && SKILLS.prism_shell.shield, "skill effect flags");
+assert(SKILLS.tide_spray.targetRule === "front" && SKILLS.mist_ward.targetRule === "lowest", "targetRule");
+assert(SKILLS.swarm_haze.dot && SKILLS.fang_burst.dot, "bug DoT skills");
+assert(SKILLS.bulwark_pulse.counter && SKILLS.shell_spike.counter, "shell counter skills");
+assert(SKILLS.tidal_veil.shield && SKILLS.prism_burst.targetRule === "front", "scale/light shield or front");
+{
+  const d4 = probeLaneSkillEffects();
+  assert(d4.laneOk, "D4 lane stamp + combat mults");
+  assert(d4.dotOk, "D4 DoT tick");
+  assert(d4.shieldOk, "D4 shield apply");
+  assert(d4.counterOk, "D4 counter on guard");
+  assert(d4.ok, "D4 probe all ok");
+}
 assert(DUNGEON_CHALLENGE_RULES.length >= 5, "challenge rules");
 const chal = pickDailyChallenge("2026-08-26", "tide_2");
 assert(chal?.label && pickDailyChallenge("2026-08-26", "tide_2").id === chal.id, "chal deterministic");
@@ -1087,6 +1107,14 @@ const combatRes = runDungeon(combatSt, "tide_1");
 assert(combatRes.ok && combatRes.combatEvents?.length > 5, "combat events");
 assert(!combatRes.combatStart?.allies?.some((a) => a.isMaster), "no master in combat");
 assert(combatRes.combatStart?.allies?.length >= 1, "combat roster allies");
+assert(
+  combatRes.combatStart.allies.every((a) => a.lane === "front" || a.lane === "rear"),
+  "combat allies stamped with lane"
+);
+assert(
+  combatRes.combatStart.foes.every((f) => f.lane === "front" || f.lane === "rear"),
+  "combat foes stamped with lane"
+);
 assert(combatRes.combatEvents.some((e) => e.type === "strike" || e.type === "text"), "strike or text");
 const strikeEv = combatRes.combatEvents.find((e) => e.type === "strike");
 if (strikeEv) {
