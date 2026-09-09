@@ -91,6 +91,7 @@ import {
   petSkillIds,
   partySynergy,
   personalityCombatFor,
+  personalityCombatForPet,
   gearSetBonus,
   GEAR_SETS,
   DISPATCH_MISSIONS,
@@ -926,8 +927,17 @@ const synSp = partySynergy([
 assert(synSp.labels.some((l) => l.includes("同族血脈")), "same species");
 assert(personalityCombatFor("fierce")?.atkMult === 1.1, "fierce passive");
 assert(personalityCombatFor("gentle")?.sustainBias, "gentle sustain");
+assert(personalityCombatFor("bloodthirst")?.lifesteal > 0, "bloodthirst lifesteal");
+assert(personalityCombatFor("vengeful")?.lowHpAtk > 1, "vengeful lowHpAtk");
+assert(personalityCombatFor("brutal")?.frontAtkMult > 1, "brutal frontAtk");
+assert(personalityCombatFor("arrogant")?.executeAtk > 1, "arrogant execute");
+assert(personalityCombatFor("patient")?.dmgTakenMult < 1, "patient dmgTaken");
+assert(personalityCombatFor("cunning")?.aggroBias, "cunning aggroBias");
 assert(personalityCombatFor("diligent")?.atkMult < 1, "diligent combat soft");
 assert(personalityCombatFor("blessed")?.atkMult >= 1, "blessed combat buff");
+const peBlend = personalityCombatForPet({ personalityId: "bloodthirst", personality2Id: "gentle" });
+assert(peBlend?.lifesteal > 0 && peBlend?.sustainBias, "dual pe blend tags");
+assert(personalityExplain("bloodthirst")?.lifesteal > 0, "explain lifesteal");
 assert(GEAR_SETS.tide && gearSetBonus(["tide_blade", "moss_vest"]).atk === 3, "set2");
 assert(gearSetBonus(["core_fang", "abyss_plate", "gloom_sigil"]).labels.some((l) => l.includes("三件")), "set3");
 assert(DISPATCH_MISSIONS.length >= 3, "dispatch missions");
@@ -3489,7 +3499,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v105"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v106"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

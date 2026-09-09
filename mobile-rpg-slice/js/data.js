@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260909.1";
+export const APP_BUILD = "20260909.2";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -4377,11 +4377,34 @@ export function rarityBreedMutationMult(parentA, parentB) {
 /**
  * 性格戰鬥被動（每寵獨立套用；唔改白板成長公式）
  * 戰鬥向加打減續航；工作向加工減打；祥瑞只加不減
+ * 行為標籤：sustainBias／aggroBias／lifesteal／lowHpAtk／frontAtkMult／executeAtk／dmgTakenMult
  */
 export const PERSONALITY_COMBAT = {
-  fierce: { id: "fierce", label: "烈性：攻擊 +10%，血量 −4%", atkMult: 1.1, hpMult: 0.96, spdMult: 1 },
-  steady: { id: "steady", label: "沉穩：血量 +12%，速度 −5%", atkMult: 1, hpMult: 1.12, spdMult: 0.95 },
-  sly: { id: "sly", label: "狡黠：速度 +10%，攻擊 +4%", atkMult: 1.04, hpMult: 1, spdMult: 1.1 },
+  fierce: {
+    id: "fierce",
+    label: "烈性：攻擊 +10%，血量 −4%；前排輸出微升",
+    atkMult: 1.1,
+    hpMult: 0.96,
+    spdMult: 1,
+    frontAtkMult: 1.08,
+    aggroBias: true,
+  },
+  steady: {
+    id: "steady",
+    label: "沉穩：血量 +12%，速度 −5%；承傷微減",
+    atkMult: 1,
+    hpMult: 1.12,
+    spdMult: 0.95,
+    dmgTakenMult: 0.94,
+  },
+  sly: {
+    id: "sly",
+    label: "狡黠：速度 +10%，攻擊 +4%；偏攻擊技",
+    atkMult: 1.04,
+    hpMult: 1,
+    spdMult: 1.1,
+    aggroBias: true,
+  },
   gentle: {
     id: "gentle",
     label: "溫馴：血量 +6%，受治療／減傷技優先感（續航親和）",
@@ -4390,32 +4413,72 @@ export const PERSONALITY_COMBAT = {
     spdMult: 1,
     sustainBias: true,
   },
-  wild: { id: "wild", label: "狂放：攻擊 +12%，血量 −8%", atkMult: 1.12, hpMult: 0.92, spdMult: 1.04 },
-  brutal: { id: "brutal", label: "殘暴：攻擊 +14%，血量 −6%", atkMult: 1.14, hpMult: 0.94, spdMult: 1 },
+  wild: {
+    id: "wild",
+    label: "狂放：攻擊 +12%，血量 −8%；偏攻擊技",
+    atkMult: 1.12,
+    hpMult: 0.92,
+    spdMult: 1.04,
+    aggroBias: true,
+  },
+  brutal: {
+    id: "brutal",
+    label: "殘暴：攻擊 +14%，血量 −6%；前排輸出微升",
+    atkMult: 1.14,
+    hpMult: 0.94,
+    spdMult: 1,
+    frontAtkMult: 1.1,
+    aggroBias: true,
+  },
   bloodthirst: {
     id: "bloodthirst",
-    label: "嗜血：攻擊 +12%，血量 −10%，速度 +6%",
+    label: "嗜血：攻擊 +12%，血量 −10%，速度 +6%；命中吸血",
     atkMult: 1.12,
     hpMult: 0.9,
     spdMult: 1.06,
+    lifesteal: 0.12,
+    aggroBias: true,
   },
-  arrogant: { id: "arrogant", label: "傲慢：攻擊 +8%，速度 −4%", atkMult: 1.08, hpMult: 1, spdMult: 0.96 },
+  arrogant: {
+    id: "arrogant",
+    label: "傲慢：攻擊 +8%，速度 −4%；對殘血敵人增傷",
+    atkMult: 1.08,
+    hpMult: 1,
+    spdMult: 0.96,
+    executeAtk: 1.12,
+  },
   restless: {
     id: "restless",
-    label: "躁動：速度 +14%，血量 −5%",
+    label: "躁動：速度 +14%，血量 −5%；偏攻擊技",
     atkMult: 1.03,
     hpMult: 0.95,
     spdMult: 1.14,
+    aggroBias: true,
   },
-  vengeful: { id: "vengeful", label: "執念：攻擊 +9%，血量 −3%", atkMult: 1.09, hpMult: 0.97, spdMult: 1.01 },
+  vengeful: {
+    id: "vengeful",
+    label: "執念：攻擊 +9%，血量 −3%；自身殘血時增傷",
+    atkMult: 1.09,
+    hpMult: 0.97,
+    spdMult: 1.01,
+    lowHpAtk: 1.15,
+  },
   cunning: {
     id: "cunning",
-    label: "陰鷙：攻擊 +7%，速度 +10%，血量 −5%",
+    label: "陰鷙：攻擊 +7%，速度 +10%，血量 −5%；偏攻擊技",
     atkMult: 1.07,
     hpMult: 0.95,
     spdMult: 1.1,
+    aggroBias: true,
   },
-  diligent: { id: "diligent", label: "勤懇：攻擊 −6%，血量 +4%", atkMult: 0.94, hpMult: 1.04, spdMult: 0.98 },
+  diligent: {
+    id: "diligent",
+    label: "勤懇：攻擊 −6%，血量 +4%；承傷微減",
+    atkMult: 0.94,
+    hpMult: 1.04,
+    spdMult: 0.98,
+    dmgTakenMult: 0.96,
+  },
   nurturing: {
     id: "nurturing",
     label: "慈育：攻擊 −8%，血量 +8%（續航親和）",
@@ -4426,16 +4489,37 @@ export const PERSONALITY_COMBAT = {
   },
   patient: {
     id: "patient",
-    label: "忍耐：血量 +10%，速度 −8%（續航親和）",
+    label: "忍耐：血量 +10%，速度 −8%（續航親和）；承傷微減",
     atkMult: 0.96,
     hpMult: 1.1,
     spdMult: 0.92,
     sustainBias: true,
+    dmgTakenMult: 0.92,
   },
-  curious: { id: "curious", label: "好奇：速度 +4%，攻擊 −3%", atkMult: 0.97, hpMult: 0.99, spdMult: 1.04 },
-  loyal: { id: "loyal", label: "忠勤：攻擊 −4%，血量 +6%", atkMult: 0.96, hpMult: 1.06, spdMult: 0.99 },
+  curious: {
+    id: "curious",
+    label: "好奇：速度 +4%，攻擊 −3%",
+    atkMult: 0.97,
+    hpMult: 0.99,
+    spdMult: 1.04,
+  },
+  loyal: {
+    id: "loyal",
+    label: "忠勤：攻擊 −4%，血量 +6%；承傷微減",
+    atkMult: 0.96,
+    hpMult: 1.06,
+    spdMult: 0.99,
+    dmgTakenMult: 0.95,
+  },
   blessed: { id: "blessed", label: "祥瑞：攻血速微升", atkMult: 1.03, hpMult: 1.03, spdMult: 1.02 },
-  clever: { id: "clever", label: "機靈：速度 +6%，攻擊 +2%", atkMult: 1.02, hpMult: 1, spdMult: 1.06 },
+  clever: {
+    id: "clever",
+    label: "機靈：速度 +6%，攻擊 +2%；偏攻擊技",
+    atkMult: 1.02,
+    hpMult: 1,
+    spdMult: 1.06,
+    aggroBias: true,
+  },
   noble: { id: "noble", label: "高潔：攻血速微升", atkMult: 1.03, hpMult: 1.03, spdMult: 1.02 },
   serene: {
     id: "serene",
@@ -4451,7 +4535,7 @@ export function personalityCombatFor(personalityId) {
   return PERSONALITY_COMBAT[personalityId] || null;
 }
 
-/** 主 70% + 副 30% 混合性格戰鬥倍率 */
+/** 主 70% + 副 30% 混合性格戰鬥倍率／行為標籤 */
 export function personalityCombatForPet(pet) {
   const a = personalityCombatFor(pet?.personalityId);
   const b = personalityCombatFor(pet?.personality2Id);
@@ -4459,6 +4543,7 @@ export function personalityCombatForPet(pet) {
   if (!b) return a;
   if (!a) return b;
   const blend = (x, y) => 1 + ((x || 1) - 1) * 0.7 + ((y || 1) - 1) * 0.3;
+  const blend01 = (x, y) => (x || 0) * 0.7 + (y || 0) * 0.3;
   return {
     id: `${a.id}+${b.id}`,
     label: `${a.label.split("：")[0]}/${b.label.split("：")[0]}`,
@@ -4466,6 +4551,12 @@ export function personalityCombatForPet(pet) {
     hpMult: blend(a.hpMult, b.hpMult),
     spdMult: blend(a.spdMult, b.spdMult),
     sustainBias: !!(a.sustainBias || b.sustainBias),
+    aggroBias: !!(a.aggroBias || b.aggroBias),
+    lifesteal: blend01(a.lifesteal, b.lifesteal),
+    lowHpAtk: blend(a.lowHpAtk || 1, b.lowHpAtk || 1),
+    frontAtkMult: blend(a.frontAtkMult || 1, b.frontAtkMult || 1),
+    executeAtk: blend(a.executeAtk || 1, b.executeAtk || 1),
+    dmgTakenMult: blend(a.dmgTakenMult || 1, b.dmgTakenMult || 1),
   };
 }
 
@@ -4493,6 +4584,12 @@ export function personalityExplain(personalityId) {
     combatLabel: combat?.label || `${pe.name}：暫無額外戰鬥被動`,
     combat: combat,
     sustainBias: !!combat?.sustainBias,
+    aggroBias: !!combat?.aggroBias,
+    lifesteal: combat?.lifesteal || 0,
+    lowHpAtk: combat?.lowHpAtk || 1,
+    frontAtkMult: combat?.frontAtkMult || 1,
+    executeAtk: combat?.executeAtk || 1,
+    peDmgTakenMult: combat?.dmgTakenMult || 1,
     workFeed: pe.workFeed,
     workDust: pe.workDust,
     workToken: pe.workToken,

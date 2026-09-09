@@ -1511,6 +1511,7 @@ function buildTrainCombatAllies(state) {
       generation: gen,
       sustainBias: !!pe?.sustainBias,
     });
+    stampPersonalityCombatTags(allies[allies.length - 1], pe);
   }
   prepareCombatLanes(allies, formationId, "ally");
   return { allies, synergy, formation, tactics };
@@ -4544,6 +4545,21 @@ function pushCombatText(events, text) {
   events.push({ type: "text", text });
 }
 
+/** 性格行為標籤寫入戰鬥單位（喺 lane 規則之前設 base dmgTaken，之後再乘） */
+function stampPersonalityCombatTags(unit, pe) {
+  if (!unit || !pe) return unit;
+  unit.sustainBias = !!pe.sustainBias;
+  unit.aggroBias = !!pe.aggroBias;
+  unit.lifesteal = pe.lifesteal || 0;
+  unit.lowHpAtk = pe.lowHpAtk > 1 ? pe.lowHpAtk : 1;
+  unit.frontAtkMult = pe.frontAtkMult > 1 ? pe.frontAtkMult : 1;
+  unit.executeAtk = pe.executeAtk > 1 ? pe.executeAtk : 1;
+  if (pe.dmgTakenMult && pe.dmgTakenMult !== 1) {
+    unit.dmgTakenMult = (unit.dmgTakenMult != null ? unit.dmgTakenMult : 1) * pe.dmgTakenMult;
+  }
+  return unit;
+}
+
 function dealStrike(actor, target, power, transcript, events, skillName, opts = {}) {
   if (!target || target.hp <= 0) return;
   const pMult = skillPowerMult(actor.skillLevel || 1);
@@ -4553,6 +4569,15 @@ function dealStrike(actor, target, power, transcript, events, skillName, opts = 
   }
   const dealtMult = actor.dmgDealtMult != null ? actor.dmgDealtMult : 1;
   dmg = Math.max(1, Math.floor(dmg * dealtMult));
+  if ((actor.frontAtkMult || 1) > 1 && actor.lane === "front") {
+    dmg = Math.max(1, Math.floor(dmg * actor.frontAtkMult));
+  }
+  if ((actor.lowHpAtk || 1) > 1 && actor.maxHp > 0 && actor.hp / actor.maxHp < 0.5) {
+    dmg = Math.max(1, Math.floor(dmg * actor.lowHpAtk));
+  }
+  if ((actor.executeAtk || 1) > 1 && target.maxHp > 0 && target.hp / target.maxHp < 0.35) {
+    dmg = Math.max(1, Math.floor(dmg * actor.executeAtk));
+  }
   const { mult, tag } = elementMatchup(actor.elementId, target.elementId);
   dmg = Math.max(1, Math.floor(dmg * mult));
   if (actor.atkBuffTurns > 0) dmg = Math.max(1, Math.floor(dmg * (1 + (actor.atkBuffPct || 0))));
@@ -4602,6 +4627,13 @@ function dealStrike(actor, target, power, transcript, events, skillName, opts = 
           : null,
       targetBuff: target.guardTurns > 0 ? "甲盾" : target.shieldHp > 0 ? "護盾" : null,
     });
+  }
+  if ((actor.lifesteal || 0) > 0 && hpDmg > 0 && actor.hp > 0) {
+    const heal = Math.max(1, Math.floor(hpDmg * actor.lifesteal));
+    actor.hp = Math.min(actor.maxHp, actor.hp + heal);
+    const lifeLine = `${actor.name} 嗜血回復 ${heal}。`;
+    transcript.push(lifeLine);
+    pushCombatText(events, lifeLine);
   }
   if (
     !opts.fromCounter &&
@@ -4751,10 +4783,16 @@ function act(actor, allies, foes, transcript, events, tactics = "balanced") {
     let skill;
     const preferSustain =
       (tactics === "sustain" && actor.side === "ally") || (actor.side === "ally" && actor.sustainBias);
+    const preferAggro = actor.side === "ally" && actor.aggroBias && !preferSustain;
     if (preferSustain) {
       const sustain = ready.filter((s) => s.type === "heal" || s.type === "guard");
       skill = sustain.length
         ? sustain[Math.floor(Math.random() * sustain.length)]
+        : ready[Math.floor(Math.random() * ready.length)];
+    } else if (preferAggro) {
+      const aggro = ready.filter((s) => s.type === "strike" || s.type === "cleave" || s.type === "debuff");
+      skill = aggro.length
+        ? aggro[Math.floor(Math.random() * aggro.length)]
         : ready[Math.floor(Math.random() * ready.length)];
     } else {
       skill = ready[Math.floor(Math.random() * ready.length)];
@@ -5048,6 +5086,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
       generation: gen,
       sustainBias: !!pe?.sustainBias,
     });
+    stampPersonalityCombatTags(allies[allies.length - 1], pe);
   }
 
   if (!allies.length) {
@@ -7029,6 +7068,7 @@ function buildAbyssCombatAllies(state, run) {
       sustainBias: !!st.pe?.sustainBias,
       dmgTakenMult: st.dmgTakenMult || 1,
     });
+    stampPersonalityCombatTags(allies[allies.length - 1], st.pe);
   }
   return { allies, synergy, formation, tactics };
 }
