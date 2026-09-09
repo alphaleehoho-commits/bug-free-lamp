@@ -198,6 +198,7 @@ import {
   OFFLINE_CLAIM_MIN_SEC,
   OFFLINE_BANK_CAP_SEC,
   releaseSoulGain,
+  eggDissolveSoul,
   releaseRefund,
   SOUL_SHOP_OFFERS,
   soulShopOfferById,
@@ -301,6 +302,9 @@ import {
   releasePet,
   releasePets,
   previewReleaseSoul,
+  dissolveEgg,
+  suggestRanchCullUids,
+  ranchCapView,
   togglePetStarred,
   togglePetLocked,
   setPetStarred,
@@ -3099,9 +3103,57 @@ assert(cssSrc.includes("pet-explain"), "css pet explain blocks");
   assert(MATERIALS.soul_essence?.name === "精魂", "soul_essence material");
   assert(emptyMaterials().soul_essence === 0, "empty mats has soul");
   const baseSoul = releaseSoulGain({ level: 1, rarity: 0, fusionLevel: 0, generation: 1 });
-  assert(baseSoul === 6, `lv1 common soul=6 got ${baseSoul}`);
+  assert(baseSoul === 2, `lv1 common soul=2 got ${baseSoul}`);
   const rareSoul = releaseSoulGain({ level: 10, rarity: 1, fusionLevel: 1, generation: 2 });
-  assert(rareSoul === 36, `rare formula got ${rareSoul}`);
+  assert(rareSoul === 37, `rare formula got ${rareSoul}`);
+  const starredFresh = releaseSoulGain({ level: 1, rarity: 0, fusionLevel: 0, generation: 1, starred: true });
+  assert(starredFresh === baseSoul, "star marker does not change soul");
+  const invested = releaseSoulGain({ level: 5, rarity: 0, fusionLevel: 0, generation: 1 });
+  assert(invested > baseSoul, "leveled pet worth more soul than fresh");
+
+  assert(eggDissolveSoul({ source: "breed", generation: 1, genes: { rarity: 0 } }) === 1, "breed egg dissolve gen1");
+  assert(eggDissolveSoul({ source: "breed", generation: 3, genes: { rarity: 1, hybrid: true } }) === 5, "breed egg dissolve gen3 hybrid");
+  assert(eggDissolveSoul({ source: "shop", tier: "C" }) === 1, "shop C dissolve");
+  assert(eggDissolveSoul({ tier: "A" }) === 3, "shop A dissolve");
+  const hatchSoul = releaseSoulGain({ level: 1, rarity: 0, fusionLevel: 0, generation: 1 });
+  assert(eggDissolveSoul({ source: "breed", generation: 1, genes: {} }) <= hatchSoul, "dissolve <= fresh release");
+
+  const dissSt = {
+    eggs: [{ uid: "egg-d1", source: "breed", name: "一代獸蛋", generation: 1, genes: { rarity: 0 }, tier: "C" }],
+    materials: { ...emptyMaterials() },
+    stats: {},
+    log: [],
+  };
+  const diss = dissolveEgg(dissSt, "egg-d1");
+  assert(diss.ok && diss.soul === 1 && dissSt.eggs.length === 0, "dissolve removes egg");
+  assert(Math.floor(dissSt.materials.soul_essence) === 1, "dissolve banks soul");
+  const hatchingBlock = dissolveEgg(
+    {
+      eggs: [{ uid: "egg-h", source: "breed", generation: 1, genes: {}, startedAt: 1, readyAt: Date.now() + 99999 }],
+      materials: { ...emptyMaterials() },
+      stats: {},
+      log: [],
+    },
+    "egg-h"
+  );
+  assert(!hatchingBlock.ok, "cannot dissolve hatching egg");
+
+  const cullSt = {
+    ranch: [
+      { ...makeStarterPet(), uid: "cull-weak", level: 1, rarity: 0, starred: false, locked: false },
+      { ...makeStarterPet(), uid: "cull-star", level: 1, rarity: 0, starred: true, locked: false },
+      { ...makeStarterPet(), uid: "cull-strong", level: 20, rarity: 2, starred: false, locked: false },
+    ],
+    pets: [],
+    breedJobs: [],
+    dispatches: [],
+  };
+  const cull = suggestRanchCullUids(cullSt, 1);
+  assert(cull[0] === "cull-weak", "cull prefers weak unstarred");
+  assert(!cull.includes("cull-star"), "cull skips starred");
+  const rcv = ranchCapView({ realm: 0, ranch: cullSt.ranch, itemBonus: { ranchCap: 0, hatchSlots: 0 } });
+  assert(rcv.used === 3 && rcv.cap >= 3, "ranchCapView counts");
+
   const oldRef = releaseRefund({ level: 5, fusionLevel: 1 });
   assert(oldRef.stones === 0 && oldRef.feed === 0 && oldRef.dust === 0 && oldRef.soul > 0, "legacy refund is soul-only");
 
@@ -3437,7 +3489,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v106"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v108"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

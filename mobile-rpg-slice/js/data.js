@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260909.2";
+export const APP_BUILD = "20260909.4";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -4550,7 +4550,7 @@ export const MATERIALS = {
   soul_essence: {
     id: "soul_essence",
     name: "精魂",
-    desc: "放生靈寵所得 · 精魂商人兌換飼料／材料／道具",
+    desc: "放生／潮還蛋所得 · 養成／稀有／融合越高越賺 · 精魂商人兌換",
     tier: "soul",
   },
 };
@@ -5866,16 +5866,40 @@ export function bestiaryCombatBonus(discoveredCount) {
 }
 
 /**
- * 放生精魂公式（只返還精魂，唔再退石／飼料／塵）：
- * 基礎 4 ＋ 等級×2 ＋ 稀有×6 ＋ 融階×4 ＋（代數−1）×2
- * 例：普 Lv1 → 6；稀有 Lv10 融1 二代 → 4+20+6+4+2 = 36
+ * 放生精魂：壓低出殼即賣，抬高養成／稀有／融合（星標只係 UI 標記，唔加精魂）。
+ * 基礎 2 ＋ 等級×2 ＋ 稀有×8 ＋ 融階×5 ＋（代數−1）×2
+ * 未養成普通幼寵（Lv≤1、無融、普通）：封頂 2＋（代數−1）
+ * 例：普 Lv1 → 2；稀有 Lv10 融1 二代 → 2+20+8+5+2 = 37
  */
 export function releaseSoulGain(pet) {
   const lv = Math.max(1, pet?.level ?? 1);
   const fus = Math.max(0, pet?.fusionLevel ?? 0);
   const rar = Math.max(0, Math.min(RARITY_MAX, pet?.rarity ?? 0));
   const gen = Math.max(1, petGeneration(pet) || 1);
-  return Math.max(1, 4 + lv * 2 + rar * 6 + fus * 4 + (gen - 1) * 2);
+  let soul = 2 + lv * 2 + rar * 8 + fus * 5 + (gen - 1) * 2;
+  const freshFodder = lv <= 1 && rar === 0 && fus === 0;
+  if (freshFodder) {
+    soul = Math.min(soul, 2 + (gen - 1));
+  }
+  return Math.max(1, soul);
+}
+
+/**
+ * 未孵蛋化精（潮還）：精魂低於孵出後放生，鼓勵早篩唔好雙重等待。
+ * 繁殖蛋跟 genes 代數／稀有；商店蛋跟品階。
+ */
+export function eggDissolveSoul(egg) {
+  if (!egg) return 1;
+  if (egg.source === "breed") {
+    const gen = Math.max(1, Math.min(GEN_MAX, (egg.generation ?? egg.genes?.generation ?? 1) | 0));
+    const rar = Math.max(0, Math.min(RARITY_MAX, (egg.genes?.rarity ?? 0) | 0));
+    const hybridBonus = egg.genes?.hybrid || egg.genes?.tertiary ? 1 : 0;
+    return Math.max(1, 1 + (gen - 1) + Math.min(2, rar) + hybridBonus);
+  }
+  const tier = String(egg.tier || "C").toUpperCase();
+  if (tier === "A") return 3;
+  if (tier === "B") return 2;
+  return 1;
 }
 
 /** @deprecated 舊放生石／飼料／塵；保留別名以便舊測試／註解對照 */

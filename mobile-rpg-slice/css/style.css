@@ -957,6 +957,19 @@ body {
 .hatch-claim-all-row .primary {
   flex: 1;
 }
+.hatch-ranch-warn {
+  color: #e8b86d;
+  margin: 0.2rem 0 0.35rem;
+}
+.hatch-ranch-warn .linkish {
+  margin-left: 0.35rem;
+}
+.hatch-inv-row .row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
 .hatch-egg-filters {
   margin-bottom: 0.35rem;
 }
