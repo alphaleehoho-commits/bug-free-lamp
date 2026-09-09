@@ -4550,7 +4550,7 @@ export const MATERIALS = {
   soul_essence: {
     id: "soul_essence",
     name: "精魂",
-    desc: "放生／潮還蛋所得 · 養成越高越賺 · 精魂商人兌換",
+    desc: "放生／潮還蛋所得 · 養成／稀有／融合越高越賺 · 精魂商人兌換",
     tier: "soul",
   },
 };
@@ -5866,19 +5866,18 @@ export function bestiaryCombatBonus(discoveredCount) {
 }
 
 /**
- * 放生精魂：壓低出殼即賣，抬高養成／稀有／融合／星標。
- * 基礎 2 ＋ 等級×2 ＋ 稀有×8 ＋ 融階×5 ＋（代數−1）×2 ＋ 星標×4
- * 未養成普通幼寵（Lv≤1、無融、無星、普通）：封頂 2＋（代數−1）
- * 例：普 Lv1 → 2；稀有 Lv10 融1 二代 → 2+20+8+5+2 = 37；星標普 Lv1 → 8
+ * 放生精魂：壓低出殼即賣，抬高養成／稀有／融合（星標只係 UI 標記，唔加精魂）。
+ * 基礎 2 ＋ 等級×2 ＋ 稀有×8 ＋ 融階×5 ＋（代數−1）×2
+ * 未養成普通幼寵（Lv≤1、無融、普通）：封頂 2＋（代數−1）
+ * 例：普 Lv1 → 2；稀有 Lv10 融1 二代 → 2+20+8+5+2 = 37
  */
 export function releaseSoulGain(pet) {
   const lv = Math.max(1, pet?.level ?? 1);
   const fus = Math.max(0, pet?.fusionLevel ?? 0);
   const rar = Math.max(0, Math.min(RARITY_MAX, pet?.rarity ?? 0));
   const gen = Math.max(1, petGeneration(pet) || 1);
-  const star = pet?.starred ? 4 : 0;
-  let soul = 2 + lv * 2 + rar * 8 + fus * 5 + (gen - 1) * 2 + star;
-  const freshFodder = lv <= 1 && rar === 0 && fus === 0 && !pet?.starred;
+  let soul = 2 + lv * 2 + rar * 8 + fus * 5 + (gen - 1) * 2;
+  const freshFodder = lv <= 1 && rar === 0 && fus === 0;
   if (freshFodder) {
     soul = Math.min(soul, 2 + (gen - 1));
   }

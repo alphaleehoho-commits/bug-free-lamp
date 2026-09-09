@@ -3107,7 +3107,7 @@ assert(cssSrc.includes("pet-explain"), "css pet explain blocks");
   const rareSoul = releaseSoulGain({ level: 10, rarity: 1, fusionLevel: 1, generation: 2 });
   assert(rareSoul === 37, `rare formula got ${rareSoul}`);
   const starredFresh = releaseSoulGain({ level: 1, rarity: 0, fusionLevel: 0, generation: 1, starred: true });
-  assert(starredFresh === 8, `starred lv1 soul=8 got ${starredFresh}`);
+  assert(starredFresh === baseSoul, "star marker does not change soul");
   const invested = releaseSoulGain({ level: 5, rarity: 0, fusionLevel: 0, generation: 1 });
   assert(invested > baseSoul, "leveled pet worth more soul than fresh");
 
