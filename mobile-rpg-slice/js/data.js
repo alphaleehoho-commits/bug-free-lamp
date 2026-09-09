@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260909.5";
+export const APP_BUILD = "20260909.6";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -4491,6 +4491,14 @@ export const PERSONALITY_ROLE_LABEL = {
   blessed: "祥瑞",
 };
 
+/** 短標：戰魂／職魂（卡面・繁殖預覽） */
+export const PERSONALITY_ROLE_SHORT = {
+  fight: "戰魂",
+  work: "職魂",
+  balanced: "衡魂",
+  blessed: "瑞魂",
+};
+
 /** 性格詳情：成長偏向＋戰鬥被動文案 */
 export function personalityExplain(personalityId) {
   const pe = PERSONALITIES[personalityId];
@@ -4501,6 +4509,7 @@ export function personalityExplain(personalityId) {
     name: pe.name,
     role: pe.role,
     roleLabel: PERSONALITY_ROLE_LABEL[pe.role] || pe.role || "—",
+    roleShort: PERSONALITY_ROLE_SHORT[pe.role] || pe.role || "—",
     growthAtk: pe.atk,
     growthHp: pe.hp,
     growthSpd: pe.spd,
@@ -5827,8 +5836,8 @@ export function partySynergy(pets) {
     }
   }
   if (kinship) {
-    atkMult *= 1.06;
-    hpMult *= 1.06;
+    atkMult *= 1.08;
+    hpMult *= 1.08;
     labels.push("親子羈絆（攻血↑）");
   }
 

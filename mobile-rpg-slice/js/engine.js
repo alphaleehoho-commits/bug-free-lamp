@@ -90,6 +90,8 @@ import {
   RARITY_MAX,
   SPECIES,
   PERSONALITIES,
+  PERSONALITY_ROLE_LABEL,
+  PERSONALITY_ROLE_SHORT,
   petGeneration,
   genLabel,
   childGenerationOdds,
@@ -6532,6 +6534,29 @@ export function breedPreview(petA, petB) {
     matCost,
     genOdds: odds,
     outcomes,
+    temperParents: [
+      (() => {
+        const pe = PERSONALITIES[petA.personalityId];
+        return {
+          name: displayPetName(petA),
+          personalityName: petA.personalityName || pe?.name || "—",
+          role: pe?.role || null,
+          roleShort: PERSONALITY_ROLE_SHORT[pe?.role] || null,
+          roleLabel: PERSONALITY_ROLE_LABEL[pe?.role] || null,
+        };
+      })(),
+      (() => {
+        const pe = PERSONALITIES[petB.personalityId];
+        return {
+          name: displayPetName(petB),
+          personalityName: petB.personalityName || pe?.name || "—",
+          role: pe?.role || null,
+          roleShort: PERSONALITY_ROLE_SHORT[pe?.role] || null,
+          roleLabel: PERSONALITY_ROLE_LABEL[pe?.role] || null,
+        };
+      })(),
+    ],
+    temperNote: "子代性格多從雙親主／副性格池遺傳（約一成突變）；戰魂偏打、職魂偏牧場",
     statPreview: {
       atk: [statLo.atk + (loAwaken?.atk || 0), statHi.atk + (hiAwaken?.atk || 0)],
       hp: [statLo.hp + (loAwaken?.hp || 0), statHi.hp + (hiAwaken?.hp || 0)],
@@ -6542,24 +6567,41 @@ export function breedPreview(petA, petB) {
   };
 }
 
-/** UI：血統（父母／子代） */
+function lineageMember(state, id) {
+  const hit = findOwnedPet(state, id);
+  if (hit) {
+    return {
+      uid: id,
+      name: displayPetName(hit.pet),
+      generation: petGeneration(hit.pet),
+      speciesName: SPECIES[hit.pet.speciesId]?.name || hit.pet.name,
+      exists: true,
+      deployed: (state.pets || []).some((x) => x.uid === id),
+    };
+  }
+  return { uid: id, name: "已放歸", exists: false, deployed: false };
+}
+
+/** UI：血統（父母／祖父母／子代） */
 export function petLineage(state, uid) {
   const found = findOwnedPet(state, uid);
   if (!found) return null;
   const pet = found.pet;
-  const parents = (pet.bornFrom || []).map((id) => {
-    const hit = findOwnedPet(state, id);
-    if (hit) {
-      return {
-        uid: id,
-        name: displayPetName(hit.pet),
-        generation: petGeneration(hit.pet),
-        speciesName: SPECIES[hit.pet.speciesId]?.name || hit.pet.name,
-        exists: true,
-      };
+  const parents = (pet.bornFrom || []).map((id) => lineageMember(state, id));
+  const seenGp = new Set();
+  const grandparents = [];
+  for (const parent of parents) {
+    if (!parent.exists) continue;
+    const parentPet = findOwnedPet(state, parent.uid)?.pet;
+    for (const gpId of parentPet?.bornFrom || []) {
+      if (!gpId || seenGp.has(gpId) || gpId === uid) continue;
+      seenGp.add(gpId);
+      const gp = lineageMember(state, gpId);
+      gp.viaUid = parent.uid;
+      gp.viaName = parent.name;
+      grandparents.push(gp);
     }
-    return { uid: id, name: "已放歸", exists: false };
-  });
+  }
   const children = [];
   for (const p of [...(state.pets || []), ...(state.ranch || [])]) {
     if ((p.bornFrom || []).includes(uid)) {
@@ -6572,10 +6614,16 @@ export function petLineage(state, uid) {
       });
     }
   }
+  const selfDeployed = (state.pets || []).some((x) => x.uid === uid);
+  const kinshipActive =
+    selfDeployed &&
+    (parents.some((p) => p.deployed) || children.some((c) => c.deployed));
   return {
     generation: petGeneration(pet),
     parents,
+    grandparents,
     children,
+    kinshipActive,
     hasLineage: parents.length > 0 || children.length > 0,
   };
 }
