@@ -3096,7 +3096,7 @@ function cultivatePanel(qiPct, next, m) {
           })
           .join("") || `<li class="empty">暫無精魂貨物。</li>`;
       shopBody = `<h2>商肆 · 精魂</h2>
-      <p class="lead">精魂 ${soulN} · 放生／潮還所得（養成越高越賺）兌換飼料／材料／道具</p>
+      <p class="lead">精魂 ${soulN} · 放生／潮還所得（養成／稀有／融合越高越賺）兌換飼料／材料／道具</p>
       <ul class="list">${soulRows}</ul>`;
     } else if (shopInner === "grit") {
       const cosRows = (gritV.cosmeticList || gritV.cosmeticsList || [])
