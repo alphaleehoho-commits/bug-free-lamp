@@ -4134,6 +4134,7 @@ function petDetailTemperHtml(pet) {
         <p class="meta">成長偏向 攻${fmtGrowthMult(ex.growthAtk)} · 血${fmtGrowthMult(ex.growthHp)} · 速${fmtGrowthMult(ex.growthSpd)}</p>
         ${ex.sustainBias ? `<p class="meta muted">續航親和：治療／減傷技較易惠及此寵</p>` : ""}
         <p class="meta muted">牧場產出 飼料×${(+ex.workFeed).toFixed(2)} · 靈塵×${(+ex.workDust).toFixed(2)} · 潮霧令×${(+ex.workToken).toFixed(2)}</p>
+        <p class="meta muted">派遣 時長×${(+ex.dispatchTime).toFixed(2)} · 獎勵×${(+ex.dispatchReward).toFixed(2)} · 繁殖冷卻×${(+ex.breedCdMult).toFixed(2)}</p>
       </div>`;
   };
   return `

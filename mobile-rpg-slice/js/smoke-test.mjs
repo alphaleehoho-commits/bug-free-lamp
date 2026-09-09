@@ -470,6 +470,16 @@ assert(DISPATCH_GEN_REWARD_MULT[3] === 1.25, "gen3 dispatch mult");
 assert(IDLE_BY_PERSONALITY.diligent?.feed > IDLE_BY_PERSONALITY.fierce?.feed, "work>fight feed");
 assert(PERSONALITIES.blessed.workFeed >= 1 && PERSONALITIES.blessed.atk >= 1, "blessed no penalty");
 assert(PERSONALITIES.brutal.atk > 1 && PERSONALITIES.brutal.workFeed < 1, "fight tradeoff");
+for (const id of Object.keys(PERSONALITIES)) {
+  const pe = PERSONALITIES[id];
+  assert(typeof pe.dispatchReward === "number" && pe.dispatchReward > 0, `dispatchReward ${id}`);
+  assert(typeof pe.breedCdMult === "number" && pe.breedCdMult > 0, `breedCdMult ${id}`);
+}
+assert(PERSONALITIES.diligent.dispatchReward >= 1.08 && PERSONALITIES.diligent.dispatchReward <= 1.22, "work dispatchReward band");
+assert(PERSONALITIES.wild.dispatchReward <= 1.0 && PERSONALITIES.wild.dispatchReward >= 0.88, "fight dispatchReward band");
+assert(PERSONALITIES.nurturing.breedCdMult < PERSONALITIES.wild.breedCdMult, "nurturing faster breed than wild");
+assert(personalityExplain("diligent")?.dispatchReward === PERSONALITIES.diligent.dispatchReward, "explain dispatchReward");
+assert(personalityExplain("patient")?.breedCdMult === PERSONALITIES.patient.breedCdMult, "explain breedCdMult");
 const mig = migrateBestiaryMap({
   "reefox:tide:fierce:none": true,
   "reefox:tide:gentle:none": true,
@@ -2112,6 +2122,56 @@ if (beforeStones) {
 assert(dispSt.dispatchBoard.length >= 1, "claim refills dispatch board");
 assert(claimR.boardFilled, "claim returns boardFilled id");
 
+/* D1: personality dispatchReward multiplies claim payout (main only) */
+{
+  const baseStones = mission.reward?.stones || 0;
+  function claimPe(peId) {
+    const pet = {
+      ...buildPetStats({
+        id: `pe-${peId}`,
+        species: "reefox",
+        element: "tide",
+        personality: peId,
+        cost: 0,
+      }),
+      uid: "disp-pe",
+      generation: 1,
+    };
+    const st = {
+      stones: 0,
+      scrap: 0,
+      feed: 0,
+      dust: 0,
+      materials: {},
+      ranch: [pet],
+      pets: [],
+      dispatches: [
+        {
+          dispatchId: "d-pe",
+          missionId: mission.id,
+          petUids: ["disp-pe"],
+          readyAt: Date.now() - 1,
+          claimed: false,
+        },
+      ],
+      dispatchBoard: [],
+      stats: {},
+      daily: { date: todayKey(), progress: {}, claimed: {}, idleSec: 0 },
+      log: [],
+      achievements: { dispatch_once: true },
+    };
+    claimDispatch(st, "d-pe", () => 0);
+    return st.stones;
+  }
+  const workStones = claimPe("diligent");
+  const fightStones = claimPe("wild");
+  const expectWork = Math.max(1, Math.round(baseStones * PERSONALITIES.diligent.dispatchReward));
+  const expectFight = Math.max(1, Math.round(baseStones * PERSONALITIES.wild.dispatchReward));
+  assert(workStones === expectWork, "diligent claimDispatch dispatchReward");
+  assert(fightStones === expectFight, "wild claimDispatch dispatchReward");
+  assert(workStones > fightStones, "work pe reward > fight pe reward");
+}
+
 /* Dispatch board rotate + slot cap + restrictions */
 const dispTidePet = {
   ...buildPetStats({
@@ -2455,7 +2515,11 @@ assert(batchSt.breedJobs[0].batch === 10 && batchSt.breedJobs[0].cycles.length =
 assert(batchSt.stones === stonesBeforeBatch - BREED_STONE_COST * 10, "stones ×10");
 assert(batchSt.materials.coral_shard === coralBeforeBatch - breedMatCost(0, 0).coral_shard * 10, "coral ×10");
 const t0 = batchSt.breedJobs[0].startedAt;
-assert(batchSt.breedJobs[0].readyAt === t0 + BREED_COOLDOWN_MS * 10, "10× duration 450s");
+const gentleCd =
+  ((PERSONALITIES.gentle.breedCdMult || 1) + (PERSONALITIES.gentle.breedCdMult || 1)) / 2;
+const expectCycleMs = Math.round(BREED_COOLDOWN_MS * gentleCd);
+assert(batchSt.breedJobs[0].cycleMs === expectCycleMs, "breed cycleMs applies breedCdMult");
+assert(batchSt.breedJobs[0].readyAt === t0 + expectCycleMs * 10, "10× duration with pe cd");
 const job10 = batchSt.breedJobs[0];
 const fakeNow = Date.now();
 job10.startedAt = fakeNow - 92_000;

@@ -3489,7 +3489,19 @@ export function claimDispatch(state, dispatchId, rng = Math.random) {
       : maxGen >= 2
         ? DISPATCH_GEN_REWARD_MULT[2] || 1.1
         : 1;
-  const scaled = scaleReward(mission?.reward, genMult);
+  const rewardMults = (d.petUids || []).map((uid) => {
+    const hit = findOwnedPet(state, uid);
+    const pe = PERSONALITIES[hit?.pet?.personalityId];
+    const pe2 = PERSONALITIES[hit?.pet?.personality2Id];
+    if (!pe && !pe2) return 1;
+    if (!pe2) return pe.dispatchReward ?? 1;
+    if (!pe) return pe2.dispatchReward ?? 1;
+    return (pe.dispatchReward ?? 1) * 0.7 + (pe2.dispatchReward ?? 1) * 0.3;
+  });
+  const peRewardMult = rewardMults.length
+    ? rewardMults.reduce((a, b) => a + b, 0) / rewardMults.length
+    : 1;
+  const scaled = scaleReward(mission?.reward, genMult * peRewardMult);
   applyReward(state, scaled);
   let eggGot = null;
   const chance = mission?.eggChance;
@@ -6122,7 +6134,11 @@ export function tryBreed(state, uidA, uidB, count = 1) {
   }
 
   const now = Date.now();
-  const cdMult = rarityBreedCdMult(a, b);
+  const peCdMult =
+    ((PERSONALITIES[a.personalityId]?.breedCdMult || 1) +
+      (PERSONALITIES[b.personalityId]?.breedCdMult || 1)) /
+    2;
+  const cdMult = rarityBreedCdMult(a, b) * peCdMult;
   const cycleMs = Math.round(BREED_COOLDOWN_MS * cdMult);
   const parentSnap = [snapshotBreedParent(a), snapshotBreedParent(b)];
   /** 每週期預 roll genes，並即時結算天生（領蛋唔依賴雙親仍在） */
