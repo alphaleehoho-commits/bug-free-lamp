@@ -205,6 +205,7 @@ import {
   elementExplain,
   kindExplain,
   personalityExplain,
+  PERSONALITY_ROLE_SHORT,
   skillTypeLabel,
   ELEMENT_EXPLAIN,
   KIND_EXPLAIN,
@@ -924,7 +925,8 @@ const synKin = partySynergy([
   { uid: "c1", elementId: "tide", kind: "獸", speciesId: "tideling", generation: 2, bornFrom: ["p1", "p2"] },
 ]);
 assert(synKin.labels.some((l) => l.includes("親子")), "kinship bond");
-assert(synKin.atkMult > 1.07, "kinship atk");
+assert(synKin.atkMult > 1.14, "kinship atk");
+assert(Math.abs(synKin.atkMult - 1.07 * 1.08) < 1e-9, "kinship × dual-element");
 const synSp = partySynergy([
   { uid: "a", elementId: "gale", kind: "禽", speciesId: "ashwing", generation: 1 },
   { uid: "b", elementId: "flame", kind: "禽", speciesId: "ashwing", generation: 1 },
@@ -1630,6 +1632,8 @@ assert(
   "preview shows main/sub hybrid rows"
 );
 assert(prev.genMult >= 1, "preview exposes genMult");
+assert(prev.temperParents?.length === 2 && prev.temperParents[1].roleShort === "戰魂", "preview temper soul tags");
+assert(prev.temperNote?.includes("戰魂"), "preview temper note");
 
 const breedGoalNavSt = {
   realm: 2,
@@ -1654,12 +1658,32 @@ assert(
 
 const lineSt = {
   pets: [{ uid: "c1", speciesId: "glintfox", name: "耀狐", bornFrom: ["a", "b"], generation: 2 }],
-  ranch: [{ uid: "a", speciesId: "reefox", name: "礁狐", generation: 1 }],
+  ranch: [
+    { uid: "a", speciesId: "reefox", name: "礁狐", generation: 1, bornFrom: ["gp1", "gp2"] },
+    { uid: "gp1", speciesId: "tideling", name: "潮仔", generation: 0 },
+  ],
 };
 const lin = petLineage(lineSt, "c1");
 assert(lin.parents.length === 2 && lin.children.length === 0, "lineage parents");
+assert(lin.grandparents?.length >= 1 && lin.grandparents.some((g) => g.uid === "gp1"), "lineage grandparents");
+assert(lin.grandparents.find((g) => g.uid === "gp1")?.viaUid === "a", "grandparent via parent");
 const linA = petLineage(lineSt, "a");
 assert(linA.children.length === 1, "lineage children");
+const kinLine = petLineage(
+  {
+    pets: [
+      { uid: "p1", speciesId: "reefox", name: "父", generation: 1 },
+      { uid: "c1", speciesId: "glintfox", name: "子", bornFrom: ["p1", "p2"], generation: 2 },
+    ],
+    ranch: [],
+  },
+  "c1"
+);
+assert(kinLine.kinshipActive, "lineage kinship when parent co-deployed");
+
+assert(PERSONALITY_ROLE_SHORT.fight === "戰魂" && PERSONALITY_ROLE_SHORT.work === "職魂", "soul short labels");
+assert(personalityExplain("fierce")?.roleShort === "戰魂", "fierce roleShort");
+assert(personalityExplain("gentle")?.roleShort === "職魂", "gentle roleShort");
 
 const inh = breedStatInheritancePreview(foxA, finB, { rarity: 1, generation: 2, hybrid: true });
 assert(inh.atk >= 0 && inh.hp >= 0, "inherit preview");
@@ -3116,6 +3140,12 @@ assert(uiSrc2.includes("petDetailSkillsHtml"), "ui skills tab helper");
 assert(uiSrc2.includes("戰鬥被動"), "ui personality combat copy");
 assert(uiSrc2.includes("相剋"), "ui element matchup copy");
 assert(uiSrc2.includes("data-upgrade-skill") && uiSrc2.includes("data-temper-oil"), "ui keep upgrade/temper");
+assert(uiSrc2.includes("personalitySoulTagHtml"), "ui soul role tags");
+assert(uiSrc2.includes("pet-tag-soul"), "ui soul tag class");
+assert(uiSrc2.includes("pet-tag-kin"), "ui kinship tag");
+assert(uiSrc2.includes("祖父母"), "ui grandparents lineage");
+assert(uiSrc2.includes("雙親性格"), "ui breed preview temper");
+assert(uiSrc2.includes("partyKinshipUidSet"), "ui party kinship helper");
 assert(cssSrc.includes("pet-detail-tabs"), "css pet detail tabs");
 assert(cssSrc.includes("pet-explain"), "css pet explain blocks");
 
@@ -3510,7 +3540,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v109"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v110"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");
