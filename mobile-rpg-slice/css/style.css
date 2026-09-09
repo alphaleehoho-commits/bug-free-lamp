@@ -863,6 +863,27 @@ body {
 .hatch-claim-overlay .hatch-claim-card {
   max-height: min(52vh, calc(var(--app-h, 100dvh) * 0.55));
 }
+.hatch-claim-overlay.is-celebrate .hatch-claim-card {
+  border-color: rgba(232, 184, 109, 0.55);
+  box-shadow: 0 0 0 1px rgba(232, 184, 109, 0.2);
+}
+.hatch-reveal-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  margin: 0.15rem 0 0.2rem;
+}
+.hatch-reveal-tag {
+  font-size: 0.55rem;
+  padding: 0.08rem 0.28rem;
+  border-radius: 4px;
+  background: rgba(232, 184, 109, 0.18);
+  color: #f0d6a0;
+  border: 1px solid rgba(232, 184, 109, 0.35);
+}
+.hatch-claim-row.is-reveal {
+  border-color: rgba(126, 184, 163, 0.4);
+}
 .hatch-panel .lead {
   margin-bottom: 0.35rem;
 }
@@ -1132,6 +1153,8 @@ button.flash-act {
   background: rgba(0, 0, 0, 0.15);
 }
 .breed-outcome-hybrid strong { color: #e8b86d; }
+.breed-outcome-hybrid-sub strong { color: #c9a86a; }
+.breed-outcome-tertiary strong { color: #d4a5ff; }
 .breed-outcome-inherit strong { color: var(--muted); }
 .breed-chip-row {
   display: flex;
