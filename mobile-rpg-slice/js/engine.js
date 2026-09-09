@@ -93,6 +93,7 @@ import {
   genLabel,
   childGenerationOdds,
   hybridRecipeForKinds,
+  hybridRecipesForKinds,
   tertiaryRecipesForParents,
   genPowerMult,
   BREED_GOALS,
@@ -3803,7 +3804,11 @@ export function startHatch(state, eggUid, now = Date.now()) {
   const hatchMs = tutShort ? TUTORIAL_EGG_HATCH_MS : eggHatchMsFor(egg, t);
   egg.startedAt = now;
   egg.readyAt = now + hatchMs;
-  const hatchLabel = tutShort ? `${Math.round(hatchMs / 1000)} 秒` : `約 ${Math.round(hatchMs / 60000)} 分`;
+  const hatchSec = Math.round(hatchMs / 1000);
+  const hatchLabel =
+    tutShort || egg.source === "breed" || hatchMs < 90_000
+      ? `${hatchSec} 秒`
+      : `約 ${Math.round(hatchMs / 60000)} 分`;
   pushLog(state, `開始孵化【${egg.name || t.name}】（${hatchLabel}）。`);
   if (state.tutorial && !state.tutorial.done) {
     state.tutorial.flags.hatchStarted = true;
@@ -3872,11 +3877,57 @@ export function claimHatch(state, eggUid) {
   pushLog(state, `【${egg.name || eggTierInfo(egg.tier).name}】孵出 ${pet.name}！`);
   const tut = advanceTutorialCascade(state);
   checkAchievements(state);
+  const genes = egg.source === "breed" ? egg.genes : null;
+  const reveal = hatchRevealFromPet(pet, egg);
+  const celebrate = !!(
+    (egg.source === "breed" &&
+      (genes?.hybrid ||
+        genes?.tertiary ||
+        genes?.rarityUp ||
+        (genes?.rarity ?? 0) >= 2 ||
+        (genes?.generation ?? 0) >= 2 ||
+        egg.awakenSkillLevel ||
+        (pet.bloodmarks && pet.bloodmarks.length))) ||
+    (egg.source !== "breed" && (pet.rarity ?? 0) >= 2)
+  );
   return {
     ok: true,
     msg: `孵出 ${pet.name}`,
     pet,
+    eggSource: egg.source || null,
+    celebrate,
+    reveal,
+    hybrid: !!(genes?.hybrid || SPECIES[pet.speciesId]?.breedOnly),
+    tertiary: !!genes?.tertiary,
+    rarity: pet.rarity ?? genes?.rarity ?? 0,
+    rarityUp: !!genes?.rarityUp,
+    generation: petGeneration(pet),
     tutorialUnlock: tut.advanced ? tut.unlockMsg : null,
+  };
+}
+
+/** 破殼揭示摘要（孵化儀式用） */
+function hatchRevealFromPet(pet, egg) {
+  const r = rarityInfo(pet.rarity ?? 0);
+  const bloodName =
+    pet.bloodlineName && pet.bloodlineName !== "無紋" ? pet.bloodlineName : null;
+  const tags = [];
+  if (egg?.source === "breed") tags.push("血脈破殼");
+  if (egg?.genes?.tertiary) tags.push("三代種");
+  else if (SPECIES[pet.speciesId]?.breedOnly || egg?.genes?.hybrid) tags.push("雜交種");
+  if ((pet.rarity ?? 0) >= 3) tags.push("傳說");
+  else if ((pet.rarity ?? 0) >= 2) tags.push("史詩");
+  else if (egg?.genes?.rarityUp) tags.push("稀有上升");
+  if (petGeneration(pet) >= 2) tags.push(genLabel(petGeneration(pet)));
+  if (egg?.awakenSkillLevel) tags.push(`覺醒技 Lv.${egg.awakenSkillLevel}`);
+  if (bloodName) tags.push(bloodName);
+  return {
+    tags,
+    rarityName: r.name,
+    rarityColor: r.color,
+    genLabel: genLabel(petGeneration(pet)),
+    bloodline: bloodName,
+    parents: egg?.parentNames || [],
   };
 }
 
@@ -3888,12 +3939,20 @@ export function claimAllReadyHatches(state, now = Date.now()) {
     .map((e) => e.uid);
   if (!readyUids.length) return { ok: false, msg: "沒有可領取的孵化。", pets: [] };
   const pets = [];
+  const reveals = [];
+  let celebrate = false;
+  let hybrid = false;
+  let maxRarity = 0;
   let tutorialUnlock = null;
   let stopMsg = null;
   for (const uid of readyUids) {
     const r = claimHatch(state, uid);
     if (r.ok && r.pet) {
       pets.push(r.pet);
+      if (r.reveal) reveals.push(r.reveal);
+      if (r.celebrate) celebrate = true;
+      if (r.hybrid) hybrid = true;
+      maxRarity = Math.max(maxRarity, r.rarity ?? 0);
       if (r.tutorialUnlock) tutorialUnlock = r.tutorialUnlock;
     } else {
       stopMsg = r.msg || "領取中斷。";
@@ -3905,10 +3964,20 @@ export function claimAllReadyHatches(state, now = Date.now()) {
     pets.length === 1
       ? `孵出 ${pets[0].name}`
       : `一鍵收取 ${pets.length} 隻：${pets.map((p) => p.name).join("、")}`;
+  const payload = {
+    ok: true,
+    msg,
+    pets,
+    reveals,
+    celebrate,
+    hybrid,
+    rarity: maxRarity,
+    tutorialUnlock,
+  };
   if (stopMsg) {
-    return { ok: true, msg: `${msg}（其後：${stopMsg}）`, pets, tutorialUnlock, partial: true };
+    return { ...payload, msg: `${msg}（其後：${stopMsg}）`, partial: true };
   }
-  return { ok: true, msg, pets, tutorialUnlock };
+  return payload;
 }
 
 /** 出戰 → 牧場 */
@@ -5751,7 +5820,10 @@ function goalNavForBreakthroughItem(item) {
   if (label.includes("秘境") || label.includes("勝場") || label.includes("通關")) {
     return { tab: "dungeon", sub: "field" };
   }
-  if (label.includes("繁殖") || label.includes("融合") || label.includes("代寵") || label.includes("雜交")) {
+  if (label.includes("繁殖") || label.includes("代寵") || label.includes("雜交")) {
+    return { tab: "party", sub: "breed" };
+  }
+  if (label.includes("融合")) {
     return { tab: "party", sub: "ranch" };
   }
   if (label.includes("圖鑑")) {
@@ -5767,7 +5839,7 @@ function goalNavForPathQuest(q) {
   if (q.type === "combats" || q.type === "cleared") return { tab: "dungeon", sub: "field" };
   if (q.type === "bestiary") return { tab: "codex", sub: "dex" };
   if (q.type === "breeds" || q.type === "hybrid_owned" || q.type === "min_gen" || q.type === "tertiary_owned") {
-    return { tab: "party", sub: "ranch" };
+    return { tab: "party", sub: "breed" };
   }
   return { tab: "codex", sub: "path" };
 }
@@ -6315,6 +6387,22 @@ export function breedPreview(petA, petB) {
       pct: null,
       kind: "same",
     });
+  } else if (base.recipeOutcomes?.length) {
+    for (const o of base.recipeOutcomes) {
+      const tag =
+        o.tier === "tertiary" ? "三代" : o.tier === "sub" ? "次配方" : "主配方";
+      outcomes.push({
+        label: `${tag}【${o.name}】`,
+        pct: o.pct,
+        kind: o.tier === "tertiary" ? "tertiary" : o.tier === "sub" ? "hybrid-sub" : "hybrid",
+      });
+    }
+    const inheritPct = Math.max(0, 100 - Math.round(base.hybridChance * 100));
+    outcomes.push({
+      label: "遺傳父母物種",
+      pct: inheritPct,
+      kind: "inherit",
+    });
   } else if (base.hybridName) {
     const outcomeKind = base.tier === "tertiary" ? "tertiary" : "hybrid";
     const outcomeLabel =
@@ -6410,27 +6498,59 @@ export function breedPairHint(petA, petB) {
   let hybridName = null;
   let hybridChance = 0;
   let tier = null;
+  /** @type {{ name: string, species: string, chance: number, pct: number, tier: string }[]} */
+  const recipeOutcomes = [];
   const bothHybrid = !!(SPECIES[petA.speciesId]?.breedOnly && SPECIES[petB.speciesId]?.breedOnly);
   if (!same && bothHybrid) {
     const tertList = tertiaryRecipesForParents(petA.speciesId, petB.speciesId);
     if (tertList.length) {
-      const best = tertList.reduce((a, b) => (a.chance >= b.chance ? a : b));
-      if (SPECIES[best.species]) {
-        hybridName = SPECIES[best.species].name;
-        hybridChance = Math.min(
-          0.7,
-          tertList.reduce((s, r) => s + Math.min(0.55, r.chance * genMult), 0)
-        );
+      let total = 0;
+      for (const r of tertList) {
+        if (!SPECIES[r.species]) continue;
+        const w = Math.min(0.55, r.chance * genMult);
+        total += w;
+        recipeOutcomes.push({
+          name: SPECIES[r.species].name,
+          species: r.species,
+          chance: w,
+          pct: 0,
+          tier: "tertiary",
+        });
+      }
+      hybridChance = Math.min(0.7, total);
+      const scale = total > 0 ? hybridChance / total : 0;
+      for (const o of recipeOutcomes) o.pct = Math.round(o.chance * scale * 100);
+      const best = recipeOutcomes.reduce((a, b) => (a.chance >= b.chance ? a : b), recipeOutcomes[0]);
+      if (best) {
+        hybridName = best.name;
         tier = "tertiary";
       }
     }
   }
   if (!hybridName && !same && kindA !== kindB) {
-    const recipe = hybridRecipeForKinds(kindA, kindB);
-    if (recipe && SPECIES[recipe.species]) {
-      hybridName = SPECIES[recipe.species].name;
-      hybridChance = Math.min(0.85, recipe.chance * genMult);
-      tier = recipe.tier;
+    const list = hybridRecipesForKinds(kindA, kindB);
+    if (list.length) {
+      let total = 0;
+      for (const r of list) {
+        if (!SPECIES[r.species]) continue;
+        const w = Math.min(0.85, r.chance * genMult);
+        total += w;
+        recipeOutcomes.push({
+          name: SPECIES[r.species].name,
+          species: r.species,
+          chance: w,
+          pct: 0,
+          tier: r.tier || "main",
+        });
+      }
+      hybridChance = Math.min(0.9, total);
+      const scale = total > 0 ? hybridChance / total : 0;
+      for (const o of recipeOutcomes) o.pct = Math.round(o.chance * scale * 100);
+      const best = recipeOutcomes.reduce((a, b) => (a.chance >= b.chance ? a : b), recipeOutcomes[0]);
+      if (best) {
+        hybridName = best.name;
+        tier = best.tier;
+      }
     }
   }
 
@@ -6438,10 +6558,9 @@ export function breedPairHint(petA, petB) {
   if (same) {
     note = `同種：較易升稀有 · 子代 ${genOddsText}`;
   } else if (hybridName && tier === "tertiary") {
-    note = `三代種：約 ${Math.round(hybridChance * 100)}% 【${hybridName}】· 子代 ${genOddsText}`;
+    note = `三代種：合計約 ${Math.round(hybridChance * 100)}% · 子代 ${genOddsText}`;
   } else if (hybridName) {
-    const tierTag = tier === "main" ? "主配方" : "次配方";
-    note = `異種${tierTag}：約 ${Math.round(hybridChance * 100)}% 雜交【${hybridName}】· 子代 ${genOddsText}`;
+    note = `異種配方：合計約 ${Math.round(hybridChance * 100)}%（含主／次 · 代數加成×${genMult.toFixed(2)}）· 子代 ${genOddsText}`;
   } else {
     note = `異種無雜交配方（×）· 只遺傳父母 · 子代 ${genOddsText}`;
   }
@@ -6451,6 +6570,8 @@ export function breedPairHint(petA, petB) {
     hybridName,
     hybridChance,
     tier,
+    recipeOutcomes,
+    genMult,
     genA,
     genB,
     genOddsText,

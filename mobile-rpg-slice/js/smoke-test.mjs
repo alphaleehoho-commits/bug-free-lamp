@@ -230,6 +230,7 @@ import {
   ensureShop,
   breedPreview,
   petLineage,
+  nextGoalView,
   useTemperOil,
   deployPet,
   claimHatch,
@@ -783,6 +784,16 @@ assert(roundStat(35.699999999999996) === 36, "roundStat ceils speed");
 assert(rarityBreedCdMult({ rarity: 3 }, { rarity: 0 }) === 0.78, "rarity breed cd");
 assert(eggHatchMsFor({ generation: 0 }, EGG_TIERS.C) === EGG_TIERS.C.hatchMs, "egg hatch gen0");
 assert(eggHatchMsFor({ generation: 2 }, EGG_TIERS.C) === Math.round(EGG_TIERS.C.hatchMs * 1.5), "egg hatch gen2");
+assert(
+  eggHatchMsFor({ source: "breed", generation: 1 }, EGG_TIERS.C) === Math.round(35_000 * 1.15),
+  "breed egg hatch short gen1"
+);
+assert(
+  eggHatchMsFor({ source: "breed", generation: 3 }, EGG_TIERS.C) < EGG_TIERS.C.hatchMs,
+  "breed egg hatch shorter than shop C"
+);
+assert(String(MATERIALS.breed_ticket?.desc || "").includes("即時就緒"), "breed_ticket desc matches use");
+assert(String(MATERIALS.blood_catalyst?.desc || "").includes("減半"), "blood_catalyst desc matches use");
 assert(ABYSS_EGG_COST === 110, "abyss egg cost");
 assert(ABYSS_POWER_NODE_MAX === 8 && ABYSS_POWER_NODE_COST === 55 && ABYSS_POWER_NODE_ATK === 0.01, "abyss power node");
 assert(pickDailyDungeonMod("2026-08-26")?.label, "daily mod");
@@ -1588,6 +1599,33 @@ const finB = { uid: "b", speciesId: "glowfin", kind: "光", elementId: "flame", 
 const prev = breedPreview(foxA, finB);
 assert(prev?.hybridName === "耀狐" && prev.outcomes.length >= 2, "breed preview hybrid");
 assert(prev.statPreview.atk[1] >= prev.statPreview.atk[0], "stat preview range");
+assert(prev.recipeOutcomes?.length >= 1, "breed preview lists recipe outcomes");
+assert(
+  prev.outcomes.some((o) => o.kind === "hybrid" || o.kind === "hybrid-sub"),
+  "preview shows main/sub hybrid rows"
+);
+assert(prev.genMult >= 1, "preview exposes genMult");
+
+const breedGoalNavSt = {
+  realm: 2,
+  qi: 520,
+  stones: 140,
+  scrap: 3,
+  dust: 12,
+  feed: 0,
+  combatsWon: 8,
+  clearedDungeons: { tide_2: true },
+  stats: { breeds: 0, fusions: 0 },
+  ranch: [makeStarterPet(), makeStarterPet()],
+  pets: [],
+  bestiary: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`nav-dex-${i}`, true])),
+  pathQuests: { claimed: {} },
+};
+const breedGoalNav = nextGoalView(breedGoalNavSt);
+assert(
+  breedGoalNav?.tab === "party" && breedGoalNav?.sub === "breed",
+  "breed breakthrough goal navigates to breed tab"
+);
 
 const lineSt = {
   pets: [{ uid: "c1", speciesId: "glintfox", name: "耀狐", bornFrom: ["a", "b"], generation: 2 }],
@@ -2404,7 +2442,7 @@ assert(breedQSt.breedJobs.length === 1, "claimed job removed");
 const breedEgg = breedQSt.eggs[breedQSt.eggs.length - 1];
 assert(breedEgg.source === "breed" && breedEgg.genes, "breed egg stores genes");
 assert(/代.蛋$/.test(breedEgg.name), "breed egg name like 一代獸蛋");
-assert(String(breedEgg.desc || "").includes("可以孵化出"), "breed egg desc");
+assert(String(breedEgg.desc || "").includes("血脈已封"), "breed egg desc seals bloodline");
 assert(breedEgg.generation >= 1, "egg generation locked at claim");
 assert(breedEgg.kind, "egg kind locked at claim");
 
@@ -2415,6 +2453,8 @@ breedEgg.readyAt = Date.now() - 1;
 breedQSt.ranch.pop();
 const hatchClaim = claimHatch(breedQSt, breedEgg.uid);
 assert(hatchClaim.ok && hatchClaim.pet, "hatch breed egg to pet");
+assert(hatchClaim.reveal?.tags?.length >= 1, "hatch reveal tags for breed egg");
+assert(hatchClaim.celebrate != null, "hatch returns celebrate flag");
 assert(breedQSt.ranch.length === ranchBefore, "pet after hatch (pop+push)");
 assert(hatchClaim.pet.generation === breedEgg.generation, "hatched gen matches egg");
 assert(hatchClaim.pet.bornFrom?.length === 2, "hatched has parents");
@@ -2520,7 +2560,7 @@ const namedEgg = makeBreedEgg({
   parentUids: ["a", "b"],
 });
 assert(namedEgg.name === "一代蟲蛋", "egg name 一代蟲蛋");
-assert(namedEgg.desc === "可以孵化出一代蟲寵物", "egg desc");
+assert(namedEgg.desc === "血脈已封 · 破殼可見一代蟲靈寵", "egg desc");
 const hatchedFromNamed = hatchPetFromEgg(namedEgg);
 assert(hatchedFromNamed.kind === "蟲" && hatchedFromNamed.generation === 1, "hatch uses stored genes");
 
@@ -3397,7 +3437,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v105"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v106"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

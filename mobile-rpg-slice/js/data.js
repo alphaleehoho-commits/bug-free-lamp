@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260909.1";
+export const APP_BUILD = "20260909.2";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -3410,10 +3410,22 @@ export function eggTierInfo(tier) {
   return EGG_TIERS[tier] || EGG_TIERS.C;
 }
 
-/** 蛋孵化毫秒：階時間 × (1 + 代數×0.25)；教學短孵另計 */
+/** 繁殖蛋短儀式基準（唔跟商店蛋長 CD） */
+export const BREED_EGG_HATCH_BASE_MS = 35_000;
+
+/**
+ * 蛋孵化毫秒：
+ * - 一般／商店：階時間 × (1 + 代數×0.25)
+ * - 繁殖蛋：短儀式 35s × (1 + max(1,代)×0.15)，避免雙重長 CD
+ * 教學短孵另計（startHatch）
+ */
 export function eggHatchMsFor(egg, tierInfo) {
   const t = tierInfo || eggTierInfo(egg?.tier || "C");
   const gen = Math.max(0, egg?.generation | 0);
+  if (egg?.source === "breed") {
+    const g = Math.max(1, gen);
+    return Math.round(BREED_EGG_HATCH_BASE_MS * (1 + g * 0.15));
+  }
   return Math.round((t.hatchMs || 120_000) * (1 + gen * 0.25));
 }
 
@@ -3447,7 +3459,7 @@ export function makeBreedEgg(outcome, now = Date.now()) {
     uid,
     tier: "C",
     name: `${prefix}${kind}蛋`,
-    desc: `可以孵化出${prefix}${kind}寵物`,
+    desc: `血脈已封 · 破殼可見${prefix}${kind}靈寵`,
     source: "breed",
     kind,
     generation,
@@ -4480,13 +4492,13 @@ export const MATERIALS = {
   blood_catalyst: {
     id: "blood_catalyst",
     name: "血統催化",
-    desc: "秘境專屬：繁殖冷卻縮短／加紋機率",
+    desc: "將最早孕育中的交配剩餘時間減半",
     tier: "dungeon",
   },
   breed_ticket: {
     id: "breed_ticket",
     name: "催生符",
-    desc: "秘境專屬：立即重置繁殖冷卻",
+    desc: "令最早孕育中的交配即時就緒，可領蛋",
     tier: "dungeon",
   },
   /** 入場憑證：練功／每日／升階產出；秘境永不掉落 */
@@ -4579,7 +4591,7 @@ export const SOUL_SHOP_OFFERS = [
   {
     id: "breed_ticket_pack",
     name: "催生符",
-    desc: "立即重置繁殖冷卻",
+    desc: "令最早孕育中的交配即時就緒，可領蛋",
     cost: 22,
     grant: { materials: { breed_ticket: 1 } },
   },
@@ -5291,8 +5303,8 @@ export const MATERIAL_USES = {
   void_grade_stone: "升級副材·虛",
   fusion_core: "終身融合",
   temper_oil: "洗性格",
-  blood_catalyst: "縮短繁殖冷卻",
-  breed_ticket: "重置繁殖冷卻",
+  blood_catalyst: "孕育時間減半",
+  breed_ticket: "交配即時就緒",
   mist_token: "秘境入場／掃蕩",
   tide_key_1: "主脊段主（初段）",
   tide_key_2: "主脊段主（中段）",

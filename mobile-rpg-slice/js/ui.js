@@ -1193,7 +1193,7 @@ function recipeBoardHtml() {
 
   return `
     <h3>主／次配方一覽</h3>
-    <p class="meta">只讀參考；實際機率受雙親代數加成。</p>
+    <p class="meta">只讀參考；實際機率＝表列×雙親代數加成（預覽頁會顯示合計％同主／次拆分）。三代種見下方求道／繁殖預覽。</p>
     <ul class="recipe-sum">${mains}${subs}</ul>
     <div class="recipe-matrix-wrap">
       <table class="recipe-matrix" aria-label="種類雜交矩陣">
@@ -3724,12 +3724,17 @@ function breedPreviewHtml(preview, matAfford) {
     .map((o) => `<span class="breed-chip">${escapeHtml(genLabel(o.gen))} ${o.pct}%</span>`)
     .join("");
   const sp = preview.statPreview;
+  const genMultNote =
+    preview.genMult != null && preview.genMult > 1
+      ? `<p class="meta">代數加成 ×${preview.genMult.toFixed(2)}（提高雜交／突變）</p>`
+      : "";
   return `
     <div class="breed-preview">
       <h3>繁殖預覽</h3>
       <p class="meta">${escapeHtml(preview.parentNames[0])} × ${escapeHtml(preview.parentNames[1])}</p>
       <ul class="breed-outcomes">${outcomeRows}</ul>
       <div class="breed-chip-row">${genChips}</div>
+      ${genMultNote}
       <p class="meta">物種池：${escapeHtml(preview.speciesHint)} · 屬性突變 ~${Math.round(
         preview.elemRate * 100
       )}%</p>
@@ -4006,18 +4011,28 @@ function petsHatchView() {
   </div>`;
 }
 
-function hatchClaimPetRowsHtml(pets) {
+function hatchClaimPetRowsHtml(pets, reveals = []) {
   if (!pets?.length) return `<li class="empty">沒有孵出靈寵。</li>`;
   return pets
-    .map((p) => {
+    .map((p, i) => {
       const r = rarityInfo(p.rarity ?? 0);
-      return `<li class="card-row hatch-claim-row">
+      const reveal = reveals[i] || null;
+      const tags = (reveal?.tags || [])
+        .map((t) => `<span class="hatch-reveal-tag">${escapeHtml(t)}</span>`)
+        .join("");
+      const parentLine =
+        reveal?.parents?.length === 2
+          ? `<span class="muted">血脈：${escapeHtml(reveal.parents[0])} × ${escapeHtml(reveal.parents[1])}</span>`
+          : "";
+      return `<li class="card-row hatch-claim-row${reveal?.tags?.length ? " is-reveal" : ""}">
         <div>
           <strong>${escapeHtml(displayPetName(p))}</strong>
+          ${tags ? `<div class="hatch-reveal-tags">${tags}</div>` : ""}
           <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
             petGeneration(p)
           )} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}</span>
           <span class="muted">攻${fmtInt(p.atk)} 血${fmtInt(p.hp)} 速${fmtInt(p.spd)}</span>
+          ${parentLine}
         </div>
       </li>`;
     })
@@ -4027,14 +4042,19 @@ function hatchClaimPetRowsHtml(pets) {
 function hatchClaimModalHtml() {
   if (!hatchClaimModal?.pets?.length) return "";
   const pets = hatchClaimModal.pets;
-  const title = pets.length === 1 ? "孵化完成" : `一鍵收取 · ${pets.length} 隻`;
+  const reveals = hatchClaimModal.reveals || [];
+  const celebrate = !!hatchClaimModal.celebrate;
+  const title = pets.length === 1 ? (celebrate ? "血脈破殼" : "孵化完成") : `一鍵收取 · ${pets.length} 隻`;
+  const lead = celebrate
+    ? "潮象顯現——血脈已寫入牧場"
+    : "靈寵已進入牧場";
   return `
-    <div class="combat-modal-overlay hatch-claim-overlay" data-live="hatch-claim" role="dialog" aria-label="孵化領取">
+    <div class="combat-modal-overlay hatch-claim-overlay${celebrate ? " is-celebrate" : ""}" data-live="hatch-claim" role="dialog" aria-label="孵化領取">
       <div class="combat-modal-card hatch-claim-card">
         <div class="combat-modal-scroll">
           <h2>${escapeHtml(title)}</h2>
-          <p class="lead">靈寵已進入牧場</p>
-          <ul class="list hatch-claim-list">${hatchClaimPetRowsHtml(pets)}</ul>
+          <p class="lead">${escapeHtml(lead)}</p>
+          <ul class="list hatch-claim-list">${hatchClaimPetRowsHtml(pets, reveals)}</ul>
         </div>
         <div class="combat-modal-actions row">
           <button type="button" class="primary" data-act="close-hatch-claim">返回</button>
@@ -6278,12 +6298,22 @@ function bind() {
     btn.addEventListener("click", () => {
       const r = claimHatch(state, btn.dataset.claimHatch);
       if (r.ok && r.pet) {
-        hatchClaimModal = { pets: [r.pet] };
+        hatchClaimModal = {
+          pets: [r.pet],
+          reveals: r.reveal ? [r.reveal] : [],
+          celebrate: !!r.celebrate,
+        };
       }
       saveState(state);
       render();
       if (r.tutorialUnlock) setFlash(r.tutorialUnlock, "unlock");
       else if (!r.ok) setFlash(r.msg);
+      else if (r.celebrate) {
+        let tone = "celebrate";
+        if (r.hybrid) tone = "hybrid";
+        else if ((r.rarity ?? 0) >= 3) tone = "legend";
+        setFlash(r.msg, tone);
+      }
     });
   });
   app.querySelectorAll("[data-claim-all-hatch]").forEach((btn) => {
@@ -6291,12 +6321,22 @@ function bind() {
       if (btn.disabled) return;
       const r = claimAllReadyHatches(state);
       if (r.ok && r.pets?.length) {
-        hatchClaimModal = { pets: r.pets };
+        hatchClaimModal = {
+          pets: r.pets,
+          reveals: r.reveals || [],
+          celebrate: !!r.celebrate,
+        };
       }
       saveState(state);
       render();
       if (r.tutorialUnlock) setFlash(r.tutorialUnlock, "unlock");
       else if (!r.ok) setFlash(r.msg);
+      else if (r.celebrate) {
+        let tone = "celebrate";
+        if (r.hybrid) tone = "hybrid";
+        else if ((r.rarity ?? 0) >= 3) tone = "legend";
+        setFlash(r.msg, tone);
+      }
     });
   });
   app.querySelectorAll("[data-hatch-filter]").forEach((btn) => {
