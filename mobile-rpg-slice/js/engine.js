@@ -8,6 +8,9 @@ import {
   GEAR,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
+  ACTIVE_PET_BASE,
+  ACTIVE_PET_UNLOCK_STAGE,
+  activePetMaxForState,
   FUSION_RULES,
   FUSION_MAX_STAGE,
   buildPetStats,
@@ -158,6 +161,7 @@ import {
   spineTrainProfile,
   spineFrontierTier,
   spineStageFromState,
+  isSpineStageBossFloor,
   spineKeyMatForStage,
   spineThreatBase,
   maxClearedTideTier,
@@ -1398,7 +1402,9 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
   });
 
   if (!warden) {
-    return [
+    const floor = tier + 1;
+    const stageBoss = isSpineStageBossFloor(floor);
+    const waves = [
       {
         label: `${prefix}散霧`,
         enemies: [mkNormal(`${prefix}游魂`, 0.88), mkNormal(`${prefix}鼠`, 0.84)],
@@ -1412,14 +1418,23 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
         enemies: [mkNormal(`${prefix}獸`, 1.02), mkNormal(`${prefix}衛`, 0.98)],
       },
       {
-        label: `第${tier + 1}層·精英`,
+        label: stageBoss ? `第${floor}層·先鋒` : `第${floor}層·精英`,
         enemies: [mkElite(`${prefix}精英`, 1.08 + tier * 0.04)],
       },
-      {
-        label: `第${tier + 1}層·守門`,
-        enemies: [mkElite(`${prefix}守門`, 1.22 + tier * 0.06)],
-      },
     ];
+    if (stageBoss) {
+      waves.push({
+        label: `第${floor}層·階段頭目`,
+        enemies: [mkBoss(`${prefix}階段主`)],
+        stageBoss: true,
+      });
+    } else {
+      waves.push({
+        label: `第${floor}層·守門`,
+        enemies: [mkElite(`${prefix}守門`, 1.22 + tier * 0.06)],
+      });
+    }
+    return waves;
   }
 
   const waves = [];
@@ -1655,6 +1670,7 @@ export function createTrainIdleSession(state) {
   const frontier = spineFrontierTier(state);
   const canUnlockNext = floor === frontier;
   const waves = buildTrainCombatWaves(zoneId, tierIndex, { warden: false, frontierTier: floor });
+  const stageBoss = isSpineStageBossFloor(floor);
   const { allies, tactics } = buildTrainCombatAllies(state);
   if (!allies.length) return null;
   _combatUid = 0;
@@ -1670,6 +1686,7 @@ export function createTrainIdleSession(state) {
     /** 本輪是否首次挑戰當前未通層（首通文案用） */
     isFirstClear: canUnlockNext && !z.clearReady,
     clearReady: !!z.clearReady,
+    stageBoss,
     petSig,
     waves,
     waveCount: waves.length,
@@ -1678,7 +1695,7 @@ export function createTrainIdleSession(state) {
     foes,
     tactics,
     round: 0,
-    maxRounds: 60,
+    maxRounds: stageBoss ? 70 : 60,
     order: [],
     orderIdx: 0,
     phase: "fight",
@@ -1692,7 +1709,7 @@ export function createTrainIdleSession(state) {
     resultLine: null,
     lastText: `—— 第 1 波・${waves[0].label} ——`,
     waveLabel: `第 1／${waves.length} 波・${waves[0].label}`,
-    layerLabel: `第${floor}層`,
+    layerLabel: stageBoss ? `第${floor}層·階段頭目` : `第${floor}層`,
     siteName: site.name,
     efficiency: trainClearEfficiency(state, zoneId),
     depthMult: trainDepthMultForFloor(floor),
@@ -2247,7 +2264,7 @@ export function teamBondBarView(state) {
     pct: Math.max(0, Math.min(100, pct)),
     power,
     petCount: pets.length,
-    petMax: ACTIVE_PET_MAX,
+    petMax: activePetMaxForState(state),
     avgLv,
     starred,
     stageName: br.cur?.name || "",
@@ -3687,8 +3704,13 @@ export function dismissPending(state, encounterId) {
 /** 牧場 → 出戰 */
 export function deployPet(state, uid) {
   if (!state.ranch) state.ranch = [];
-  if (state.pets.length >= ACTIVE_PET_MAX) {
-    return { ok: false, msg: `出戰欄已滿（最多 ${ACTIVE_PET_MAX} 隻）。` };
+  const petMax = activePetMaxForState(state);
+  if (state.pets.length >= petMax) {
+    const unlockHint =
+      petMax < ACTIVE_PET_MAX
+        ? `（主脊階段${ACTIVE_PET_UNLOCK_STAGE}解鎖第 ${ACTIVE_PET_MAX} 位）`
+        : "";
+    return { ok: false, msg: `出戰欄已滿（最多 ${petMax} 隻）${unlockHint}。` };
   }
   if (breedBusyUids(state).has(uid)) {
     return { ok: false, msg: "該靈寵交配孕育中，無法出戰。" };
@@ -4341,7 +4363,7 @@ export function petDetail(state, uid) {
     baseline,
     innateBonus,
     ranchFull: (state.ranch?.length || 0) >= ranchCap(state),
-    partyFull: state.pets.length >= ACTIVE_PET_MAX,
+    partyFull: state.pets.length >= activePetMaxForState(state),
   };
 }
 
@@ -7495,6 +7517,10 @@ export {
   SLOT_LABEL,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
+  ACTIVE_PET_BASE,
+  ACTIVE_PET_UNLOCK_STAGE,
+  activePetMaxForState,
+  isSpineStageBossFloor,
   FUSION_MAX_STAGE,
   FUSION_RULES,
   BREED_STONE_COST,

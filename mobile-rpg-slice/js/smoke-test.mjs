@@ -170,6 +170,10 @@ import {
   trainTierThreat,
   rollTideKeyDrop,
   ACTIVE_PET_MAX,
+  ACTIVE_PET_BASE,
+  ACTIVE_PET_UNLOCK_STAGE,
+  activePetMaxForState,
+  isSpineStageBossFloor,
   ABYSS_MUTATION_IDS,
   ABYSS_COSMETIC_IDS,
   ABYSS_WIPE_KEEP_RATE,
@@ -834,11 +838,11 @@ assert(DAILY_QUESTS.length >= 7, "7 daily quests");
 assert(ACHIEVEMENTS.length >= 20, "expanded achievements");
 assert(typeof weekKey() === "string" && weekKey().includes("-W"), "weekKey");
 assert(FORMATIONS.vanguard && FORMATION_IDS.length === 3, "formations");
-assert(FORMATION_SLOT_COUNT === 3, "formation slot count");
+assert(FORMATION_SLOT_COUNT === 4, "formation slot count max 4");
 {
-  const vg = formationAllyPlacement("vanguard", 3);
-  const rr = formationAllyPlacement("rear", 3);
-  const bl = formationAllyPlacement("balanced", 3);
+  const vg = formationAllyPlacement("vanguard", 3, 3);
+  const rr = formationAllyPlacement("rear", 3, 3);
+  const bl = formationAllyPlacement("balanced", 3, 3);
   assert(vg.every((p) => p.lane === "front"), "vanguard all front lane");
   assert(rr.every((p) => p.lane === "rear"), "rear all rear lane");
   assert(
@@ -853,11 +857,13 @@ assert(FORMATION_SLOT_COUNT === 3, "formation slot count");
     JSON.stringify(vg.map((p) => p.lane)) !== JSON.stringify(bl.map((p) => p.lane)),
     "vanguard vs balanced placement differ"
   );
-  const foes = formationFoePlacement(2);
+  const foes = formationFoePlacement(2, 3);
   assert(foes[0].unitIndex === 0 && foes[1].unitIndex === 1 && foes[2].unitIndex === null, "foe wave order slots");
   assert(foes.every((p) => p.lane === "front"), "foes stay front lane");
-  const one = formationAllyPlacement("vanguard", 1);
+  const one = formationAllyPlacement("vanguard", 1, 3);
   assert(one[0].unitIndex === 0 && one[1].unitIndex === null && one[2].unitIndex === null, "partial party empty slots");
+  const bl4 = formationAllyPlacement("balanced", 4, 4);
+  assert(bl4.length === 4 && bl4.map((p) => p.lane).join(",") === "rear,front,rear,front", "balanced 4-slot stagger");
 }
 assert(FORMATIONS.vanguard.desc.includes("前排"), "vanguard desc mentions front");
 assert(FORMATIONS.rear.desc.includes("後排"), "rear desc mentions rear");
@@ -958,7 +964,8 @@ assert(dual.personality2Id === "gentle" && dual.personality2Name, "build dual pe
 /* P11: material hints + unlock helpers */
 assert(MATERIAL_SOURCE_INDEX.tide_dew?.sites?.includes("主脊潮脈"), "tide_dew spine");
 assert(MATERIAL_SOURCE_INDEX.coral_shard?.sites?.includes("主脊潮脈"), "coral spine");
-assert(MATERIAL_SOURCE_INDEX.earth_grade_stone?.sites?.includes("地脈"), "earth branch source");
+assert(MATERIAL_SOURCE_INDEX.earth_grade_stone?.sites?.includes("主脊潮脈"), "earth spine AFK source");
+assert(!MATERIAL_SOURCE_INDEX.earth_grade_stone?.sites?.includes("地脈"), "no earth branch source");
 assert(MATERIAL_SOURCE_INDEX.seal_ember?.sites?.includes("主脊潮脈"), "ember spine");
 assert(materialSourceLabel("seal_ember").includes("主脊"), "ember source");
 assert(trainSiteUnlockHint(TRAIN_SITES[0]) == null, "spine no unlock hint");
@@ -986,7 +993,7 @@ assert(TRAIN_SITES.every((s) => (s.drops || []).some((d) => d.mat === "mist_toke
 /* P19: shortage → spine / branch nav */
 assert(primaryTrainSiteForMat("coral_shard")?.id === SPINE_ZONE_ID, "coral → spine");
 assert(primaryTrainSiteForMat("echo_resin")?.id === SPINE_ZONE_ID, "resin → spine");
-assert(primaryTrainSiteForMat("earth_grade_stone")?.id === "earth_vein", "earth → branch");
+assert(primaryTrainSiteForMat("earth_grade_stone")?.id === SPINE_ZONE_ID, "earth → spine AFK");
 assert(primaryTrainSiteForMat("temper_oil") == null, "temper no AFK site");
 const shortSt = {
   materials: { tide_dew: 0, coral_shard: 0 },
@@ -1001,7 +1008,7 @@ const earthSug = suggestTrainForShortage(
   { ...shortSt, clearedDungeons: { tide_21: true } },
   { earth_grade_stone: 1 }
 );
-assert(earthSug?.siteId === "earth_vein" && earthSug.isBranch, "suggest earth branch");
+assert(earthSug?.siteId === SPINE_ZONE_ID && !earthSug.isBranch, "suggest earth spine");
 
 /* P20: spine spotlight */
 const spot = pickDailyTrainSpotlight("2026-08-30");
@@ -1021,7 +1028,7 @@ assert(!evaluateDungeonChallenge([gen1Pet], gen2Rule).ok, "gen2 challenge reject
 const earthD = buildBranchDungeon("earth_vein", 1);
 assert(earthD?.isSideBranch && earthD.matDropOverride?.weights?.earth_grade_stone >= 8, "earth branch mats");
 assert(isBranchDungeonId("earth_vein_3") && !isBranchDungeonId("tide_3"), "branch id parse");
-assert(listSideBranches({ clearedDungeons: { tide_161: true } }).every((b) => b.unlocked), "all branches late");
+assert(SIDE_BRANCHES.length === 3, "legacy side branch defs kept");
 assert(maxClearedTideTier({ clearedDungeons: { tide_5: true, earth_vein_1: true } }) === 5, "branch clears ignore max tide");
 assert(spineFrontierTier({ clearedDungeons: { tide_5: true } }) === 6, "frontier next");
 assert(spineStageFromState({ clearedDungeons: { tide_21: true } }) === 2, "stage from state");
@@ -2613,7 +2620,10 @@ while (idleSteps < 500 && !idleWon) {
 assert(idleWon, "idle session can clear with strong party");
 assert(tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady, "clearReady persisted");
 assert(persistTrainIdleClearResult(tzSt, idleSess), "persist spine lastClear");
-assert(ACTIVE_PET_MAX === 3, "party size stays 3 for formation slots");
+assert(ACTIVE_PET_BASE === 3 && ACTIVE_PET_MAX === 4, "party 3 base / 4 unlock");
+assert(activePetMaxForState({ clearedDungeons: {} }) === 3, "party max stage1");
+assert(activePetMaxForState({ clearedDungeons: { tide_41: true } }) === 4, "party max stage3");
+assert(isSpineStageBossFloor(20) && isSpineStageBossFloor(40) && !isSpineStageBossFloor(21), "stage boss floors");
 setTrainSite(tzSt, "ruins");
 assert(tzSt.trainSite === SPINE_ZONE_ID, "legacy site id remaps to spine");
 const spineView = trainIdleCombatView(tzSt);
@@ -2693,7 +2703,7 @@ assert(uiSrc2.includes('data-slot="'), "ui formation data-slot attrs");
 assert(uiSrc2.includes('data-lane="'), "ui formation data-lane attrs");
 assert(uiSrc2.includes("combat-formation"), "ui formation roster class");
 assert(uiSrc2.includes("formationAllyPlacement"), "ui uses ally placement helper");
-assert(uiSrc2.includes("FORMATION_SLOT_COUNT"), "ui 3-slot formation");
+assert(uiSrc2.includes("FORMATION_SLOT_COUNT"), "ui formation slots");
 assert(uiSrc2.includes("persistTrainIdleClearResult"), "ui persists zone lastClear");
 assert(uiSrc2.includes("idleCombatResultLine"), "ui gates clear line to ended session");
 assert(
@@ -2715,8 +2725,8 @@ assert(uiSrc2.includes("trainFloorNavGates"), "ui uses trainFloorNavGates");
 assert(uiSrc2.includes("data-train-floor-prev"), "ui floor prev");
 assert(uiSrc2.includes("data-train-floor-next"), "ui floor next");
 assert(uiSrc2.includes("navTrainIdleFloor"), "ui uses navTrainIdleFloor");
-assert(uiSrc2.includes("data-train-branch"), "ui side branch chips");
-assert(uiSrc2.includes("data-train-branch-attack"), "ui branch combat from train");
+assert(!uiSrc2.includes("data-train-branch-attack"), "ui no branch combat from train");
+assert(uiSrc2.includes("is-stage-boss") || uiSrc2.includes("train-boss-banner"), "ui stage boss highlight");
 assert(!uiSrc2.includes("data-train-spine-attack"), "ui no spine dungeon challenge");
 assert(!uiSrc2.includes("data-set-depth"), "ui no mist depth buttons");
 assert(!uiSrc2.includes("data-challenge-warden"), "ui no warden on train");
@@ -3359,12 +3369,15 @@ assert(launchTide5 && launchTide5.loreTag === "裂潮" && launchTide5.name.inclu
 assert(launchTide5.matDropOverride?.weights?.tide_dew > 0, "tide_5 spine stage1 mats");
 assert(spineStageForTier(1) === 1 && spineStageForTier(20) === 1 && spineStageForTier(21) === 2, "spine stages 20/band");
 assert(spineStageForTier(40) === 2 && spineStageForTier(41) === 3, "spine mid bands");
-assert(spineStageMatBias(1).coral_shard > 0 && !spineStageMatBias(1).earth_grade_stone, "spine1 bias main mats only");
+assert(spineStageMatBias(1).coral_shard > 0 && !spineStageMatBias(1).earth_grade_stone, "spine1 no early earth");
 assert(
-  spineAfkDropsForStage(1).some((d) => d.mat === "earth_grade_stone" && d.perSec > 0),
-  "spine1 soft-gate earth drip outside bias"
+  !spineAfkDropsForStage(1).some((d) => d.mat === "earth_grade_stone"),
+  "spine1 no earth AFK until stage2"
 );
-assert(spineStageMatBias(2).earth_grade_stone > 0, "spine2 earth heavier in bias");
+assert(spineStageMatBias(2).earth_grade_stone > 0, "spine2 earth in bias");
+assert(spineAfkDropsForStage(2).some((d) => d.mat === "earth_grade_stone"), "spine2 earth AFK");
+assert(spineStageMatBias(3).cloud_grade_stone > 0, "spine3 cloud chapter");
+assert(ACTIVE_PET_UNLOCK_STAGE === 3, "4th slot at stage3");
 assert(
   trainTierThreat(SPINE_ZONE_ID, 19, { frontierTier: 20 }) < 350,
   "floor20 threat softened for early party"
@@ -3384,7 +3397,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v104"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v105"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

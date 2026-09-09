@@ -79,6 +79,10 @@ import {
   SKILLS,
   PENDING_BOND_MAX,
   ACTIVE_PET_MAX,
+  ACTIVE_PET_BASE,
+  ACTIVE_PET_UNLOCK_STAGE,
+  activePetMaxForState,
+  isSpineStageBossFloor,
   BOND_FEED_COST,
   BOND_FEED_BONUS,
   NICK_MAX_LEN,
@@ -110,13 +114,9 @@ import {
   navTrainIdleFloor,
   trainIdleFloor,
   trainFloorNavGates,
-  listSideBranches,
-  branchFloors,
-  isSideBranchUnlocked,
-  sideBranchById,
-  isBranchDungeonId,
   SPINE_ZONE_ID,
   spineTrunkView,
+  spineStageFromState,
   dungeonDisplayName,
   materialHintsView,
   itemsView,
@@ -286,8 +286,6 @@ let hatchClaimModal = null;
 let hatchEggFilter = "all";
 /** 背包內頁：材料 | 道具 */
 let bagInner = "mats";
-/** 練功側枝展開：branchId 或 null */
-let trainBranchFocus = null;
 /** 商肆內頁：stones | soul | grit */
 let shopInner = "stones";
 /** @type {"power" | "gen" | "rarity" | "element" | "status" | "star" | "level"} */
@@ -926,13 +924,15 @@ function currentFormationId() {
   return FORMATION_IDS.includes(state.formation) ? state.formation : "balanced";
 }
 
-/** 3 企位陣型：依 formation 填 lane（前／後排）；空 slot 保留位置 */
+/** 陣型企位：依 formation 填 lane；列數跟出戰上限／敵方數量 */
 function formationSideHtml(units, side, renderUnit, formationId = "balanced") {
   const list = units || [];
+  const allySlots = activePetMaxForState(state);
+  const foeSlots = Math.max(list.length, Math.min(FORMATION_SLOT_COUNT, Math.max(allySlots, 2)));
   const placement =
     side === "foe"
-      ? formationFoePlacement(list.length)
-      : formationAllyPlacement(formationId, list.length);
+      ? formationFoePlacement(list.length, foeSlots)
+      : formationAllyPlacement(formationId, list.length, allySlots);
   return placement
     .map((p) => {
       const u = p.unitIndex != null ? list[p.unitIndex] : null;
@@ -1476,17 +1476,11 @@ function matHintListHtml() {
   return `<ul class="mat-hint-list">${materialHintsView(state)
     .map((m) => {
       const site = primaryTrainSiteForMat(m.id);
-      const goto = site?.isBranch
-        ? site.unlocked !== false && isSideBranchUnlocked(state, site.id)
-          ? `<button type="button" class="linkish mat-goto" data-goto-branch="${escapeHtml(site.id)}">去${escapeHtml(
-              site.name
-            )}</button>`
-          : `<span class="mat-goto muted">側枝未解鎖</span>`
-        : site
-          ? `<button type="button" class="linkish mat-goto" data-goto-train="${SPINE_ZONE_ID}">去主脊</button>`
-          : MATERIALS[m.id]?.tier === "dungeon"
-            ? `<span class="mat-goto muted">秘境</span>`
-            : "";
+      const goto = site
+        ? `<button type="button" class="linkish mat-goto" data-goto-train="${SPINE_ZONE_ID}">去主脊</button>`
+        : MATERIALS[m.id]?.tier === "dungeon"
+          ? `<span class="mat-goto muted">秘境</span>`
+          : "";
       return `
     <li class="mat-hint ${m.count <= 0 ? "is-empty" : ""}">
       <span class="mat-name">${escapeHtml(m.name)}</span>
@@ -2257,7 +2251,7 @@ function statsSheetHtml() {
           <li><span>精魂</span><strong>${Math.floor(state.materials?.soul_essence || 0)}</strong></li>
           <li><span>勝場</span><strong>${state.combatsWon}</strong></li>
           <li><span>牧場</span><strong>${ranchN}／${ranchCap(state)}</strong></li>
-          <li><span>出戰</span><strong>${state.pets.length}／${ACTIVE_PET_MAX}</strong></li>
+          <li><span>出戰</span><strong>${state.pets.length}／${activePetMaxForState(state)}</strong></li>
         </ul>
         <p class="meta">靈契 ${Math.floor(state.qi)} / ${next?.need || "—"} · ${qiPct}% →【${escapeHtml(br.next?.name || "")}】</p>
         ${matRows ? `<h4>持有材料</h4><ul class="stat-sheet-mats">${matRows}</ul>` : ""}
@@ -2759,7 +2753,7 @@ async function playIdleCombatEvents(events) {
         targetBuff: event.targetBuff || null,
         targetHp: event.targetHp,
         targetMaxHp: event.targetMaxHp,
-        speedMult: 1,
+        speedMult: 0.42,
         token,
       });
     } else if (event.type === "heal") {
@@ -2771,7 +2765,7 @@ async function playIdleCombatEvents(events) {
         buffText: "治療",
         targetHp: event.targetHp,
         targetMaxHp: event.targetMaxHp,
-        speedMult: 1,
+        speedMult: 0.42,
         token,
       });
     }
@@ -2791,10 +2785,13 @@ function tickIdleCombat({ background = false } = {}) {
   const now = Date.now();
   const gapSec = Math.max(0, (now - lastIdleStepAt) / 1000);
   lastIdleStepAt = now;
-  // 約 1 步／秒；背景或節流時用牆鐘追趕
+  // 約 2.5 步／秒；背景用牆鐘追趕
+  const IDLE_STEPS_PER_SEC = 2.5;
   let steps = 1;
-  if (background || (typeof document !== "undefined" && document.hidden) || gapSec > 1.5) {
-    steps = Math.min(120, Math.max(1, Math.floor(gapSec || 1)));
+  if (background || (typeof document !== "undefined" && document.hidden) || gapSec > 0.7) {
+    steps = Math.min(160, Math.max(1, Math.floor((gapSec || 0.4) * IDLE_STEPS_PER_SEC)));
+  } else if (gapSec >= 0.35) {
+    steps = Math.min(3, Math.max(1, Math.round(gapSec * IDLE_STEPS_PER_SEC)));
   }
 
   let lastResult = null;
@@ -2911,6 +2908,12 @@ function idleUnitBarHtml(u, slotIndex = 0, lane = "front") {
 function trainIdleStripHtml() {
   const wrap = ensureIdleCombat();
   const gates = trainFloorNavGates(state);
+  const floor = gates.floor || trainIdleFloor(state);
+  const stageBoss = isSpineStageBossFloor(floor) || !!wrap?.session?.stageBoss;
+  const bossCls = stageBoss ? " is-stage-boss" : "";
+  const bossBanner = stageBoss
+    ? `<p class="train-boss-banner">階段頭目關 · 通關後進入新階段</p>`
+    : "";
   const floorNav = `<div class="row train-floor-nav">
     <button type="button" class="secondary" data-train-floor-prev ${
       gates.canPrev ? "" : "disabled"
@@ -2920,8 +2923,9 @@ function trainIdleStripHtml() {
     }>下一層</button>
   </div>`;
   if (!wrap?.session) {
-    return `<div class="train-idle-strip" data-live="train-idle">
+    return `<div class="train-idle-strip${bossCls}" data-live="train-idle">
       ${floorNav}
+      ${bossBanner}
       <p class="meta train-idle-log muted">掛機清場中（請先出戰）</p>
     </div>`;
   }
@@ -2940,13 +2944,17 @@ function trainIdleStripHtml() {
     Math.round(((s.waveIndex + (s.ended && s.won ? 1 : 0)) / Math.max(1, s.waveCount)) * 100)
   );
   const resultLine = idleCombatResultLine(wrap);
-  const resultCls =
-    resultLine === "挑戰失敗" ? " is-fail" : resultLine ? " is-clear" : "";
-  return `<div class="train-idle-strip" data-live="train-idle">
+  const resultCls = resultLine
+    ? resultLine === "挑戰失敗"
+      ? " is-fail"
+      : " is-clear"
+    : "";
+  return `<div class="train-idle-strip${bossCls}" data-live="train-idle">
     ${floorNav}
+    ${bossBanner}
     <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
     <div class="bar combat-bar train-idle-bar"><i data-live="train-idle-bar" style="width:${pct}%"></i></div>
-    <div class="combat-roster train-idle-roster combat-formation" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}">
+    <div class="combat-roster train-idle-roster combat-formation" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}" style="--formation-rows:${activePetMaxForState(state)}">
       <div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
         s.allies,
         "ally",
@@ -3152,68 +3160,25 @@ function cultivatePanel(qiPct, next, m) {
   const trunk = spineTrunkView(state);
   const viewFloor = trainIdleFloor(state);
   const floorName = dungeonDisplayName(viewFloor);
-
-  const branches = listSideBranches(state);
-  const branchChips = branches
-    .map((b) => {
-      const open = trainBranchFocus === b.id;
-      if (!b.unlocked) {
-        return `<button type="button" class="ghost train-branch-btn is-locked" disabled title="${escapeHtml(b.lockHint)}">🔒 ${escapeHtml(b.name)}</button>`;
-      }
-      return `<button type="button" class="${open ? "primary" : "secondary"} train-branch-btn" data-train-branch="${b.id}">${open ? "▾" : "▸"} ${escapeHtml(b.name)}</button>`;
-    })
-    .join("");
-
-  let branchDetail = "";
-  if (trainBranchFocus) {
-    const b = sideBranchById(trainBranchFocus);
-    if (b && isSideBranchUnlocked(state, b.id)) {
-      const floors = branchFloors(b.id);
-      const floorRows = floors
-        .map((fid, i) => {
-          const floor = i + 1;
-          const cleared = !!(state.clearedDungeons || {})[fid];
-          const gate = dungeonGateView(state, fid);
-          const d = resolveDungeon(state, fid);
-          let action = "";
-          if (!gate.needsSummon || gate.phase === "ready") {
-            action = `<button type="button" class="primary" data-train-branch-attack="${escapeHtml(fid)}">${cleared ? "再戰" : "挑戰"}</button>`;
-          } else if (gate.summoning) {
-            action = `<span class="muted">凝聚中…</span>`;
-          } else {
-            action = `<button type="button" class="secondary" data-train-branch-summon="${escapeHtml(fid)}">召喚</button>`;
-          }
-          return `<li class="card-row train-branch-floor">
-            <div>
-              <strong>${escapeHtml(d?.name || `${b.name}·${floor}`)}</strong>
-              <span class="muted">${cleared ? "已通" : "未通"} · 專產${escapeHtml(MATERIALS[b.specialty]?.name || b.specialty)}</span>
-            </div>
-            ${action}
-          </li>`;
-        })
-        .join("");
-      branchDetail = `<div class="train-branch-panel">
-        <p class="meta">側枝唔推進主脊 · 專刷【${escapeHtml(MATERIALS[b.specialty]?.name || b.specialty)}】</p>
-        <ul class="list">${floorRows}</ul>
-        <button type="button" class="ghost" data-train-branch-close>收起側枝</button>
-      </div>`;
-    }
-  }
+  const petMax = activePetMaxForState(state);
+  const stage = spineStageFromState(state);
+  const stageNote =
+    stage >= ACTIVE_PET_UNLOCK_STAGE
+      ? `<p class="meta">階段${stage} · 出戰 ${state.pets.length}／${petMax}</p>`
+      : `<p class="meta">階段${stage} · 出戰 ${state.pets.length}／${petMax}（階段三·已通≥41 解鎖第4位）</p>`;
 
   return wrapStage(
     nav,
     `<h2>第${viewFloor}關 · ${escapeHtml(floorName)}</h2>
     <p class="meta">${escapeHtml(trunk.progressLabel)}</p>
+    ${stageNote}
     ${
       tutorialQiReady(state)
         ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
         : ""
     }
     ${trainIdleStripHtml()}
-    ${trainRatesBlockHtml(rateLines)}
-    <h3>側枝</h3>
-    <div class="row tactics-row train-branch-row">${branchChips}</div>
-    ${branchDetail}`
+    ${trainRatesBlockHtml(rateLines)}`
   );
 }
 
@@ -3505,7 +3470,7 @@ function petsListView() {
         )
       )
       .join("") ||
-    `<li class="empty">出戰欄空。從牧場派出靈寵（最多 ${ACTIVE_PET_MAX}）。</li>`;
+    `<li class="empty">出戰欄空。從牧場派出靈寵（最多 ${activePetMaxForState(state)}）。</li>`;
 
   const deployedIds = new Set((state.pets || []).map((p) => p.uid));
   const ranchIdle = (ranch || []).filter((p) => !deployedIds.has(p.uid));
@@ -3734,7 +3699,7 @@ function petsListView() {
   return wrapStage(
     nav,
     `<h2>靈寵 · 出戰</h2>
-    <p class="lead">${state.pets.length}/${ACTIVE_PET_MAX} · ${escapeHtml(synNote)}</p>
+    <p class="lead">${state.pets.length}/${activePetMaxForState(state)} · ${escapeHtml(synNote)}</p>
     <ul class="list">${roster}</ul>`
   );
 }
@@ -6076,44 +6041,7 @@ function bind() {
       setFlash(r.msg);
     });
   });
-  app.querySelectorAll("[data-train-branch]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = btn.dataset.trainBranch;
-      trainBranchFocus = trainBranchFocus === id ? null : id;
-      panelSub = { ...panelSub, cultivate: "train" };
-      render();
-    });
-  });
-  app.querySelectorAll("[data-train-branch-close]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      trainBranchFocus = null;
-      render();
-    });
-  });
-  app.querySelectorAll("[data-goto-branch]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      trainBranchFocus = btn.dataset.gotoBranch;
-      panelSub = { ...panelSub, cultivate: "train" };
-      tab = "cultivate";
-      render();
-    });
-  });
-  app.querySelectorAll("[data-train-branch-summon]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = btn.dataset.trainBranchSummon;
-      const r = startDungeonSummon(state, id);
-      saveState(state);
-      setFlash(r.msg);
-      render();
-    });
-  });
-  app.querySelectorAll("[data-train-branch-attack]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = btn.dataset.trainBranchAttack;
-      if (!isBranchDungeonId(id)) return;
-      executeDungeonAttack(id, "challenge");
-    });
-  });
+  // 側枝戰鬥入口已移除；材料提示用 data-goto-train 指主脊
   app.querySelectorAll("[data-train-floor-prev]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
@@ -6606,12 +6534,16 @@ window.addEventListener("beforeinstallprompt", (e) => {
 
 setInterval(() => {
   if (playback && !playback.done) return;
+  const onTrainPanel = tab === "cultivate" && panelSub.cultivate === "train";
+  tickIdleCombat({ background: !onTrainPanel });
+}, 380);
+
+setInterval(() => {
+  if (playback && !playback.done) return;
   const eggReadyNow = patchLive();
   const adv = advanceTutorialIfReady(state);
   const snap = tutorialLiveSnapshot(state);
   const onTrainPanel = tab === "cultivate" && panelSub.cultivate === "train";
-  // 掛機五波：全局推進（離開練功頁／背景分頁仍繼續）
-  tickIdleCombat({ background: !onTrainPanel });
   let summonFlip = false;
   if (tab === "dungeon" && panelSub.dungeon === "field") {
     const ids = dungeonsForRealm(state.realm).filter((id) => resolveDungeon(state, id));

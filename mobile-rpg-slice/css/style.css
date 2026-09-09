@@ -1972,14 +1972,15 @@ button.linkish strong { color: var(--jade); }
 .combat-formation-side {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: repeat(3, minmax(1.55rem, auto));
+  grid-template-rows: repeat(var(--formation-rows, 3), minmax(1.4rem, auto));
   gap: 0.2rem 0.12rem;
-  min-height: 5.2rem;
+  min-height: calc(var(--formation-rows, 3) * 1.55rem);
   align-content: start;
 }
 .combat-unit[data-slot="0"] { grid-row: 1; }
 .combat-unit[data-slot="1"] { grid-row: 2; }
 .combat-unit[data-slot="2"] { grid-row: 3; }
+.combat-unit[data-slot="3"] { grid-row: 4; }
 /* 友方：rear=外側(左)，front=對敵(右)；敵方鏡像 */
 .combat-formation-side[data-side="ally"] .combat-unit[data-lane="rear"] {
   grid-column: 1;
@@ -3156,6 +3157,32 @@ button.pet-badge {
 .panel-train .train-idle-strip {
   position: relative;
   overflow: hidden;
+}
+.train-idle-strip.is-stage-boss {
+  border: 2px solid color-mix(in srgb, #e85a4a 75%, #fff);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #e85a4a 40%, transparent),
+    0 0 18px color-mix(in srgb, #e85a4a 28%, transparent);
+  animation: stageBossPulse 1.1s ease-in-out infinite;
+}
+.train-boss-banner {
+  margin: 0 0 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, #ff8a78 80%, var(--fog));
+  text-align: center;
+}
+@keyframes stageBossPulse {
+  0%, 100% {
+    border-color: color-mix(in srgb, #e85a4a 70%, #fff);
+    box-shadow: 0 0 0 1px color-mix(in srgb, #e85a4a 35%, transparent),
+      0 0 12px color-mix(in srgb, #e85a4a 22%, transparent);
+  }
+  50% {
+    border-color: color-mix(in srgb, #ff6b5a 90%, #fff);
+    box-shadow: 0 0 0 2px color-mix(in srgb, #ff6b5a 55%, transparent),
+      0 0 22px color-mix(in srgb, #e85a4a 45%, transparent);
+  }
 }
 .cultivate-panel .train-idle-strip::after {
   content: "";
