@@ -3880,13 +3880,15 @@ export function claimHatch(state, eggUid) {
   const genes = egg.source === "breed" ? egg.genes : null;
   const reveal = hatchRevealFromPet(pet, egg);
   const celebrate = !!(
-    genes?.hybrid ||
-    genes?.tertiary ||
-    genes?.rarityUp ||
-    (genes?.rarity ?? pet.rarity ?? 0) >= 2 ||
-    (genes?.generation ?? petGeneration(pet)) >= 2 ||
-    egg.awakenSkillLevel ||
-    (pet.bloodmarks && pet.bloodmarks.length)
+    (egg.source === "breed" &&
+      (genes?.hybrid ||
+        genes?.tertiary ||
+        genes?.rarityUp ||
+        (genes?.rarity ?? 0) >= 2 ||
+        (genes?.generation ?? 0) >= 2 ||
+        egg.awakenSkillLevel ||
+        (pet.bloodmarks && pet.bloodmarks.length))) ||
+    (egg.source !== "breed" && (pet.rarity ?? 0) >= 2)
   );
   return {
     ok: true,
