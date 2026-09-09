@@ -57,6 +57,7 @@ import {
   FORMATION_SLOT_COUNT,
   formationAllyPlacement,
   formationFoePlacement,
+  LANE_COMBAT,
   DUNGEON_CHALLENGE_RULES,
   pickDailyChallenge,
   DUNGEON_DAILY_MODS,
@@ -90,6 +91,7 @@ import {
   petSkillIds,
   partySynergy,
   personalityCombatFor,
+  personalityCombatForPet,
   gearSetBonus,
   GEAR_SETS,
   DISPATCH_MISSIONS,
@@ -309,6 +311,7 @@ import {
   exportSaveJson,
   importSaveJson,
   dailyView,
+  probeLaneSkillEffects,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -470,6 +473,16 @@ assert(DISPATCH_GEN_REWARD_MULT[3] === 1.25, "gen3 dispatch mult");
 assert(IDLE_BY_PERSONALITY.diligent?.feed > IDLE_BY_PERSONALITY.fierce?.feed, "work>fight feed");
 assert(PERSONALITIES.blessed.workFeed >= 1 && PERSONALITIES.blessed.atk >= 1, "blessed no penalty");
 assert(PERSONALITIES.brutal.atk > 1 && PERSONALITIES.brutal.workFeed < 1, "fight tradeoff");
+for (const id of Object.keys(PERSONALITIES)) {
+  const pe = PERSONALITIES[id];
+  assert(typeof pe.dispatchReward === "number" && pe.dispatchReward > 0, `dispatchReward ${id}`);
+  assert(typeof pe.breedCdMult === "number" && pe.breedCdMult > 0, `breedCdMult ${id}`);
+}
+assert(PERSONALITIES.diligent.dispatchReward >= 1.08 && PERSONALITIES.diligent.dispatchReward <= 1.22, "work dispatchReward band");
+assert(PERSONALITIES.wild.dispatchReward <= 1.0 && PERSONALITIES.wild.dispatchReward >= 0.88, "fight dispatchReward band");
+assert(PERSONALITIES.nurturing.breedCdMult < PERSONALITIES.wild.breedCdMult, "nurturing faster breed than wild");
+assert(personalityExplain("diligent")?.dispatchReward === PERSONALITIES.diligent.dispatchReward, "explain dispatchReward");
+assert(personalityExplain("patient")?.breedCdMult === PERSONALITIES.patient.breedCdMult, "explain breedCdMult");
 const mig = migrateBestiaryMap({
   "reefox:tide:fierce:none": true,
   "reefox:tide:gentle:none": true,
@@ -867,6 +880,24 @@ assert(FORMATION_SLOT_COUNT === 4, "formation slot count max 4");
 }
 assert(FORMATIONS.vanguard.desc.includes("前排"), "vanguard desc mentions front");
 assert(FORMATIONS.rear.desc.includes("後排"), "rear desc mentions rear");
+assert(FORMATIONS.vanguard.desc.includes("多傷") || FORMATIONS.vanguard.desc.includes("前排多"), "vanguard combat lane flavor");
+assert(FORMATIONS.rear.desc.includes("減傷"), "rear combat lane flavor");
+assert(FORMATIONS.balanced.desc.includes("前排") && FORMATIONS.balanced.desc.includes("後排"), "balanced mentions lanes");
+assert(LANE_COMBAT.front.dmgDealtMult > 1 && LANE_COMBAT.rear.dmgTakenMult < 1, "lane combat mults");
+assert(LANE_COMBAT.rear.healOutMult > 1, "rear heal stronger");
+assert(SKILLS.shell_guard.counter && SKILLS.venom_bite.dot && SKILLS.prism_shell.shield, "skill effect flags");
+assert(SKILLS.tide_spray.targetRule === "front" && SKILLS.mist_ward.targetRule === "lowest", "targetRule");
+assert(SKILLS.swarm_haze.dot && SKILLS.fang_burst.dot, "bug DoT skills");
+assert(SKILLS.bulwark_pulse.counter && SKILLS.shell_spike.counter, "shell counter skills");
+assert(SKILLS.tidal_veil.shield && SKILLS.prism_burst.targetRule === "front", "scale/light shield or front");
+{
+  const d4 = probeLaneSkillEffects();
+  assert(d4.laneOk, "D4 lane stamp + combat mults");
+  assert(d4.dotOk, "D4 DoT tick");
+  assert(d4.shieldOk, "D4 shield apply");
+  assert(d4.counterOk, "D4 counter on guard");
+  assert(d4.ok, "D4 probe all ok");
+}
 assert(DUNGEON_CHALLENGE_RULES.length >= 5, "challenge rules");
 const chal = pickDailyChallenge("2026-08-26", "tide_2");
 assert(chal?.label && pickDailyChallenge("2026-08-26", "tide_2").id === chal.id, "chal deterministic");
@@ -896,8 +927,17 @@ const synSp = partySynergy([
 assert(synSp.labels.some((l) => l.includes("同族血脈")), "same species");
 assert(personalityCombatFor("fierce")?.atkMult === 1.1, "fierce passive");
 assert(personalityCombatFor("gentle")?.sustainBias, "gentle sustain");
+assert(personalityCombatFor("bloodthirst")?.lifesteal > 0, "bloodthirst lifesteal");
+assert(personalityCombatFor("vengeful")?.lowHpAtk > 1, "vengeful lowHpAtk");
+assert(personalityCombatFor("brutal")?.frontAtkMult > 1, "brutal frontAtk");
+assert(personalityCombatFor("arrogant")?.executeAtk > 1, "arrogant execute");
+assert(personalityCombatFor("patient")?.dmgTakenMult < 1, "patient dmgTaken");
+assert(personalityCombatFor("cunning")?.aggroBias, "cunning aggroBias");
 assert(personalityCombatFor("diligent")?.atkMult < 1, "diligent combat soft");
 assert(personalityCombatFor("blessed")?.atkMult >= 1, "blessed combat buff");
+const peBlend = personalityCombatForPet({ personalityId: "bloodthirst", personality2Id: "gentle" });
+assert(peBlend?.lifesteal > 0 && peBlend?.sustainBias, "dual pe blend tags");
+assert(personalityExplain("bloodthirst")?.lifesteal > 0, "explain lifesteal");
 assert(GEAR_SETS.tide && gearSetBonus(["tide_blade", "moss_vest"]).atk === 3, "set2");
 assert(gearSetBonus(["core_fang", "abyss_plate", "gloom_sigil"]).labels.some((l) => l.includes("三件")), "set3");
 assert(DISPATCH_MISSIONS.length >= 3, "dispatch missions");
@@ -1077,6 +1117,14 @@ const combatRes = runDungeon(combatSt, "tide_1");
 assert(combatRes.ok && combatRes.combatEvents?.length > 5, "combat events");
 assert(!combatRes.combatStart?.allies?.some((a) => a.isMaster), "no master in combat");
 assert(combatRes.combatStart?.allies?.length >= 1, "combat roster allies");
+assert(
+  combatRes.combatStart.allies.every((a) => a.lane === "front" || a.lane === "rear"),
+  "combat allies stamped with lane"
+);
+assert(
+  combatRes.combatStart.foes.every((f) => f.lane === "front" || f.lane === "rear"),
+  "combat foes stamped with lane"
+);
 assert(combatRes.combatEvents.some((e) => e.type === "strike" || e.type === "text"), "strike or text");
 const strikeEv = combatRes.combatEvents.find((e) => e.type === "strike");
 if (strikeEv) {
@@ -2112,6 +2160,56 @@ if (beforeStones) {
 assert(dispSt.dispatchBoard.length >= 1, "claim refills dispatch board");
 assert(claimR.boardFilled, "claim returns boardFilled id");
 
+/* D1: personality dispatchReward multiplies claim payout (main only) */
+{
+  const baseStones = mission.reward?.stones || 0;
+  function claimPe(peId) {
+    const pet = {
+      ...buildPetStats({
+        id: `pe-${peId}`,
+        species: "reefox",
+        element: "tide",
+        personality: peId,
+        cost: 0,
+      }),
+      uid: "disp-pe",
+      generation: 1,
+    };
+    const st = {
+      stones: 0,
+      scrap: 0,
+      feed: 0,
+      dust: 0,
+      materials: {},
+      ranch: [pet],
+      pets: [],
+      dispatches: [
+        {
+          dispatchId: "d-pe",
+          missionId: mission.id,
+          petUids: ["disp-pe"],
+          readyAt: Date.now() - 1,
+          claimed: false,
+        },
+      ],
+      dispatchBoard: [],
+      stats: {},
+      daily: { date: todayKey(), progress: {}, claimed: {}, idleSec: 0 },
+      log: [],
+      achievements: { dispatch_once: true },
+    };
+    claimDispatch(st, "d-pe", () => 0);
+    return st.stones;
+  }
+  const workStones = claimPe("diligent");
+  const fightStones = claimPe("wild");
+  const expectWork = Math.max(1, Math.round(baseStones * PERSONALITIES.diligent.dispatchReward));
+  const expectFight = Math.max(1, Math.round(baseStones * PERSONALITIES.wild.dispatchReward));
+  assert(workStones === expectWork, "diligent claimDispatch dispatchReward");
+  assert(fightStones === expectFight, "wild claimDispatch dispatchReward");
+  assert(workStones > fightStones, "work pe reward > fight pe reward");
+}
+
 /* Dispatch board rotate + slot cap + restrictions */
 const dispTidePet = {
   ...buildPetStats({
@@ -2455,7 +2553,11 @@ assert(batchSt.breedJobs[0].batch === 10 && batchSt.breedJobs[0].cycles.length =
 assert(batchSt.stones === stonesBeforeBatch - BREED_STONE_COST * 10, "stones ×10");
 assert(batchSt.materials.coral_shard === coralBeforeBatch - breedMatCost(0, 0).coral_shard * 10, "coral ×10");
 const t0 = batchSt.breedJobs[0].startedAt;
-assert(batchSt.breedJobs[0].readyAt === t0 + BREED_COOLDOWN_MS * 10, "10× duration 450s");
+const gentleCd =
+  ((PERSONALITIES.gentle.breedCdMult || 1) + (PERSONALITIES.gentle.breedCdMult || 1)) / 2;
+const expectCycleMs = Math.round(BREED_COOLDOWN_MS * gentleCd);
+assert(batchSt.breedJobs[0].cycleMs === expectCycleMs, "breed cycleMs applies breedCdMult");
+assert(batchSt.breedJobs[0].readyAt === t0 + expectCycleMs * 10, "10× duration with pe cd");
 const job10 = batchSt.breedJobs[0];
 const fakeNow = Date.now();
 job10.startedAt = fakeNow - 92_000;
@@ -3397,7 +3499,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v105"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v106"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260909.1";
+export const APP_BUILD = "20260909.2";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -722,7 +722,9 @@ export const PERSONALITIES = {
     workDust: 0.7,
     workToken: 0.5,
     dispatchTime: 1.08,
+    dispatchReward: 0.95,
     breedMutate: 1.0,
+    breedCdMult: 1.05,
     bond: 0.48,
   },
   steady: {
@@ -736,7 +738,9 @@ export const PERSONALITIES = {
     workDust: 1.1,
     workToken: 1.05,
     dispatchTime: 0.9,
+    dispatchReward: 1.08,
     breedMutate: 1.0,
+    breedCdMult: 0.98,
     bond: 0.68,
   },
   sly: {
@@ -750,7 +754,9 @@ export const PERSONALITIES = {
     workDust: 1.2,
     workToken: 1.25,
     dispatchTime: 0.95,
+    dispatchReward: 1.06,
     breedMutate: 1.05,
+    breedCdMult: 1.0,
     bond: 0.55,
   },
   gentle: {
@@ -764,7 +770,9 @@ export const PERSONALITIES = {
     workDust: 1.15,
     workToken: 1.1,
     dispatchTime: 0.92,
+    dispatchReward: 1.12,
     breedMutate: 0.95,
+    breedCdMult: 0.92,
     bond: 0.78,
   },
   wild: {
@@ -778,7 +786,9 @@ export const PERSONALITIES = {
     workDust: 0.55,
     workToken: 0.45,
     dispatchTime: 1.12,
+    dispatchReward: 0.88,
     breedMutate: 1.2,
+    breedCdMult: 1.15,
     bond: 0.38,
   },
   // —— 戰鬥向（加打減工）——
@@ -793,7 +803,9 @@ export const PERSONALITIES = {
     workDust: 0.5,
     workToken: 0.4,
     dispatchTime: 1.15,
+    dispatchReward: 0.9,
     breedMutate: 1.0,
+    breedCdMult: 1.06,
     bond: 0.4,
   },
   bloodthirst: {
@@ -807,7 +819,9 @@ export const PERSONALITIES = {
     workDust: 0.6,
     workToken: 0.4,
     dispatchTime: 1.1,
+    dispatchReward: 0.88,
     breedMutate: 1.05,
+    breedCdMult: 1.08,
     bond: 0.42,
   },
   arrogant: {
@@ -821,7 +835,9 @@ export const PERSONALITIES = {
     workDust: 0.65,
     workToken: 0.6,
     dispatchTime: 1.05,
+    dispatchReward: 0.96,
     breedMutate: 0.9,
+    breedCdMult: 1.02,
     bond: 0.45,
   },
   restless: {
@@ -835,7 +851,9 @@ export const PERSONALITIES = {
     workDust: 0.75,
     workToken: 0.55,
     dispatchTime: 1.18,
+    dispatchReward: 0.92,
     breedMutate: 1.1,
+    breedCdMult: 1.12,
     bond: 0.5,
   },
   vengeful: {
@@ -849,7 +867,9 @@ export const PERSONALITIES = {
     workDust: 0.7,
     workToken: 0.55,
     dispatchTime: 1.06,
+    dispatchReward: 0.94,
     breedMutate: 1.0,
+    breedCdMult: 1.04,
     bond: 0.46,
   },
   cunning: {
@@ -863,7 +883,9 @@ export const PERSONALITIES = {
     workDust: 0.85,
     workToken: 0.75,
     dispatchTime: 1.0,
+    dispatchReward: 0.98,
     breedMutate: 1.08,
+    breedCdMult: 1.03,
     bond: 0.5,
   },
   // —— 工作向（加工減打）——
@@ -878,7 +900,9 @@ export const PERSONALITIES = {
     workDust: 1.35,
     workToken: 1.3,
     dispatchTime: 0.85,
+    dispatchReward: 1.22,
     breedMutate: 1.0,
+    breedCdMult: 0.95,
     bond: 0.72,
   },
   nurturing: {
@@ -892,7 +916,9 @@ export const PERSONALITIES = {
     workDust: 1.05,
     workToken: 1.0,
     dispatchTime: 0.88,
+    dispatchReward: 1.15,
     breedMutate: 1.15,
+    breedCdMult: 0.85,
     bond: 0.8,
   },
   patient: {
@@ -906,7 +932,9 @@ export const PERSONALITIES = {
     workDust: 1.2,
     workToken: 1.15,
     dispatchTime: 0.78,
+    dispatchReward: 1.18,
     breedMutate: 0.95,
+    breedCdMult: 0.88,
     bond: 0.7,
   },
   curious: {
@@ -920,7 +948,9 @@ export const PERSONALITIES = {
     workDust: 1.45,
     workToken: 1.4,
     dispatchTime: 0.9,
+    dispatchReward: 1.1,
     breedMutate: 1.2,
+    breedCdMult: 1.0,
     bond: 0.62,
   },
   loyal: {
@@ -934,7 +964,9 @@ export const PERSONALITIES = {
     workDust: 1.15,
     workToken: 1.2,
     dispatchTime: 0.86,
+    dispatchReward: 1.16,
     breedMutate: 1.0,
+    breedCdMult: 0.94,
     bond: 0.74,
   },
   // —— 祥瑞系（只加不減）——
@@ -949,7 +981,9 @@ export const PERSONALITIES = {
     workDust: 1.12,
     workToken: 1.1,
     dispatchTime: 0.95,
+    dispatchReward: 1.1,
     breedMutate: 1.08,
+    breedCdMult: 0.96,
     bond: 0.72,
   },
   clever: {
@@ -963,7 +997,9 @@ export const PERSONALITIES = {
     workDust: 1.15,
     workToken: 1.18,
     dispatchTime: 0.92,
+    dispatchReward: 1.08,
     breedMutate: 1.1,
+    breedCdMult: 1.0,
     bond: 0.65,
   },
   noble: {
@@ -977,7 +1013,9 @@ export const PERSONALITIES = {
     workDust: 1.1,
     workToken: 1.08,
     dispatchTime: 0.94,
+    dispatchReward: 1.07,
     breedMutate: 1.05,
+    breedCdMult: 0.98,
     bond: 0.7,
   },
   serene: {
@@ -991,7 +1029,9 @@ export const PERSONALITIES = {
     workDust: 1.18,
     workToken: 1.12,
     dispatchTime: 0.9,
+    dispatchReward: 1.09,
     breedMutate: 1.05,
+    breedCdMult: 0.95,
     bond: 0.75,
   },
 };
@@ -1086,6 +1126,7 @@ export const SKILLS = {
     type: "heal",
     cd: 3,
     power: 0.35,
+    targetRule: "lowest",
     desc: "治療生命最低的友方",
   },
   tide_banner: {
@@ -1116,7 +1157,8 @@ export const SKILLS = {
     type: "cleave",
     cd: 3,
     power: 0.75,
-    desc: "鱗類：濺射最多兩名敵人",
+    targetRule: "front",
+    desc: "鱗類：優先濺射前排（最多兩名）",
   },
   gale_dive: {
     id: "gale_dive",
@@ -1136,7 +1178,8 @@ export const SKILLS = {
     type: "guard",
     cd: 3,
     power: 0.4,
-    desc: "甲類：自身減傷並小幅回血",
+    counter: true,
+    desc: "甲類：減傷回血，受擊時反擊",
   },
   venom_bite: {
     id: "venom_bite",
@@ -1146,7 +1189,8 @@ export const SKILLS = {
     type: "debuff",
     cd: 2,
     power: 1.2,
-    desc: "蟲類：傷害並使目標攻擊降低",
+    dot: true,
+    desc: "蟲類：傷害、削攻並附加蝕毒（持續傷）",
   },
   glow_lance: {
     id: "glow_lance",
@@ -1156,7 +1200,9 @@ export const SKILLS = {
     type: "strike",
     cd: 2,
     power: 1.6,
-    desc: "光類：熒芒穿刺單體",
+    targetRule: "front",
+    shield: true,
+    desc: "光類：穿刺前排並為自身覆薄盾",
   },
   // —— 第二技能（融階／等級解鎖）——
   pack_howl: {
@@ -1177,7 +1223,9 @@ export const SKILLS = {
     type: "heal",
     cd: 3,
     power: 0.22,
-    desc: "鱗類二技：為生命最低友方回復",
+    targetRule: "lowest",
+    shield: true,
+    desc: "鱗類二技：治療生命最低友方並覆薄盾",
   },
   sky_pierce: {
     id: "sky_pierce",
@@ -1197,7 +1245,8 @@ export const SKILLS = {
     type: "guard",
     cd: 4,
     power: 0.28,
-    desc: "甲類二技：強減傷並回血",
+    counter: true,
+    desc: "甲類二技：強減傷回血，受擊反擊",
   },
   swarm_haze: {
     id: "swarm_haze",
@@ -1207,7 +1256,9 @@ export const SKILLS = {
     type: "cleave",
     cd: 3,
     power: 0.65,
-    desc: "蟲類二技：濺射全體敵人",
+    targetRule: "front",
+    dot: true,
+    desc: "蟲類二技：前排濺射並附加蝕毒",
   },
   prism_burst: {
     id: "prism_burst",
@@ -1217,7 +1268,9 @@ export const SKILLS = {
     type: "cleave",
     cd: 3,
     power: 0.7,
-    desc: "光類二技：棱光濺射全體",
+    targetRule: "front",
+    shield: true,
+    desc: "光類二技：前排棱光濺射並自覆護盾",
   },
   // —— 敵方專屬 ——
   abyss_slam: {
@@ -1291,7 +1344,8 @@ export const SKILLS = {
     type: "guard",
     cd: 3,
     power: 0.45,
-    desc: "鐵背專屬：強減傷回血",
+    counter: true,
+    desc: "鐵背專屬：強減傷回血，受擊反擊",
   },
   mist_surge: {
     id: "mist_surge",
@@ -1300,7 +1354,8 @@ export const SKILLS = {
     type: "cleave",
     cd: 3,
     power: 0.8,
-    desc: "霧鯉專屬：霧浪濺射",
+    targetRule: "front",
+    desc: "霧鯉專屬：霧浪優先濺射前排",
   },
   storm_lance: {
     id: "storm_lance",
@@ -1327,7 +1382,9 @@ export const SKILLS = {
     type: "cleave",
     cd: 3,
     power: 1.55,
-    desc: "牙蟎專屬：毒牙濺射",
+    targetRule: "front",
+    dot: true,
+    desc: "牙蟎專屬：毒牙前排濺射並蝕毒",
   },
   scale_glide: {
     id: "scale_glide",
@@ -1336,7 +1393,9 @@ export const SKILLS = {
     type: "strike",
     cd: 2,
     power: 1.75,
-    desc: "鱗羽專屬：鱗刃俯衝",
+    targetRule: "front",
+    shield: true,
+    desc: "鱗羽專屬：鱗刃襲前排並自覆薄盾",
   },
   shell_spike: {
     id: "shell_spike",
@@ -1345,7 +1404,8 @@ export const SKILLS = {
     type: "guard",
     cd: 3,
     power: 0.5,
-    desc: "甲蟎專屬：甲刺反震",
+    counter: true,
+    desc: "甲蟎專屬：甲刺減傷，受擊反震",
   },
   glint_beam: {
     id: "glint_beam",
@@ -1354,7 +1414,8 @@ export const SKILLS = {
     type: "strike",
     cd: 2,
     power: 1.88,
-    desc: "耀狐專屬：光焰貫穿",
+    targetRule: "front",
+    desc: "耀狐專屬：光焰貫穿前排",
   },
   prism_shell: {
     id: "prism_shell",
@@ -1363,7 +1424,9 @@ export const SKILLS = {
     type: "guard",
     cd: 3,
     power: 0.48,
-    desc: "稜背專屬：稜光護盾",
+    shield: true,
+    counter: true,
+    desc: "稜背專屬：稜光護盾並可反擊",
   },
 };
 
@@ -1854,16 +1917,24 @@ export function rollBreedGenes(parentA, parentB) {
     : Math.random() < 0.5
       ? ga.personality
       : gb.personality;
+  // 雙親主性格平均突變倍率（好奇／狂放高、傲慢／忍耐低）
+  const peBreedMut =
+    ((PERSONALITIES[ga.personality]?.breedMutate || 1) +
+      (PERSONALITIES[gb.personality]?.breedMutate || 1)) /
+    2;
   // 主性格突變
-  if (Math.random() < 0.12 * genMult * rarityMutMult) {
+  if (Math.random() < 0.12 * genMult * rarityMutMult * peBreedMut) {
     const others = Object.keys(PERSONALITIES).filter((p) => p !== personality);
     personality = pick(others);
     mutated = true;
   }
-  // 第二性格：從池中另抽，可突變
+  // 第二性格：從池中另抽，可突變；雙親同 role 略提高繼承機率
   let personality2 = null;
   const pe2Pool = pePool.filter((p) => p !== personality);
-  if (pe2Pool.length && Math.random() < 0.72) {
+  const roleA = PERSONALITIES[ga.personality]?.role;
+  const roleB = PERSONALITIES[gb.personality]?.role;
+  const pe2InheritChance = roleA && roleA === roleB ? 0.82 : 0.72;
+  if (pe2Pool.length && Math.random() < pe2InheritChance) {
     personality2 = pe2Pool[Math.floor(Math.random() * pe2Pool.length)];
   } else if (Math.random() < 0.45) {
     const others = Object.keys(PERSONALITIES).filter((p) => p !== personality);
@@ -1885,10 +1956,6 @@ export function rollBreedGenes(parentA, parentB) {
     const other = markPool.find((m) => m !== bloodmarks[0]);
     if (other) bloodmarks.push(other);
   }
-  const peBreedMut =
-    ((PERSONALITIES[ga.personality]?.breedMutate || 1) +
-      (PERSONALITIES[gb.personality]?.breedMutate || 1)) /
-    2;
   if (Math.random() < 0.28 * genMult * peBreedMut * rarityMutMult) {
     const candidates = BLOODLINE_MARK_IDS.filter((id) => !bloodmarks.includes(id));
     if (candidates.length) {
@@ -2000,12 +2067,21 @@ export const TACTICS = {
 
 export const TACTIC_IDS = ["balanced", "focus_boss", "sustain"];
 
+/**
+ * 前／後排實戰微調（與陣型企位 lane 疊加）
+ * front：略增輸出與承傷；rear：減承傷，治療／增益略強
+ */
+export const LANE_COMBAT = {
+  front: { dmgDealtMult: 1.08, dmgTakenMult: 1.1, healOutMult: 1, buffOutMult: 1 },
+  rear: { dmgDealtMult: 1, dmgTakenMult: 0.9, healOutMult: 1.1, buffOutMult: 1.08 },
+};
+
 /** 出戰陣型（影響寵物攻／血／速＋友方企位；人物不受影響） */
 export const FORMATIONS = {
   vanguard: {
     id: "vanguard",
     name: "前衛",
-    desc: "寵物壓前排 · 血量 +12%，攻擊 −5%",
+    desc: "寵物壓前排 · 血量 +12%，攻擊 −5% · 前排多傷多挨",
     petHpMult: 1.12,
     petAtkMult: 0.95,
     petSpdMult: 1,
@@ -2013,7 +2089,7 @@ export const FORMATIONS = {
   balanced: {
     id: "balanced",
     name: "均衡",
-    desc: "前後交錯站位 · 無額外修正",
+    desc: "前後交錯站位 · 前排多傷多挨／後排減傷、治療增益略強",
     petHpMult: 1,
     petAtkMult: 1,
     petSpdMult: 1,
@@ -2021,7 +2097,7 @@ export const FORMATIONS = {
   rear: {
     id: "rear",
     name: "後場",
-    desc: "寵物靠後排 · 攻擊 +12%，血量 −6%，速度 +5%",
+    desc: "寵物靠後排 · 攻擊 +12%，血量 −6%，速度 +5% · 後排減傷、治療增益略強",
     petHpMult: 0.94,
     petAtkMult: 1.12,
     petSpdMult: 1.05,
@@ -4301,11 +4377,34 @@ export function rarityBreedMutationMult(parentA, parentB) {
 /**
  * 性格戰鬥被動（每寵獨立套用；唔改白板成長公式）
  * 戰鬥向加打減續航；工作向加工減打；祥瑞只加不減
+ * 行為標籤：sustainBias／aggroBias／lifesteal／lowHpAtk／frontAtkMult／executeAtk／dmgTakenMult
  */
 export const PERSONALITY_COMBAT = {
-  fierce: { id: "fierce", label: "烈性：攻擊 +10%，血量 −4%", atkMult: 1.1, hpMult: 0.96, spdMult: 1 },
-  steady: { id: "steady", label: "沉穩：血量 +12%，速度 −5%", atkMult: 1, hpMult: 1.12, spdMult: 0.95 },
-  sly: { id: "sly", label: "狡黠：速度 +10%，攻擊 +4%", atkMult: 1.04, hpMult: 1, spdMult: 1.1 },
+  fierce: {
+    id: "fierce",
+    label: "烈性：攻擊 +10%，血量 −4%；前排輸出微升",
+    atkMult: 1.1,
+    hpMult: 0.96,
+    spdMult: 1,
+    frontAtkMult: 1.08,
+    aggroBias: true,
+  },
+  steady: {
+    id: "steady",
+    label: "沉穩：血量 +12%，速度 −5%；承傷微減",
+    atkMult: 1,
+    hpMult: 1.12,
+    spdMult: 0.95,
+    dmgTakenMult: 0.94,
+  },
+  sly: {
+    id: "sly",
+    label: "狡黠：速度 +10%，攻擊 +4%；偏攻擊技",
+    atkMult: 1.04,
+    hpMult: 1,
+    spdMult: 1.1,
+    aggroBias: true,
+  },
   gentle: {
     id: "gentle",
     label: "溫馴：血量 +6%，受治療／減傷技優先感（續航親和）",
@@ -4314,32 +4413,72 @@ export const PERSONALITY_COMBAT = {
     spdMult: 1,
     sustainBias: true,
   },
-  wild: { id: "wild", label: "狂放：攻擊 +12%，血量 −8%", atkMult: 1.12, hpMult: 0.92, spdMult: 1.04 },
-  brutal: { id: "brutal", label: "殘暴：攻擊 +14%，血量 −6%", atkMult: 1.14, hpMult: 0.94, spdMult: 1 },
+  wild: {
+    id: "wild",
+    label: "狂放：攻擊 +12%，血量 −8%；偏攻擊技",
+    atkMult: 1.12,
+    hpMult: 0.92,
+    spdMult: 1.04,
+    aggroBias: true,
+  },
+  brutal: {
+    id: "brutal",
+    label: "殘暴：攻擊 +14%，血量 −6%；前排輸出微升",
+    atkMult: 1.14,
+    hpMult: 0.94,
+    spdMult: 1,
+    frontAtkMult: 1.1,
+    aggroBias: true,
+  },
   bloodthirst: {
     id: "bloodthirst",
-    label: "嗜血：攻擊 +12%，血量 −10%，速度 +6%",
+    label: "嗜血：攻擊 +12%，血量 −10%，速度 +6%；命中吸血",
     atkMult: 1.12,
     hpMult: 0.9,
     spdMult: 1.06,
+    lifesteal: 0.12,
+    aggroBias: true,
   },
-  arrogant: { id: "arrogant", label: "傲慢：攻擊 +8%，速度 −4%", atkMult: 1.08, hpMult: 1, spdMult: 0.96 },
+  arrogant: {
+    id: "arrogant",
+    label: "傲慢：攻擊 +8%，速度 −4%；對殘血敵人增傷",
+    atkMult: 1.08,
+    hpMult: 1,
+    spdMult: 0.96,
+    executeAtk: 1.12,
+  },
   restless: {
     id: "restless",
-    label: "躁動：速度 +14%，血量 −5%",
+    label: "躁動：速度 +14%，血量 −5%；偏攻擊技",
     atkMult: 1.03,
     hpMult: 0.95,
     spdMult: 1.14,
+    aggroBias: true,
   },
-  vengeful: { id: "vengeful", label: "執念：攻擊 +9%，血量 −3%", atkMult: 1.09, hpMult: 0.97, spdMult: 1.01 },
+  vengeful: {
+    id: "vengeful",
+    label: "執念：攻擊 +9%，血量 −3%；自身殘血時增傷",
+    atkMult: 1.09,
+    hpMult: 0.97,
+    spdMult: 1.01,
+    lowHpAtk: 1.15,
+  },
   cunning: {
     id: "cunning",
-    label: "陰鷙：攻擊 +7%，速度 +10%，血量 −5%",
+    label: "陰鷙：攻擊 +7%，速度 +10%，血量 −5%；偏攻擊技",
     atkMult: 1.07,
     hpMult: 0.95,
     spdMult: 1.1,
+    aggroBias: true,
   },
-  diligent: { id: "diligent", label: "勤懇：攻擊 −6%，血量 +4%", atkMult: 0.94, hpMult: 1.04, spdMult: 0.98 },
+  diligent: {
+    id: "diligent",
+    label: "勤懇：攻擊 −6%，血量 +4%；承傷微減",
+    atkMult: 0.94,
+    hpMult: 1.04,
+    spdMult: 0.98,
+    dmgTakenMult: 0.96,
+  },
   nurturing: {
     id: "nurturing",
     label: "慈育：攻擊 −8%，血量 +8%（續航親和）",
@@ -4350,16 +4489,37 @@ export const PERSONALITY_COMBAT = {
   },
   patient: {
     id: "patient",
-    label: "忍耐：血量 +10%，速度 −8%（續航親和）",
+    label: "忍耐：血量 +10%，速度 −8%（續航親和）；承傷微減",
     atkMult: 0.96,
     hpMult: 1.1,
     spdMult: 0.92,
     sustainBias: true,
+    dmgTakenMult: 0.92,
   },
-  curious: { id: "curious", label: "好奇：速度 +4%，攻擊 −3%", atkMult: 0.97, hpMult: 0.99, spdMult: 1.04 },
-  loyal: { id: "loyal", label: "忠勤：攻擊 −4%，血量 +6%", atkMult: 0.96, hpMult: 1.06, spdMult: 0.99 },
+  curious: {
+    id: "curious",
+    label: "好奇：速度 +4%，攻擊 −3%",
+    atkMult: 0.97,
+    hpMult: 0.99,
+    spdMult: 1.04,
+  },
+  loyal: {
+    id: "loyal",
+    label: "忠勤：攻擊 −4%，血量 +6%；承傷微減",
+    atkMult: 0.96,
+    hpMult: 1.06,
+    spdMult: 0.99,
+    dmgTakenMult: 0.95,
+  },
   blessed: { id: "blessed", label: "祥瑞：攻血速微升", atkMult: 1.03, hpMult: 1.03, spdMult: 1.02 },
-  clever: { id: "clever", label: "機靈：速度 +6%，攻擊 +2%", atkMult: 1.02, hpMult: 1, spdMult: 1.06 },
+  clever: {
+    id: "clever",
+    label: "機靈：速度 +6%，攻擊 +2%；偏攻擊技",
+    atkMult: 1.02,
+    hpMult: 1,
+    spdMult: 1.06,
+    aggroBias: true,
+  },
   noble: { id: "noble", label: "高潔：攻血速微升", atkMult: 1.03, hpMult: 1.03, spdMult: 1.02 },
   serene: {
     id: "serene",
@@ -4375,7 +4535,7 @@ export function personalityCombatFor(personalityId) {
   return PERSONALITY_COMBAT[personalityId] || null;
 }
 
-/** 主 70% + 副 30% 混合性格戰鬥倍率 */
+/** 主 70% + 副 30% 混合性格戰鬥倍率／行為標籤 */
 export function personalityCombatForPet(pet) {
   const a = personalityCombatFor(pet?.personalityId);
   const b = personalityCombatFor(pet?.personality2Id);
@@ -4383,6 +4543,7 @@ export function personalityCombatForPet(pet) {
   if (!b) return a;
   if (!a) return b;
   const blend = (x, y) => 1 + ((x || 1) - 1) * 0.7 + ((y || 1) - 1) * 0.3;
+  const blend01 = (x, y) => (x || 0) * 0.7 + (y || 0) * 0.3;
   return {
     id: `${a.id}+${b.id}`,
     label: `${a.label.split("：")[0]}/${b.label.split("：")[0]}`,
@@ -4390,6 +4551,12 @@ export function personalityCombatForPet(pet) {
     hpMult: blend(a.hpMult, b.hpMult),
     spdMult: blend(a.spdMult, b.spdMult),
     sustainBias: !!(a.sustainBias || b.sustainBias),
+    aggroBias: !!(a.aggroBias || b.aggroBias),
+    lifesteal: blend01(a.lifesteal, b.lifesteal),
+    lowHpAtk: blend(a.lowHpAtk || 1, b.lowHpAtk || 1),
+    frontAtkMult: blend(a.frontAtkMult || 1, b.frontAtkMult || 1),
+    executeAtk: blend(a.executeAtk || 1, b.executeAtk || 1),
+    dmgTakenMult: blend(a.dmgTakenMult || 1, b.dmgTakenMult || 1),
   };
 }
 
@@ -4417,9 +4584,19 @@ export function personalityExplain(personalityId) {
     combatLabel: combat?.label || `${pe.name}：暫無額外戰鬥被動`,
     combat: combat,
     sustainBias: !!combat?.sustainBias,
+    aggroBias: !!combat?.aggroBias,
+    lifesteal: combat?.lifesteal || 0,
+    lowHpAtk: combat?.lowHpAtk || 1,
+    frontAtkMult: combat?.frontAtkMult || 1,
+    executeAtk: combat?.executeAtk || 1,
+    peDmgTakenMult: combat?.dmgTakenMult || 1,
     workFeed: pe.workFeed,
     workDust: pe.workDust,
     workToken: pe.workToken,
+    dispatchTime: pe.dispatchTime ?? 1,
+    dispatchReward: pe.dispatchReward ?? 1,
+    breedMutate: pe.breedMutate ?? 1,
+    breedCdMult: pe.breedCdMult ?? 1,
   };
 }
 

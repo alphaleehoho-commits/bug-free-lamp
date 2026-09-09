@@ -4133,7 +4133,14 @@ function petDetailTemperHtml(pet) {
         <p class="meta"><strong>戰鬥被動</strong> — ${escapeHtml(ex.combatLabel)}</p>
         <p class="meta">成長偏向 攻${fmtGrowthMult(ex.growthAtk)} · 血${fmtGrowthMult(ex.growthHp)} · 速${fmtGrowthMult(ex.growthSpd)}</p>
         ${ex.sustainBias ? `<p class="meta muted">續航親和：治療／減傷技較易惠及此寵</p>` : ""}
+        ${ex.aggroBias ? `<p class="meta muted">攻勢親和：較易施展攻擊／減益技</p>` : ""}
+        ${ex.lifesteal > 0 ? `<p class="meta muted">命中吸血 ×${(+ex.lifesteal).toFixed(2)}</p>` : ""}
+        ${ex.lowHpAtk > 1 ? `<p class="meta muted">殘血增傷 ×${(+ex.lowHpAtk).toFixed(2)}</p>` : ""}
+        ${ex.frontAtkMult > 1 ? `<p class="meta muted">前排輸出 ×${(+ex.frontAtkMult).toFixed(2)}</p>` : ""}
+        ${ex.executeAtk > 1 ? `<p class="meta muted">對殘血敵人 ×${(+ex.executeAtk).toFixed(2)}</p>` : ""}
+        ${ex.peDmgTakenMult < 1 ? `<p class="meta muted">承傷 ×${(+ex.peDmgTakenMult).toFixed(2)}</p>` : ""}
         <p class="meta muted">牧場產出 飼料×${(+ex.workFeed).toFixed(2)} · 靈塵×${(+ex.workDust).toFixed(2)} · 潮霧令×${(+ex.workToken).toFixed(2)}</p>
+        <p class="meta muted">派遣 時長×${(+ex.dispatchTime).toFixed(2)} · 獎勵×${(+ex.dispatchReward).toFixed(2)} · 繁殖冷卻×${(+ex.breedCdMult).toFixed(2)}</p>
       </div>`;
   };
   return `

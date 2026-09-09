@@ -122,6 +122,7 @@ import {
   FORMATION_SLOT_COUNT,
   formationAllyPlacement,
   formationFoePlacement,
+  LANE_COMBAT,
   HYBRID_SKILLS,
   genCombatMult,
   genAwakenBonus,
@@ -1502,10 +1503,17 @@ function buildTrainCombatAllies(state) {
       guardTurns: 0,
       atkBuffTurns: 0,
       atkBuffPct: 0,
+      shieldHp: 0,
+      counterTurns: 0,
+      counterPower: 0,
+      dotTurns: 0,
+      dotPct: 0,
       generation: gen,
       sustainBias: !!pe?.sustainBias,
     });
+    stampPersonalityCombatTags(allies[allies.length - 1], pe);
   }
+  prepareCombatLanes(allies, formationId, "ally");
   return { allies, synergy, formation, tactics };
 }
 
@@ -1606,6 +1614,23 @@ export function runTrainLayerCombat(state, { zoneId, tierIndex = 0, mode = "tier
 
     for (const actor of order) {
       if (actor.hp <= 0) continue;
+      tickDot(actor, transcript, combatEvents);
+      if (actor.hp <= 0) {
+        const downEarly = checkSideDown();
+        if (downEarly === "lose") {
+          ended = true;
+          say(`折戟【主脊潮脈】${layerLabel}……出戰隊全滅。`);
+          break;
+        }
+        if (downEarly === "wave") {
+          if (advanceOrWin()) {
+            won = true;
+            ended = true;
+            break;
+          }
+        }
+        continue;
+      }
       const actions = Math.max(1, actor.actions || 1);
       for (let a = 0; a < actions; a += 1) {
         if (actor.hp <= 0) break;
@@ -1789,12 +1814,15 @@ export function stepTrainIdleSession(session) {
 
   const transcript = [];
   const events = [];
-  const actions = Math.max(1, actor.actions || 1);
-  for (let a = 0; a < actions; a += 1) {
-    if (actor.hp <= 0) break;
-    if (allies.every((x) => x.hp <= 0) || foes.every((x) => x.hp <= 0)) break;
-    if (actor.side === "ally") act(actor, allies, foes, transcript, events, session.tactics);
-    else act(actor, foes, allies, transcript, events, "balanced");
+  tickDot(actor, transcript, events);
+  if (actor.hp > 0) {
+    const actions = Math.max(1, actor.actions || 1);
+    for (let a = 0; a < actions; a += 1) {
+      if (actor.hp <= 0) break;
+      if (allies.every((x) => x.hp <= 0) || foes.every((x) => x.hp <= 0)) break;
+      if (actor.side === "ally") act(actor, allies, foes, transcript, events, session.tactics);
+      else act(actor, foes, allies, transcript, events, "balanced");
+    }
   }
   tickCooldowns(actor);
 
@@ -3489,7 +3517,19 @@ export function claimDispatch(state, dispatchId, rng = Math.random) {
       : maxGen >= 2
         ? DISPATCH_GEN_REWARD_MULT[2] || 1.1
         : 1;
-  const scaled = scaleReward(mission?.reward, genMult);
+  const rewardMults = (d.petUids || []).map((uid) => {
+    const hit = findOwnedPet(state, uid);
+    const pe = PERSONALITIES[hit?.pet?.personalityId];
+    const pe2 = PERSONALITIES[hit?.pet?.personality2Id];
+    if (!pe && !pe2) return 1;
+    if (!pe2) return pe.dispatchReward ?? 1;
+    if (!pe) return pe2.dispatchReward ?? 1;
+    return (pe.dispatchReward ?? 1) * 0.7 + (pe2.dispatchReward ?? 1) * 0.3;
+  });
+  const peRewardMult = rewardMults.length
+    ? rewardMults.reduce((a, b) => a + b, 0) / rewardMults.length
+    : 1;
+  const scaled = scaleReward(mission?.reward, genMult * peRewardMult);
   applyReward(state, scaled);
   let eggGot = null;
   const chance = mission?.eggChance;
@@ -4391,6 +4431,93 @@ function pickFoe(foes, tactics = "balanced") {
   return live.reduce((a, b) => (a.hp <= b.hp ? a : b));
 }
 
+/** 依技能 targetRule 選目標；無規則時回退戰術挑敵 */
+function pickByTargetRule(units, targetRule, tactics = "balanced") {
+  const live = (units || []).filter((u) => u.hp > 0);
+  if (!live.length) return null;
+  if (targetRule === "lowest") return lowestHp(live);
+  if (targetRule === "front") {
+    const front = live.filter((u) => u.lane === "front");
+    return front.length ? front.reduce((a, b) => (a.hp <= b.hp ? a : b)) : live[0];
+  }
+  if (targetRule === "rear") {
+    const rear = live.filter((u) => u.lane === "rear");
+    return rear.length ? rear.reduce((a, b) => (a.hp <= b.hp ? a : b)) : live[0];
+  }
+  if (targetRule === "random") {
+    return live[Math.floor(Math.random() * live.length)];
+  }
+  return pickFoe(live, tactics);
+}
+
+function cleaveTargets(foes, skill) {
+  let live = foes.filter((f) => f.hp > 0);
+  if (!live.length) return [];
+  if (skill.targetRule === "front") {
+    const front = live.filter((f) => f.lane === "front");
+    if (front.length) live = front;
+  } else if (skill.targetRule === "rear") {
+    const rear = live.filter((f) => f.lane === "rear");
+    if (rear.length) live = rear;
+  }
+  if (skill.id === "tide_spray") return live.slice(0, 2);
+  return live;
+}
+
+/**
+ * 依陣型／敵方企位標記 lane（用實際出戰／敵人數作列數）
+ */
+function stampCombatLanes(units, formationId, side = "ally") {
+  const n = (units || []).length;
+  if (!n) return units;
+  const placement =
+    side === "foe"
+      ? formationFoePlacement(n, n)
+      : formationAllyPlacement(formationId || "balanced", n, n);
+  for (let i = 0; i < n; i += 1) {
+    const slot = placement.find((p) => p.unitIndex === i);
+    units[i].lane = slot?.lane || "front";
+  }
+  return units;
+}
+
+/** 前／後排實戰微調（疊乘於既有 dmgTaken／healOut） */
+function applyLaneCombatRules(units) {
+  for (const u of units || []) {
+    const lane = u.lane === "rear" ? "rear" : "front";
+    const r = LANE_COMBAT[lane] || LANE_COMBAT.front;
+    u.dmgDealtMult = (u.dmgDealtMult != null ? u.dmgDealtMult : 1) * (r.dmgDealtMult || 1);
+    u.dmgTakenMult = (u.dmgTakenMult != null ? u.dmgTakenMult : 1) * (r.dmgTakenMult || 1);
+    u.healOutMult = (u.healOutMult != null ? u.healOutMult : 1) * (r.healOutMult || 1);
+    u.buffOutMult = (u.buffOutMult != null ? u.buffOutMult : 1) * (r.buffOutMult || 1);
+  }
+  return units;
+}
+
+function prepareCombatLanes(units, formationId, side = "ally") {
+  stampCombatLanes(units, formationId, side);
+  applyLaneCombatRules(units);
+  return units;
+}
+
+function applyDotToTarget(target, skill) {
+  if (!skill?.dot || !target || target.hp <= 0) return;
+  target.dotTurns = Math.max(target.dotTurns || 0, 2);
+  target.dotPct = Math.max(target.dotPct || 0, 0.06);
+}
+
+function applyShieldToUnit(unit, power) {
+  if (!unit) return;
+  const add = Math.max(4, Math.floor(unit.maxHp * Math.max(0.08, power * 0.55)));
+  unit.shieldHp = Math.max(0, unit.shieldHp || 0) + add;
+}
+
+function applyCounterStance(unit, power) {
+  if (!unit) return;
+  unit.counterTurns = Math.max(unit.counterTurns || 0, 2);
+  unit.counterPower = Math.max(unit.counterPower || 0, Math.min(0.55, 0.28 + power * 0.35));
+}
+
 let _combatUid = 0;
 
 function tagCombatUnits(units, prefix) {
@@ -4410,6 +4537,7 @@ function unitRosterEntry(u) {
     maxHp: u.maxHp,
     role: u.role || null,
     actions: u.actions || 1,
+    lane: u.lane || "front",
   };
 }
 
@@ -4417,28 +4545,66 @@ function pushCombatText(events, text) {
   events.push({ type: "text", text });
 }
 
-function dealStrike(actor, target, power, transcript, events, skillName) {
+/** 性格行為標籤寫入戰鬥單位（喺 lane 規則之前設 base dmgTaken，之後再乘） */
+function stampPersonalityCombatTags(unit, pe) {
+  if (!unit || !pe) return unit;
+  unit.sustainBias = !!pe.sustainBias;
+  unit.aggroBias = !!pe.aggroBias;
+  unit.lifesteal = pe.lifesteal || 0;
+  unit.lowHpAtk = pe.lowHpAtk > 1 ? pe.lowHpAtk : 1;
+  unit.frontAtkMult = pe.frontAtkMult > 1 ? pe.frontAtkMult : 1;
+  unit.executeAtk = pe.executeAtk > 1 ? pe.executeAtk : 1;
+  if (pe.dmgTakenMult && pe.dmgTakenMult !== 1) {
+    unit.dmgTakenMult = (unit.dmgTakenMult != null ? unit.dmgTakenMult : 1) * pe.dmgTakenMult;
+  }
+  return unit;
+}
+
+function dealStrike(actor, target, power, transcript, events, skillName, opts = {}) {
   if (!target || target.hp <= 0) return;
   const pMult = skillPowerMult(actor.skillLevel || 1);
   let dmg = Math.max(1, Math.floor(actor.atk * power * pMult) + Math.floor(Math.random() * 4) - 1);
   if (skillName === "嵐擊" || skillName === "穿空" || skillName === "礁襲") {
     dmg += Math.floor(actor.spd / 4);
   }
+  const dealtMult = actor.dmgDealtMult != null ? actor.dmgDealtMult : 1;
+  dmg = Math.max(1, Math.floor(dmg * dealtMult));
+  if ((actor.frontAtkMult || 1) > 1 && actor.lane === "front") {
+    dmg = Math.max(1, Math.floor(dmg * actor.frontAtkMult));
+  }
+  if ((actor.lowHpAtk || 1) > 1 && actor.maxHp > 0 && actor.hp / actor.maxHp < 0.5) {
+    dmg = Math.max(1, Math.floor(dmg * actor.lowHpAtk));
+  }
+  if ((actor.executeAtk || 1) > 1 && target.maxHp > 0 && target.hp / target.maxHp < 0.35) {
+    dmg = Math.max(1, Math.floor(dmg * actor.executeAtk));
+  }
   const { mult, tag } = elementMatchup(actor.elementId, target.elementId);
   dmg = Math.max(1, Math.floor(dmg * mult));
   if (actor.atkBuffTurns > 0) dmg = Math.max(1, Math.floor(dmg * (1 + (actor.atkBuffPct || 0))));
   const mitigated0 = target.guardTurns > 0 ? Math.max(1, Math.floor(dmg * 0.55)) : dmg;
-  const mitigated = Math.max(
+  let mitigated = Math.max(
     1,
     Math.floor(mitigated0 * (target.dmgTakenMult != null ? target.dmgTakenMult : 1))
   );
-  target.hp = Math.max(0, target.hp - mitigated);
+  let absorbed = 0;
+  if ((target.shieldHp || 0) > 0) {
+    absorbed = Math.min(target.shieldHp, mitigated);
+    target.shieldHp -= absorbed;
+    mitigated -= absorbed;
+  }
+  if (mitigated > 0) {
+    target.hp = Math.max(0, target.hp - mitigated);
+  }
   const guardNote = target.guardTurns > 0 ? "（甲盾減傷）" : "";
+  const shieldNote = absorbed > 0 ? `（護盾吸收 ${absorbed}）` : "";
   const elemNote = tag ? `（${tag}）` : "";
   let verb = "普通攻擊";
-  if (skillName) verb = `施展【${skillName}】`;
+  if (skillName) verb = skillName === "反擊" ? "反擊" : `施展【${skillName}】`;
   else if (power !== 1) verb = "餘波擊中";
-  const line = `${actor.name} ${verb} → ${target.name}，造成 ${mitigated} 傷害${elemNote}${target.hp === 0 ? "（擊破）" : ""}${guardNote}。`;
+  const hpDmg = mitigated;
+  const line = `${actor.name} ${verb} → ${target.name}，造成 ${hpDmg + absorbed} 傷害${elemNote}${
+    target.hp === 0 ? "（擊破）" : ""
+  }${guardNote}${shieldNote}。`;
   transcript.push(line);
   if (events) {
     events.push({
@@ -4447,7 +4613,8 @@ function dealStrike(actor, target, power, transcript, events, skillName) {
       actorUid: actor.uid,
       targetUid: target.uid,
       skillName: skillName || null,
-      dmg: mitigated,
+      dmg: hpDmg + absorbed,
+      absorbed,
       elemTag: tag,
       actorElementId: actor.elementId,
       targetElementId: target.elementId,
@@ -4458,7 +4625,25 @@ function dealStrike(actor, target, power, transcript, events, skillName) {
         actor.atkBuffTurns > 0
           ? `攻↑${Math.round((actor.atkBuffPct || 0) * 100)}%`
           : null,
-      targetBuff: target.guardTurns > 0 ? "甲盾" : null,
+      targetBuff: target.guardTurns > 0 ? "甲盾" : target.shieldHp > 0 ? "護盾" : null,
+    });
+  }
+  if ((actor.lifesteal || 0) > 0 && hpDmg > 0 && actor.hp > 0) {
+    const heal = Math.max(1, Math.floor(hpDmg * actor.lifesteal));
+    actor.hp = Math.min(actor.maxHp, actor.hp + heal);
+    const lifeLine = `${actor.name} 嗜血回復 ${heal}。`;
+    transcript.push(lifeLine);
+    pushCombatText(events, lifeLine);
+  }
+  if (
+    !opts.fromCounter &&
+    (target.counterTurns || 0) > 0 &&
+    target.hp > 0 &&
+    actor.hp > 0 &&
+    (hpDmg > 0 || absorbed > 0)
+  ) {
+    dealStrike(target, actor, target.counterPower || 0.35, transcript, events, "反擊", {
+      fromCounter: true,
     });
   }
 }
@@ -4470,24 +4655,31 @@ function useSkill(actor, skill, allies, foes, transcript, events, tactics = "bal
   const power = skill.power * pMult;
 
   if (skill.type === "strike") {
-    const t = pickFoe(foes, tactics);
+    const t = pickByTargetRule(foes, skill.targetRule, tactics);
     if (!t) return false;
     dealStrike(actor, t, skill.power, transcript, events, skill.name);
+    applyDotToTarget(t, skill);
+    if (skill.shield) applyShieldToUnit(actor, power);
   } else if (skill.type === "cleave") {
-    const live = foes.filter((f) => f.hp > 0);
-    if (!live.length) return false;
-    const targets = skill.id === "tide_spray" ? live.slice(0, 2) : live;
+    const targets = cleaveTargets(foes, skill);
+    if (!targets.length) return false;
     const line = `${actor.name} 施展【${skill.name}】！`;
     transcript.push(line);
     pushCombatText(events, line);
-    for (const t of targets) dealStrike(actor, t, skill.power, transcript, events, null);
+    for (const t of targets) {
+      dealStrike(actor, t, skill.power, transcript, events, null);
+      applyDotToTarget(t, skill);
+    }
+    if (skill.shield) applyShieldToUnit(actor, power);
   } else if (skill.type === "heal") {
-    const t = lowestHp(allies);
+    const t = pickByTargetRule(allies, skill.targetRule || "lowest", tactics) || lowestHp(allies);
     if (!t) return false;
     const healMult = actor.healOutMult != null ? actor.healOutMult : 1;
     const heal = Math.max(1, Math.floor((Math.max(8, Math.floor(t.maxHp * power) + actor.atk)) * healMult));
     t.hp = Math.min(t.maxHp, t.hp + heal);
-    const line = `${actor.name} 施展【${skill.name}】，為 ${t.name} 回復 ${heal} 生命。`;
+    if (skill.shield) applyShieldToUnit(t, power);
+    const shieldNote = skill.shield && t.shieldHp ? `並覆護盾` : "";
+    const line = `${actor.name} 施展【${skill.name}】，為 ${t.name} 回復 ${heal} 生命${shieldNote}。`;
     transcript.push(line);
     if (events) {
       events.push({
@@ -4505,7 +4697,13 @@ function useSkill(actor, skill, allies, foes, transcript, events, tactics = "bal
     const healMult = actor.healOutMult != null ? actor.healOutMult : 1;
     const heal = Math.max(1, Math.floor(Math.max(5, Math.floor(actor.maxHp * power)) * healMult));
     actor.hp = Math.min(actor.maxHp, actor.hp + heal);
-    const line = `${actor.name} 施展【${skill.name}】，減傷並回復 ${heal}。`;
+    if (skill.shield) applyShieldToUnit(actor, power);
+    if (skill.counter) applyCounterStance(actor, power);
+    const extras = [];
+    if (skill.shield) extras.push("護盾");
+    if (skill.counter) extras.push("反擊姿");
+    const extraNote = extras.length ? `（${extras.join("·")}）` : "";
+    const line = `${actor.name} 施展【${skill.name}】，減傷並回復 ${heal}${extraNote}。`;
     transcript.push(line);
     if (events) {
       events.push({
@@ -4518,15 +4716,17 @@ function useSkill(actor, skill, allies, foes, transcript, events, tactics = "bal
       });
     }
   } else if (skill.type === "debuff") {
-    const t = pickFoe(foes, tactics);
+    const t = pickByTargetRule(foes, skill.targetRule, tactics);
     if (!t) return false;
     dealStrike(actor, t, skill.power, transcript, events, skill.name);
     t.atk = Math.max(1, Math.floor(t.atk * 0.85));
-    const line = `${t.name} 的攻擊因蝕咬而下降。`;
+    applyDotToTarget(t, skill);
+    const line = `${t.name} 的攻擊因蝕咬而下降${skill.dot ? "，並中蝕毒" : ""}。`;
     transcript.push(line);
     pushCombatText(events, line);
   } else if (skill.type === "buff") {
-    const pct = power;
+    const buffMult = actor.buffOutMult != null ? actor.buffOutMult : 1;
+    const pct = power * buffMult;
     for (const a of allies.filter((x) => x.hp > 0)) {
       a.atkBuffTurns = 3;
       a.atkBuffPct = pct;
@@ -4542,12 +4742,33 @@ function useSkill(actor, skill, allies, foes, transcript, events, tactics = "bal
   return true;
 }
 
+function tickDot(unit, transcript, events) {
+  if (!unit || unit.hp <= 0 || !(unit.dotTurns > 0)) return;
+  const dmg = Math.max(1, Math.floor(unit.maxHp * (unit.dotPct || 0.06)));
+  unit.hp = Math.max(0, unit.hp - dmg);
+  unit.dotTurns -= 1;
+  const line = `${unit.name} 受到蝕毒侵蝕，損失 ${dmg} 生命${unit.hp === 0 ? "（擊破）" : ""}。`;
+  if (transcript) transcript.push(line);
+  if (events) {
+    events.push({
+      type: "dot",
+      text: line,
+      targetUid: unit.uid,
+      dmg,
+      targetHp: unit.hp,
+      targetMaxHp: unit.maxHp,
+      ko: unit.hp === 0,
+    });
+  }
+}
+
 function tickCooldowns(unit) {
-  Object.keys(unit.skillCd).forEach((k) => {
+  Object.keys(unit.skillCd || {}).forEach((k) => {
     if (unit.skillCd[k] > 0) unit.skillCd[k] -= 1;
   });
   if (unit.guardTurns > 0) unit.guardTurns -= 1;
   if (unit.atkBuffTurns > 0) unit.atkBuffTurns -= 1;
+  if (unit.counterTurns > 0) unit.counterTurns -= 1;
 }
 
 function act(actor, allies, foes, transcript, events, tactics = "balanced") {
@@ -4562,10 +4783,16 @@ function act(actor, allies, foes, transcript, events, tactics = "balanced") {
     let skill;
     const preferSustain =
       (tactics === "sustain" && actor.side === "ally") || (actor.side === "ally" && actor.sustainBias);
+    const preferAggro = actor.side === "ally" && actor.aggroBias && !preferSustain;
     if (preferSustain) {
       const sustain = ready.filter((s) => s.type === "heal" || s.type === "guard");
       skill = sustain.length
         ? sustain[Math.floor(Math.random() * sustain.length)]
+        : ready[Math.floor(Math.random() * ready.length)];
+    } else if (preferAggro) {
+      const aggro = ready.filter((s) => s.type === "strike" || s.type === "cleave" || s.type === "debuff");
+      skill = aggro.length
+        ? aggro[Math.floor(Math.random() * aggro.length)]
         : ready[Math.floor(Math.random() * ready.length)];
     } else {
       skill = ready[Math.floor(Math.random() * ready.length)];
@@ -4614,11 +4841,18 @@ function spawnCombatFoe(e, dailyMod = null, challenge = null) {
     guardTurns: 0,
     atkBuffTurns: 0,
     atkBuffPct: 0,
+    shieldHp: 0,
+    counterTurns: 0,
+    counterPower: 0,
+    dotTurns: 0,
+    dotPct: 0,
   };
 }
 
 function spawnWaveFoes(wave, dailyMod = null, challenge = null) {
-  return (wave?.enemies || []).map((e) => spawnCombatFoe(e, dailyMod, challenge));
+  const foes = (wave?.enemies || []).map((e) => spawnCombatFoe(e, dailyMod, challenge));
+  prepareCombatLanes(foes, null, "foe");
+  return foes;
 }
 
 /** 組出戰方戰鬥單位（runDungeon / 預覽共用） */
@@ -4673,6 +4907,7 @@ function buildDungeonAllyUnits(state, d, { dailyMod = null, challenge = null } =
       skillName: p.skillName || SKILLS[p.skillId]?.name || "—",
     });
   }
+  prepareCombatLanes(allies, formationId, "ally");
   return {
     allies,
     synergy,
@@ -4843,14 +5078,22 @@ export function runDungeon(state, dungeonId, opts = {}) {
       guardTurns: 0,
       atkBuffTurns: 0,
       atkBuffPct: 0,
+      shieldHp: 0,
+      counterTurns: 0,
+      counterPower: 0,
+      dotTurns: 0,
+      dotPct: 0,
       generation: gen,
       sustainBias: !!pe?.sustainBias,
     });
+    stampPersonalityCombatTags(allies[allies.length - 1], pe);
   }
 
   if (!allies.length) {
     return { ok: false, msg: "請先派出至少一隻靈寵再進秘境。" };
   }
+
+  prepareCombatLanes(allies, formationId, "ally");
 
   let waveIndex = 0;
   let foes = spawnWaveFoes(waves[0], dailyMod, challenge);
@@ -5005,6 +5248,24 @@ export function runDungeon(state, dungeonId, opts = {}) {
 
     for (const actor of order) {
       if (actor.hp <= 0) continue;
+      tickDot(actor, transcript, combatEvents);
+      if (actor.hp <= 0) {
+        const downDot = checkSideDown();
+        if (downDot === "lose") {
+          ended = true;
+          state.winStreak = 0;
+          say(`折戟【${d.name}】……退回契壇休養。`);
+          break;
+        }
+        if (downDot === "wave") {
+          if (advanceOrWin()) {
+            won = true;
+            ended = true;
+            break;
+          }
+        }
+        continue;
+      }
       const actions = Math.max(1, actor.actions || 1);
       for (let a = 0; a < actions; a += 1) {
         if (actor.hp <= 0) break;
@@ -6122,7 +6383,11 @@ export function tryBreed(state, uidA, uidB, count = 1) {
   }
 
   const now = Date.now();
-  const cdMult = rarityBreedCdMult(a, b);
+  const peCdMult =
+    ((PERSONALITIES[a.personalityId]?.breedCdMult || 1) +
+      (PERSONALITIES[b.personalityId]?.breedCdMult || 1)) /
+    2;
+  const cdMult = rarityBreedCdMult(a, b) * peCdMult;
   const cycleMs = Math.round(BREED_COOLDOWN_MS * cdMult);
   const parentSnap = [snapshotBreedParent(a), snapshotBreedParent(b)];
   /** 每週期預 roll genes，並即時結算天生（領蛋唔依賴雙親仍在） */
@@ -6640,12 +6905,10 @@ function buildAbyssFloorWaves(depth, seed) {
 }
 
 function applyAbyssMutationsToAllies(allies, mutationIds, formationId) {
-  const placement = formationAllyPlacement(formationId, allies.length);
+  stampCombatLanes(allies, formationId, "ally");
   for (let i = 0; i < allies.length; i += 1) {
-    const slot = placement.find((p) => p.unitIndex === i);
-    allies[i].lane = slot?.lane || "front";
     allies[i].dmgTakenMult = allies[i].dmgTakenMult || 1;
-    allies[i].healOutMult = 1;
+    allies[i].healOutMult = allies[i].healOutMult != null ? allies[i].healOutMult : 1;
   }
   let healMult = 1;
   let frontTax = 1;
@@ -6658,10 +6921,11 @@ function applyAbyssMutationsToAllies(allies, mutationIds, formationId) {
     if (m.allySpdMult != null) allySpd *= m.allySpdMult;
   }
   for (const a of allies) {
-    a.healOutMult = healMult;
+    a.healOutMult = (a.healOutMult != null ? a.healOutMult : 1) * healMult;
     if (a.lane === "front") a.dmgTakenMult = (a.dmgTakenMult || 1) * frontTax;
     if (allySpd !== 1) a.spd = Math.max(1, Math.round(a.spd * allySpd));
   }
+  applyLaneCombatRules(allies);
 }
 
 function abyssMutationFoeMult(mutationIds) {
@@ -6795,10 +7059,16 @@ function buildAbyssCombatAllies(state, run) {
       guardTurns: 0,
       atkBuffTurns: 0,
       atkBuffPct: 0,
+      shieldHp: 0,
+      counterTurns: 0,
+      counterPower: 0,
+      dotTurns: 0,
+      dotPct: 0,
       generation: st.gen,
       sustainBias: !!st.pe?.sustainBias,
       dmgTakenMult: st.dmgTakenMult || 1,
     });
+    stampPersonalityCombatTags(allies[allies.length - 1], st.pe);
   }
   return { allies, synergy, formation, tactics };
 }
@@ -6956,6 +7226,23 @@ function runAbyssFloorCombat(state, { depth, seed, mutationIds, run }) {
       .sort((a, b) => b.spd - a.spd || a.name.localeCompare(b.name));
     for (const actor of order) {
       if (actor.hp <= 0) continue;
+      tickDot(actor, transcript, combatEvents);
+      if (actor.hp <= 0) {
+        const downDot = checkSideDown();
+        if (downDot === "lose") {
+          ended = true;
+          say(`折戟潮淵第 ${depth} 層……出戰隊全滅。`);
+          break;
+        }
+        if (downDot === "wave") {
+          if (advanceOrWin()) {
+            won = true;
+            ended = true;
+            break;
+          }
+        }
+        continue;
+      }
       const actions = Math.max(1, actor.actions || 1);
       for (let a = 0; a < actions; a += 1) {
         if (actor.hp <= 0) break;
@@ -7586,6 +7873,7 @@ export {
   FORMATION_SLOT_COUNT,
   formationAllyPlacement,
   formationFoePlacement,
+  LANE_COMBAT,
   GEAR_SETS,
   MATERIALS,
   ITEMS,
@@ -7636,3 +7924,138 @@ export {
   rollTideKeyDrop,
   DUNGEON_TIDE_KEY,
 };
+
+/**
+ * D4 探測：lane stamp + DoT／護盾／反擊（供 smoke）
+ * @returns {{ ok: boolean, laneOk: boolean, dotOk: boolean, shieldOk: boolean, counterOk: boolean }}
+ */
+export function probeLaneSkillEffects() {
+  const allies = [
+    {
+      uid: "a1",
+      side: "ally",
+      name: "甲試",
+      hp: 100,
+      maxHp: 100,
+      atk: 20,
+      spd: 10,
+      elementId: "stone",
+      skills: ["shell_guard"],
+      skillCd: { shell_guard: 0 },
+      skillLevel: 1,
+      guardTurns: 0,
+      atkBuffTurns: 0,
+      atkBuffPct: 0,
+      shieldHp: 0,
+      counterTurns: 0,
+      counterPower: 0,
+      dotTurns: 0,
+      dotPct: 0,
+    },
+    {
+      uid: "a2",
+      side: "ally",
+      name: "鱗試",
+      hp: 80,
+      maxHp: 80,
+      atk: 18,
+      spd: 12,
+      elementId: "tide",
+      skills: ["tidal_veil"],
+      skillCd: { tidal_veil: 0 },
+      skillLevel: 1,
+      guardTurns: 0,
+      atkBuffTurns: 0,
+      atkBuffPct: 0,
+      shieldHp: 0,
+      counterTurns: 0,
+      counterPower: 0,
+      dotTurns: 0,
+      dotPct: 0,
+    },
+    {
+      uid: "a3",
+      side: "ally",
+      name: "蟲試",
+      hp: 70,
+      maxHp: 70,
+      atk: 22,
+      spd: 14,
+      elementId: "gloom",
+      skills: ["venom_bite"],
+      skillCd: { venom_bite: 0 },
+      skillLevel: 1,
+      guardTurns: 0,
+      atkBuffTurns: 0,
+      atkBuffPct: 0,
+      shieldHp: 0,
+      counterTurns: 0,
+      counterPower: 0,
+      dotTurns: 0,
+      dotPct: 0,
+    },
+  ];
+  prepareCombatLanes(allies, "balanced", "ally");
+  const laneOk =
+    allies[0].lane === "rear" &&
+    allies[1].lane === "front" &&
+    allies[2].lane === "rear" &&
+    allies[1].dmgDealtMult > 1 &&
+    allies[0].dmgTakenMult < 1;
+
+  const foes = [
+    {
+      uid: "f1",
+      side: "foe",
+      name: "靶",
+      hp: 200,
+      maxHp: 200,
+      atk: 15,
+      spd: 8,
+      elementId: "flame",
+      skills: [],
+      skillCd: {},
+      skillLevel: 1,
+      guardTurns: 0,
+      atkBuffTurns: 0,
+      atkBuffPct: 0,
+      shieldHp: 0,
+      counterTurns: 0,
+      counterPower: 0,
+      dotTurns: 0,
+      dotPct: 0,
+      lane: "front",
+      dmgTakenMult: 1,
+    },
+  ];
+  const transcript = [];
+  const events = [];
+
+  const shell = SKILLS.shell_guard;
+  const venom = SKILLS.venom_bite;
+  const veil = SKILLS.tidal_veil;
+  useSkill(allies[0], shell, allies, foes, transcript, events, "balanced");
+  const counterOk = (allies[0].counterTurns || 0) > 0 && (allies[0].guardTurns || 0) > 0;
+  const foeHpBeforeHit = foes[0].hp;
+  dealStrike(foes[0], allies[0], 1, transcript, events, null);
+  const counterFired =
+    counterOk && (foes[0].hp < foeHpBeforeHit || transcript.some((l) => l.includes("反擊")));
+
+  useSkill(allies[2], venom, allies, foes, transcript, events, "balanced");
+  const dotOk = (foes[0].dotTurns || 0) > 0;
+  const foeHpBeforeDot = foes[0].hp;
+  tickDot(foes[0], transcript, events);
+  const dotTickOk = dotOk && foes[0].hp < foeHpBeforeDot;
+
+  allies[1].skillCd.tidal_veil = 0;
+  useSkill(allies[1], veil, allies, foes, transcript, events, "balanced");
+  const shieldOk = allies.some((a) => (a.shieldHp || 0) > 0);
+
+  return {
+    ok: !!(laneOk && dotTickOk && shieldOk && counterFired),
+    laneOk: !!laneOk,
+    dotOk: !!dotTickOk,
+    shieldOk: !!shieldOk,
+    counterOk: !!counterFired,
+  };
+}
