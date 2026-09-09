@@ -764,6 +764,27 @@ assert(
   ),
   "hybrid second skill"
 );
+assert(SKILLS.abyss_reign_surge && SKILLS.void_glint_ray && SKILLS.dusk_iron_plate, "tertiary skill defs");
+assert(SKILLS.coral_storm_lance && SKILLS.deep_fang_toxin && SKILLS.tide_prism_howl, "tertiary skill defs 2");
+assert(SKILLS.night_scale_veil && SKILLS.gale_void_slash, "tertiary skill defs 3");
+assert(HYBRID_SKILLS.abyssreign === "abyss_reign_surge", "淵君 unique skill");
+assert(HYBRID_SKILLS.tideprism === "tide_prism_howl", "潮稜 unique buff skill");
+assert(
+  petSkillIds({ skillId: "tide_spray", speciesId: "abyssreign", kind: "鱗", fusionLevel: 1 }).includes(
+    "abyss_reign_surge"
+  ),
+  "tertiary second skill in combat list"
+);
+assert(
+  !petSkillIds({ skillId: "tide_spray", speciesId: "abyssreign", kind: "鱗", level: 15 }).includes("mist_surge"),
+  "tertiary no longer reuses mist_surge"
+);
+const tertTypes = new Set(
+  ["abyssreign", "voidglint", "duskiron", "coralstorm", "deepfang", "tideprism", "nightscale", "galevoid"].map(
+    (id) => SKILLS[HYBRID_SKILLS[id]]?.type
+  )
+);
+assert(tertTypes.size >= 5, "tertiary skills span multiple combat roles");
 assert(genCombatMult(3) === 1.03 && genCombatMult(1) === 1.01, "gen combat residual");
 assert(RARITY[1].mult === 1.18 && RARITY[2].mult === 1.38 && RARITY[3].mult === 1.65, "rarity mults widened");
 assert(levelStatGains(0).atk === 2 && levelStatGains(3).atk === 2.6, "level gains gen slope");
@@ -3489,7 +3510,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v108"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v109"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");
