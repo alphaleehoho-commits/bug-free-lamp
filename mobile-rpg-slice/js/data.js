@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260909.2";
+export const APP_BUILD = "20260909.6";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -1365,6 +1365,79 @@ export const SKILLS = {
     power: 0.48,
     desc: "稜背專屬：稜光護盾",
   },
+  // —— 三代種專屬（唔 reuse 雜交二技）——
+  abyss_reign_surge: {
+    id: "abyss_reign_surge",
+    name: "淵君潮壓",
+    owner: "pet",
+    type: "cleave",
+    cd: 3,
+    power: 0.95,
+    desc: "淵君專屬：深淵潮壓濺射",
+  },
+  void_glint_ray: {
+    id: "void_glint_ray",
+    name: "虛耀裂光",
+    owner: "pet",
+    type: "strike",
+    cd: 2,
+    power: 2.05,
+    desc: "虛耀專屬：虛空裂光貫穿",
+  },
+  dusk_iron_plate: {
+    id: "dusk_iron_plate",
+    name: "暮鐵甲",
+    owner: "pet",
+    type: "guard",
+    cd: 3,
+    power: 0.55,
+    desc: "暮鐵專屬：暮色鐵甲減傷回血",
+  },
+  coral_storm_lance: {
+    id: "coral_storm_lance",
+    name: "珊嵐槍",
+    owner: "pet",
+    type: "strike",
+    cd: 2,
+    power: 1.95,
+    desc: "珊嵐專屬：珊嵐槍刺（＋速）",
+  },
+  deep_fang_toxin: {
+    id: "deep_fang_toxin",
+    name: "深牙蝕",
+    owner: "pet",
+    type: "debuff",
+    cd: 2,
+    power: 1.5,
+    desc: "深牙專屬：深淵毒牙削攻",
+  },
+  tide_prism_howl: {
+    id: "tide_prism_howl",
+    name: "潮稜嚎",
+    owner: "pet",
+    type: "buff",
+    cd: 4,
+    power: 0.15,
+    desc: "潮稜專屬：潮稜嚎鼓舞全隊",
+  },
+  night_scale_veil: {
+    id: "night_scale_veil",
+    name: "夜鱗帷",
+    owner: "pet",
+    type: "heal",
+    cd: 3,
+    power: 0.28,
+    desc: "夜鱗專屬：夜鱗帷癒傷",
+  },
+  gale_void_slash: {
+    id: "gale_void_slash",
+    name: "嵐虛斬",
+    owner: "pet",
+    type: "strike",
+    cd: 2,
+    power: 1.8,
+    desc: "嵐虛專屬：虛空嵐斬（＋速）",
+  },
 };
 
 /** 人物依階段解鎖技能 */
@@ -2238,16 +2311,22 @@ export const HYBRID_SKILLS = {
   shellmite: "shell_spike",
   glintfox: "glint_beam",
   prismback: "prism_shell",
-  /* 三代種沿用相近技能 */
-  abyssreign: "mist_surge",
-  voidglint: "glint_beam",
-  duskiron: "iron_bulwark",
-  coralstorm: "storm_lance",
-  deepfang: "fang_burst",
-  tideprism: "tide_beast_rush",
-  nightscale: "scale_glide",
-  galevoid: "reef_dive",
+  /* 三代種專屬二技 */
+  abyssreign: "abyss_reign_surge",
+  voidglint: "void_glint_ray",
+  duskiron: "dusk_iron_plate",
+  coralstorm: "coral_storm_lance",
+  deepfang: "deep_fang_toxin",
+  tideprism: "tide_prism_howl",
+  nightscale: "night_scale_veil",
+  galevoid: "gale_void_slash",
 };
+
+/** 第二技能 id：雜交／三代專屬優先，否則 kind 二技 */
+export function secondSkillIdForPet(pet) {
+  if (!pet) return null;
+  return HYBRID_SKILLS[pet.speciesId] || KIND_SECOND_SKILLS[pet.kind] || null;
+}
 
 /** 高代子代出生加成（P15B） */
 export function genAwakenBonus(generation) {
@@ -3646,8 +3725,7 @@ export function petSkillIds(pet) {
     (pet.fusionLevel ?? 0) >= SECOND_SKILL_UNLOCK.fusionLevel ||
     (pet.level ?? 1) >= SECOND_SKILL_UNLOCK.level;
   if (unlocked) {
-    const hybridId = HYBRID_SKILLS[pet.speciesId];
-    const second = hybridId || KIND_SECOND_SKILLS[pet.kind];
+    const second = secondSkillIdForPet(pet);
     if (second) ids.push(second);
   }
   return ids;
@@ -4413,6 +4491,14 @@ export const PERSONALITY_ROLE_LABEL = {
   blessed: "祥瑞",
 };
 
+/** 短標：戰魂／職魂（卡面・繁殖預覽） */
+export const PERSONALITY_ROLE_SHORT = {
+  fight: "戰魂",
+  work: "職魂",
+  balanced: "衡魂",
+  blessed: "瑞魂",
+};
+
 /** 性格詳情：成長偏向＋戰鬥被動文案 */
 export function personalityExplain(personalityId) {
   const pe = PERSONALITIES[personalityId];
@@ -4423,6 +4509,7 @@ export function personalityExplain(personalityId) {
     name: pe.name,
     role: pe.role,
     roleLabel: PERSONALITY_ROLE_LABEL[pe.role] || pe.role || "—",
+    roleShort: PERSONALITY_ROLE_SHORT[pe.role] || pe.role || "—",
     growthAtk: pe.atk,
     growthHp: pe.hp,
     growthSpd: pe.spd,
@@ -4550,7 +4637,7 @@ export const MATERIALS = {
   soul_essence: {
     id: "soul_essence",
     name: "精魂",
-    desc: "放生靈寵所得 · 精魂商人兌換飼料／材料／道具",
+    desc: "放生／潮還蛋所得 · 養成／稀有／融合越高越賺 · 精魂商人兌換",
     tier: "soul",
   },
 };
@@ -5749,8 +5836,8 @@ export function partySynergy(pets) {
     }
   }
   if (kinship) {
-    atkMult *= 1.06;
-    hpMult *= 1.06;
+    atkMult *= 1.08;
+    hpMult *= 1.08;
     labels.push("親子羈絆（攻血↑）");
   }
 
@@ -5866,16 +5953,40 @@ export function bestiaryCombatBonus(discoveredCount) {
 }
 
 /**
- * 放生精魂公式（只返還精魂，唔再退石／飼料／塵）：
- * 基礎 4 ＋ 等級×2 ＋ 稀有×6 ＋ 融階×4 ＋（代數−1）×2
- * 例：普 Lv1 → 6；稀有 Lv10 融1 二代 → 4+20+6+4+2 = 36
+ * 放生精魂：壓低出殼即賣，抬高養成／稀有／融合（星標只係 UI 標記，唔加精魂）。
+ * 基礎 2 ＋ 等級×2 ＋ 稀有×8 ＋ 融階×5 ＋（代數−1）×2
+ * 未養成普通幼寵（Lv≤1、無融、普通）：封頂 2＋（代數−1）
+ * 例：普 Lv1 → 2；稀有 Lv10 融1 二代 → 2+20+8+5+2 = 37
  */
 export function releaseSoulGain(pet) {
   const lv = Math.max(1, pet?.level ?? 1);
   const fus = Math.max(0, pet?.fusionLevel ?? 0);
   const rar = Math.max(0, Math.min(RARITY_MAX, pet?.rarity ?? 0));
   const gen = Math.max(1, petGeneration(pet) || 1);
-  return Math.max(1, 4 + lv * 2 + rar * 6 + fus * 4 + (gen - 1) * 2);
+  let soul = 2 + lv * 2 + rar * 8 + fus * 5 + (gen - 1) * 2;
+  const freshFodder = lv <= 1 && rar === 0 && fus === 0;
+  if (freshFodder) {
+    soul = Math.min(soul, 2 + (gen - 1));
+  }
+  return Math.max(1, soul);
+}
+
+/**
+ * 未孵蛋化精（潮還）：精魂低於孵出後放生，鼓勵早篩唔好雙重等待。
+ * 繁殖蛋跟 genes 代數／稀有；商店蛋跟品階。
+ */
+export function eggDissolveSoul(egg) {
+  if (!egg) return 1;
+  if (egg.source === "breed") {
+    const gen = Math.max(1, Math.min(GEN_MAX, (egg.generation ?? egg.genes?.generation ?? 1) | 0));
+    const rar = Math.max(0, Math.min(RARITY_MAX, (egg.genes?.rarity ?? 0) | 0));
+    const hybridBonus = egg.genes?.hybrid || egg.genes?.tertiary ? 1 : 0;
+    return Math.max(1, 1 + (gen - 1) + Math.min(2, rar) + hybridBonus);
+  }
+  const tier = String(egg.tier || "C").toUpperCase();
+  if (tier === "A") return 3;
+  if (tier === "B") return 2;
+  return 1;
 }
 
 /** @deprecated 舊放生石／飼料／塵；保留別名以便舊測試／註解對照 */

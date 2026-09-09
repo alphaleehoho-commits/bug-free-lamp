@@ -8,6 +8,9 @@ import {
   releasePets,
   previewReleaseSoul,
   releaseSoulGain,
+  dissolveEgg,
+  suggestRanchCullUids,
+  ranchCapView,
   togglePetStarred,
   togglePetLocked,
   deployPet,
@@ -174,6 +177,7 @@ import {
   elementExplain,
   kindExplain,
   personalityExplain,
+  PERSONALITY_ROLE_SHORT,
   skillTypeLabel,
   skillPowerMult,
   SECOND_SKILL_UNLOCK,
@@ -297,6 +301,24 @@ let ranchStarOnly = false;
  * @type {null | { phase: "select" | "confirm", selected: string[] }}
  */
 let ranchRelease = null;
+
+/** 打開牧場清弱寵（預選建議 cull） */
+function openRanchCullSelect(needSlots = 1) {
+  const suggested = suggestRanchCullUids(state, Math.max(1, needSlots));
+  ranchRelease = { phase: "select", selected: [...suggested] };
+  releaseModal = null;
+  hatchClaimModal = null;
+  tab = "party";
+  panelSub = { ...panelSub, party: "ranch" };
+  petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [], detailTab: "stats" };
+  render();
+  if (suggested.length) {
+    setFlash(`已預選 ${suggested.length} 隻弱寵，確認後放生騰位。`);
+  } else {
+    setFlash("冇可清嘅弱寵（星標／上鎖／忙碌除外）。");
+  }
+}
+
 /**
  * 放生確認半屏（單隻／批量）
  * @type {null | { uids: string[], fromDetail?: boolean }}
@@ -3075,7 +3097,7 @@ function cultivatePanel(qiPct, next, m) {
           })
           .join("") || `<li class="empty">暫無精魂貨物。</li>`;
       shopBody = `<h2>商肆 · 精魂</h2>
-      <p class="lead">精魂 ${soulN} · 放生所得兌換飼料／材料／道具</p>
+      <p class="lead">精魂 ${soulN} · 放生／潮還所得（養成／稀有／融合越高越賺）兌換飼料／材料／道具</p>
       <ul class="list">${soulRows}</ul>`;
     } else if (shopInner === "grit") {
       const cosRows = (gritV.cosmeticList || gritV.cosmeticsList || [])
@@ -3198,6 +3220,32 @@ function petFlagTags(p) {
   return bits.join("");
 }
 
+/** 戰魂／職魂短標（主性格） */
+function personalitySoulTagHtml(personalityId) {
+  const ex = personalityExplain(personalityId);
+  if (!ex?.role) return "";
+  const short = ex.roleShort || PERSONALITY_ROLE_SHORT[ex.role] || ex.roleLabel;
+  return `<span class="pet-tag pet-tag-soul pet-tag-soul-${escapeHtml(ex.role)}" title="${escapeHtml(
+    ex.roleLabel
+  )}">${escapeHtml(short)}</span>`;
+}
+
+/** 出戰陣中有親子關係的 uid */
+function partyKinshipUidSet(pets) {
+  const list = Array.isArray(pets) ? pets : [];
+  const uids = new Set(list.map((p) => p.uid).filter(Boolean));
+  const out = new Set();
+  for (const p of list) {
+    for (const id of p.bornFrom || []) {
+      if (uids.has(id) && id !== p.uid) {
+        out.add(p.uid);
+        out.add(id);
+      }
+    }
+  }
+  return out;
+}
+
 /** 卡面右上角星標／上鎖徽章（牧場可撳；揀寵卡只顯示） */
 function petCornerBadges(p, opts = {}) {
   const uid = escapeHtml(p.uid || p.templateId);
@@ -3307,7 +3355,9 @@ function petGridCard(p, extraBtn = "", tagHtml = "", opts = {}) {
         </div>
       </div>
       <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""}</span>
-      <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)} · 攻${fmtInt(p.atk)}</span>
+      <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${personalitySoulTagHtml(
+        p.personalityId
+      )} · 攻${fmtInt(p.atk)}</span>
       <div class="row-actions pet-card-actions">
         ${
           managing
@@ -3332,7 +3382,9 @@ function petRow(p, extraBtn = "", tagHtml = "") {
       <div>
         <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
         ${tagHtml}${petFlagTags(p)}
-        <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
+        <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${personalitySoulTagHtml(
+          p.personalityId
+        )}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
         <span class="muted">攻${fmtInt(p.atk)} 血${fmtInt(p.hp)} 速${fmtInt(p.spd)} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
@@ -3460,13 +3512,27 @@ function petsListView() {
   const busy = new Set(dv.busyUids || []);
   const mating = breedBusyUids(state);
 
+  const syn = partySynergy(state.pets);
+  const kinSet = partyKinshipUidSet(state.pets);
+  const synNote = syn.labels.length
+    ? syn.labels
+        .map((l) =>
+          l.includes("親子")
+            ? `<span class="pet-tag pet-tag-kin" title="親子同出戰：攻血↑">${escapeHtml(l)}</span>`
+            : escapeHtml(l)
+        )
+        .join("、")
+    : "同元素／種類／親子可羈絆";
+
   const roster =
     state.pets
       .map((p) =>
         petRow(
           p,
           `<button type="button" class="secondary" data-undeploy="${escapeHtml(p.uid)}">撤回</button>`,
-          petStatusTag("fight")
+          `${petStatusTag("fight")}${
+            kinSet.has(p.uid) ? `<span class="pet-tag pet-tag-kin" title="親子羈絆">親子</span>` : ""
+          }`
         )
       )
       .join("") ||
@@ -3614,9 +3680,6 @@ function petsListView() {
     })
     .join("");
 
-  const syn = partySynergy(state.pets);
-  const synNote = syn.labels.length ? syn.labels.join("、") : "同元素／種類／親子可羈絆";
-
   const nav = partyNavHtml();
   const sub = panelSub.party;
 
@@ -3651,21 +3714,34 @@ function petsListView() {
         : 0;
     const manageBar = ranchRelease?.phase === "select"
       ? `<div class="ranch-manage-bar">
-          <p class="meta">已選 ${selCount} · 預計精魂 +${selSoul} · 上鎖／出戰／派遣不可選</p>
+          <p class="meta">已選 ${selCount} · 預計精魂 +${selSoul} · 上鎖／出戰／派遣不可選 · 幼寵精魂較低</p>
           <div class="row">
             <button type="button" class="secondary" data-act="ranch-release-cancel">取消</button>
+            <button type="button" class="ghost" data-act="ranch-cull-suggest">加選弱寵</button>
             <button type="button" class="primary" data-act="ranch-release-next" ${selCount ? "" : "disabled"}>下一步</button>
           </div>
         </div>`
       : `<div class="row ranch-manage-entry">
           <button type="button" class="secondary" data-act="ranch-release-start">批量放生</button>
+          ${
+            ranch.length >= cap
+              ? `<button type="button" class="primary" data-act="ranch-cull-open">清弱寵騰位</button>`
+              : ""
+          }
         </div>`;
+    const capNote =
+      ranch.length >= cap
+        ? `<p class="meta hatch-ranch-warn">牧場已滿——孵化領取／契約會卡住。建議清弱寵或出戰。</p>`
+        : ranch.length >= cap - 2
+          ? `<p class="meta muted">牧場將滿（餘 ${cap - ranch.length}）。出殼即賣精魂偏低，寧願潮還多餘蛋。</p>`
+          : "";
     return wrapStage(
       nav,
       `<h2>靈寵 · 牧場</h2>
       <p class="lead">牧場 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 精魂 ${Math.floor(
         state.materials?.soul_essence || 0
       )} · 待命微產飼料／靈塵／潮霧令</p>
+      ${capNote}
       ${eggBrief}
       <div class="ranch-sort" role="group" aria-label="牧場排序">${sortOpts}${starFilterChip}</div>
       ${manageBar}
@@ -3699,7 +3775,7 @@ function petsListView() {
   return wrapStage(
     nav,
     `<h2>靈寵 · 出戰</h2>
-    <p class="lead">${state.pets.length}/${activePetMaxForState(state)} · ${escapeHtml(synNote)}</p>
+    <p class="lead">${state.pets.length}/${activePetMaxForState(state)} · ${synNote}</p>
     <ul class="list">${roster}</ul>`
   );
 }
@@ -3723,6 +3799,18 @@ function breedPreviewHtml(preview, matAfford) {
   const genChips = preview.genOdds
     .map((o) => `<span class="breed-chip">${escapeHtml(genLabel(o.gen))} ${o.pct}%</span>`)
     .join("");
+  const temperRow = (preview.temperParents || [])
+    .map((t) => {
+      const soul = t.roleShort
+        ? `<span class="pet-tag pet-tag-soul pet-tag-soul-${escapeHtml(t.role || "")}" title="${escapeHtml(
+            t.roleLabel || ""
+          )}">${escapeHtml(t.roleShort)}</span>`
+        : "";
+      return `<span class="breed-temper-parent">${escapeHtml(t.name)} · ${escapeHtml(
+        t.personalityName
+      )}${soul}</span>`;
+    })
+    .join("<span class=\"muted\"> × </span>");
   const sp = preview.statPreview;
   const genMultNote =
     preview.genMult != null && preview.genMult > 1
@@ -3738,6 +3826,12 @@ function breedPreviewHtml(preview, matAfford) {
       <p class="meta">物種池：${escapeHtml(preview.speciesHint)} · 屬性突變 ~${Math.round(
         preview.elemRate * 100
       )}%</p>
+      <p class="meta">雙親性格：${temperRow}</p>
+      ${
+        preview.temperNote
+          ? `<p class="meta muted">${escapeHtml(preview.temperNote)}</p>`
+          : ""
+      }
       <p class="meta">天生溢出（估）：攻${statRangeHtml(sp.atk)}／血${statRangeHtml(sp.hp)}／速${statRangeHtml(
         sp.spd
       )}</p>
@@ -3750,37 +3844,47 @@ function lineageHtml(lineage) {
   if (!lineage?.hasLineage) {
     return `<h3>血統</h3><p class="meta">原生靈寵，無繁殖紀錄。</p>`;
   }
+  const memberRow = (p, extraMuted = "") => {
+    if (p.exists) {
+      return `<li><button type="button" class="linkish" data-pet-detail="${escapeHtml(p.uid)}">${escapeHtml(
+        p.name
+      )}</button> <span class="muted">${escapeHtml(p.speciesName)} · ${escapeHtml(genLabel(p.generation))}${
+        p.deployed ? " · 出戰" : ""
+      }${extraMuted}</span></li>`;
+    }
+    return `<li><span class="muted">${escapeHtml(p.name)}</span></li>`;
+  };
   const parentRows =
     lineage.parents.length > 0
-      ? lineage.parents
-          .map((p) => {
-            if (p.exists) {
-              return `<li><button type="button" class="linkish" data-pet-detail="${escapeHtml(p.uid)}">${escapeHtml(
-                p.name
-              )}</button> <span class="muted">${escapeHtml(p.speciesName)} · ${escapeHtml(genLabel(p.generation))}</span></li>`;
-            }
-            return `<li><span class="muted">${escapeHtml(p.name)}</span></li>`;
-          })
-          .join("")
+      ? lineage.parents.map((p) => memberRow(p)).join("")
       : `<li class="muted">無父母紀錄</li>`;
+  const gpRows =
+    (lineage.grandparents || []).length > 0
+      ? lineage.grandparents
+          .map((g) => memberRow(g, g.viaName ? ` · 經${escapeHtml(g.viaName)}` : ""))
+          .join("")
+      : "";
   const childRows =
     lineage.children.length > 0
-      ? lineage.children
-          .map(
-            (c) =>
-              `<li><button type="button" class="linkish" data-pet-detail="${escapeHtml(c.uid)}">${escapeHtml(
-                c.name
-              )}</button> <span class="muted">${escapeHtml(c.speciesName)} · ${escapeHtml(genLabel(c.generation))}${
-                c.deployed ? " · 出戰" : ""
-              }</span></li>`
-          )
-          .join("")
+      ? lineage.children.map((c) => memberRow(c)).join("")
       : `<li class="muted">尚無子代</li>`;
+  const kinBanner = lineage.kinshipActive
+    ? `<p class="meta lineage-kin"><span class="pet-tag pet-tag-kin">親子羈絆</span> 與此寵有血緣的靈寵正同隊出戰（攻血↑）。</p>`
+    : lineage.parents.some((p) => p.exists) || lineage.children.length
+      ? `<p class="meta muted">親子同出戰可觸發「親子羈絆」攻血加成。</p>`
+      : "";
   return `
     <h3>血統</h3>
     <p class="meta">本體 ${escapeHtml(genLabel(lineage.generation))}</p>
+    ${kinBanner}
     <p class="meta"><strong>父母</strong></p>
     <ul class="lineage-list">${parentRows}</ul>
+    ${
+      gpRows
+        ? `<p class="meta"><strong>祖父母</strong>（${lineage.grandparents.length}）</p>
+    <ul class="lineage-list">${gpRows}</ul>`
+        : ""
+    }
     <p class="meta"><strong>子代</strong>（${lineage.children.length}）</p>
     <ul class="lineage-list">${childRows}</ul>`;
 }
@@ -3843,7 +3947,9 @@ function petsBreedView() {
       ${petArtFromPet(pet, { size: 36, generation: petGeneration(pet) })}
       <div>
         <strong>${escapeHtml(displayPetName(pet))}</strong>
-        <span class="muted">${genTagHtml(petGeneration(pet))} · ${escapeHtml(pet.elementName)}·${escapeHtml(pet.personalityName)}</span>
+        <span class="muted">${genTagHtml(petGeneration(pet))} · ${escapeHtml(pet.elementName)}·${escapeHtml(pet.personalityName)}${personalitySoulTagHtml(
+          pet.personalityId
+        )}</span>
       </div>
       <button type="button" class="secondary" data-breed-toggle="${escapeHtml(pet.uid)}">移除</button>
     </div>`;
@@ -3863,7 +3969,9 @@ function petsBreedView() {
           btnAttr: `data-breed-toggle="${escapeHtml(p.uid)}"`,
           meta: `<span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
             petGeneration(p)
-          )} · ${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}${mating ? " · 交配中" : ""}`,
+          )} · ${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}${personalitySoulTagHtml(p.personalityId)}${
+            mating ? " · 交配中" : ""
+          }`,
         });
       })
       .join("") || `<li class="empty pet-pick-empty">牧場需要待命靈寵才能交配（派遣中不可用）。</li>`;
@@ -3964,16 +4072,24 @@ function petsHatchView() {
     .filter((e) => !e.hatching)
     .filter(hatchInventoryFilter);
   const canStart = free > 0;
+  const ranchCv = ranchCapView(state);
+  const ranchWarn = ranchCv.full
+    ? `<p class="meta hatch-ranch-warn">牧場已滿（${ranchCv.used}/${ranchCv.cap}）——領取會失敗。<button type="button" class="linkish" data-act="hatch-open-cull">清弱寵騰位</button></p>`
+    : ranchCv.nearlyFull
+      ? `<p class="meta hatch-ranch-warn">牧場將滿（餘 ${ranchCv.free}）· 可先潮還多餘蛋或清倉。</p>`
+      : "";
   const invRows =
     invEggs
       .map((e) => {
         const uid = escapeHtml(e.uid);
+        const dissolveN = e.dissolveSoul ?? 1;
         return `<li class="card-row egg-row hatch-inv-row">
           <div>
             <strong>${escapeHtml(e.name)}</strong>
             <span class="muted">${escapeHtml(e.label)} · ${escapeHtml(e.desc || "")}</span>
           </div>
           <div class="row-actions">
+            <button type="button" class="ghost" data-dissolve-egg="${uid}" title="未孵化精，精魂少於放生">潮還＋${dissolveN}</button>
             <button type="button" class="primary${tutGlow({ type: "start-hatch" })}" data-start-hatch="${uid}" ${
               canStart ? "" : "disabled"
             }>放入孵化</button>
@@ -3998,6 +4114,8 @@ function petsHatchView() {
   return `<div class="hatch-panel" data-hatch-panel>
     <h2>靈寵 · 孵化</h2>
     <p class="lead">孵化欄 ${hv.used}/${hv.cap} · 庫存 ${(state.eggs || []).filter((e) => e.startedAt == null).length} 枚</p>
+    ${ranchWarn}
+    <p class="meta muted">唔想養嘅蛋可「潮還」化精（少於孵出再放生）——省雙重等待。</p>
     <h3>孵化欄</h3>
     <div class="hatch-slots" data-hatch-slots>${slotCards}</div>
     <div class="row hatch-claim-all-row">
@@ -4149,7 +4267,13 @@ function petDetailTemperHtml(pet) {
     if (!ex) return "";
     return `
       <div class="pet-explain">
-        <h3>${escapeHtml(tag)} · ${escapeHtml(ex.name)} <span class="muted">（${escapeHtml(ex.roleLabel)}）</span></h3>
+        <h3>${escapeHtml(tag)} · ${escapeHtml(ex.name)} ${
+          ex.roleShort
+            ? `<span class="pet-tag pet-tag-soul pet-tag-soul-${escapeHtml(ex.role)}" title="${escapeHtml(
+                ex.roleLabel
+              )}">${escapeHtml(ex.roleShort)}</span>`
+            : `<span class="muted">（${escapeHtml(ex.roleLabel)}）</span>`
+        }</h3>
         <p class="meta"><strong>戰鬥被動</strong> — ${escapeHtml(ex.combatLabel)}</p>
         <p class="meta">成長偏向 攻${fmtGrowthMult(ex.growthAtk)} · 血${fmtGrowthMult(ex.growthHp)} · 速${fmtGrowthMult(ex.growthSpd)}</p>
         ${ex.sustainBias ? `<p class="meta muted">續航親和：治療／減傷技較易惠及此寵</p>` : ""}
@@ -4270,7 +4394,7 @@ function petsDetailView() {
     `<div class="pet-detail-hero">
       ${petArtFromPet(pet, { size: 52, generation: g, className: "pet-art--detail" })}
       <div class="pet-detail-hero-text">
-        <h2>${escapeHtml(displayPetName(pet))}${petFlagTags(pet)}</h2>
+        <h2>${escapeHtml(displayPetName(pet))}${petFlagTags(pet)}${personalitySoulTagHtml(pet.personalityId)}</h2>
         <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
       </div>
     </div>
@@ -5577,6 +5701,15 @@ function bind() {
         ranchRelease = { phase: "select", selected: [] };
         releaseModal = null;
         render();
+      } else if (act === "ranch-cull-open" || act === "hatch-open-cull") {
+        openRanchCullSelect(act === "hatch-open-cull" ? 2 : 1);
+      } else if (act === "ranch-cull-suggest") {
+        if (ranchRelease?.phase !== "select") return;
+        const more = suggestRanchCullUids(state, 3);
+        const selected = new Set(ranchRelease.selected || []);
+        for (const uid of more) selected.add(uid);
+        ranchRelease = { phase: "select", selected: [...selected] };
+        render();
       } else if (act === "ranch-release-cancel") {
         ranchRelease = null;
         render();
@@ -6307,8 +6440,10 @@ function bind() {
       saveState(state);
       render();
       if (r.tutorialUnlock) setFlash(r.tutorialUnlock, "unlock");
-      else if (!r.ok) setFlash(r.msg);
-      else if (r.celebrate) {
+      else if (!r.ok) {
+        setFlash(r.msg);
+        if (r.ranchFull) openRanchCullSelect(1);
+      } else if (r.celebrate) {
         let tone = "celebrate";
         if (r.hybrid) tone = "hybrid";
         else if ((r.rarity ?? 0) >= 3) tone = "legend";
@@ -6330,13 +6465,24 @@ function bind() {
       saveState(state);
       render();
       if (r.tutorialUnlock) setFlash(r.tutorialUnlock, "unlock");
-      else if (!r.ok) setFlash(r.msg);
-      else if (r.celebrate) {
+      else if (!r.ok) {
+        setFlash(r.msg);
+        if (r.ranchFull) openRanchCullSelect(1);
+      } else if (r.celebrate) {
         let tone = "celebrate";
         if (r.hybrid) tone = "hybrid";
         else if ((r.rarity ?? 0) >= 3) tone = "legend";
         setFlash(r.msg, tone);
       }
+      if (r.ok && r.ranchFull) openRanchCullSelect(1);
+    });
+  });
+  app.querySelectorAll("[data-dissolve-egg]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = dissolveEgg(state, btn.dataset.dissolveEgg);
+      saveState(state);
+      render();
+      flashResult(r);
     });
   });
   app.querySelectorAll("[data-hatch-filter]").forEach((btn) => {

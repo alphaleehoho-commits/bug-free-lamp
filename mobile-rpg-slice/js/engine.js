@@ -73,6 +73,7 @@ import {
   bestiaryEntries,
   bestiaryCombatBonus,
   releaseSoulGain,
+  eggDissolveSoul,
   releaseRefund,
   NICK_MAX_LEN,
   DAILY_QUESTS,
@@ -89,6 +90,8 @@ import {
   RARITY_MAX,
   SPECIES,
   PERSONALITIES,
+  PERSONALITY_ROLE_LABEL,
+  PERSONALITY_ROLE_SHORT,
   petGeneration,
   genLabel,
   childGenerationOdds,
@@ -124,6 +127,7 @@ import {
   formationAllyPlacement,
   formationFoePlacement,
   HYBRID_SKILLS,
+  secondSkillIdForPet,
   genCombatMult,
   genAwakenBonus,
   BREED_ELEMENT_MUTATION_RATE,
@@ -3756,6 +3760,7 @@ export function eggsView(state, now = Date.now()) {
       ready: hatching && left <= 0,
       leftMs: left,
       leftSec: Math.ceil(left / 1000),
+      dissolveSoul: eggDissolveSoul(e),
     };
   });
 }
@@ -3832,7 +3837,11 @@ export function claimHatch(state, eggUid) {
   // 蛋入牧場欄；出戰欄唔佔牧場容量（同契約／繁殖／撤回一致）
   const cap = ranchCap(state);
   if (state.ranch.length >= cap) {
-    return { ok: false, msg: `牧場已滿（${state.ranch.length}/${cap}），無法領取。可先出戰或放歸。` };
+    return {
+      ok: false,
+      msg: `牧場已滿（${state.ranch.length}/${cap}），無法領取。可先清倉放生或出戰。`,
+      ranchFull: true,
+    };
   }
   const pet = normalizePet(hatchPetFromEgg(egg, { realm: state.realm, starter: egg.source === "starter" }));
   state.eggs.splice(i, 1);
@@ -3945,6 +3954,7 @@ export function claimAllReadyHatches(state, now = Date.now()) {
   let maxRarity = 0;
   let tutorialUnlock = null;
   let stopMsg = null;
+  let ranchFull = false;
   for (const uid of readyUids) {
     const r = claimHatch(state, uid);
     if (r.ok && r.pet) {
@@ -3956,10 +3966,13 @@ export function claimAllReadyHatches(state, now = Date.now()) {
       if (r.tutorialUnlock) tutorialUnlock = r.tutorialUnlock;
     } else {
       stopMsg = r.msg || "領取中斷。";
+      if (r.ranchFull) ranchFull = true;
       break;
     }
   }
-  if (!pets.length) return { ok: false, msg: stopMsg || "無法領取。", pets: [] };
+  if (!pets.length) {
+    return { ok: false, msg: stopMsg || "無法領取。", pets: [], ranchFull };
+  }
   const msg =
     pets.length === 1
       ? `孵出 ${pets[0].name}`
@@ -3973,6 +3986,7 @@ export function claimAllReadyHatches(state, now = Date.now()) {
     hybrid,
     rarity: maxRarity,
     tutorialUnlock,
+    ranchFull,
   };
   if (stopMsg) {
     return { ...payload, msg: `${msg}（其後：${stopMsg}）`, partial: true };
@@ -4101,6 +4115,92 @@ export function previewReleaseSoul(state, uids) {
   return { ok: true, soul, pets };
 }
 
+/**
+ * 建議清倉對象：牧場內未上鎖、非星標、非交配／派遣中，優先低等級／低稀有。
+ * limit 預設騰出 1 格（牧場滿時領孵用）。
+ */
+export function suggestRanchCullUids(state, limit = 1) {
+  const need = Math.max(1, Math.min(12, limit | 0));
+  const mating = breedBusyUids(state);
+  const dispatchBusy = dispatchBusyUids(state);
+  const rows = (state.ranch || [])
+    .filter((p) => p && !p.locked && !p.starred && !mating.has(p.uid) && !dispatchBusy.has(p.uid))
+    .map((p) => ({
+      uid: p.uid,
+      score:
+        (p.level ?? 1) * 10 +
+        (p.rarity ?? 0) * 40 +
+        (p.fusionLevel ?? 0) * 60 +
+        petGeneration(p) * 5,
+    }))
+    .sort((a, b) => a.score - b.score);
+  return rows.slice(0, need).map((r) => r.uid);
+}
+
+/** 牧場容量視圖（UI 滿倉提示） */
+export function ranchCapView(state) {
+  const cap = ranchCap(state);
+  const used = state.ranch?.length || 0;
+  const free = Math.max(0, cap - used);
+  return {
+    used,
+    cap,
+    free,
+    full: free <= 0,
+    nearlyFull: free > 0 && free <= 2,
+  };
+}
+
+/**
+ * 未孵蛋化精（潮還）：只接受庫存蛋（未開始孵化）。
+ */
+export function dissolveEgg(state, eggUid) {
+  if (!state.eggs) state.eggs = [];
+  const i = state.eggs.findIndex((e) => e.uid === eggUid);
+  if (i < 0) return { ok: false, msg: "找不到這枚蛋。" };
+  const egg = state.eggs[i];
+  if (egg.startedAt != null) {
+    return { ok: false, msg: "孵化中唔可以化精。先等完成或領取。" };
+  }
+  const soul = eggDissolveSoul(egg);
+  state.eggs.splice(i, 1);
+  if (!state.materials) state.materials = emptyMaterials();
+  state.materials.soul_essence = (state.materials.soul_essence || 0) + soul;
+  if (!state.stats) state.stats = {};
+  state.stats.eggDissolves = (state.stats.eggDissolves || 0) + 1;
+  const label = egg.name || eggTierInfo(egg.tier).name;
+  pushLog(state, `潮還【${label}】，獲精魂 ${soul}。`);
+  return { ok: true, msg: `潮還 ${label}，精魂 +${soul}`, soul, egg };
+}
+
+/** 批量潮還庫存蛋 */
+export function dissolveEggs(state, eggUids) {
+  const ids = Array.isArray(eggUids) ? eggUids.filter(Boolean) : [];
+  if (!ids.length) return { ok: false, msg: "未揀蛋。", soul: 0, count: 0 };
+  let total = 0;
+  let count = 0;
+  for (const uid of ids) {
+    const r = dissolveEgg(state, uid);
+    if (!r.ok) {
+      return {
+        ok: false,
+        msg: count ? `${r.msg}（已潮還 ${count} 枚，精魂 +${total}）` : r.msg,
+        soul: total,
+        count,
+        partial: count > 0,
+      };
+    }
+    total += r.soul || 0;
+    count += 1;
+  }
+  return {
+    ok: true,
+    msg: count === 1 ? `潮還 1 枚，精魂 +${total}` : `潮還 ${count} 枚，精魂 +${total}`,
+    soul: total,
+    count,
+  };
+}
+
 /** 為靈寵命名（最多 NICK_MAX_LEN 字） */
 export function renamePet(state, uid, nick) {
   const found = findOwnedPet(state, uid);
@@ -4185,7 +4285,7 @@ export function upgradePet(state, uid, payWith = "stones") {
 function maybeAnnounceSecondSkill(state, pet, prevLevel) {
   if (prevLevel < SECOND_SKILL_UNLOCK.level && (pet.level ?? 1) >= SECOND_SKILL_UNLOCK.level) {
     if ((pet.fusionLevel ?? 0) < SECOND_SKILL_UNLOCK.fusionLevel) {
-      const secondId = KIND_SECOND_SKILLS[pet.kind];
+      const secondId = secondSkillIdForPet(pet);
       const sn = SKILLS[secondId]?.name;
       if (sn) pushLog(state, `${pet.name} 因等級覺醒第二技能【${sn}】！`);
     }
@@ -4371,7 +4471,7 @@ export function fusePets(state, baseUid, matUids) {
   if (state.tutorial && !state.tutorial.flags) state.tutorial.flags = {};
   if (state.tutorial?.flags) state.tutorial.flags.fuseDone = true;
   if (targetStage === SECOND_SKILL_UNLOCK.fusionLevel) {
-    const secondId = KIND_SECOND_SKILLS[base.kind];
+    const secondId = secondSkillIdForPet(base);
     const sn = SKILLS[secondId]?.name;
     if (sn) pushLog(state, `${base.name} 覺醒第二技能【${sn}】！`);
   }
@@ -4395,8 +4495,7 @@ export function petDetail(state, uid) {
   const rule = target != null ? FUSION_RULES[target] : null;
   const skillIds = petSkillIds(pet);
   const skillLv = pet.skillLevel ?? 1;
-  const secondId =
-    HYBRID_SKILLS[pet.speciesId] || KIND_SECOND_SKILLS[pet.kind];
+  const secondId = secondSkillIdForPet(pet);
   const secondUnlocked =
     fusion >= SECOND_SKILL_UNLOCK.fusionLevel || level >= SECOND_SKILL_UNLOCK.level;
   const baseline = petSpeciesBaseline(pet.speciesId, pet.elementId, pet.personalityId);
@@ -4490,7 +4589,7 @@ function dealStrike(actor, target, power, transcript, events, skillName) {
   if (!target || target.hp <= 0) return;
   const pMult = skillPowerMult(actor.skillLevel || 1);
   let dmg = Math.max(1, Math.floor(actor.atk * power * pMult) + Math.floor(Math.random() * 4) - 1);
-  if (skillName === "嵐擊" || skillName === "穿空" || skillName === "礁襲") {
+  if (skillName === "嵐擊" || skillName === "穿空" || skillName === "礁襲" || skillName === "珊嵐槍" || skillName === "嵐虛斬") {
     dmg += Math.floor(actor.spd / 4);
   }
   const { mult, tag } = elementMatchup(actor.elementId, target.elementId);
@@ -6435,6 +6534,29 @@ export function breedPreview(petA, petB) {
     matCost,
     genOdds: odds,
     outcomes,
+    temperParents: [
+      (() => {
+        const pe = PERSONALITIES[petA.personalityId];
+        return {
+          name: displayPetName(petA),
+          personalityName: petA.personalityName || pe?.name || "—",
+          role: pe?.role || null,
+          roleShort: PERSONALITY_ROLE_SHORT[pe?.role] || null,
+          roleLabel: PERSONALITY_ROLE_LABEL[pe?.role] || null,
+        };
+      })(),
+      (() => {
+        const pe = PERSONALITIES[petB.personalityId];
+        return {
+          name: displayPetName(petB),
+          personalityName: petB.personalityName || pe?.name || "—",
+          role: pe?.role || null,
+          roleShort: PERSONALITY_ROLE_SHORT[pe?.role] || null,
+          roleLabel: PERSONALITY_ROLE_LABEL[pe?.role] || null,
+        };
+      })(),
+    ],
+    temperNote: "子代性格多從雙親主／副性格池遺傳（約一成突變）；戰魂偏打、職魂偏牧場",
     statPreview: {
       atk: [statLo.atk + (loAwaken?.atk || 0), statHi.atk + (hiAwaken?.atk || 0)],
       hp: [statLo.hp + (loAwaken?.hp || 0), statHi.hp + (hiAwaken?.hp || 0)],
@@ -6445,24 +6567,41 @@ export function breedPreview(petA, petB) {
   };
 }
 
-/** UI：血統（父母／子代） */
+function lineageMember(state, id) {
+  const hit = findOwnedPet(state, id);
+  if (hit) {
+    return {
+      uid: id,
+      name: displayPetName(hit.pet),
+      generation: petGeneration(hit.pet),
+      speciesName: SPECIES[hit.pet.speciesId]?.name || hit.pet.name,
+      exists: true,
+      deployed: (state.pets || []).some((x) => x.uid === id),
+    };
+  }
+  return { uid: id, name: "已放歸", exists: false, deployed: false };
+}
+
+/** UI：血統（父母／祖父母／子代） */
 export function petLineage(state, uid) {
   const found = findOwnedPet(state, uid);
   if (!found) return null;
   const pet = found.pet;
-  const parents = (pet.bornFrom || []).map((id) => {
-    const hit = findOwnedPet(state, id);
-    if (hit) {
-      return {
-        uid: id,
-        name: displayPetName(hit.pet),
-        generation: petGeneration(hit.pet),
-        speciesName: SPECIES[hit.pet.speciesId]?.name || hit.pet.name,
-        exists: true,
-      };
+  const parents = (pet.bornFrom || []).map((id) => lineageMember(state, id));
+  const seenGp = new Set();
+  const grandparents = [];
+  for (const parent of parents) {
+    if (!parent.exists) continue;
+    const parentPet = findOwnedPet(state, parent.uid)?.pet;
+    for (const gpId of parentPet?.bornFrom || []) {
+      if (!gpId || seenGp.has(gpId) || gpId === uid) continue;
+      seenGp.add(gpId);
+      const gp = lineageMember(state, gpId);
+      gp.viaUid = parent.uid;
+      gp.viaName = parent.name;
+      grandparents.push(gp);
     }
-    return { uid: id, name: "已放歸", exists: false };
-  });
+  }
   const children = [];
   for (const p of [...(state.pets || []), ...(state.ranch || [])]) {
     if ((p.bornFrom || []).includes(uid)) {
@@ -6475,10 +6614,16 @@ export function petLineage(state, uid) {
       });
     }
   }
+  const selfDeployed = (state.pets || []).some((x) => x.uid === uid);
+  const kinshipActive =
+    selfDeployed &&
+    (parents.some((p) => p.deployed) || children.some((c) => c.deployed));
   return {
     generation: petGeneration(pet),
     parents,
+    grandparents,
     children,
+    kinshipActive,
     hasLineage: parents.length > 0 || children.length > 0,
   };
 }
@@ -7692,6 +7837,7 @@ export {
   hybridRecipeSummary,
   hybridRecipeMatrix,
   releaseSoulGain,
+  eggDissolveSoul,
   releaseRefund,
   DUNGEON_TRIALS,
   KINDS,

@@ -198,12 +198,14 @@ import {
   OFFLINE_CLAIM_MIN_SEC,
   OFFLINE_BANK_CAP_SEC,
   releaseSoulGain,
+  eggDissolveSoul,
   releaseRefund,
   SOUL_SHOP_OFFERS,
   soulShopOfferById,
   elementExplain,
   kindExplain,
   personalityExplain,
+  PERSONALITY_ROLE_SHORT,
   skillTypeLabel,
   ELEMENT_EXPLAIN,
   KIND_EXPLAIN,
@@ -301,6 +303,9 @@ import {
   releasePet,
   releasePets,
   previewReleaseSoul,
+  dissolveEgg,
+  suggestRanchCullUids,
+  ranchCapView,
   togglePetStarred,
   togglePetLocked,
   setPetStarred,
@@ -760,6 +765,27 @@ assert(
   ),
   "hybrid second skill"
 );
+assert(SKILLS.abyss_reign_surge && SKILLS.void_glint_ray && SKILLS.dusk_iron_plate, "tertiary skill defs");
+assert(SKILLS.coral_storm_lance && SKILLS.deep_fang_toxin && SKILLS.tide_prism_howl, "tertiary skill defs 2");
+assert(SKILLS.night_scale_veil && SKILLS.gale_void_slash, "tertiary skill defs 3");
+assert(HYBRID_SKILLS.abyssreign === "abyss_reign_surge", "淵君 unique skill");
+assert(HYBRID_SKILLS.tideprism === "tide_prism_howl", "潮稜 unique buff skill");
+assert(
+  petSkillIds({ skillId: "tide_spray", speciesId: "abyssreign", kind: "鱗", fusionLevel: 1 }).includes(
+    "abyss_reign_surge"
+  ),
+  "tertiary second skill in combat list"
+);
+assert(
+  !petSkillIds({ skillId: "tide_spray", speciesId: "abyssreign", kind: "鱗", level: 15 }).includes("mist_surge"),
+  "tertiary no longer reuses mist_surge"
+);
+const tertTypes = new Set(
+  ["abyssreign", "voidglint", "duskiron", "coralstorm", "deepfang", "tideprism", "nightscale", "galevoid"].map(
+    (id) => SKILLS[HYBRID_SKILLS[id]]?.type
+  )
+);
+assert(tertTypes.size >= 5, "tertiary skills span multiple combat roles");
 assert(genCombatMult(3) === 1.03 && genCombatMult(1) === 1.01, "gen combat residual");
 assert(RARITY[1].mult === 1.18 && RARITY[2].mult === 1.38 && RARITY[3].mult === 1.65, "rarity mults widened");
 assert(levelStatGains(0).atk === 2 && levelStatGains(3).atk === 2.6, "level gains gen slope");
@@ -899,7 +925,8 @@ const synKin = partySynergy([
   { uid: "c1", elementId: "tide", kind: "獸", speciesId: "tideling", generation: 2, bornFrom: ["p1", "p2"] },
 ]);
 assert(synKin.labels.some((l) => l.includes("親子")), "kinship bond");
-assert(synKin.atkMult > 1.07, "kinship atk");
+assert(synKin.atkMult > 1.14, "kinship atk");
+assert(Math.abs(synKin.atkMult - 1.07 * 1.08) < 1e-9, "kinship × dual-element");
 const synSp = partySynergy([
   { uid: "a", elementId: "gale", kind: "禽", speciesId: "ashwing", generation: 1 },
   { uid: "b", elementId: "flame", kind: "禽", speciesId: "ashwing", generation: 1 },
@@ -1605,6 +1632,8 @@ assert(
   "preview shows main/sub hybrid rows"
 );
 assert(prev.genMult >= 1, "preview exposes genMult");
+assert(prev.temperParents?.length === 2 && prev.temperParents[1].roleShort === "戰魂", "preview temper soul tags");
+assert(prev.temperNote?.includes("戰魂"), "preview temper note");
 
 const breedGoalNavSt = {
   realm: 2,
@@ -1629,12 +1658,32 @@ assert(
 
 const lineSt = {
   pets: [{ uid: "c1", speciesId: "glintfox", name: "耀狐", bornFrom: ["a", "b"], generation: 2 }],
-  ranch: [{ uid: "a", speciesId: "reefox", name: "礁狐", generation: 1 }],
+  ranch: [
+    { uid: "a", speciesId: "reefox", name: "礁狐", generation: 1, bornFrom: ["gp1", "gp2"] },
+    { uid: "gp1", speciesId: "tideling", name: "潮仔", generation: 0 },
+  ],
 };
 const lin = petLineage(lineSt, "c1");
 assert(lin.parents.length === 2 && lin.children.length === 0, "lineage parents");
+assert(lin.grandparents?.length >= 1 && lin.grandparents.some((g) => g.uid === "gp1"), "lineage grandparents");
+assert(lin.grandparents.find((g) => g.uid === "gp1")?.viaUid === "a", "grandparent via parent");
 const linA = petLineage(lineSt, "a");
 assert(linA.children.length === 1, "lineage children");
+const kinLine = petLineage(
+  {
+    pets: [
+      { uid: "p1", speciesId: "reefox", name: "父", generation: 1 },
+      { uid: "c1", speciesId: "glintfox", name: "子", bornFrom: ["p1", "p2"], generation: 2 },
+    ],
+    ranch: [],
+  },
+  "c1"
+);
+assert(kinLine.kinshipActive, "lineage kinship when parent co-deployed");
+
+assert(PERSONALITY_ROLE_SHORT.fight === "戰魂" && PERSONALITY_ROLE_SHORT.work === "職魂", "soul short labels");
+assert(personalityExplain("fierce")?.roleShort === "戰魂", "fierce roleShort");
+assert(personalityExplain("gentle")?.roleShort === "職魂", "gentle roleShort");
 
 const inh = breedStatInheritancePreview(foxA, finB, { rarity: 1, generation: 2, hybrid: true });
 assert(inh.atk >= 0 && inh.hp >= 0, "inherit preview");
@@ -3091,6 +3140,12 @@ assert(uiSrc2.includes("petDetailSkillsHtml"), "ui skills tab helper");
 assert(uiSrc2.includes("戰鬥被動"), "ui personality combat copy");
 assert(uiSrc2.includes("相剋"), "ui element matchup copy");
 assert(uiSrc2.includes("data-upgrade-skill") && uiSrc2.includes("data-temper-oil"), "ui keep upgrade/temper");
+assert(uiSrc2.includes("personalitySoulTagHtml"), "ui soul role tags");
+assert(uiSrc2.includes("pet-tag-soul"), "ui soul tag class");
+assert(uiSrc2.includes("pet-tag-kin"), "ui kinship tag");
+assert(uiSrc2.includes("祖父母"), "ui grandparents lineage");
+assert(uiSrc2.includes("雙親性格"), "ui breed preview temper");
+assert(uiSrc2.includes("partyKinshipUidSet"), "ui party kinship helper");
 assert(cssSrc.includes("pet-detail-tabs"), "css pet detail tabs");
 assert(cssSrc.includes("pet-explain"), "css pet explain blocks");
 
@@ -3099,9 +3154,57 @@ assert(cssSrc.includes("pet-explain"), "css pet explain blocks");
   assert(MATERIALS.soul_essence?.name === "精魂", "soul_essence material");
   assert(emptyMaterials().soul_essence === 0, "empty mats has soul");
   const baseSoul = releaseSoulGain({ level: 1, rarity: 0, fusionLevel: 0, generation: 1 });
-  assert(baseSoul === 6, `lv1 common soul=6 got ${baseSoul}`);
+  assert(baseSoul === 2, `lv1 common soul=2 got ${baseSoul}`);
   const rareSoul = releaseSoulGain({ level: 10, rarity: 1, fusionLevel: 1, generation: 2 });
-  assert(rareSoul === 36, `rare formula got ${rareSoul}`);
+  assert(rareSoul === 37, `rare formula got ${rareSoul}`);
+  const starredFresh = releaseSoulGain({ level: 1, rarity: 0, fusionLevel: 0, generation: 1, starred: true });
+  assert(starredFresh === baseSoul, "star marker does not change soul");
+  const invested = releaseSoulGain({ level: 5, rarity: 0, fusionLevel: 0, generation: 1 });
+  assert(invested > baseSoul, "leveled pet worth more soul than fresh");
+
+  assert(eggDissolveSoul({ source: "breed", generation: 1, genes: { rarity: 0 } }) === 1, "breed egg dissolve gen1");
+  assert(eggDissolveSoul({ source: "breed", generation: 3, genes: { rarity: 1, hybrid: true } }) === 5, "breed egg dissolve gen3 hybrid");
+  assert(eggDissolveSoul({ source: "shop", tier: "C" }) === 1, "shop C dissolve");
+  assert(eggDissolveSoul({ tier: "A" }) === 3, "shop A dissolve");
+  const hatchSoul = releaseSoulGain({ level: 1, rarity: 0, fusionLevel: 0, generation: 1 });
+  assert(eggDissolveSoul({ source: "breed", generation: 1, genes: {} }) <= hatchSoul, "dissolve <= fresh release");
+
+  const dissSt = {
+    eggs: [{ uid: "egg-d1", source: "breed", name: "一代獸蛋", generation: 1, genes: { rarity: 0 }, tier: "C" }],
+    materials: { ...emptyMaterials() },
+    stats: {},
+    log: [],
+  };
+  const diss = dissolveEgg(dissSt, "egg-d1");
+  assert(diss.ok && diss.soul === 1 && dissSt.eggs.length === 0, "dissolve removes egg");
+  assert(Math.floor(dissSt.materials.soul_essence) === 1, "dissolve banks soul");
+  const hatchingBlock = dissolveEgg(
+    {
+      eggs: [{ uid: "egg-h", source: "breed", generation: 1, genes: {}, startedAt: 1, readyAt: Date.now() + 99999 }],
+      materials: { ...emptyMaterials() },
+      stats: {},
+      log: [],
+    },
+    "egg-h"
+  );
+  assert(!hatchingBlock.ok, "cannot dissolve hatching egg");
+
+  const cullSt = {
+    ranch: [
+      { ...makeStarterPet(), uid: "cull-weak", level: 1, rarity: 0, starred: false, locked: false },
+      { ...makeStarterPet(), uid: "cull-star", level: 1, rarity: 0, starred: true, locked: false },
+      { ...makeStarterPet(), uid: "cull-strong", level: 20, rarity: 2, starred: false, locked: false },
+    ],
+    pets: [],
+    breedJobs: [],
+    dispatches: [],
+  };
+  const cull = suggestRanchCullUids(cullSt, 1);
+  assert(cull[0] === "cull-weak", "cull prefers weak unstarred");
+  assert(!cull.includes("cull-star"), "cull skips starred");
+  const rcv = ranchCapView({ realm: 0, ranch: cullSt.ranch, itemBonus: { ranchCap: 0, hatchSlots: 0 } });
+  assert(rcv.used === 3 && rcv.cap >= 3, "ranchCapView counts");
+
   const oldRef = releaseRefund({ level: 5, fusionLevel: 1 });
   assert(oldRef.stones === 0 && oldRef.feed === 0 && oldRef.dust === 0 && oldRef.soul > 0, "legacy refund is soul-only");
 
@@ -3437,7 +3540,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v106"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v110"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");
