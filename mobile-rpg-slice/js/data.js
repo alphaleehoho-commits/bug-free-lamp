@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260910.1";
+export const APP_BUILD = "20260910.2";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -2737,6 +2737,48 @@ function scaleReward(obj, mult) {
   return out;
 }
 
+/** 高層遇寵：按主題屬性偏置 element／species 權重 */
+function themeElementWeights(favored) {
+  const w = { flame: 1, gloom: 1, tide: 1, stone: 1, gale: 1 };
+  if (favored && w[favored] != null) w[favored] = 5;
+  // 鄰屬略抬，保持多樣性
+  const neighbors = {
+    flame: ["gale", "tide"],
+    gale: ["flame", "gloom"],
+    gloom: ["gale", "stone"],
+    stone: ["gloom", "tide"],
+    tide: ["stone", "flame"],
+  };
+  for (const n of neighbors[favored] || []) {
+    if (w[n] != null) w[n] = Math.max(w[n], 2);
+  }
+  return w;
+}
+
+function themeEncounterWeights(favored) {
+  const base = {
+    reefox: 2,
+    tidecarp: 2,
+    mossback: 2,
+    ashwing: 2,
+    nightmoth: 2,
+    glowfin: 2,
+    saltpup: 1,
+    brineeel: 1,
+    cliffkite: 1,
+    barnshell: 1,
+  };
+  const boost = {
+    flame: { glowfin: 5, ashwing: 4, reefox: 2 },
+    gloom: { nightmoth: 5, glowfin: 3, ashwing: 2 },
+    stone: { mossback: 5, brineeel: 4, barnshell: 3, tidecarp: 2 },
+    tide: { reefox: 4, tidecarp: 5, saltpup: 4, glowfin: 2 },
+    gale: { ashwing: 5, cliffkite: 4, nightmoth: 3, reefox: 2 },
+  };
+  const extra = boost[favored] || {};
+  return { ...base, ...extra };
+}
+
 /** 5 層以上：以第 4 層為基準按 tier 公式放大 */
 export function scaleDungeonForTier(base, tier) {
   const d = cloneDungeon(base);
@@ -2846,6 +2888,18 @@ export function scaleDungeonForTier(base, tier) {
     chance: Math.min(0.62, 0.42 + Math.min(extra, 40) * 0.004),
     weights: matBias,
   };
+  const favored = theme.passive?.element || "gale";
+  d.elementWeights = themeElementWeights(favored);
+  d.encounterWeights = themeEncounterWeights(favored);
+  // 深層略抬稀有野生種權重（仍受 wildSpeciesIds／realm 過濾）
+  if (spineStage >= 4) {
+    d.encounterWeights = {
+      ...d.encounterWeights,
+      nightmoth: (d.encounterWeights.nightmoth || 1) + 1,
+      cliffkite: (d.encounterWeights.cliffkite || 1) + 1,
+      glowfin: (d.encounterWeights.glowfin || 1) + 1,
+    };
+  }
   return d;
 }
 

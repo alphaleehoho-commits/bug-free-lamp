@@ -3555,17 +3555,12 @@ export function isFusionUnlocked(state) {
 export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
   const d = resolveDungeon(state, dungeonId);
   if (!d) return "秘境不存在。";
-  if ((state.realm | 0) < (d.needRealm | 0)) {
-    return `需要階段【${stageAt(d.needRealm).name}】才能進攻（現【${stageAt(state.realm).name}】）。敵情條件達標仍要先突破。`;
-  }
+  const realmMsg = dungeonRealmGateMsg(state, d);
+  if (realmMsg) return realmMsg;
   if (!state.pets?.length) return "請先派出至少一隻靈寵再進秘境。";
   const gate = dungeonGateView(state, dungeonId, now);
-  if (gate.needsSummon && gate.phase !== "ready") {
-    if (gate.phase === "summoning") {
-      return `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……就緒後才可挑戰。`;
-    }
-    return "已通關層需先「召喚」凝聚秘境，再開始挑戰。";
-  }
+  const summonMsg = dungeonSummonGateMsg(gate);
+  if (summonMsg) return summonMsg;
   const tutWaiveChallenge = tutorialWaivesDungeonChallenge(state, dungeonId);
   const challenge = tutWaiveChallenge ? null : d.challenge || null;
   if (!tutWaiveChallenge && challenge?.banElement) {
@@ -3578,6 +3573,24 @@ export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
     }
   }
   return null;
+}
+
+/** 統一：階段／realm 閘門文案 */
+export function dungeonRealmGateMsg(state, d) {
+  if (!d) return "秘境不存在。";
+  if ((state.realm | 0) < (d.needRealm | 0)) {
+    return `需要階段【${stageAt(d.needRealm).name}】（現【${stageAt(state.realm).name}】）`;
+  }
+  return null;
+}
+
+/** 統一：已通關召喚閘門文案 */
+export function dungeonSummonGateMsg(gate) {
+  if (!gate?.needsSummon || gate.phase === "ready") return null;
+  if (gate.phase === "summoning") {
+    return `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……就緒後才可挑戰`;
+  }
+  return "已通關層需先召喚凝聚，再開始挑戰";
 }
 
 /**
@@ -4904,8 +4917,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
     if (!already && tier !== frontier) {
       return { ok: false, msg: `請先打通主脊第 ${frontier} 關。` };
     }
-  } else if (state.realm < d.needRealm) {
-    return { ok: false, msg: `需要階段：${stageAt(d.needRealm).name}` };
+  } else {
+    const realmMsg = dungeonRealmGateMsg(state, d);
+    if (realmMsg) return { ok: false, msg: realmMsg };
   }
   if (!state.dungeonReadyAt) state.dungeonReadyAt = {};
   if (!state.clearedDungeons) state.clearedDungeons = {};
@@ -4927,10 +4941,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
   const gate = dungeonGateView(state, dungeonId, now);
   // 已通關：必須先召喚就緒；教學／首通可直打
   if (!sweepInternal && gate.needsSummon && gate.phase !== "ready") {
-    if (gate.phase === "summoning") {
-      return { ok: false, msg: `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……` };
-    }
-    return { ok: false, msg: "請先召喚秘境。" };
+    return { ok: false, msg: dungeonSummonGateMsg(gate) };
   }
 
   const dailyPack = ensureDungeonDaily(state);
@@ -5505,7 +5516,7 @@ export function dungeonSweepCost(state, dungeonId, count) {
     mats,
     canAfford: have >= total,
     have,
-    label: `${name}×${total}`,
+    label: n > 1 ? `${name}×${total}（每場×${perRun}）` : `${name}×${total}`,
   };
 }
 
@@ -5578,16 +5589,15 @@ export function startDungeonSummon(state, dungeonId, count = 1) {
   const d = resolveDungeon(state, dungeonId);
   if (!d) return { ok: false, msg: "秘境不存在。" };
   if (tutorialActive(state)) return { ok: false, msg: "教學期間請直接進攻。" };
-  if (state.realm < d.needRealm) {
-    return { ok: false, msg: `需要階段：${stageAt(d.needRealm).name}` };
-  }
+  const realmMsg = dungeonRealmGateMsg(state, d);
+  if (realmMsg) return { ok: false, msg: realmMsg };
   if (!state.pets?.length) return { ok: false, msg: "請先派出靈寵。" };
   if (!state.clearedDungeons?.[dungeonId]) {
     return { ok: false, msg: "首通無需召喚，直接進攻即可。" };
   }
   const gate = dungeonGateView(state, dungeonId);
   if (gate.phase === "summoning") {
-    return { ok: false, msg: `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……` };
+    return { ok: false, msg: dungeonSummonGateMsg(gate) };
   }
   if (gate.phase === "ready") {
     return { ok: false, msg: "秘境已就緒，請開始挑戰。" };
@@ -5623,14 +5633,13 @@ export function canDungeonSweep(state, dungeonId, count = null) {
   const d = resolveDungeon(state, dungeonId);
   if (!d) return { ok: false, reason: "秘境不存在。" };
   if (tutorialActive(state)) return { ok: false, reason: "教學期間請單次進攻。" };
-  if (state.realm < d.needRealm) {
-    return { ok: false, reason: `需${stageAt(d.needRealm).name}` };
-  }
+  const realmMsg = dungeonRealmGateMsg(state, d);
+  if (realmMsg) return { ok: false, reason: realmMsg };
   if (!state.pets?.length) return { ok: false, reason: "請先派出靈寵。" };
   if (!state.clearedDungeons?.[dungeonId]) return { ok: false, reason: "需先通關本層。" };
   const gate = dungeonGateView(state, dungeonId);
   if (gate.phase === "summoning") {
-    return { ok: false, reason: `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）` };
+    return { ok: false, reason: dungeonSummonGateMsg(gate) };
   }
   // idle：可發起召喚連刷；ready：batch 須吻合
   if (gate.phase === "ready") {

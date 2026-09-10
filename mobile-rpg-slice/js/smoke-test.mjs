@@ -864,6 +864,10 @@ const t5 = buildDungeonForTier(5);
 assert(t5.id === "tide_5" && t5.needRealm === 4, "t5 tier");
 assert(t5.reward.stones > DUNGEONS[3].reward.stones, "t5 scaled reward");
 assert(t5.encounterWeights && Object.keys(t5.encounterWeights).length > 0, "t5 inherits encounterWeights");
+assert(t5.elementWeights?.flame >= 5, "t5 flame theme element bias");
+assert(t5.encounterWeights?.glowfin >= 5, "t5 flame theme species bias");
+const t6w = buildDungeonForTier(6);
+assert(t6w.elementWeights?.gloom >= 5 && t6w.encounterWeights?.nightmoth >= 5, "t6 gloom theme bias");
 assert(resolveDungeon({ dungeonDaily: null, realm: 5 }, "tide_5")?.encounterWeights, "resolveDungeon tide_5 has weights");
 assert(resolveDungeon({ dungeonDaily: null, realm: 5 }, "earth_vein_1") == null, "resolveDungeon rejects abolished branch");
 const t2daily = generateDailyDungeon("tide_2", "2026-08-27");
@@ -1892,6 +1896,7 @@ assert(dungeonGateView(sweepSt, "tide_1").phase === "idle", "gate idle after swe
 const cost5 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 5);
 const cost10 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 10);
 assert(cost10.total > cost5.total, "10-sweep costs more than 5");
+assert(cost5.label.includes("每場") && cost5.perRun >= 1, "cost label shows per-run");
 assert(clampDungeonSummonCount(7) === 7, "summon count 7 ok");
 const teamPrev = dungeonTeamPreview(sweepSt, "tide_1");
 assert(teamPrev?.ok && teamPrev.allies?.length >= 1 && teamPrev.foes?.length >= 1, "team preview");
@@ -3546,7 +3551,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v111"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v112"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");
