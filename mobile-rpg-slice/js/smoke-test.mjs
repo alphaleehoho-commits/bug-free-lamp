@@ -182,7 +182,11 @@ import {
   ABYSS_EVENT_EVERY,
   ABYSS_MUTATIONS,
   ABYSS_MERCHANT_BUFFS,
+  ABYSS_UNLOCK_SPINE_STAGE,
+  ABYSS_WEEKLY_DEPTH_MILESTONES,
+  ABYSS_BEST_DEPTH_MILESTONES,
   rollAbyssFloorEvent,
+  rollAbyssMutationChoices,
   emptyAbyssDive,
   emptyMaterials,
   emptyItems,
@@ -290,6 +294,7 @@ import {
   retreatAbyssDive,
   rearrangeAbyssSquad,
   resolveAbyssEvent,
+  resolveAbyssMutationChoice,
   buyAbyssInsurance,
   buyAbyssCosmetic,
   buyAbyssEgg,
@@ -441,6 +446,7 @@ assert(ABYSS_TIDE_SHIFT_COST >= 1, "abyss tide shift grit cost");
     items: { ...emptyItems(), tide_shift_charm: 2 },
     materials: { ...emptyMaterials(), abyss_grit: ABYSS_TIDE_SHIFT_COST + 5 },
     bestiary: {},
+    clearedDungeons: { tide_81: true },
     abyssDive: emptyAbyssDive(),
     log: [],
   };
@@ -1814,20 +1820,20 @@ assert(tacticsSetupNav.panelSub.dungeon === "setup", "tactics sync keeps setup s
   assert(tutorialLockReason(fightSt, "dungeonSub", "setup") === "教學中", "setup lock flashes 教學中");
   const unlockedAbyss = abyssDiveView({
     realm: 0,
+    clearedDungeons: { tide_81: true },
+    materials: {},
+    pets: [],
+    ranch: [],
+  });
+  assert(unlockedAbyss.unlocked, "spine stage 5 clears abyss unlock gate");
+  const lockedAbyss = abyssDiveView({
+    realm: 0,
     clearedDungeons: { tide_1: true },
     materials: {},
     pets: [],
     ranch: [],
   });
-  assert(unlockedAbyss.unlocked, "tide_1 clears abyss unlock gate");
-  const lockedAbyss = abyssDiveView({
-    realm: 0,
-    clearedDungeons: {},
-    materials: {},
-    pets: [],
-    ranch: [],
-  });
-  assert(!lockedAbyss.unlocked, "abyss locked before tide_1 / realm");
+  assert(!lockedAbyss.unlocked, "abyss locked before spine stage 5");
   const realmAbyss = abyssDiveView({
     realm: 1,
     clearedDungeons: {},
@@ -1835,7 +1841,15 @@ assert(tacticsSetupNav.panelSub.dungeon === "setup", "tactics sync keeps setup s
     pets: [],
     ranch: [],
   });
-  assert(realmAbyss.unlocked, "realm >= 1 unlocks abyss");
+  assert(!realmAbyss.unlocked, "realm alone does not unlock abyss");
+  const midAbyss = abyssDiveView({
+    realm: 2,
+    clearedDungeons: { tide_80: true },
+    materials: {},
+    pets: [],
+    ranch: [],
+  });
+  assert(!midAbyss.unlocked, "stage 4 (tide_80) still locks abyss");
 }
 
 /* Week A: dungeon sweep + daily all-clear */
@@ -2872,8 +2886,16 @@ assert(MATERIALS.abyss_grit?.tier === "abyss", "abyss grit material");
 assert(ABYSS_MUTATION_IDS.length >= 5, "abyss mutations expanded");
 assert(ABYSS_COSMETIC_IDS.length >= 3, "abyss cosmetics");
 assert(ABYSS_EVENT_EVERY === 5, "event every 5 floors");
+assert(ABYSS_UNLOCK_SPINE_STAGE === 5, "abyss unlocks at spine stage 5");
+assert(ABYSS_WEEKLY_DEPTH_MILESTONES.length >= 3, "weekly depth milestones");
+assert(ABYSS_BEST_DEPTH_MILESTONES.length >= 3, "best depth milestones");
 assert(rollAbyssFloorEvent("seed", 5).options.length === 2, "event offers 2 choices");
+assert(rollAbyssMutationChoices("seed", 3).options.length === 2, "mutation offers 2 choices");
 assert(Object.keys(ABYSS_MERCHANT_BUFFS).length >= 3, "merchant buffs");
+assert(String(ABYSS_RULES_TEXT).includes("2 選 1"), "rules mention mutation pick");
+assert(uiSrc2.includes("data-abyss-insurance"), "ui grit shop insurance button");
+assert(uiSrc2.includes("data-abyss-mutation"), "ui mutation pick");
+assert(uiSrc2.includes("封印") || uiSrc2.includes("階段"), "ui abyss lock teaser");
 {
   const mkPet = (uid, over = {}) => ({
     uid,
@@ -2893,7 +2915,7 @@ assert(Object.keys(ABYSS_MERCHANT_BUFFS).length >= 3, "merchant buffs");
   });
   const squadPets = [mkPet("ap1"), mkPet("ap2"), mkPet("ap3"), mkPet("ap4"), mkPet("ap5")];
   const squadUids = squadPets.map((p) => p.uid);
-  const abyssSt = {
+  const earlySt = {
     realm: 1,
     pets: squadPets.slice(0, 3),
     ranch: squadPets.slice(3),
@@ -2905,10 +2927,26 @@ assert(Object.keys(ABYSS_MERCHANT_BUFFS).length >= 3, "merchant buffs");
     log: [],
     abyssDive: emptyAbyssDive(),
   };
+  assert(!abyssDiveView(earlySt).unlocked, "abyss locked before spine stage 5");
+  assert(!startAbyssDive(earlySt, squadUids).ok, "cannot start abyss early");
+
+  const abyssSt = {
+    realm: 1,
+    pets: squadPets.slice(0, 3),
+    ranch: squadPets.slice(3),
+    materials: { ...emptyMaterials(), mist_token: 5, abyss_grit: 200 },
+    clearedDungeons: { tide_81: true },
+    formation: "balanced",
+    tactics: "balanced",
+    eggs: [],
+    log: [],
+    abyssDive: emptyAbyssDive(),
+  };
   const av = abyssDiveView(abyssSt);
   assert(av.unlocked && av.freeLeft && av.canFormSquad, "abyss unlocked free first");
+  assert(av.unlockSpineStage === 5 && av.spineStage >= 5, "unlock meta in view");
   assert(abyssSquadCandidates(abyssSt).length === 5, "squad candidates from pets+ranch");
-assert(abyssSquadCandidates(abyssSt).every((p) => p.speciesId), "abyss candidates expose speciesId for silhouettes");
+  assert(abyssSquadCandidates(abyssSt).every((p) => p.speciesId), "abyss candidates expose speciesId for silhouettes");
   assert(!startAbyssDive(abyssSt, squadUids.slice(0, 3)).ok, "reject short squad");
   const s1 = startAbyssDive(abyssSt, squadUids);
   assert(s1.ok && s1.won && s1.depth === 1 && s1.combatEvents?.length, "abyss floor 1 clear");
@@ -2926,6 +2964,11 @@ assert(abyssSquadCandidates(abyssSt).every((p) => p.speciesId), "abyss candidate
   assert(s3.ok, "abyss floor 2");
   // after floor 2, hp should not all be full if they took damage — at least snapshot exists
   assert(abyssSt.abyssDive.run?.hpByUid, "hp persists across floors");
+  const pick3 = advanceAbyssDive(abyssSt);
+  assert(!pick3.ok && pick3.needMutationPick && pick3.pendingMutationChoice?.options?.length === 2, "floor 3 asks mutation pick");
+  const mutId = pick3.pendingMutationChoice.options[0].mutationId;
+  const mutPick = resolveAbyssMutationChoice(abyssSt, mutId);
+  assert(mutPick.ok && (abyssSt.abyssDive.run.mutationIds || []).includes(mutId), "mutation choice applied");
   const s4 = advanceAbyssDive(abyssSt);
   assert(s4.ok && (abyssSt.abyssDive.run?.mutationIds || []).length >= 1, "mutation by floor 3");
   if (s4.won) {
@@ -2940,13 +2983,23 @@ assert(abyssSquadCandidates(abyssSt).every((p) => p.speciesId), "abyss candidate
   assert(abyssSt.abyssDive.run.benchUids.includes("ap2"), "rearrange bench");
   // push to floor 5 for event
   let guard = 0;
-  while ((abyssSt.abyssDive.run?.depth | 0) < 5 && abyssSt.abyssDive.run && guard < 8) {
+  while ((abyssSt.abyssDive.run?.depth | 0) < 5 && abyssSt.abyssDive.run && guard < 12) {
     if (abyssSt.abyssDive.run.pendingEvent) {
       const t = abyssSt.abyssDive.run.pendingEvent.options[0].type;
       const er = resolveAbyssEvent(abyssSt, t);
       assert(er.ok, "resolve mid-loop event");
     }
+    if (abyssSt.abyssDive.run.pendingMutationChoice) {
+      const mid = abyssSt.abyssDive.run.pendingMutationChoice.options[0].mutationId;
+      const mr = resolveAbyssMutationChoice(abyssSt, mid);
+      assert(mr.ok, "resolve mid-loop mutation");
+    }
     const step = advanceAbyssDive(abyssSt);
+    if (!step.ok && step.needMutationPick) {
+      const mid = step.pendingMutationChoice.options[0].mutationId;
+      assert(resolveAbyssMutationChoice(abyssSt, mid).ok, "pick mutation mid-loop");
+      continue;
+    }
     assert(step.ok, `advance toward floor 5 (${guard})`);
     if (!step.won) break;
     guard += 1;
@@ -2987,7 +3040,7 @@ assert(abyssSquadCandidates(abyssSt).every((p) => p.speciesId), "abyss candidate
       pets: squadPets.slice(0, 3),
       ranch: squadPets.slice(3),
       materials: { ...emptyMaterials(), mist_token: 5, abyss_grit: 50 },
-      clearedDungeons: { tide_1: true },
+      clearedDungeons: { tide_81: true },
       formation: "balanced",
       tactics: "balanced",
       eggs: [],
@@ -3013,12 +3066,55 @@ assert(abyssSquadCandidates(abyssSt).every((p) => p.speciesId), "abyss candidate
       },
     };
     // floor 9 is mutation floor (9 % 3 === 0)
+    const mPick = advanceAbyssDive(mutSt);
+    assert(!mPick.ok && mPick.needMutationPick, "floor 9 mutation pick first");
+    const newMut = mPick.pendingMutationChoice.options.find((o) => o.mutationId !== "mut_no_heal")
+      || mPick.pendingMutationChoice.options[0];
+    assert(resolveAbyssMutationChoice(mutSt, newMut.mutationId).ok, "accept capped mutation");
     const m9 = advanceAbyssDive(mutSt);
     if (m9.ok && m9.won) {
       const ids = mutSt.abyssDive.run.mutationIds || [];
       assert(ids.length === 3, "mutations capped at 3");
       assert(!ids.includes("mut_no_heal"), "oldest mutation dropped when capped");
     }
+  }
+  // milestone grant at depth 10
+  {
+    const msSt = {
+      realm: 1,
+      pets: squadPets.slice(0, 3),
+      ranch: squadPets.slice(3),
+      materials: { ...emptyMaterials(), mist_token: 5, abyss_grit: 0 },
+      clearedDungeons: { tide_81: true },
+      formation: "balanced",
+      tactics: "balanced",
+      eggs: [],
+      log: [],
+      abyssDive: {
+        ...emptyAbyssDive(),
+        run: {
+          seed: "ms-test",
+          depth: 9,
+          pendingGrit: 5,
+          mutationIds: [],
+          mutationCommittedForDepth: 10,
+          startedAt: Date.now(),
+          squadUids,
+          activeUids: squadUids.slice(0, 3),
+          benchUids: squadUids.slice(3),
+          hpByUid: Object.fromEntries(squadUids.map((uid) => [uid, { hp: 800, maxHp: 800 }])),
+          diveBuffs: [],
+          pendingEvent: null,
+        },
+      },
+    };
+    const grit0 = Math.floor(msSt.materials.abyss_grit || 0);
+    const ms = advanceAbyssDive(msSt);
+    assert(ms.ok && ms.won && ms.depth === 10, "clear depth 10");
+    assert((ms.milestones || []).length >= 1, "milestones granted at 10");
+    assert(msSt.abyssDive.bestMilestonesClaimed["10"], "best milestone 10 claimed");
+    assert(msSt.abyssDive.weekMilestonesClaimed["10"], "week milestone 10 claimed");
+    assert(Math.floor(msSt.materials.abyss_grit) > grit0, "milestone grit banked");
   }
   const before = Math.floor(abyssSt.materials.abyss_grit || 0);
   if (abyssSt.abyssDive.run) {
@@ -3037,7 +3133,7 @@ assert(abyssSquadCandidates(abyssSt).every((p) => p.speciesId), "abyss candidate
       pets: weak.slice(0, 3),
       ranch: weak.slice(3),
       materials: { ...emptyMaterials(), mist_token: 5, abyss_grit: 0 },
-      clearedDungeons: { tide_1: true },
+      clearedDungeons: { tide_81: true },
       formation: "balanced",
       tactics: "balanced",
       eggs: [],
@@ -3049,6 +3145,7 @@ assert(abyssSquadCandidates(abyssSt).every((p) => p.speciesId), "abyss candidate
           depth: 2,
           pendingGrit: 20,
           mutationIds: ["mut_no_heal"],
+          mutationCommittedForDepth: 3,
           startedAt: Date.now(),
           squadUids: wUids,
           activeUids: wUids.slice(0, 3),
@@ -3540,7 +3637,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v110"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v111"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");
