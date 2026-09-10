@@ -705,296 +705,145 @@ export function shopSpeciesIds(realm = 0) {
 }
 
 /**
- * 性格（20）：多數打／工取捨；少數祥瑞系只加不減。
- * role: fight | work | balanced | blessed
- * atk/hp/spd = 基礎面板倍率；work* = 牧場待命／派遣場外
+ * 主性格池（戰鬥加成 only）：三項 (m-1) 總計 ≈ +9%，單項最多 ±15%。
+ * 唔影響面板白板／牧場／派遣。
  */
-export const PERSONALITIES = {
-  // —— 原有五種 ——
-  fierce: {
-    id: "fierce",
-    name: "烈性",
-    role: "fight",
-    atk: 1.15,
-    hp: 0.92,
-    spd: 1.05,
-    workFeed: 0.55,
-    workDust: 0.7,
-    workToken: 0.5,
-    dispatchTime: 1.08,
-    breedMutate: 1.0,
-    bond: 0.48,
-  },
-  steady: {
-    id: "steady",
-    name: "沉穩",
-    role: "balanced",
-    atk: 0.95,
-    hp: 1.18,
-    spd: 0.9,
-    workFeed: 1.15,
-    workDust: 1.1,
-    workToken: 1.05,
-    dispatchTime: 0.9,
-    breedMutate: 1.0,
-    bond: 0.68,
-  },
-  sly: {
-    id: "sly",
-    name: "狡黠",
-    role: "balanced",
-    atk: 1.08,
-    hp: 0.95,
-    spd: 1.12,
-    workFeed: 0.85,
-    workDust: 1.2,
-    workToken: 1.25,
-    dispatchTime: 0.95,
-    breedMutate: 1.05,
-    bond: 0.55,
-  },
-  gentle: {
-    id: "gentle",
-    name: "溫馴",
-    role: "work",
-    atk: 0.9,
-    hp: 1.1,
-    spd: 1.0,
-    workFeed: 1.45,
-    workDust: 1.15,
-    workToken: 1.1,
-    dispatchTime: 0.92,
-    breedMutate: 0.95,
-    bond: 0.78,
-  },
-  wild: {
-    id: "wild",
-    name: "狂放",
-    role: "fight",
-    atk: 1.2,
-    hp: 0.88,
-    spd: 1.08,
-    workFeed: 0.4,
-    workDust: 0.55,
-    workToken: 0.45,
-    dispatchTime: 1.12,
-    breedMutate: 1.2,
-    bond: 0.38,
-  },
-  // —— 戰鬥向（加打減工）——
-  brutal: {
-    id: "brutal",
-    name: "殘暴",
-    role: "fight",
-    atk: 1.22,
-    hp: 0.9,
-    spd: 1.0,
-    workFeed: 0.45,
-    workDust: 0.5,
-    workToken: 0.4,
-    dispatchTime: 1.15,
-    breedMutate: 1.0,
-    bond: 0.4,
-  },
-  bloodthirst: {
-    id: "bloodthirst",
-    name: "嗜血",
-    role: "fight",
-    atk: 1.18,
-    hp: 0.85,
-    spd: 1.1,
-    workFeed: 0.35,
-    workDust: 0.6,
-    workToken: 0.4,
-    dispatchTime: 1.1,
-    breedMutate: 1.05,
-    bond: 0.42,
-  },
-  arrogant: {
-    id: "arrogant",
-    name: "傲慢",
-    role: "fight",
-    atk: 1.12,
-    hp: 1.0,
-    spd: 0.95,
-    workFeed: 0.7,
-    workDust: 0.65,
-    workToken: 0.6,
-    dispatchTime: 1.05,
-    breedMutate: 0.9,
-    bond: 0.45,
-  },
-  restless: {
-    id: "restless",
-    name: "躁動",
-    role: "fight",
-    atk: 1.05,
-    hp: 0.92,
-    spd: 1.2,
-    workFeed: 0.6,
-    workDust: 0.75,
-    workToken: 0.55,
-    dispatchTime: 1.18,
-    breedMutate: 1.1,
-    bond: 0.5,
-  },
-  vengeful: {
-    id: "vengeful",
-    name: "執念",
-    role: "fight",
-    atk: 1.14,
-    hp: 0.96,
-    spd: 1.02,
-    workFeed: 0.65,
-    workDust: 0.7,
-    workToken: 0.55,
-    dispatchTime: 1.06,
-    breedMutate: 1.0,
-    bond: 0.46,
-  },
-  cunning: {
-    id: "cunning",
-    name: "陰鷙",
-    role: "fight",
-    atk: 1.1,
-    hp: 0.93,
-    spd: 1.15,
-    workFeed: 0.7,
-    workDust: 0.85,
-    workToken: 0.75,
-    dispatchTime: 1.0,
-    breedMutate: 1.08,
-    bond: 0.5,
-  },
-  // —— 工作向（加工減打）——
-  diligent: {
-    id: "diligent",
-    name: "勤懇",
-    role: "work",
-    atk: 0.88,
-    hp: 1.05,
-    spd: 0.95,
-    workFeed: 1.5,
-    workDust: 1.35,
-    workToken: 1.3,
-    dispatchTime: 0.85,
-    breedMutate: 1.0,
-    bond: 0.72,
-  },
-  nurturing: {
-    id: "nurturing",
-    name: "慈育",
-    role: "work",
-    atk: 0.85,
-    hp: 1.12,
-    spd: 0.92,
-    workFeed: 1.65,
-    workDust: 1.05,
-    workToken: 1.0,
-    dispatchTime: 0.88,
-    breedMutate: 1.15,
-    bond: 0.8,
-  },
-  patient: {
-    id: "patient",
-    name: "忍耐",
-    role: "work",
-    atk: 0.92,
-    hp: 1.15,
-    spd: 0.88,
-    workFeed: 1.25,
-    workDust: 1.2,
-    workToken: 1.15,
-    dispatchTime: 0.78,
-    breedMutate: 0.95,
-    bond: 0.7,
-  },
-  curious: {
-    id: "curious",
-    name: "好奇",
-    role: "work",
-    atk: 0.95,
-    hp: 0.98,
-    spd: 1.05,
-    workFeed: 1.05,
-    workDust: 1.45,
-    workToken: 1.4,
-    dispatchTime: 0.9,
-    breedMutate: 1.2,
-    bond: 0.62,
-  },
-  loyal: {
-    id: "loyal",
-    name: "忠勤",
-    role: "work",
-    atk: 0.94,
-    hp: 1.08,
-    spd: 0.98,
-    workFeed: 1.3,
-    workDust: 1.15,
-    workToken: 1.2,
-    dispatchTime: 0.86,
-    breedMutate: 1.0,
-    bond: 0.74,
-  },
-  // —— 祥瑞系（只加不減）——
-  blessed: {
-    id: "blessed",
-    name: "祥瑞",
-    role: "blessed",
-    atk: 1.04,
-    hp: 1.04,
-    spd: 1.02,
-    workFeed: 1.12,
-    workDust: 1.12,
-    workToken: 1.1,
-    dispatchTime: 0.95,
-    breedMutate: 1.08,
-    bond: 0.72,
-  },
-  clever: {
-    id: "clever",
-    name: "機靈",
-    role: "blessed",
-    atk: 1.03,
-    hp: 1.0,
-    spd: 1.08,
-    workFeed: 1.08,
-    workDust: 1.15,
-    workToken: 1.18,
-    dispatchTime: 0.92,
-    breedMutate: 1.1,
-    bond: 0.65,
-  },
-  noble: {
-    id: "noble",
-    name: "高潔",
-    role: "blessed",
-    atk: 1.05,
-    hp: 1.05,
-    spd: 1.03,
-    workFeed: 1.1,
-    workDust: 1.1,
-    workToken: 1.08,
-    dispatchTime: 0.94,
-    breedMutate: 1.05,
-    bond: 0.7,
-  },
-  serene: {
-    id: "serene",
-    name: "澄明",
-    role: "blessed",
-    atk: 1.0,
-    hp: 1.08,
-    spd: 1.02,
-    workFeed: 1.15,
-    workDust: 1.18,
-    workToken: 1.12,
-    dispatchTime: 0.9,
-    breedMutate: 1.05,
-    bond: 0.75,
-  },
+export const MAIN_PERSONALITIES = {
+  fierce: { id: "fierce", name: "烈性", role: "atk" },
+  steady: { id: "steady", name: "沉穩", role: "hp" },
+  sly: { id: "sly", name: "狡黠", role: "spd" },
+  gentle: { id: "gentle", name: "溫馴", role: "sustain" },
+  wild: { id: "wild", name: "狂放", role: "atk" },
+  brutal: { id: "brutal", name: "殘暴", role: "atk" },
+  bloodthirst: { id: "bloodthirst", name: "嗜血", role: "atk" },
+  arrogant: { id: "arrogant", name: "傲慢", role: "atk" },
+  restless: { id: "restless", name: "躁動", role: "spd" },
+  vengeful: { id: "vengeful", name: "執念", role: "atk" },
+  cunning: { id: "cunning", name: "陰鷙", role: "spd" },
+  clever: { id: "clever", name: "機靈", role: "spd" },
+  noble: { id: "noble", name: "高潔", role: "balanced" },
+  serene: { id: "serene", name: "澄明", role: "sustain" },
 };
+
+/**
+ * 副性格池（成長 only）：三項 (m-1) 總計 ≈ +6%，單項最多 ±10%。
+ * ID 與主池完全唔重疊；唔影響戰鬥。
+ */
+export const SUB_PERSONALITIES = {
+  precocious: { id: "precocious", name: "早熟", atk: 1.08, hp: 0.94, spd: 1.04 },
+  latebloomer: { id: "latebloomer", name: "晚成", atk: 0.95, hp: 1.1, spd: 1.01 },
+  hardy: { id: "hardy", name: "厚積", atk: 0.96, hp: 1.08, spd: 1.02 },
+  keen: { id: "keen", name: "敏銳", atk: 1.04, hp: 0.96, spd: 1.06 },
+  sturdy: { id: "sturdy", name: "壯實", atk: 1.02, hp: 1.06, spd: 0.98 },
+  fleet: { id: "fleet", name: "飛掠", atk: 1.03, hp: 0.93, spd: 1.1 },
+  evenhanded: { id: "evenhanded", name: "平穩", atk: 1.02, hp: 1.02, spd: 1.02 },
+  sharp: { id: "sharp", name: "銳進", atk: 1.1, hp: 0.94, spd: 1.02 },
+  bulwark: { id: "bulwark", name: "守成", atk: 0.94, hp: 1.1, spd: 1.02 },
+  spry: { id: "spry", name: "輕捷", atk: 0.98, hp: 0.98, spd: 1.1 },
+  vigorous: { id: "vigorous", name: "旺盛", atk: 1.05, hp: 1.05, spd: 0.96 },
+  tempered: { id: "tempered", name: "淬煉", atk: 1.06, hp: 1.0, spd: 1.0 },
+};
+
+/** @deprecated 兼容別名＝主性格池 */
+export const PERSONALITIES = MAIN_PERSONALITIES;
+
+export const MAIN_PERSONALITY_IDS = Object.keys(MAIN_PERSONALITIES);
+export const SUB_PERSONALITY_IDS = Object.keys(SUB_PERSONALITIES);
+
+/** 副性格覺醒等級（約主脊階段三） */
+export const SUB_PERSONALITY_AWAKEN_LEVEL = 20;
+
+/** 契約成功率（性格唔再影響） */
+export const BOND_RATE_DEFAULT = 0.55;
+
+/** 舊主性格 → 新主池 */
+export const LEGACY_MAIN_PERSONALITY_MAP = {
+  fierce: "fierce",
+  steady: "steady",
+  sly: "sly",
+  gentle: "gentle",
+  wild: "wild",
+  brutal: "brutal",
+  bloodthirst: "bloodthirst",
+  arrogant: "arrogant",
+  restless: "restless",
+  vengeful: "vengeful",
+  cunning: "cunning",
+  diligent: "gentle",
+  nurturing: "gentle",
+  patient: "steady",
+  curious: "sly",
+  loyal: "gentle",
+  blessed: "noble",
+  clever: "clever",
+  noble: "noble",
+  serene: "serene",
+};
+
+/** 舊性格 ID（曾做副）→ 新副池 */
+export const LEGACY_SUB_PERSONALITY_MAP = {
+  fierce: "sharp",
+  steady: "hardy",
+  sly: "keen",
+  gentle: "latebloomer",
+  wild: "fleet",
+  brutal: "sharp",
+  bloodthirst: "vigorous",
+  arrogant: "tempered",
+  restless: "spry",
+  vengeful: "sharp",
+  cunning: "keen",
+  diligent: "evenhanded",
+  nurturing: "hardy",
+  patient: "bulwark",
+  curious: "precocious",
+  loyal: "sturdy",
+  blessed: "evenhanded",
+  clever: "keen",
+  noble: "tempered",
+  serene: "latebloomer",
+  // 已是副池 ID 則原樣
+  precocious: "precocious",
+  latebloomer: "latebloomer",
+  hardy: "hardy",
+  keen: "keen",
+  sturdy: "sturdy",
+  fleet: "fleet",
+  evenhanded: "evenhanded",
+  sharp: "sharp",
+  bulwark: "bulwark",
+  spry: "spry",
+  vigorous: "vigorous",
+  tempered: "tempered",
+};
+
+export function remapMainPersonalityId(id) {
+  if (id && MAIN_PERSONALITIES[id]) return id;
+  const mapped = LEGACY_MAIN_PERSONALITY_MAP[id];
+  if (mapped && MAIN_PERSONALITIES[mapped]) return mapped;
+  return "sly";
+}
+
+export function remapSubPersonalityId(id) {
+  if (id && SUB_PERSONALITIES[id]) return id;
+  const mapped = LEGACY_SUB_PERSONALITY_MAP[id];
+  if (mapped && SUB_PERSONALITIES[mapped]) return mapped;
+  return null;
+}
+
+export function pickMainPersonalityId(excludeId = null) {
+  const pool = excludeId
+    ? MAIN_PERSONALITY_IDS.filter((id) => id !== excludeId)
+    : MAIN_PERSONALITY_IDS;
+  return pool[Math.floor(Math.random() * pool.length)] || "sly";
+}
+
+export function pickSubPersonalityId(excludeId = null) {
+  const pool = excludeId
+    ? SUB_PERSONALITY_IDS.filter((id) => id !== excludeId)
+    : SUB_PERSONALITY_IDS;
+  return pool[Math.floor(Math.random() * pool.length)] || "evenhanded";
+}
 
 /** 牧場待命全局倍率（避免疊練功地爆倉） */
 export const RANCH_IDLE_GLOBAL_MULT = 0.35;
@@ -1515,9 +1364,9 @@ export function fusionStoneCost(targetStage) {
   return 120 * n * rule.totalPets;
 }
 
-/** 性格 → 契約成功率（由 PERSONALITIES.bond 匯出） */
+/** @deprecated 性格唔再影響契約；一律用 BOND_RATE_DEFAULT */
 export const BOND_RATE_BY_PERSONALITY = Object.fromEntries(
-  Object.values(PERSONALITIES).map((p) => [p.id, p.bond ?? 0.5])
+  MAIN_PERSONALITY_IDS.map((id) => [id, BOND_RATE_DEFAULT])
 );
 
 /** 契約靈石上限（秘境遇寵） */
@@ -1915,35 +1764,31 @@ export function rollBreedGenes(parentA, parentB) {
     mutated = true;
   }
 
-  // 性格池：雙親主／副性格
-  const pePool = [
-    ga.personality,
-    gb.personality,
-    ga.personality2,
-    gb.personality2,
-  ].filter((id) => id && PERSONALITIES[id]);
-  let personality = pePool.length
-    ? pePool[Math.floor(Math.random() * pePool.length)]
-    : Math.random() < 0.5
-      ? ga.personality
-      : gb.personality;
-  // 主性格突變
+  // 主性格：只從雙親主池遺傳
+  const mainPool = [ga.personality, gb.personality]
+    .map((id) => remapMainPersonalityId(id))
+    .filter((id) => MAIN_PERSONALITIES[id]);
+  let personality = mainPool.length
+    ? mainPool[Math.floor(Math.random() * mainPool.length)]
+    : pickMainPersonalityId();
   if (Math.random() < 0.12 * genMult * rarityMutMult) {
-    const others = Object.keys(PERSONALITIES).filter((p) => p !== personality);
-    personality = pick(others);
+    personality = pickMainPersonalityId(personality);
     mutated = true;
   }
-  // 第二性格：從池中另抽，可突變
+
+  // 副性格基因：只從副池；子代孵出時未覺醒，覺醒時優先用此基因
+  const subPool = [ga.personality2, gb.personality2]
+    .map((id) => remapSubPersonalityId(id))
+    .filter((id) => id && SUB_PERSONALITIES[id]);
   let personality2 = null;
-  const pe2Pool = pePool.filter((p) => p !== personality);
-  if (pe2Pool.length && Math.random() < 0.72) {
-    personality2 = pe2Pool[Math.floor(Math.random() * pe2Pool.length)];
-  } else if (Math.random() < 0.45) {
-    const others = Object.keys(PERSONALITIES).filter((p) => p !== personality);
-    personality2 = pick(others);
+  if (subPool.length && Math.random() < 0.72) {
+    personality2 = subPool[Math.floor(Math.random() * subPool.length)];
+  } else if (Math.random() < 0.55) {
+    personality2 = pickSubPersonalityId();
     mutated = true;
+  } else {
+    personality2 = pickSubPersonalityId();
   }
-  if (personality2 === personality) personality2 = null;
 
   /* 血脈紋：繼承雙親池，約 28% 突變加紋，最高 2 */
   const markPool = [
@@ -1958,11 +1803,7 @@ export function rollBreedGenes(parentA, parentB) {
     const other = markPool.find((m) => m !== bloodmarks[0]);
     if (other) bloodmarks.push(other);
   }
-  const peBreedMut =
-    ((PERSONALITIES[ga.personality]?.breedMutate || 1) +
-      (PERSONALITIES[gb.personality]?.breedMutate || 1)) /
-    2;
-  if (Math.random() < 0.28 * genMult * peBreedMut * rarityMutMult) {
+  if (Math.random() < 0.28 * genMult * rarityMutMult) {
     const candidates = BLOODLINE_MARK_IDS.filter((id) => !bloodmarks.includes(id));
     if (candidates.length) {
       bloodmarks.push(pick(candidates));
@@ -2013,7 +1854,7 @@ export function rollWildEncounter(dungeonId = "wild", dungeonDef = null, realm =
   const elementId = elWeights
     ? pickWeighted(elWeights) || pick(Object.keys(ELEMENTS))
     : pick(Object.keys(ELEMENTS));
-  const personalityId = pick(Object.keys(PERSONALITIES));
+  const personalityId = pickMainPersonalityId();
   const baseCost = Math.min(BOND_COST_MAX, 24 + Math.floor(Math.random() * 19));
   let bloodmarks = [];
   if ((realm | 0) >= 2 && Math.random() < 0.18) {
@@ -2033,7 +1874,7 @@ export function rollWildEncounter(dungeonId = "wild", dungeonDef = null, realm =
     rarity: 0,
     bloodmarks,
   });
-  const bondRate = BOND_RATE_BY_PERSONALITY[personalityId] ?? 0.5;
+  const bondRate = BOND_RATE_DEFAULT;
   return {
     ...pet,
     encounterId: pet.templateId,
@@ -3382,24 +3223,25 @@ export function masterSkillsForStage(stageId) {
 export function buildPetStats(template) {
   const sp = SPECIES[template.species];
   const el = ELEMENTS[template.element];
-  const pe = PERSONALITIES[template.personality];
+  const mainId = remapMainPersonalityId(template.personality);
+  const pe = MAIN_PERSONALITIES[mainId];
   if (!sp || !el || !pe) throw new Error("invalid pet template");
-  const pe2 =
-    template.personality2 && template.personality2 !== template.personality
-      ? PERSONALITIES[template.personality2]
-      : null;
+  const subGene =
+    remapSubPersonalityId(template.personality2) ||
+    (template.personality2Awakened ? null : null);
   const rarity = Math.max(0, Math.min(RARITY_MAX, template.rarity ?? 0));
   const rMult = rarityInfo(rarity).mult;
   const skillId = KIND_SKILLS[sp.kind];
   const bloodmarks = normalizeBloodmarks(template.bloodmarks);
   const bm = bloodmarkCombatMult(bloodmarks);
-  // 主性格 75% + 副性格 25% 影響白板
-  const peAtk = pe2 ? pe.atk * 0.75 + pe2.atk * 0.25 : pe.atk;
-  const peHp = pe2 ? pe.hp * 0.75 + pe2.hp * 0.25 : pe.hp;
-  const peSpd = pe2 ? pe.spd * 0.75 + pe2.spd * 0.25 : pe.spd;
-  const atk = Math.round(sp.base.atk * el.atk * peAtk * rMult * bm.atk);
-  const hp = Math.round(sp.base.hp * el.hp * peHp * rMult * bm.hp);
-  const spd = Math.round(sp.base.spd * el.spd * peSpd * rMult * bm.spd);
+  // 性格唔再烙入白板（主＝戰鬥、副＝成長）
+  const atk = Math.round(sp.base.atk * el.atk * rMult * bm.atk);
+  const hp = Math.round(sp.base.hp * el.hp * rMult * bm.hp);
+  const spd = Math.round(sp.base.spd * el.spd * rMult * bm.spd);
+  const awakened = !!template.personality2Awakened;
+  const subId = awakened ? remapSubPersonalityId(template.personality2) : null;
+  const pe2 = subId ? SUB_PERSONALITIES[subId] : null;
+  const geneSub = remapSubPersonalityId(template.personality2) || pickSubPersonalityId();
   return {
     templateId: template.id,
     speciesId: sp.id,
@@ -3412,6 +3254,7 @@ export function buildPetStats(template) {
     personalityName: pe.name,
     personality2Id: pe2?.id || null,
     personality2Name: pe2?.name || null,
+    personality2Awakened: awakened && !!pe2,
     bloodmarks,
     bloodlineName: bloodlineLabel(bloodmarks),
     name: `${el.name}${sp.name}`,
@@ -3429,7 +3272,7 @@ export function buildPetStats(template) {
       species: sp.id,
       element: el.id,
       personality: pe.id,
-      personality2: pe2?.id || null,
+      personality2: geneSub,
     },
   };
 }
@@ -3607,7 +3450,7 @@ export function hatchPetFromEgg(egg, opts = {}) {
   const species = opts.species || wildIds[Math.floor(Math.random() * wildIds.length)] || "reefox";
   const elements = Object.keys(ELEMENTS);
   const element = opts.element || elements[Math.floor(Math.random() * elements.length)] || "tide";
-  const personalities = Object.keys(PERSONALITIES);
+  const personalities = MAIN_PERSONALITY_IDS;
   const personality =
     opts.personality || personalities[Math.floor(Math.random() * personalities.length)] || "sly";
   let rarity = 0;
@@ -3649,23 +3492,20 @@ export function hatchPetFromEgg(egg, opts = {}) {
 
 export function petLabel(pet) {
   const r = rarityInfo(pet.rarity ?? 0).name;
-  const pe2 = pet.personality2Name ? `/${pet.personality2Name}` : "";
+  const pe2 =
+    pet.personality2Awakened && pet.personality2Name ? `/${pet.personality2Name}` : "";
   const blood = pet.bloodlineName && pet.bloodlineName !== "無紋" ? `·${pet.bloodlineName}` : "";
   return `${pet.name}（${r}·${pet.kind}·${pet.elementName}·${pet.personalityName}${pe2}${blood}）`;
 }
 
 /* ─── P1：牧場掛機產物 ─── */
 
-/** 性格 → 每秒飼料／靈塵／潮霧令產量（牧場待命；再乘 RANCH_IDLE_GLOBAL_MULT） */
+/** 牧場待命中性產量（性格唔再影響；再乘 RANCH_IDLE_GLOBAL_MULT） */
+export const RANCH_IDLE_BASE = { feed: 0.06, dust: 0.025, token: 0.004 };
+
+/** @deprecated 兼容舊引用；一律中性 */
 export const IDLE_BY_PERSONALITY = Object.fromEntries(
-  Object.values(PERSONALITIES).map((p) => [
-    p.id,
-    {
-      feed: 0.06 * (p.workFeed ?? 1),
-      dust: 0.025 * (p.workDust ?? 1),
-      token: 0.004 * (p.workToken ?? 1),
-    },
-  ])
+  MAIN_PERSONALITY_IDS.map((id) => [id, { ...RANCH_IDLE_BASE }])
 );
 
 /** 元素對掛機倍率 */
@@ -4172,17 +4012,16 @@ export function gearBonuses(gearIds) {
 }
 
 /**
- * 種族×元素×性格的天生基準（寵物成長以此為根）
+ * 種族×元素天生基準（性格唔再影響白板）
  */
-export function petSpeciesBaseline(speciesId, elementId, personalityId) {
+export function petSpeciesBaseline(speciesId, elementId, _personalityId) {
   const sp = SPECIES[speciesId];
   const el = ELEMENTS[elementId];
-  const pe = PERSONALITIES[personalityId];
-  if (!sp || !el || !pe) return { atk: 0, hp: 0, spd: 0 };
+  if (!sp || !el) return { atk: 0, hp: 0, spd: 0 };
   return {
-    atk: Math.round(sp.base.atk * el.atk * pe.atk),
-    hp: Math.round(sp.base.hp * el.hp * pe.hp),
-    spd: Math.round(sp.base.spd * el.spd * pe.spd),
+    atk: Math.round(sp.base.atk * el.atk),
+    hp: Math.round(sp.base.hp * el.hp),
+    spd: Math.round(sp.base.spd * el.spd),
   };
 }
 
@@ -4389,137 +4228,216 @@ export function rarityBreedMutationMult(parentA, parentB) {
 
 
 /**
- * 性格戰鬥被動（每寵獨立套用；唔改白板成長公式）
- * 戰鬥向加打減續航；工作向加工減打；祥瑞只加不減
+ * 主性格戰鬥被動（只影響戰鬥；三項 (m-1) 總計 ≈ +9%，單項最多 ±15%）
  */
 export const PERSONALITY_COMBAT = {
-  fierce: { id: "fierce", label: "烈性：攻擊 +10%，血量 −4%", atkMult: 1.1, hpMult: 0.96, spdMult: 1 },
-  steady: { id: "steady", label: "沉穩：血量 +12%，速度 −5%", atkMult: 1, hpMult: 1.12, spdMult: 0.95 },
-  sly: { id: "sly", label: "狡黠：速度 +10%，攻擊 +4%", atkMult: 1.04, hpMult: 1, spdMult: 1.1 },
+  fierce: { id: "fierce", label: "烈性：攻擊 +12%，血量 −6%，速度 +3%", atkMult: 1.12, hpMult: 0.94, spdMult: 1.03 },
+  steady: { id: "steady", label: "沉穩：血量 +15%，攻擊 −3%，速度 −3%", atkMult: 0.97, hpMult: 1.15, spdMult: 0.97 },
+  sly: { id: "sly", label: "狡黠：速度 +8%，攻擊 +5%，血量 −4%", atkMult: 1.05, hpMult: 0.96, spdMult: 1.08 },
   gentle: {
     id: "gentle",
-    label: "溫馴：血量 +6%，受治療／減傷技優先感（續航親和）",
-    atkMult: 0.97,
-    hpMult: 1.06,
-    spdMult: 1,
-    sustainBias: true,
-  },
-  wild: { id: "wild", label: "狂放：攻擊 +12%，血量 −8%", atkMult: 1.12, hpMult: 0.92, spdMult: 1.04 },
-  brutal: { id: "brutal", label: "殘暴：攻擊 +14%，血量 −6%", atkMult: 1.14, hpMult: 0.94, spdMult: 1 },
-  bloodthirst: {
-    id: "bloodthirst",
-    label: "嗜血：攻擊 +12%，血量 −10%，速度 +6%",
-    atkMult: 1.12,
-    hpMult: 0.9,
-    spdMult: 1.06,
-  },
-  arrogant: { id: "arrogant", label: "傲慢：攻擊 +8%，速度 −4%", atkMult: 1.08, hpMult: 1, spdMult: 0.96 },
-  restless: {
-    id: "restless",
-    label: "躁動：速度 +14%，血量 −5%",
-    atkMult: 1.03,
-    hpMult: 0.95,
-    spdMult: 1.14,
-  },
-  vengeful: { id: "vengeful", label: "執念：攻擊 +9%，血量 −3%", atkMult: 1.09, hpMult: 0.97, spdMult: 1.01 },
-  cunning: {
-    id: "cunning",
-    label: "陰鷙：攻擊 +7%，速度 +10%，血量 −5%",
-    atkMult: 1.07,
-    hpMult: 0.95,
-    spdMult: 1.1,
-  },
-  diligent: { id: "diligent", label: "勤懇：攻擊 −6%，血量 +4%", atkMult: 0.94, hpMult: 1.04, spdMult: 0.98 },
-  nurturing: {
-    id: "nurturing",
-    label: "慈育：攻擊 −8%，血量 +8%（續航親和）",
-    atkMult: 0.92,
-    hpMult: 1.08,
-    spdMult: 0.96,
-    sustainBias: true,
-  },
-  patient: {
-    id: "patient",
-    label: "忍耐：血量 +10%，速度 −8%（續航親和）",
+    label: "溫馴：血量 +10%，攻擊 −4%，速度 +3%（續航親和）",
     atkMult: 0.96,
     hpMult: 1.1,
-    spdMult: 0.92,
+    spdMult: 1.03,
     sustainBias: true,
   },
-  curious: { id: "curious", label: "好奇：速度 +4%，攻擊 −3%", atkMult: 0.97, hpMult: 0.99, spdMult: 1.04 },
-  loyal: { id: "loyal", label: "忠勤：攻擊 −4%，血量 +6%", atkMult: 0.96, hpMult: 1.06, spdMult: 0.99 },
-  blessed: { id: "blessed", label: "祥瑞：攻血速微升", atkMult: 1.03, hpMult: 1.03, spdMult: 1.02 },
-  clever: { id: "clever", label: "機靈：速度 +6%，攻擊 +2%", atkMult: 1.02, hpMult: 1, spdMult: 1.06 },
-  noble: { id: "noble", label: "高潔：攻血速微升", atkMult: 1.03, hpMult: 1.03, spdMult: 1.02 },
+  wild: { id: "wild", label: "狂放：攻擊 +14%，血量 −10%，速度 +5%", atkMult: 1.14, hpMult: 0.9, spdMult: 1.05 },
+  brutal: { id: "brutal", label: "殘暴：攻擊 +15%，血量 −9%，速度 +3%", atkMult: 1.15, hpMult: 0.91, spdMult: 1.03 },
+  bloodthirst: {
+    id: "bloodthirst",
+    label: "嗜血：攻擊 +12%，血量 −10%，速度 +7%",
+    atkMult: 1.12,
+    hpMult: 0.9,
+    spdMult: 1.07,
+  },
+  arrogant: { id: "arrogant", label: "傲慢：攻擊 +10%，血量 +2%，速度 −3%", atkMult: 1.1, hpMult: 1.02, spdMult: 0.97 },
+  restless: {
+    id: "restless",
+    label: "躁動：速度 +12%，攻擊 +3%，血量 −6%",
+    atkMult: 1.03,
+    hpMult: 0.94,
+    spdMult: 1.12,
+  },
+  vengeful: { id: "vengeful", label: "執念：攻擊 +11%，血量 −4%，速度 +2%", atkMult: 1.11, hpMult: 0.96, spdMult: 1.02 },
+  cunning: {
+    id: "cunning",
+    label: "陰鷙：攻擊 +8%，速度 +8%，血量 −7%",
+    atkMult: 1.08,
+    hpMult: 0.93,
+    spdMult: 1.08,
+  },
+  clever: { id: "clever", label: "機靈：速度 +7%，攻擊 +4%，血量 −2%", atkMult: 1.04, hpMult: 0.98, spdMult: 1.07 },
+  noble: { id: "noble", label: "高潔：攻血速微升", atkMult: 1.04, hpMult: 1.04, spdMult: 1.01 },
   serene: {
     id: "serene",
-    label: "澄明：血量 +5%，速度 +2%（續航親和）",
-    atkMult: 1,
-    hpMult: 1.05,
-    spdMult: 1.02,
+    label: "澄明：血量 +6%，攻擊 +2%，速度 +1%（續航親和）",
+    atkMult: 1.02,
+    hpMult: 1.06,
+    spdMult: 1.01,
     sustainBias: true,
   },
 };
 
 export function personalityCombatFor(personalityId) {
-  return PERSONALITY_COMBAT[personalityId] || null;
+  const id = remapMainPersonalityId(personalityId);
+  return PERSONALITY_COMBAT[id] || null;
 }
 
-/** 主 70% + 副 30% 混合性格戰鬥倍率 */
+/** 戰鬥只讀主性格（副性格唔參與） */
 export function personalityCombatForPet(pet) {
-  const a = personalityCombatFor(pet?.personalityId);
-  const b = personalityCombatFor(pet?.personality2Id);
-  if (!a && !b) return null;
-  if (!b) return a;
-  if (!a) return b;
-  const blend = (x, y) => 1 + ((x || 1) - 1) * 0.7 + ((y || 1) - 1) * 0.3;
+  return personalityCombatFor(pet?.personalityId);
+}
+
+/** 主性格偏向標籤（詳情用；唔再做卡面短標） */
+export const PERSONALITY_ROLE_LABEL = {
+  atk: "攻勢",
+  hp: "韌性",
+  spd: "機動",
+  sustain: "續航",
+  balanced: "均衡",
+};
+
+/** @deprecated 已停用卡面戰魂短標；保留空表避免舊引用炸 */
+export const PERSONALITY_ROLE_SHORT = {};
+
+/** 副性格成長倍率（未覺醒＝中性 1） */
+export function subPersonalityGrowthMults(pet) {
+  if (!pet?.personality2Awakened) return { atk: 1, hp: 1, spd: 1 };
+  const sub = SUB_PERSONALITIES[pet.personality2Id];
+  if (!sub) return { atk: 1, hp: 1, spd: 1 };
+  return { atk: sub.atk ?? 1, hp: sub.hp ?? 1, spd: sub.spd ?? 1 };
+}
+
+/** 將基礎升級加值乘上已覺醒副性格 */
+export function applySubGrowthToLevelGains(baseGains, pet) {
+  const m = subPersonalityGrowthMults(pet);
   return {
-    id: `${a.id}+${b.id}`,
-    label: `${a.label.split("：")[0]}/${b.label.split("：")[0]}`,
-    atkMult: blend(a.atkMult, b.atkMult),
-    hpMult: blend(a.hpMult, b.hpMult),
-    spdMult: blend(a.spdMult, b.spdMult),
-    sustainBias: !!(a.sustainBias || b.sustainBias),
+    atk: (baseGains?.atk || 0) * m.atk,
+    hp: (baseGains?.hp || 0) * m.hp,
+    spd: (baseGains?.spd || 0) * m.spd,
+    slope: baseGains?.slope,
   };
 }
 
-/** 性格角色標籤（詳情） */
-export const PERSONALITY_ROLE_LABEL = {
-  fight: "戰鬥向",
-  work: "工作向",
-  balanced: "均衡",
-  blessed: "祥瑞",
-};
-
-/** 短標：戰魂／職魂（卡面・繁殖預覽） */
-export const PERSONALITY_ROLE_SHORT = {
-  fight: "戰魂",
-  work: "職魂",
-  balanced: "衡魂",
-  blessed: "瑞魂",
-};
-
-/** 性格詳情：成長偏向＋戰鬥被動文案 */
-export function personalityExplain(personalityId) {
-  const pe = PERSONALITIES[personalityId];
-  if (!pe) return null;
-  const combat = personalityCombatFor(personalityId);
+/**
+ * 覺醒回溯補算：逐級模擬 ceilStat(base×mult) − ceilStat(base)，
+ * 同日常升級取整方式對齊，避免早／遲覺醒因進位差永久蝕數。
+ */
+export function retroactiveSubGrowthBonus(pet, subId = pet?.personality2Id) {
+  const levels = Math.max(0, (pet?.level || 1) - 1);
+  if (levels <= 0) return { atk: 0, hp: 0, spd: 0 };
+  const sub = SUB_PERSONALITIES[subId];
+  if (!sub) return { atk: 0, hp: 0, spd: 0 };
+  const gen = petGeneration(pet);
+  const base = levelStatGains(gen);
+  const perAtk = ceilStat(base.atk * (sub.atk || 1)) - ceilStat(base.atk);
+  const perHp = ceilStat(base.hp * (sub.hp || 1)) - ceilStat(base.hp);
+  const perSpd = ceilStat(base.spd * (sub.spd || 1)) - ceilStat(base.spd);
   return {
+    atk: perAtk * levels,
+    hp: perHp * levels,
+    spd: perSpd * levels,
+  };
+}
+
+/** 主性格詳情（戰鬥） */
+export function mainPersonalityExplain(personalityId) {
+  const id = remapMainPersonalityId(personalityId);
+  const pe = MAIN_PERSONALITIES[id];
+  if (!pe) return null;
+  const combat = personalityCombatFor(id);
+  return {
+    kind: "main",
     id: pe.id,
     name: pe.name,
     role: pe.role,
     roleLabel: PERSONALITY_ROLE_LABEL[pe.role] || pe.role || "—",
-    roleShort: PERSONALITY_ROLE_SHORT[pe.role] || pe.role || "—",
+    roleShort: null,
+    combatLabel: combat?.label || `${pe.name}：暫無額外戰鬥被動`,
+    combat,
+    sustainBias: !!combat?.sustainBias,
+    atkMult: combat?.atkMult ?? 1,
+    hpMult: combat?.hpMult ?? 1,
+    spdMult: combat?.spdMult ?? 1,
+    growthAtk: 1,
+    growthHp: 1,
+    growthSpd: 1,
+    workFeed: 1,
+    workDust: 1,
+    workToken: 1,
+  };
+}
+
+/** 副性格詳情（成長） */
+export function subPersonalityExplain(personalityId) {
+  const id = remapSubPersonalityId(personalityId);
+  const pe = id ? SUB_PERSONALITIES[id] : null;
+  if (!pe) return null;
+  return {
+    kind: "sub",
+    id: pe.id,
+    name: pe.name,
+    role: null,
+    roleLabel: "成長",
+    roleShort: null,
     growthAtk: pe.atk,
     growthHp: pe.hp,
     growthSpd: pe.spd,
-    combatLabel: combat?.label || `${pe.name}：暫無額外戰鬥被動`,
-    combat: combat,
-    sustainBias: !!combat?.sustainBias,
-    workFeed: pe.workFeed,
-    workDust: pe.workDust,
-    workToken: pe.workToken,
+    combatLabel: null,
+    combat: null,
+    sustainBias: false,
+    workFeed: 1,
+    workDust: 1,
+    workToken: 1,
   };
+}
+
+/**
+ * 兼容舊 personalityExplain：主池回戰鬥文案；副池回成長文案
+ */
+export function personalityExplain(personalityId) {
+  if (MAIN_PERSONALITIES[personalityId] || LEGACY_MAIN_PERSONALITY_MAP[personalityId]) {
+    return mainPersonalityExplain(personalityId);
+  }
+  return subPersonalityExplain(personalityId);
+}
+
+/** 遷移寵物性格欄位（存檔 normalize 用） */
+export function migratePetPersonalityFields(pet) {
+  if (!pet || typeof pet !== "object") return pet;
+  const next = pet;
+  const mainId = remapMainPersonalityId(next.personalityId);
+  next.personalityId = mainId;
+  next.personalityName = MAIN_PERSONALITIES[mainId]?.name || next.personalityName;
+
+  const hadLegacySub =
+    !!next.personality2Awakened ||
+    !!(next.personality2Id && (SUB_PERSONALITIES[next.personality2Id] || LEGACY_SUB_PERSONALITY_MAP[next.personality2Id]));
+  if (hadLegacySub && next.personality2Id) {
+    const subId =
+      remapSubPersonalityId(next.personality2Id) ||
+      remapSubPersonalityId(next.genes?.personality2) ||
+      pickSubPersonalityId();
+    next.personality2Id = subId;
+    next.personality2Name = SUB_PERSONALITIES[subId]?.name || null;
+    next.personality2Awakened = true;
+    if (!next.genes) next.genes = {};
+    next.genes = { ...next.genes, personality: mainId, personality2: subId };
+  } else {
+    next.personality2Awakened = false;
+    next.personality2Id = null;
+    next.personality2Name = null;
+    const geneSub =
+      remapSubPersonalityId(next.genes?.personality2) || pickSubPersonalityId();
+    if (!next.genes) next.genes = {};
+    next.genes = {
+      ...next.genes,
+      personality: mainId,
+      personality2: geneSub,
+    };
+  }
+  return next;
 }
 
 /* ─── P10：材料／練功地點／主線解鎖 ─── */
