@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260909.6";
+export const APP_BUILD = "20260910.1";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -3393,13 +3393,10 @@ export function buildPetStats(template) {
   const skillId = KIND_SKILLS[sp.kind];
   const bloodmarks = normalizeBloodmarks(template.bloodmarks);
   const bm = bloodmarkCombatMult(bloodmarks);
-  // 主性格 75% + 副性格 25% 影響白板
-  const peAtk = pe2 ? pe.atk * 0.75 + pe2.atk * 0.25 : pe.atk;
-  const peHp = pe2 ? pe.hp * 0.75 + pe2.hp * 0.25 : pe.hp;
-  const peSpd = pe2 ? pe.spd * 0.75 + pe2.spd * 0.25 : pe.spd;
-  const atk = Math.round(sp.base.atk * el.atk * peAtk * rMult * bm.atk);
-  const hp = Math.round(sp.base.hp * el.hp * peHp * rMult * bm.hp);
-  const spd = Math.round(sp.base.spd * el.spd * peSpd * rMult * bm.spd);
+  // 白板成長只跟主性格（副性格覺醒只附加戰鬥被動）
+  const atk = Math.round(sp.base.atk * el.atk * pe.atk * rMult * bm.atk);
+  const hp = Math.round(sp.base.hp * el.hp * pe.hp * rMult * bm.hp);
+  const spd = Math.round(sp.base.spd * el.spd * pe.spd * rMult * bm.spd);
   return {
     templateId: template.id,
     speciesId: sp.id,
@@ -4465,20 +4462,63 @@ export function personalityCombatFor(personalityId) {
   return PERSONALITY_COMBAT[personalityId] || null;
 }
 
-/** 主 70% + 副 30% 混合性格戰鬥倍率 */
+/** 副性格戰鬥附加權重（主保持完整；實效用 max 保底唔低過純主） */
+export const PERSONALITY_SUB_COMBAT_WEIGHT = 0.3;
+
+/**
+ * 倍率 →「攻 +9%」類短標（略去 ±0%）
+ * @param {number} mult
+ * @param {number} [weight=1] 貢獻權重（副性格用 0.3）
+ */
+export function formatStatDeltaPct(mult, weight = 1) {
+  const w = Number(weight);
+  const m = Number(mult);
+  if (!Number.isFinite(m)) return null;
+  const pct = Math.round((m - 1) * (Number.isFinite(w) ? w : 1) * 1000) / 10;
+  if (Math.abs(pct) < 0.05) return null;
+  const sign = pct > 0 ? "+" : "";
+  const text = Number.isInteger(pct) ? String(pct) : pct.toFixed(1);
+  return `${sign}${text}%`;
+}
+
+/** 將戰鬥倍率包格式化成「攻 +9% · 血 −3%」 */
+export function formatCombatDeltaLabel(combat, weight = 1) {
+  if (!combat) return "暫無額外戰鬥被動";
+  const bits = [];
+  const atk = formatStatDeltaPct(combat.atkMult ?? 1, weight);
+  const hp = formatStatDeltaPct(combat.hpMult ?? 1, weight);
+  const spd = formatStatDeltaPct(combat.spdMult ?? 1, weight);
+  if (atk) bits.push(`攻 ${atk}`);
+  if (hp) bits.push(`血 ${hp}`);
+  if (spd) bits.push(`速 ${spd}`);
+  if (combat.sustainBias) bits.push("續航親和");
+  return bits.length ? bits.join(" · ") : "暫無額外戰鬥被動";
+}
+
+/**
+ * 覺醒優勢戰鬥混合：
+ * - 未覺醒：主 100%
+ * - 已覺醒：主完整 + 副 delta×0.3，每項 final = max(純主, raw)（唔會削弱主）
+ */
 export function personalityCombatForPet(pet) {
   const a = personalityCombatFor(pet?.personalityId);
   const b = personalityCombatFor(pet?.personality2Id);
   if (!a && !b) return null;
   if (!b) return a;
   if (!a) return b;
-  const blend = (x, y) => 1 + ((x || 1) - 1) * 0.7 + ((y || 1) - 1) * 0.3;
+  const w = PERSONALITY_SUB_COMBAT_WEIGHT;
+  const mix = (mainM, subM) => {
+    const m = mainM ?? 1;
+    const s = subM ?? 1;
+    const raw = m + (s - 1) * w;
+    return Math.max(m, raw);
+  };
   return {
     id: `${a.id}+${b.id}`,
     label: `${a.label.split("：")[0]}/${b.label.split("：")[0]}`,
-    atkMult: blend(a.atkMult, b.atkMult),
-    hpMult: blend(a.hpMult, b.hpMult),
-    spdMult: blend(a.spdMult, b.spdMult),
+    atkMult: mix(a.atkMult, b.atkMult),
+    hpMult: mix(a.hpMult, b.hpMult),
+    spdMult: mix(a.spdMult, b.spdMult),
     sustainBias: !!(a.sustainBias || b.sustainBias),
   };
 }

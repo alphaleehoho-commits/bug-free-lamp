@@ -90,6 +90,9 @@ import {
   petSkillIds,
   partySynergy,
   personalityCombatFor,
+  personalityCombatForPet,
+  formatCombatDeltaLabel,
+  PERSONALITY_SUB_COMBAT_WEIGHT,
   gearSetBonus,
   GEAR_SETS,
   DISPATCH_MISSIONS,
@@ -998,6 +1001,34 @@ const dual = buildPetStats({
   cost: 1,
 });
 assert(dual.personality2Id === "gentle" && dual.personality2Name, "build dual pe");
+const soloFierce = buildPetStats({
+  id: "solo-f",
+  species: "reefox",
+  element: "tide",
+  personality: "fierce",
+  cost: 1,
+});
+assert(
+  dual.atk === soloFierce.atk && dual.hp === soloFierce.hp && dual.spd === soloFierce.spd,
+  "growth follows main personality only"
+);
+{
+  const mainC = personalityCombatFor("vengeful");
+  const softC = personalityCombatFor("diligent");
+  const blessC = personalityCombatFor("blessed");
+  const mainOnly = personalityCombatForPet({ personalityId: "vengeful" });
+  const withSoft = personalityCombatForPet({ personalityId: "vengeful", personality2Id: "diligent" });
+  const withBless = personalityCombatForPet({ personalityId: "vengeful", personality2Id: "blessed" });
+  assert(mainOnly?.atkMult === mainC.atkMult, "no sub = main 100% combat");
+  assert(withSoft.atkMult >= mainC.atkMult, "soft sub cannot cut main atk");
+  assert(withSoft.hpMult >= mainC.hpMult, "soft sub cannot cut main hp below main");
+  assert(withBless.atkMult > mainC.atkMult, "helpful sub raises atk");
+  assert(
+    formatCombatDeltaLabel(softC, PERSONALITY_SUB_COMBAT_WEIGHT).includes("-1.8%"),
+    "sub combat label weighted 30%"
+  );
+  assert(formatCombatDeltaLabel(mainC, 1).includes("+9%"), "main combat label full");
+}
 
 /* P11: material hints + unlock helpers */
 assert(MATERIAL_SOURCE_INDEX.tide_dew?.sites?.includes("主脊潮脈"), "tide_dew spine");
@@ -1633,7 +1664,7 @@ assert(
 );
 assert(prev.genMult >= 1, "preview exposes genMult");
 assert(prev.temperParents?.length === 2 && prev.temperParents[1].roleShort === "戰魂", "preview temper soul tags");
-assert(prev.temperNote?.includes("戰魂"), "preview temper note");
+assert(prev.temperNote?.includes("附加戰鬥被動"), "preview temper note");
 
 const breedGoalNavSt = {
   realm: 2,
@@ -3137,7 +3168,10 @@ assert(uiSrc2.includes("data-pet-detail-tab"), "ui pet detail tabs");
 assert(uiSrc2.includes("petDetailStatsHtml"), "ui stats tab helper");
 assert(uiSrc2.includes("petDetailTemperHtml"), "ui temper tab helper");
 assert(uiSrc2.includes("petDetailSkillsHtml"), "ui skills tab helper");
-assert(uiSrc2.includes("戰鬥被動"), "ui personality combat copy");
+assert(uiSrc2.includes("附加戰鬥（三成）") || uiSrc2.includes("實效合計"), "ui awaken combat copy");
+assert(uiSrc2.includes("唔改成長") || uiSrc2.includes("副性格唔影響成長"), "ui sub no growth copy");
+assert(!uiSrc2.includes("牧場產出 飼料×"), "ui temper hides ranch mult lines");
+assert(uiSrc2.includes("攤入全體掛機"), "ui ranch muted note");
 assert(uiSrc2.includes("相剋"), "ui element matchup copy");
 assert(uiSrc2.includes("data-upgrade-skill") && uiSrc2.includes("data-temper-oil"), "ui keep upgrade/temper");
 assert(uiSrc2.includes("personalitySoulTagHtml"), "ui soul role tags");
@@ -3540,7 +3574,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v110"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v111"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

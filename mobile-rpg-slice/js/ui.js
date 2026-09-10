@@ -177,6 +177,9 @@ import {
   elementExplain,
   kindExplain,
   personalityExplain,
+  personalityCombatForPet,
+  formatCombatDeltaLabel,
+  PERSONALITY_SUB_COMBAT_WEIGHT,
   PERSONALITY_ROLE_SHORT,
   skillTypeLabel,
   skillPowerMult,
@@ -4261,37 +4264,59 @@ function petDetailTemperHtml(pet) {
   const sub = pet.personality2Id ? personalityExplain(pet.personality2Id) : null;
   const blood =
     pet.bloodlineName && pet.bloodlineName !== "無紋"
-      ? `<li><strong>血脈</strong> — ${escapeHtml(pet.bloodlineName)}</li>`
+      ? `<p class="meta"><strong>血脈</strong> — ${escapeHtml(pet.bloodlineName)}</p>`
       : "";
-  const block = (ex, tag) => {
-    if (!ex) return "";
-    return `
-      <div class="pet-explain">
-        <h3>${escapeHtml(tag)} · ${escapeHtml(ex.name)} ${
-          ex.roleShort
-            ? `<span class="pet-tag pet-tag-soul pet-tag-soul-${escapeHtml(ex.role)}" title="${escapeHtml(
-                ex.roleLabel
-              )}">${escapeHtml(ex.roleShort)}</span>`
-            : `<span class="muted">（${escapeHtml(ex.roleLabel)}）</span>`
-        }</h3>
-        <p class="meta"><strong>戰鬥被動</strong> — ${escapeHtml(ex.combatLabel)}</p>
-        <p class="meta">成長偏向 攻${fmtGrowthMult(ex.growthAtk)} · 血${fmtGrowthMult(ex.growthHp)} · 速${fmtGrowthMult(ex.growthSpd)}</p>
-        ${ex.sustainBias ? `<p class="meta muted">續航親和：治療／減傷技較易惠及此寵</p>` : ""}
-        <p class="meta muted">牧場產出 飼料×${(+ex.workFeed).toFixed(2)} · 靈塵×${(+ex.workDust).toFixed(2)} · 潮霧令×${(+ex.workToken).toFixed(2)}</p>
-      </div>`;
+  const roleTag = (ex) => {
+    if (!ex?.role) return "";
+    const short = ex.roleShort || PERSONALITY_ROLE_SHORT[ex.role] || ex.roleLabel;
+    return `<span class="pet-tag pet-tag-soul pet-tag-soul-${escapeHtml(ex.role)}" title="${escapeHtml(
+      ex.roleLabel || ""
+    )}">${escapeHtml(short)}</span>`;
   };
+  const mainCombatLabel = main?.combat
+    ? formatCombatDeltaLabel(main.combat, 1)
+    : main?.combatLabel || "暫無額外戰鬥被動";
+  const subCombatLabel = sub?.combat
+    ? formatCombatDeltaLabel(sub.combat, PERSONALITY_SUB_COMBAT_WEIGHT)
+    : null;
+  const effective = personalityCombatForPet(pet);
+  const effectiveLabel = effective ? formatCombatDeltaLabel(effective, 1) : null;
+
+  const mainBlock = main
+    ? `<div class="pet-explain">
+        <h3>主性格 · ${escapeHtml(main.name)} ${roleTag(main)}</h3>
+        <p class="meta"><strong>戰鬥被動</strong> — ${escapeHtml(mainCombatLabel)}</p>
+        <p class="meta">成長偏向 攻${fmtGrowthMult(main.growthAtk)} · 血${fmtGrowthMult(
+          main.growthHp
+        )} · 速${fmtGrowthMult(main.growthSpd)}</p>
+        ${main.sustainBias ? `<p class="meta muted">續航親和：治療／減傷技較易惠及此寵</p>` : ""}
+      </div>`
+    : "";
+
+  const subBlock = sub
+    ? `<div class="pet-explain">
+        <h3>副性格 · ${escapeHtml(sub.name)} ${roleTag(sub)}</h3>
+        <p class="meta"><strong>附加戰鬥（三成）</strong> — ${escapeHtml(subCombatLabel)}</p>
+        <p class="meta muted">副性格唔影響成長偏向。</p>
+      </div>`
+    : `<div class="pet-explain">
+        <h3>副性格</h3>
+        <p class="meta muted">未覺醒（覺醒後附加戰鬥被動，唔改成長）</p>
+      </div>`;
+
+  const totalBlock =
+    sub && effectiveLabel
+      ? `<p class="meta"><strong>實效合計</strong> — ${escapeHtml(
+          effectiveLabel
+        )} <span class="muted">（副性格覺醒只會加分或持平，唔會削弱主性格戰鬥被動）</span></p>`
+      : "";
+
   return `
-    <ul class="skill-list pet-detail-block">
-      <li><strong>主性格</strong> — ${escapeHtml(pet.personalityName || main?.name || "—")}</li>
-      ${
-        pet.personality2Name
-          ? `<li><strong>副性格</strong> — ${escapeHtml(pet.personality2Name)} <span class="muted">（戰鬥被動約三成比重）</span></li>`
-          : `<li><strong>副性格</strong> — <span class="muted">未覺醒</span></li>`
-      }
-      ${blood}
-    </ul>
-    ${block(main, "主性格")}
-    ${sub ? block(sub, "副性格") : ""}
+    ${mainBlock}
+    ${subBlock}
+    ${totalBlock}
+    ${blood}
+    <p class="meta muted">牧場待命微產受性格影響，已攤入全體掛機，唔再逐隻列倍率。</p>
     <p class="meta">可用性格洗劑重抽主性格（唔改種族／元素）。</p>`;
 }
 
