@@ -699,6 +699,16 @@ function normalizePet(p) {
   // 舊存檔融2／3 保留；新規則終身一次靠 nextFusionStage 攔截
   if (next.skillLevel == null) next.skillLevel = 1;
   if (next.skillLevel > SKILL_MAX_LEVEL) next.skillLevel = SKILL_MAX_LEVEL;
+  {
+    const lv = next.level ?? 1;
+    const fus = next.fusionLevel ?? 0;
+    const secondUnlocked =
+      fus >= SECOND_SKILL_UNLOCK.fusionLevel || lv >= SECOND_SKILL_UNLOCK.level;
+    if (next.secondSkillLevel == null) {
+      next.secondSkillLevel = secondUnlocked ? next.skillLevel : 1;
+    }
+    if (next.secondSkillLevel > SKILL_MAX_LEVEL) next.secondSkillLevel = SKILL_MAX_LEVEL;
+  }
   if (next.rarity == null) next.rarity = 0;
   if (next.rarity > RARITY_MAX) next.rarity = RARITY_MAX;
   if (!next.rarityName) next.rarityName = rarityInfo(next.rarity).name;
@@ -1505,6 +1515,14 @@ function buildTrainCombatAllies(state) {
       spd: Math.round(p.spd * synergy.spdMult * fSpd * pSpd * bm.spd),
       elementId: p.elementId,
       skillLevel: p.skillLevel ?? 1,
+      secondSkillId: (() => {
+        const sid = secondSkillIdForPet(p);
+        const unlocked =
+          (p.fusionLevel ?? 0) >= SECOND_SKILL_UNLOCK.fusionLevel ||
+          (p.level ?? 1) >= SECOND_SKILL_UNLOCK.level;
+        return unlocked && sid ? sid : null;
+      })(),
+      secondSkillLevel: p.secondSkillLevel ?? 1,
       skills,
       skillCd: Object.fromEntries(skills.map((id) => [id, 0])),
       guardTurns: 0,
@@ -4281,12 +4299,25 @@ function maybeAnnounceSecondSkill(state, pet, prevLevel) {
   }
 }
 
-/** 靈塵＋靈響脂升級寵物技能等級（含第二技能威力） */
-export function upgradePetSkill(state, uid) {
+/** 靈塵＋靈響脂升級寵物技能（主技／二技分開） */
+export function upgradePetSkill(state, uid, which = "primary") {
   const found = findOwnedPet(state, uid);
   if (!found) return { ok: false, msg: "找不到靈寵。" };
   const pet = found.pet;
-  const lv = pet.skillLevel ?? 1;
+  const slot = which === "second" ? "second" : "primary";
+  if (slot === "second") {
+    const fusion = pet.fusionLevel ?? 0;
+    const level = pet.level ?? 1;
+    const unlocked =
+      fusion >= SECOND_SKILL_UNLOCK.fusionLevel || level >= SECOND_SKILL_UNLOCK.level;
+    if (!unlocked) {
+      return {
+        ok: false,
+        msg: `第二技能未解鎖（融階≥${SECOND_SKILL_UNLOCK.fusionLevel} 或 Lv≥${SECOND_SKILL_UNLOCK.level}）。`,
+      };
+    }
+  }
+  const lv = slot === "second" ? pet.secondSkillLevel ?? 1 : pet.skillLevel ?? 1;
   if (lv >= SKILL_MAX_LEVEL) return { ok: false, msg: `技能已滿級（${SKILL_MAX_LEVEL}）。` };
   const cost = skillDustCost(lv);
   if ((state.dust || 0) < cost) return { ok: false, msg: `靈塵不足（需 ${cost}）。` };
@@ -4300,13 +4331,16 @@ export function upgradePetSkill(state, uid) {
     };
   }
   state.dust -= cost;
-  pet.skillLevel = lv + 1;
+  if (slot === "second") pet.secondSkillLevel = lv + 1;
+  else pet.skillLevel = lv + 1;
+  const newLv = slot === "second" ? pet.secondSkillLevel : pet.skillLevel;
+  const label = slot === "second" ? "第二技能" : "主技能";
   const matNote = formatMats(mats);
   pushLog(
     state,
-    `${pet.name} 技能升至 Lv.${pet.skillLevel}（威力↑）${matNote ? `｜耗 ${matNote}` : ""}。`
+    `${pet.name} ${label}升至 Lv.${newLv}（威力↑）${matNote ? `｜耗 ${matNote}` : ""}。`
   );
-  return { ok: true, msg: `${pet.name} 技能 Lv.${pet.skillLevel}` };
+  return { ok: true, msg: `${pet.name} ${label} Lv.${newLv}` };
 }
 
 function isItemEquipped(state, itemUid) {
@@ -4487,6 +4521,7 @@ export function petDetail(state, uid) {
   const secondId = secondSkillIdForPet(pet);
   const secondUnlocked =
     fusion >= SECOND_SKILL_UNLOCK.fusionLevel || level >= SECOND_SKILL_UNLOCK.level;
+  const secondLv = pet.secondSkillLevel ?? 1;
   const baseline = petSpeciesBaseline(pet.speciesId, pet.elementId, pet.personalityId);
   const innateBonus = {
     atk: roundStat(Math.max(0, (pet.atk || 0) - baseline.atk)),
@@ -4500,11 +4535,17 @@ export function petDetail(state, uid) {
     level,
     fusionLevel: fusion,
     skillLevel: skillLv,
+    secondSkillLevel: secondLv,
     upgradeCost: upgradeStoneCost(level),
     upgradeFeedCost: upgradeFeedCost(level),
     skillDustCost: skillLv < SKILL_MAX_LEVEL ? skillDustCost(skillLv) : null,
     skillMatCost: skillLv < SKILL_MAX_LEVEL ? skillMatCost(skillLv) : null,
     skillMaxed: skillLv >= SKILL_MAX_LEVEL,
+    secondSkillDustCost:
+      secondUnlocked && secondLv < SKILL_MAX_LEVEL ? skillDustCost(secondLv) : null,
+    secondSkillMatCost:
+      secondUnlocked && secondLv < SKILL_MAX_LEVEL ? skillMatCost(secondLv) : null,
+    secondSkillMaxed: secondLv >= SKILL_MAX_LEVEL,
     nextFusionStage: target,
     fuseNeedLevel: rule?.needLevel ?? null,
     fuseTotalPets: rule?.totalPets ?? null,
@@ -4574,9 +4615,9 @@ function pushCombatText(events, text) {
   events.push({ type: "text", text });
 }
 
-function dealStrike(actor, target, power, transcript, events, skillName) {
+function dealStrike(actor, target, power, transcript, events, skillName, skillId = null) {
   if (!target || target.hp <= 0) return;
-  const pMult = skillPowerMult(actor.skillLevel || 1);
+  const pMult = skillPowerMult(actorSkillLevel(actor, skillId));
   let dmg = Math.max(1, Math.floor(actor.atk * power * pMult) + Math.floor(Math.random() * 4) - 1);
   if (skillName === "嵐擊" || skillName === "穿空" || skillName === "礁襲" || skillName === "珊嵐槍" || skillName === "嵐虛斬") {
     dmg += Math.floor(actor.spd / 4);
@@ -4620,16 +4661,23 @@ function dealStrike(actor, target, power, transcript, events, skillName) {
   }
 }
 
+function actorSkillLevel(actor, skillId) {
+  if (skillId && actor?.secondSkillId && skillId === actor.secondSkillId) {
+    return Math.max(1, actor.secondSkillLevel ?? 1);
+  }
+  return Math.max(1, actor?.skillLevel ?? 1);
+}
+
 function useSkill(actor, skill, allies, foes, transcript, events, tactics = "balanced") {
   const cdMap = actor.skillCd;
   if ((cdMap[skill.id] || 0) > 0) return false;
-  const pMult = skillPowerMult(actor.skillLevel || 1);
+  const pMult = skillPowerMult(actorSkillLevel(actor, skill.id));
   const power = skill.power * pMult;
 
   if (skill.type === "strike") {
     const t = pickFoe(foes, tactics);
     if (!t) return false;
-    dealStrike(actor, t, skill.power, transcript, events, skill.name);
+    dealStrike(actor, t, skill.power, transcript, events, skill.name, skill.id);
   } else if (skill.type === "cleave") {
     const live = foes.filter((f) => f.hp > 0);
     if (!live.length) return false;
@@ -4637,7 +4685,7 @@ function useSkill(actor, skill, allies, foes, transcript, events, tactics = "bal
     const line = `${actor.name} 施展【${skill.name}】！`;
     transcript.push(line);
     pushCombatText(events, line);
-    for (const t of targets) dealStrike(actor, t, skill.power, transcript, events, null);
+    for (const t of targets) dealStrike(actor, t, skill.power, transcript, events, null, skill.id);
   } else if (skill.type === "heal") {
     const t = lowestHp(allies);
     if (!t) return false;
@@ -4995,6 +5043,14 @@ export function runDungeon(state, dungeonId, opts = {}) {
       isMaster: false,
       elementId: p.elementId,
       skillLevel: p.skillLevel ?? 1,
+      secondSkillId: (() => {
+        const sid = secondSkillIdForPet(p);
+        const unlocked =
+          (p.fusionLevel ?? 0) >= SECOND_SKILL_UNLOCK.fusionLevel ||
+          (p.level ?? 1) >= SECOND_SKILL_UNLOCK.level;
+        return unlocked && sid ? sid : null;
+      })(),
+      secondSkillLevel: p.secondSkillLevel ?? 1,
       skills,
       skillCd: Object.fromEntries(skills.map((id) => [id, 0])),
       guardTurns: 0,
@@ -7076,6 +7132,14 @@ function buildAbyssCombatAllies(state, run) {
       spd: st.spd,
       elementId: p.elementId,
       skillLevel: p.skillLevel ?? 1,
+      secondSkillId: (() => {
+        const sid = secondSkillIdForPet(p);
+        const unlocked =
+          (p.fusionLevel ?? 0) >= SECOND_SKILL_UNLOCK.fusionLevel ||
+          (p.level ?? 1) >= SECOND_SKILL_UNLOCK.level;
+        return unlocked && sid ? sid : null;
+      })(),
+      secondSkillLevel: p.secondSkillLevel ?? 1,
       skills: st.skills,
       skillCd: Object.fromEntries(st.skills.map((id) => [id, 0])),
       guardTurns: 0,
