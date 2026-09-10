@@ -81,9 +81,6 @@ import {
   dungeonWaves,
   SKILLS,
   PENDING_BOND_MAX,
-  ACTIVE_PET_MAX,
-  ACTIVE_PET_BASE,
-  ACTIVE_PET_UNLOCK_STAGE,
   activePetMaxForState,
   isSpineStageBossFloor,
   BOND_FEED_COST,
@@ -119,7 +116,6 @@ import {
   trainFloorNavGates,
   SPINE_ZONE_ID,
   spineTrunkView,
-  spineStageFromState,
   dungeonDisplayName,
   materialHintsView,
   itemsView,
@@ -1601,14 +1597,15 @@ function materialsBlockHtml() {
     </div>`;
 }
 
-function trainRatesBlockHtml(rateLines) {
-  if (!rateLines) return "";
-  const list = `<ul class="train-rate-list">${rateLines}</ul>`;
-  return `<div class="fold-section fold-section-inline">
+function trainRatesBlockHtml(rateLines, summary = "") {
+  if (!rateLines && !summary) return "";
+  const list = rateLines ? `<ul class="train-rate-list">${rateLines}</ul>` : "";
+  return `<div class="fold-section fold-section-inline train-rates-block">
       <button type="button" class="section-toggle" data-act="toggle-train-rates">
         <span>產出速率</span>
         <span class="muted">${trainRatesOpen ? "收起" : "點開明細"}</span>
       </button>
+      ${summary ? `<p class="train-rate-summary">${summary}</p>` : ""}
       ${trainRatesOpen ? list : ""}
     </div>`;
 }
@@ -1771,10 +1768,11 @@ function patchLive() {
   const feed = document.querySelector("[data-live=feed]");
   const dust = document.querySelector("[data-live=dust]");
   const stageEl = document.querySelector("[data-live=stage]");
-  const wins = document.querySelector("[data-live=wins]");
 
   if (qiText) {
-    qiText.textContent = `靈契 ${Math.floor(state.qi)} / ${next.need}`;
+    qiText.textContent = next
+      ? `靈契 ${Math.floor(state.qi)} / ${next.need}`
+      : `靈契 ${Math.floor(state.qi)} · 已滿`;
   }
   if (qiBar) qiBar.style.width = `${qiPct}%`;
   if (stones) stones.textContent = String(Math.floor(state.stones));
@@ -1782,20 +1780,19 @@ function patchLive() {
   if (feed) feed.textContent = String(Math.floor(state.feed || 0));
   if (dust) dust.textContent = String(Math.floor(state.dust || 0));
   if (stageEl) stageEl.textContent = stage.name;
-  if (wins) wins.textContent = `勝 ${state.combatsWon}`;
 
+  const offSlot = document.querySelector("[data-live=offline-home]");
   const offLabel = document.querySelector("[data-live=offline-home-label]");
-  if (offLabel) {
-    const bank = offlineBankView(state);
-    const sec = bank.sec || 0;
-    const capped = bank.capped ? " · 已達上限" : "";
-    offLabel.textContent = sec > 0
-      ? `離線收集（${fmtOfflineDuration(sec)}）${capped}`
-      : `離線收集（0秒）· 離開後累積`;
+  const bank = offlineBankView(state);
+  const sec = bank.sec || 0;
+  if (offLabel && sec > 0) {
+    const capped = bank.capped ? " · 上限" : "";
+    offLabel.textContent = `離線 · ${fmtOfflineDuration(sec)}${capped}`;
   }
-  const bondFill = document.querySelector(".team-bond-bar .team-bond-track > i");
-  if (bondFill) {
-    bondFill.style.width = `${teamBondBarView(state).pct}%`;
+  if (offSlot) {
+    offSlot.classList.toggle("is-claimable", !!bank.canClaim);
+    const offBtn = offSlot.querySelector("[data-act=open-offline-claim]");
+    if (offBtn) offBtn.textContent = bank.canClaim ? "收集" : "詳情";
   }
 
   const eggReadyNow = patchEggLive();
@@ -2142,9 +2139,6 @@ function render() {
   }
 
   const stage = realmInfo(state);
-  const next = nextRealm(state);
-  const qiPct = next ? Math.min(100, (state.qi / next.need) * 100) : 100;
-  const m = state.master;
   const enterClass = shellReady ? "is-settled" : "is-enter";
   const busy = playback && !playback.done;
   const inTutorial = tutorialActive(state);
@@ -2154,7 +2148,7 @@ function render() {
     <header class="top top-compact">
       <div class="brand-row">
         <p class="brand" data-brand="void-tide">暗潮</p>
-        <p class="tag">Void Tide · 靈寵修行 · <span data-live="wins">勝 ${state.combatsWon}</span></p>
+        <p class="tag">Void Tide · 靈寵修行</p>
       </div>
     </header>
 
@@ -2167,7 +2161,7 @@ function render() {
 
     <main class="panel">
       <div class="panel-body">
-      ${tab === "cultivate" ? cultivatePanel(qiPct, next, m) : ""}
+      ${tab === "cultivate" ? cultivatePanel() : ""}
       ${tab === "party" ? petsPanel() : ""}
       ${tab === "dungeon" ? dungeonPanel() : ""}
       ${tab === "codex" ? codexPanel() : ""}
@@ -2400,21 +2394,6 @@ function fmtOfflineDuration(sec) {
   return rm ? `${h}時${rm}分` : `${h}時`;
 }
 
-function teamBondBarHtml() {
-  const bar = teamBondBarView(state);
-  const next = bar.nextName ? `→【${escapeHtml(bar.nextName)}】` : "";
-  const ready = bar.ready ? " · 可突破" : "";
-  return `
-    <button type="button" class="team-bond-bar" data-act="open-bond-sheet" aria-label="契隊連結">
-      <div class="team-bond-top">
-        <span class="team-bond-kicker">契隊連結</span>
-        <span class="team-bond-meta">出戰 ${bar.petCount}/${bar.petMax} · 戰力 ${bar.power}${ready}</span>
-      </div>
-      <div class="bar team-bond-track"><i style="width:${bar.pct}%"></i></div>
-      <p class="team-bond-sub">${escapeHtml(bar.stageName || "")}${next} · 均Lv ${bar.avgLv}</p>
-    </button>`;
-}
-
 function bondSheetHtml() {
   if (!bondSheetOpen) return "";
   const bar = teamBondBarView(state);
@@ -2466,17 +2445,16 @@ function offlinePendingView() {
   return h;
 }
 
-/** 修行主頁固定欄：離線收集長駐；1 秒起顯示；點開睇總結，滿 30 分先可領 */
+/** 修行主頁：有離線累積先顯示；點開睇總結，滿 30 分先可領 */
 function offlineHomeSlotHtml() {
   const bank = offlineBankView(state);
   const sec = bank.sec || 0;
-  const capped = bank.capped ? " · 已達上限" : "";
+  if (sec <= 0) return "";
+  const capped = bank.capped ? " · 上限" : "";
   const canClaim = !!bank.canClaim;
-  const label = sec > 0
-    ? `離線收集（${fmtOfflineDuration(sec)}）${capped}`
-    : `離線收集（0秒）· 離開後累積`;
+  const label = `離線 · ${fmtOfflineDuration(sec)}${capped}`;
   return `
-    <div class="offline-home-slot" data-live="offline-home">
+    <div class="offline-home-slot${canClaim ? " is-claimable" : ""}" data-live="offline-home">
       <p class="offline-home-label" data-live="offline-home-label">${escapeHtml(label)}</p>
       <button type="button" class="primary" data-act="open-offline-claim">${canClaim ? "收集" : "詳情"}</button>
     </div>`;
@@ -2513,16 +2491,16 @@ function offlineClaimModalHtml() {
   const canClaim = !!bank.canClaim;
   const left = bank.claimLeftSec || Math.max(0, OFFLINE_CLAIM_MIN_SEC - sec);
   const capNote = bank.capped
-    ? `<p class="meta muted">已達離線累積上限，請先收集。</p>`
+    ? `<p class="meta muted">已達累積上限，請先收集。</p>`
     : "";
   const gateNote = canClaim
-    ? `<p class="meta">已滿 30 分鐘，可以領取。</p>`
-    : `<p class="meta muted">離線滿 30 分鐘先可領取（未滿唔係壞咗）（而家 ${fmtOfflineDuration(sec)} · 仲差 ${fmtOfflineDuration(left)}）。</p>`;
+    ? `<p class="meta">滿 30 分 · 可領取</p>`
+    : `<p class="meta muted">滿 30 分可領 · 仲差 ${fmtOfflineDuration(left)}</p>`;
   return `
     <div class="combat-modal-overlay offline-claim-overlay" data-live="offline-claim" role="dialog" aria-label="離線收益">
       <div class="combat-modal-card offline-claim-card">
         <div class="combat-modal-scroll">
-          <h2>離線收集 · 收益總結</h2>
+          <h2>離線收益</h2>
           <p class="lead">離線 ${fmtOfflineDuration(sec)}${site}</p>
           ${gateNote}
           ${capNote}
@@ -2819,7 +2797,6 @@ function tickIdleCombat({ background = false } = {}) {
   let lastResult = null;
   let playEvents = null;
   let needRosterPatch = false;
-  let autoClaimMsg = null;
 
   for (let i = 0; i < steps; i++) {
     if (!wrap.session) break;
@@ -2857,12 +2834,6 @@ function tickIdleCombat({ background = false } = {}) {
     if (result.status === "won") {
       const marked = markTrainIdleClearReady(state, wrap.session);
       if (marked?.ok) {
-        if (marked.autoClaimed) {
-          autoClaimMsg = marked.claim?.msg || "霧階全破 · 可挑戰域主";
-          idleCombat = null;
-          clearTrainIdleCombatState(state);
-          break;
-        }
         wrap.clearReady = true;
       }
     }
@@ -2878,12 +2849,6 @@ function tickIdleCombat({ background = false } = {}) {
 
   persistTrainIdleCombatState(state, idleCombat);
   saveState(state);
-
-  if (autoClaimMsg) {
-    setFlash(autoClaimMsg, "unlock");
-    if (!background) render();
-    return;
-  }
 
   if (playEvents) {
     idleAnimBusy = true;
@@ -2931,11 +2896,28 @@ function trainIdleStripHtml() {
   const wrap = ensureIdleCombat();
   const gates = trainFloorNavGates(state);
   const floor = gates.floor || trainIdleFloor(state);
+  const floorName = dungeonDisplayName(floor);
+  const trunk = spineTrunkView(state);
+  const next = nextRealm(state);
+  const qiPct = next ? Math.min(100, (state.qi / next.need) * 100) : 100;
+  const qiLabel = next
+    ? `靈契 ${Math.floor(state.qi)} / ${next.need}`
+    : `靈契 ${Math.floor(state.qi)} · 已滿`;
   const stageBoss = isSpineStageBossFloor(floor) || !!wrap?.session?.stageBoss;
   const bossCls = stageBoss ? " is-stage-boss" : "";
   const bossBanner = stageBoss
-    ? `<p class="train-boss-banner">階段頭目關 · 通關後進入新階段</p>`
+    ? `<p class="train-boss-banner">階段頭目 · 通關進新階段</p>`
     : "";
+  const head = `<div class="train-idle-head">
+    <div class="train-idle-title">
+      <strong>第${floor}關 · ${escapeHtml(floorName)}</strong>
+      <span class="muted train-idle-progress">${escapeHtml(trunk.progressLabel)}</span>
+    </div>
+  </div>`;
+  const qiChip = `<button type="button" class="train-qi-chip" data-act="toggle-stats-sheet" aria-label="靈契進度">
+    <span class="train-qi-label" data-live="qi-text">${escapeHtml(qiLabel)}</span>
+    <div class="bar train-qi-bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
+  </button>`;
   const floorNav = `<div class="row train-floor-nav">
     <button type="button" class="secondary" data-train-floor-prev ${
       gates.canPrev ? "" : "disabled"
@@ -2946,9 +2928,14 @@ function trainIdleStripHtml() {
   </div>`;
   if (!wrap?.session) {
     return `<div class="train-idle-strip${bossCls}" data-live="train-idle">
+      ${head}
+      ${qiChip}
       ${floorNav}
       ${bossBanner}
-      <p class="meta train-idle-log muted">掛機清場中（請先出戰）</p>
+      <p class="meta train-idle-log">請先出戰靈寵</p>
+      <div class="row train-idle-empty-cta">
+        <button type="button" class="primary" data-act="goto-party-fight">去出戰</button>
+      </div>
     </div>`;
   }
   const s = wrap.session;
@@ -2972,6 +2959,8 @@ function trainIdleStripHtml() {
       : " is-clear"
     : "";
   return `<div class="train-idle-strip${bossCls}" data-live="train-idle">
+    ${head}
+    ${qiChip}
     ${floorNav}
     ${bossBanner}
     <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
@@ -2994,22 +2983,29 @@ function trainIdleStripHtml() {
   </div>`;
 }
 
-function cultivatePanel(qiPct, next, m) {
+function cultivatePanel() {
   const br = breakthroughView(state);
   const map = trainMapView(state);
   const sites = map.sites || trainSitesView(state);
   const siteCur = sites.find((s) => s.selected) || sites[0];
+  const dm = siteCur?.depthMult || 1;
+  const em = siteCur?.efficiency || 1;
   const rateLines = (siteCur?.rates?.lines || [])
     .slice(0, 6)
     .map((r) => {
-      const dm = siteCur?.depthMult || 1;
-      const em = siteCur?.efficiency || 1;
       const adj = (Number(r.perHr) * dm * em).toFixed(r.kind === "mat" ? 1 : 0);
       return `<li class="train-rate ${r.tag ? "is-boosted" : ""}"><span>${escapeHtml(r.name)}</span><span class="muted">≈${adj}/時${
         r.tag ? ` · ${escapeHtml(r.tag)}` : ""
       }</span></li>`;
     })
     .join("");
+  const topRate = (siteCur?.rates?.lines || [])[0];
+  const topAdj = topRate
+    ? (Number(topRate.perHr) * dm * em).toFixed(topRate.kind === "mat" ? 1 : 0)
+    : "";
+  const rateSummary = topRate
+    ? `效率 ×${Number(em).toFixed(2)} · 主產 ${escapeHtml(topRate.name)} ≈${topAdj}/時`
+    : `效率 ×${Number(em).toFixed(2)}`;
 
   const shopOffers = shopView(state);
   const ranchFull = (state.ranch?.length || 0) + state.pets.length >= ranchCap(state);
@@ -3179,28 +3175,17 @@ function cultivatePanel(qiPct, next, m) {
     );
   }
 
-  const trunk = spineTrunkView(state);
-  const viewFloor = trainIdleFloor(state);
-  const floorName = dungeonDisplayName(viewFloor);
-  const petMax = activePetMaxForState(state);
-  const stage = spineStageFromState(state);
-  const stageNote =
-    stage >= ACTIVE_PET_UNLOCK_STAGE
-      ? `<p class="meta">階段${stage} · 出戰 ${state.pets.length}／${petMax}</p>`
-      : `<p class="meta">階段${stage} · 出戰 ${state.pets.length}／${petMax}（階段三·已通≥41 解鎖第4位）</p>`;
+  const tutCta = tutorialQiReady(state)
+    ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
+    : "";
 
   return wrapStage(
     nav,
-    `<h2>第${viewFloor}關 · ${escapeHtml(floorName)}</h2>
-    <p class="meta">${escapeHtml(trunk.progressLabel)}</p>
-    ${stageNote}
-    ${
-      tutorialQiReady(state)
-        ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">靈契已滿 → 前往突破</button></div>`
-        : ""
-    }
+    `<div class="cultivate-panel panel-train">
+    ${tutCta}
     ${trainIdleStripHtml()}
-    ${trainRatesBlockHtml(rateLines)}`
+    ${trainRatesBlockHtml(rateLines, rateSummary)}
+    </div>`
   );
 }
 
@@ -5639,6 +5624,10 @@ function bind() {
       } else if (act === "close-offline-claim") {
         offlineClaimOpen = false;
         render();
+      } else if (act === "goto-party-fight") {
+        tab = "party";
+        panelSub = { ...panelSub, party: "fight" };
+        render();
       } else if (act === "open-bond-sheet") {
         bondSheetOpen = true;
         render();
@@ -6765,6 +6754,14 @@ setInterval(() => {
     return;
   }
   if (onTrainPanel) {
+    const bank = offlineBankView(state);
+    const wantOffline = (bank.sec || 0) > 0;
+    const hasOffline = !!document.querySelector("[data-live=offline-home]");
+    if (wantOffline !== hasOffline) {
+      saveState(state);
+      render();
+      return;
+    }
     const strip = document.querySelector("[data-live=train-idle]");
     if (strip) {
       const wrap = idleCombat;
