@@ -33,7 +33,6 @@ import {
   dungeonGateView,
   dungeonAttackBlockReason,
   isFusionUnlocked,
-  forgeHint,
   tryBreed,
   claimBreed,
   breedStatus,
@@ -4696,7 +4695,7 @@ function sweepModalHtml() {
           <div class="settle-summary-row">
             <div>
               <strong class="settle-total">+${r.totalStones} 靈石</strong>
-              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 耗潮霧令×${r.tokenCost || 0} · 碎片 +${r.totalScrap || 0}</span>
+              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 本批召喚已耗潮霧令×${r.tokenCost || 0} · 碎片 +${r.totalScrap || 0}</span>
             </div>
           </div>
           ${encounterLine}
