@@ -147,6 +147,7 @@ import {
   useBreedTicket,
   useBloodCatalyst,
   useTemperOil,
+  awakenSubPersonality,
   nextGoalView,
   dailyHubView,
   dismissDailyHub,
@@ -177,10 +178,8 @@ import {
   elementExplain,
   kindExplain,
   personalityExplain,
-  personalityCombatForPet,
-  formatCombatDeltaLabel,
-  PERSONALITY_SUB_COMBAT_WEIGHT,
   PERSONALITY_ROLE_SHORT,
+  SUB_PERSONALITY_AWAKEN_LEVEL,
   skillTypeLabel,
   skillPowerMult,
   SECOND_SKILL_UNLOCK,
@@ -3223,14 +3222,9 @@ function petFlagTags(p) {
   return bits.join("");
 }
 
-/** 戰魂／職魂短標（主性格） */
-function personalitySoulTagHtml(personalityId) {
-  const ex = personalityExplain(personalityId);
-  if (!ex?.role) return "";
-  const short = ex.roleShort || PERSONALITY_ROLE_SHORT[ex.role] || ex.roleLabel;
-  return `<span class="pet-tag pet-tag-soul pet-tag-soul-${escapeHtml(ex.role)}" title="${escapeHtml(
-    ex.roleLabel
-  )}">${escapeHtml(short)}</span>`;
+/** @deprecated 已停用卡面戰魂短標 */
+function personalitySoulTagHtml(_personalityId) {
+  return "";
 }
 
 /** 出戰陣中有親子關係的 uid */
@@ -3387,7 +3381,7 @@ function petRow(p, extraBtn = "", tagHtml = "") {
         ${tagHtml}${petFlagTags(p)}
         <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${personalitySoulTagHtml(
           p.personalityId
-        )}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
+        )}${p.personality2Awakened && p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
         <span class="muted">攻${fmtInt(p.atk)} 血${fmtInt(p.hp)} 速${fmtInt(p.spd)} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
@@ -4261,63 +4255,49 @@ function petDetailStatsHtml(pet, detail, rarity) {
 
 function petDetailTemperHtml(pet) {
   const main = personalityExplain(pet.personalityId);
-  const sub = pet.personality2Id ? personalityExplain(pet.personality2Id) : null;
+  const awakened = !!pet.personality2Awakened && !!pet.personality2Id;
+  const sub = awakened ? personalityExplain(pet.personality2Id) : null;
   const blood =
     pet.bloodlineName && pet.bloodlineName !== "無紋"
-      ? `<p class="meta"><strong>血脈</strong> — ${escapeHtml(pet.bloodlineName)}</p>`
+      ? `<li><strong>血脈</strong> — ${escapeHtml(pet.bloodlineName)}</li>`
       : "";
-  const roleTag = (ex) => {
-    if (!ex?.role) return "";
-    const short = ex.roleShort || PERSONALITY_ROLE_SHORT[ex.role] || ex.roleLabel;
-    return `<span class="pet-tag pet-tag-soul pet-tag-soul-${escapeHtml(ex.role)}" title="${escapeHtml(
-      ex.roleLabel || ""
-    )}">${escapeHtml(short)}</span>`;
-  };
-  const mainCombatLabel = main?.combat
-    ? formatCombatDeltaLabel(main.combat, 1)
-    : main?.combatLabel || "暫無額外戰鬥被動";
-  const subCombatLabel = sub?.combat
-    ? formatCombatDeltaLabel(sub.combat, PERSONALITY_SUB_COMBAT_WEIGHT)
-    : null;
-  const effective = personalityCombatForPet(pet);
-  const effectiveLabel = effective ? formatCombatDeltaLabel(effective, 1) : null;
-
+  const lv = pet.level ?? 1;
+  const canAwaken = !awakened && lv >= SUB_PERSONALITY_AWAKEN_LEVEL;
+  const awakenBtn = awakened
+    ? ""
+    : canAwaken
+      ? `<p class="meta"><button type="button" data-awaken-sub="${escapeHtml(pet.uid)}">覺醒副性格</button></p>`
+      : `<p class="meta muted">副性格未覺醒（達 Lv.${SUB_PERSONALITY_AWAKEN_LEVEL} 可於本頁覺醒）</p>`;
   const mainBlock = main
     ? `<div class="pet-explain">
-        <h3>主性格 · ${escapeHtml(main.name)} ${roleTag(main)}</h3>
-        <p class="meta"><strong>戰鬥被動</strong> — ${escapeHtml(mainCombatLabel)}</p>
-        <p class="meta">成長偏向 攻${fmtGrowthMult(main.growthAtk)} · 血${fmtGrowthMult(
-          main.growthHp
-        )} · 速${fmtGrowthMult(main.growthSpd)}</p>
+        <h3>主性格 · ${escapeHtml(main.name)} <span class="muted">（${escapeHtml(main.roleLabel || "戰鬥")}）</span></h3>
+        <p class="meta"><strong>戰鬥被動</strong> — ${escapeHtml(main.combatLabel || "—")}</p>
         ${main.sustainBias ? `<p class="meta muted">續航親和：治療／減傷技較易惠及此寵</p>` : ""}
       </div>`
     : "";
-
   const subBlock = sub
     ? `<div class="pet-explain">
-        <h3>副性格 · ${escapeHtml(sub.name)} ${roleTag(sub)}</h3>
-        <p class="meta"><strong>附加戰鬥（三成）</strong> — ${escapeHtml(subCombatLabel)}</p>
-        <p class="meta muted">副性格唔影響成長偏向。</p>
+        <h3>副性格 · ${escapeHtml(sub.name)} <span class="muted">（成長）</span></h3>
+        <p class="meta">成長偏向 攻${fmtGrowthMult(sub.growthAtk)} · 血${fmtGrowthMult(sub.growthHp)} · 速${fmtGrowthMult(sub.growthSpd)}</p>
       </div>`
     : `<div class="pet-explain">
-        <h3>副性格</h3>
-        <p class="meta muted">未覺醒（覺醒後附加戰鬥被動，唔改成長）</p>
+        <h3>副性格 · <span class="muted">未覺醒</span></h3>
+        <p class="meta muted">覺醒後影響升級成長（唔影響戰鬥）；遲覺醒會一次回溯補算，唔會蝕歷史成長。</p>
+        ${awakenBtn}
       </div>`;
-
-  const totalBlock =
-    sub && effectiveLabel
-      ? `<p class="meta"><strong>實效合計</strong> — ${escapeHtml(
-          effectiveLabel
-        )} <span class="muted">（副性格覺醒只會加分或持平，唔會削弱主性格戰鬥被動）</span></p>`
-      : "";
-
   return `
+    <ul class="skill-list pet-detail-block">
+      <li><strong>主性格</strong> — ${escapeHtml(pet.personalityName || main?.name || "—")} <span class="muted">（戰鬥）</span></li>
+      ${
+        awakened
+          ? `<li><strong>副性格</strong> — ${escapeHtml(pet.personality2Name)} <span class="muted">（成長）</span></li>`
+          : `<li><strong>副性格</strong> — <span class="muted">未覺醒</span></li>`
+      }
+      ${blood}
+    </ul>
     ${mainBlock}
     ${subBlock}
-    ${totalBlock}
-    ${blood}
-    <p class="meta muted">牧場待命微產受性格影響，已攤入全體掛機，唔再逐隻列倍率。</p>
-    <p class="meta">可用性格洗劑重抽主性格（唔改種族／元素）。</p>`;
+    <p class="meta">可用性格洗劑重抽主性格（唔改種族／元素／副性格）。</p>`;
 }
 
 function petSkillCardHtml(skill, { level, maxed, dustCost, skillMatHtml, title }) {
@@ -6124,7 +6104,14 @@ function bind() {
       flashResult(r);
     });
   });
-  app.querySelectorAll("[data-temper-oil]").forEach((btn) => {
+    app.querySelectorAll("[data-awaken-sub]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = awakenSubPersonality(state, btn.dataset.awakenSub);
+      toast(r.msg);
+      if (r.ok) render();
+    });
+  });
+app.querySelectorAll("[data-temper-oil]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
       const r = useTemperOil(state, btn.dataset.temperOil);

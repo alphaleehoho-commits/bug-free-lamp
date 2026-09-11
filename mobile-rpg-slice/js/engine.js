@@ -90,8 +90,17 @@ import {
   RARITY_MAX,
   SPECIES,
   PERSONALITIES,
+  MAIN_PERSONALITIES,
+  SUB_PERSONALITIES,
   PERSONALITY_ROLE_LABEL,
   PERSONALITY_ROLE_SHORT,
+  migratePetPersonalityFields,
+  applySubGrowthToLevelGains,
+  retroactiveSubGrowthBonus,
+  SUB_PERSONALITY_AWAKEN_LEVEL,
+  pickMainPersonalityId,
+  pickSubPersonalityId,
+  RANCH_IDLE_BASE,
   petGeneration,
   genLabel,
   childGenerationOdds,
@@ -694,12 +703,7 @@ function normalizePet(p) {
   if (next.rarity > RARITY_MAX) next.rarity = RARITY_MAX;
   if (!next.rarityName) next.rarityName = rarityInfo(next.rarity).name;
   next.generation = petGeneration(next);
-  if (next.personality2Id && PERSONALITIES[next.personality2Id]) {
-    next.personality2Name = PERSONALITIES[next.personality2Id].name;
-  } else {
-    next.personality2Id = next.personality2Id || null;
-    next.personality2Name = next.personality2Name || null;
-  }
+  migratePetPersonalityFields(next);
   next.bloodmarks = normalizeBloodmarks(next.bloodmarks);
   next.bloodlineName = bloodlineLabel(next.bloodmarks);
   // 種族↔種類同步：舊熒鰭可能仍標鱗
@@ -1050,12 +1054,11 @@ export function tickRanchIdle(state, elapsedSec) {
   const g = RANCH_IDLE_GLOBAL_MULT;
   for (const p of ranch) {
     if (!p || busy.has(p.uid)) continue;
-    const pe = IDLE_BY_PERSONALITY[p.personalityId] || { feed: 0.06, dust: 0.025, token: 0.004 };
-    const pe2 = p.personality2Id ? IDLE_BY_PERSONALITY[p.personality2Id] : null;
+    const pe = RANCH_IDLE_BASE;
     const el = IDLE_BY_ELEMENT[p.elementId] || { feed: 1, dust: 1 };
-    const feedRate = pe2 ? pe.feed * 0.7 + pe2.feed * 0.3 : pe.feed;
-    const dustRate = pe2 ? pe.dust * 0.7 + pe2.dust * 0.3 : pe.dust;
-    const tokenRate = pe2 ? pe.token * 0.7 + (pe2.token || 0) * 0.3 : pe.token || 0;
+    const feedRate = pe.feed;
+    const dustRate = pe.dust;
+    const tokenRate = pe.token || 0;
     feed += feedRate * (el.feed || 1) * g * sec;
     dust += dustRate * (el.dust || 1) * g * sec;
     token += tokenRate * g * sec;
@@ -3442,20 +3445,6 @@ export function startDispatch(state, missionId, petUids) {
   }
   const now = Date.now();
   let durationMs = mission.durationMs;
-  const timeMults = uids.map((uid) => {
-    const hit = findOwnedPet(state, uid);
-    const pe = PERSONALITIES[hit?.pet?.personalityId];
-    const pe2 = PERSONALITIES[hit?.pet?.personality2Id];
-    if (!pe && !pe2) return 1;
-    if (!pe2) return pe.dispatchTime ?? 1;
-    if (!pe) return pe2.dispatchTime ?? 1;
-    return (pe.dispatchTime ?? 1) * 0.7 + (pe2.dispatchTime ?? 1) * 0.3;
-  });
-  if (timeMults.length) {
-    durationMs = Math.round(
-      durationMs * (timeMults.reduce((a, b) => a + b, 0) / timeMults.length)
-    );
-  }
   state.dispatches.push({
     dispatchId: `disp-${now}-${Math.floor(Math.random() * 999)}`,
     missionId: mission.id,
@@ -4249,7 +4238,7 @@ export function upgradePet(state, uid, payWith = "stones") {
       return { ok: false, msg: `飼料不足（需 ${cost}）。` };
     }
     state.feed = Math.max(0, (state.feed || 0) - cost);
-    const gains = levelStatGains(petGeneration(pet));
+    const gains = applySubGrowthToLevelGains(levelStatGains(petGeneration(pet)), pet);
     pet.atk = ceilStat(pet.atk + gains.atk);
     pet.hp = ceilStat(pet.hp + gains.hp);
     pet.spd = ceilStat(pet.spd + gains.spd);
@@ -4268,7 +4257,7 @@ export function upgradePet(state, uid, payWith = "stones") {
     return { ok: false, msg: `靈石不足（需 ${cost}）。` };
   }
   state.stones -= cost;
-  const gains = levelStatGains(petGeneration(pet));
+  const gains = applySubGrowthToLevelGains(levelStatGains(petGeneration(pet)), pet);
   pet.atk = ceilStat(pet.atk + gains.atk);
   pet.hp = ceilStat(pet.hp + gains.hp);
   pet.spd = ceilStat(pet.spd + gains.spd);
@@ -5834,30 +5823,61 @@ export function useTemperOil(state, uid) {
   if (!found) return { ok: false, msg: "找不到靈寵。" };
   const pet = found.pet;
   const oldId = pet.personalityId;
-  const others = Object.keys(PERSONALITIES).filter((id) => id !== oldId);
-  if (!others.length) return { ok: false, msg: "無可替換性格。" };
-  const newId = others[Math.floor(Math.random() * others.length)];
-  const oldPe = PERSONALITIES[oldId];
-  const newPe = PERSONALITIES[newId];
+  const newId = pickMainPersonalityId(oldId);
+  const oldPe = MAIN_PERSONALITIES[oldId] || MAIN_PERSONALITIES[remapSafe(oldId)];
+  const newPe = MAIN_PERSONALITIES[newId];
+  if (!newPe) return { ok: false, msg: "無可替換性格。" };
   state.materials.temper_oil -= 1;
-  /* 按性格倍率差調整白板 */
-  if (oldPe && newPe) {
-    pet.atk = Math.max(1, Math.round((pet.atk / (oldPe.atk || 1)) * newPe.atk));
-    pet.hp = Math.max(1, Math.round((pet.hp / (oldPe.hp || 1)) * newPe.hp));
-    pet.spd = Math.max(1, Math.round((pet.spd / (oldPe.spd || 1)) * newPe.spd));
-  }
+  /* 主性格只影響戰鬥；唔再重算白板 */
   pet.personalityId = newId;
   pet.personalityName = newPe.name;
-  if (pet.personality2Id === newId) {
-    pet.personality2Id = null;
-    pet.personality2Name = null;
-  }
   if (pet.genes) {
     pet.genes = { ...pet.genes, personality: newId };
   }
   registerBestiary(state, pet);
   pushLog(state, `【${displayPetName(pet)}】使用性格洗劑：${oldPe?.name || oldId} → ${newPe.name}。`);
-  return { ok: true, msg: `${pet.name} 性格 → ${newPe.name}` };
+  return { ok: true, msg: `${pet.name} 主性格 → ${newPe.name}` };
+}
+
+function remapSafe(id) {
+  return MAIN_PERSONALITIES[id] ? id : pickMainPersonalityId();
+}
+
+/** 副性格覺醒（Lv≥20）；回溯補算成長差額 */
+export function awakenSubPersonality(state, uid) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  const pet = found.pet;
+  if (pet.personality2Awakened) return { ok: false, msg: "副性格已覺醒。" };
+  const lv = pet.level ?? 1;
+  if (lv < SUB_PERSONALITY_AWAKEN_LEVEL) {
+    return { ok: false, msg: `需達到 Lv.${SUB_PERSONALITY_AWAKEN_LEVEL} 方可覺醒副性格。` };
+  }
+  const subId =
+    (pet.genes?.personality2 && SUB_PERSONALITIES[pet.genes.personality2]
+      ? pet.genes.personality2
+      : null) || pickSubPersonalityId();
+  const sub = SUB_PERSONALITIES[subId];
+  if (!sub) return { ok: false, msg: "副性格池異常。" };
+  const bonus = retroactiveSubGrowthBonus({ ...pet, personality2Id: subId }, subId);
+  pet.personality2Id = subId;
+  pet.personality2Name = sub.name;
+  pet.personality2Awakened = true;
+  if (!pet.genes) pet.genes = {};
+  pet.genes = { ...pet.genes, personality2: subId };
+  pet.atk = ceilStat((pet.atk || 0) + bonus.atk);
+  pet.hp = ceilStat((pet.hp || 0) + bonus.hp);
+  pet.spd = ceilStat((pet.spd || 0) + bonus.spd);
+  pushLog(
+    state,
+    `【${displayPetName(pet)}】副性格覺醒為「${sub.name}」（回溯成長 攻${bonus.atk >= 0 ? "+" : ""}${ceilStat(bonus.atk)} 血${bonus.hp >= 0 ? "+" : ""}${ceilStat(bonus.hp)} 速${bonus.spd >= 0 ? "+" : ""}${ceilStat(bonus.spd)}）。`
+  );
+  return {
+    ok: true,
+    msg: `${pet.name} 覺醒副性格「${sub.name}」`,
+    pet,
+    bonus,
+  };
 }
 
 function ensureLoginStreak(state, now = Date.now()) {
@@ -6556,7 +6576,7 @@ export function breedPreview(petA, petB) {
         };
       })(),
     ],
-    temperNote: "子代性格多從雙親主／副性格池遺傳（約一成突變）；副性格覺醒後附加戰鬥被動（唔改成長）",
+    temperNote: "子代主性格從雙親主池遺傳；副性格基因入副池，孵出後未覺醒，達 Lv.20 可於性格頁覺醒",
     statPreview: {
       atk: [statLo.atk + (loAwaken?.atk || 0), statHi.atk + (hiAwaken?.atk || 0)],
       hp: [statLo.hp + (loAwaken?.hp || 0), statHi.hp + (hiAwaken?.hp || 0)],
