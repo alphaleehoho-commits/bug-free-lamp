@@ -6556,7 +6556,7 @@ export function breedPreview(petA, petB) {
         };
       })(),
     ],
-    temperNote: "子代性格多從雙親主／副性格池遺傳（約一成突變）；戰魂偏打、職魂偏牧場",
+    temperNote: "子代性格多從雙親主／副性格池遺傳（約一成突變）；副性格覺醒後附加戰鬥被動（唔改成長）",
     statPreview: {
       atk: [statLo.atk + (loAwaken?.atk || 0), statHi.atk + (hiAwaken?.atk || 0)],
       hp: [statLo.hp + (loAwaken?.hp || 0), statHi.hp + (hiAwaken?.hp || 0)],
