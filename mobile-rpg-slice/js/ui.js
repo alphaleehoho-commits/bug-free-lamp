@@ -162,6 +162,7 @@ import {
   abyssSquadCandidates,
   rearrangeAbyssSquad,
   resolveAbyssEvent,
+  resolveAbyssMutationChoice,
   exportSaveJson,
   importSaveJson,
   updateNoticeView,
@@ -182,6 +183,7 @@ import {
   OFFLINE_CLAIM_MIN_SEC,
   OFFLINE_HINT_SEC,
   ABYSS_RULES_TEXT,
+  ABYSS_UNLOCK_SPINE_STAGE,
   APP_BUILD,
   fusionMaterialRarityFactor,
   fusionPowerMultFromParts,
@@ -3151,6 +3153,14 @@ function cultivatePanel() {
       <p class="lead">精魂 ${soulN} · 放生／潮還所得（養成／稀有／融合越高越賺）兌換飼料／材料／道具</p>
       <ul class="list">${soulRows}</ul>`;
     } else if (shopInner === "grit") {
+      if (!gritV.unlocked) {
+        shopBody = `<h2>商肆 · 淵砂</h2>
+      <p class="lead">潮淵封印中</p>
+      <p class="meta">主脊達階段${gritV.unlockSpineStage || ABYSS_UNLOCK_SPINE_STAGE}（已通≥${
+          ((gritV.unlockSpineStage || ABYSS_UNLOCK_SPINE_STAGE) - 1) * 20 + 1
+        }）後解鎖深潛與淵砂兌換。現階段 ${gritV.spineStage || 1}。</p>
+      <p class="meta muted">預告貨物：淵核／突變保險／融合核（每週）／高階蛋／潮轉符／深潛外觀。</p>`;
+      } else {
       const cosRows = (gritV.cosmeticList || gritV.cosmeticsList || [])
         .map((c) => {
           const owned = c.owned ? "已擁有" : `淵砂×${c.cost}`;
@@ -3161,9 +3171,18 @@ function cultivatePanel() {
         })
         .join("");
       const nodeMaxed = (gritV.powerNodes || 0) >= (gritV.powerNodeMax || 0);
+      const hasInsurance = (gritV.insuranceCharges | 0) >= 1;
       shopBody = `<h2>商肆 · 淵砂</h2>
       <p class="lead">淵砂 ${gritHave} · 潮淵深潛結算兌換</p>
       <ul class="list">
+      <li class="card-row">
+        <div><strong>突變保險</strong><span class="muted"> · 略過下場新突變一次 · ${
+          hasInsurance ? "已備 1" : "未備"
+        }</span></div>
+        <button type="button" class="secondary" data-abyss-insurance ${hasInsurance ? "disabled" : ""}>${
+          hasInsurance ? "已持有" : `淵砂×${gritV.insuranceCost || 25}`
+        }</button>
+      </li>
       <li class="card-row">
         <div><strong>淵核</strong><span class="muted"> · 永久全隊攻擊 +${gritV.powerNodeAtkPct || 1}%／級 · ${gritV.powerNodes || 0}/${gritV.powerNodeMax || 0}</span></div>
         <button type="button" class="secondary" data-abyss-power-node ${nodeMaxed ? "disabled" : ""}>${
@@ -3187,6 +3206,7 @@ function cultivatePanel() {
       </li>
       ${cosRows}
     </ul>`;
+      }
     } else {
       shopBody = `<h2>商肆 · 靈石</h2>
       <p class="lead">靈石 ${Math.floor(state.stones)} · 牧場 ${ranchN}／${ranchCap(state)}</p>
@@ -4757,7 +4777,7 @@ function sweepModalHtml() {
 
 function abyssNextFloorNote(next) {
   if (!next) return "";
-  if (next.willAddMutation) return "將加入 1 條新突變";
+  if (next.willAddMutation) return "將 2 選 1 加入突變";
   if (next.insuranceSkips) return "突變保險將略過新突變";
   if (next.mutationFloor) return "突變層（無新增）";
   return "本層無新突變";
@@ -4793,6 +4813,46 @@ function abyssEventHtml(pendingEvent) {
       <p class="meta muted">第 ${pendingEvent.depth | 0} 層通關獎勵——揀一項先至可以續潛。</p>
       <div class="abyss-event-opts">${opts}</div>
     </div>`;
+}
+
+function abyssMutationChoiceHtml(pending) {
+  if (!pending?.options?.length) return "";
+  const opts = pending.options
+    .map(
+      (o) => `<button type="button" class="secondary abyss-event-opt" data-abyss-mutation="${escapeHtml(o.mutationId)}">
+        <strong>${escapeHtml(o.name)}</strong>
+        <span class="muted">${escapeHtml(o.desc || "")}</span>
+      </button>`
+    )
+    .join("");
+  return `<div class="abyss-event-block abyss-mutation-pick">
+      <p class="lead">潮淵突變 · 2 選 1</p>
+      <p class="meta muted">即將挑戰第 ${pending.depth | 0} 層——揀一條突變後再開戰。</p>
+      <div class="abyss-event-opts">${opts}</div>
+    </div>`;
+}
+
+function abyssMilestonesHtml(v) {
+  const week = (v.weeklyMilestones || [])
+    .map((m) => {
+      const st = m.claimed ? "已領" : m.reached ? "可領（已自動入帳）" : `未達（${v.weekBestDepth || 0}/${m.depth}）`;
+      return `<li><strong>${escapeHtml(m.label || `${m.depth}層`)}</strong><span class="muted"> · 週最深≥${m.depth} · ${st}</span></li>`;
+    })
+    .join("");
+  const best = (v.bestMilestones || [])
+    .map((m) => {
+      const st = m.claimed ? "已領" : m.reached ? "可領（已自動入帳）" : `未達（${v.bestDepth || 0}/${m.depth}）`;
+      return `<li><strong>${escapeHtml(m.label || `${m.depth}層`)}</strong><span class="muted"> · 歷史≥${m.depth} · ${st}</span></li>`;
+    })
+    .join("");
+  if (!week && !best) return "";
+  return `<details class="abyss-rules abyss-milestones">
+      <summary>深度里程碑</summary>
+      <p class="meta">本週</p>
+      <ul class="abyss-roster-list">${week || "<li class='empty'>—</li>"}</ul>
+      <p class="meta">歷史首次</p>
+      <ul class="abyss-roster-list">${best || "<li class='empty'>—</li>"}</ul>
+    </details>`;
 }
 
 function abyssRearrangeHtml(roster) {
@@ -4856,25 +4916,32 @@ function abyssSettlementHtml(result) {
   const nextNote = abyssNextFloorNote(next);
   const liveRun = abyssDiveView(state).run;
   const pendingEvent = liveRun?.pendingEvent || result.pendingEvent || null;
+  const pendingMut = liveRun?.pendingMutationChoice || result.pendingMutationChoice || null;
   const roster = liveRun?.roster || result.roster || null;
   const eventBlock = pendingEvent ? abyssEventHtml(pendingEvent) : "";
+  const mutPickBlock = !pendingEvent && pendingMut ? abyssMutationChoiceHtml(pendingMut) : "";
   const rearrangeBlock = abyssRearrangePick ? abyssRearrangeHtml(roster) : "";
   const rosterMini = !abyssRearrangePick && roster ? abyssRosterMiniHtml(roster) : "";
+  const msLines = (result.milestones || [])
+    .map((m) => `<p class="meta abyss-ms-line">里程碑 · ${escapeHtml(m.line || m.label || "")}</p>`)
+    .join("");
   return `
     <div class="abyss-settle">
       <p class="lead">已通關第 <strong>${result.clearedDepth || result.depth}</strong> 層</p>
       <div class="settle-summary-row abyss-grit-row">
         <div>
           <strong class="settle-total">淵砂 +${result.gritGained || 0}</strong>
-          <span class="muted">待結算累計 ${result.pendingGrit || 0} · 層間唔回滿血</span>
+          <span class="muted">待結算累計 ${(liveRun?.pendingGrit ?? result.pendingGrit) || 0} · 層間唔回滿血</span>
         </div>
       </div>
+      ${msLines}
       <p class="meta">活躍突變：</p>
       <p class="meta abyss-mut-list">${mutLine}</p>
       <p class="meta">本潛增益：</p>
       <p class="meta abyss-mut-list">${buffLine}</p>
       ${rosterMini}
       ${eventBlock}
+      ${mutPickBlock}
       ${rearrangeBlock}
       <div class="abyss-next-preview">
         <strong>下一層預覽 · 第 ${next?.depth ?? (result.depth | 0) + 1} 層</strong>
@@ -4945,13 +5012,13 @@ function combatModalHtml() {
   } else if (isAbyss && result?.won && !result?.wiped && result?.canContinue) {
     const liveRun = abyssDiveView(state).run;
     const needEvent = !!liveRun?.pendingEvent;
-    const contDisabled = needEvent || !!abyssRearrangePick ? "disabled" : "";
+    const needMut = !!liveRun?.pendingMutationChoice;
+    const contDisabled = needEvent || needMut || !!abyssRearrangePick ? "disabled" : "";
+    const contLabel = needEvent ? "先揀事件" : needMut ? "先揀突變" : "繼續下一層";
     actions = `
-          <button type="button" class="primary" data-act="abyss-continue-floor" ${contDisabled}>${
-            needEvent ? "先揀事件" : "繼續下一層"
-          }</button>
+          <button type="button" class="primary" data-act="abyss-continue-floor" ${contDisabled}>${contLabel}</button>
           <button type="button" class="secondary" data-act="abyss-open-rearrange" ${
-            abyssRearrangePick || needEvent ? "disabled" : ""
+            abyssRearrangePick || needEvent || needMut ? "disabled" : ""
           }>整理隊伍</button>
           <button type="button" class="secondary" data-act="abyss-retreat-settle">撤退結算</button>
           <button type="button" data-act="${clearAct}">${escapeHtml(clearLabel)}</button>`;
@@ -5067,9 +5134,17 @@ function swRefreshBannerHtml() {
 function abyssPanelHtml() {
   const v = abyssDiveView(state);
   if (!v.unlocked) {
+    const need = v.unlockSpineStage || ABYSS_UNLOCK_SPINE_STAGE;
+    const needFloor = (need - 1) * 20 + 1;
     return `<h2>潮淵深潛</h2>
       <p class="lead">無盡程序層 · 突變規則 · 專屬淵砂</p>
-      <p class="meta">先通關秘境【潮汐一層】或達到通靈初期後解鎖。</p>`;
+      <p class="meta">封印中——主脊達<strong>階段${need}</strong>（已通≥${needFloor}）後解鎖大後期深潛。</p>
+      <p class="meta">現主脊階段 ${v.spineStage || 1}。</p>
+      <p class="meta muted">預告：5 寵編隊 · 突變 2 選 1 · 週／歷史深度里程碑 · 淵砂換融合核／高階蛋。</p>
+      <details class="abyss-rules">
+        <summary>潮淵規則（預覽）</summary>
+        <pre class="abyss-rules-body">${escapeHtml(ABYSS_RULES_TEXT)}</pre>
+      </details>`;
   }
   const run = v.run;
   const mutLine = run?.mutations?.length
@@ -5081,22 +5156,29 @@ function abyssPanelHtml() {
   let runBlock;
   if (run) {
     const needEvent = !!run.pendingEvent;
+    const needMut = !!run.pendingMutationChoice;
+    const blocked = needEvent || needMut || !!abyssRearrangePick;
     const roster = abyssRosterMiniHtml(run.roster);
     const eventBlock = needEvent ? abyssEventHtml(run.pendingEvent) : "";
+    const mutPickBlock = !needEvent && needMut ? abyssMutationChoiceHtml(run.pendingMutationChoice) : "";
     const rearrangeBlock = abyssRearrangePick ? abyssRearrangeHtml(run.roster) : "";
+    const advLabel = needEvent
+      ? "先揀事件"
+      : needMut
+        ? "先揀突變"
+        : `挑戰第 ${(run.depth | 0) + 1} 層`;
     runBlock = `<div class="abyss-run card-block">
         <p class="lead">進行中 · 已通第 <strong>${run.depth}</strong> 層 · 待結算淵砂 <strong>${run.pendingGrit}</strong></p>
         <p class="meta">下一挑戰：第 <strong>${(run.depth | 0) + 1}</strong> 層 · 本潛增益：${buffLine}</p>
         <p class="meta">突變：${mutLine}</p>
         ${roster}
         ${eventBlock}
+        ${mutPickBlock}
         ${rearrangeBlock}
         <div class="row">
-          <button type="button" class="primary" data-abyss-advance ${needEvent || abyssRearrangePick ? "disabled" : ""}>${
-            needEvent ? "先揀事件" : `挑戰第 ${(run.depth | 0) + 1} 層`
-          }</button>
+          <button type="button" class="primary" data-abyss-advance ${blocked ? "disabled" : ""}>${advLabel}</button>
           <button type="button" class="secondary" data-act="abyss-open-rearrange" ${
-            abyssRearrangePick || needEvent ? "disabled" : ""
+            blocked ? "disabled" : ""
           }>整理隊伍</button>
           <button type="button" class="secondary" data-abyss-retreat>撤退結算</button>
         </div>
@@ -5136,12 +5218,13 @@ function abyssPanelHtml() {
       </div>`;
   }
   return `<h2>潮淵深潛</h2>
-    <p class="lead">無限層 · 突變規則</p>
+    <p class="lead">無限層 · 突變規則 · 大後期旁路</p>
     <p class="meta">淵砂 <strong>${v.gritHave}</strong> · 最深 ${v.bestDepth} · 本週 ${v.weekBestDepth}</p>
     <details class="abyss-rules">
       <summary>潮淵規則（必讀）</summary>
       <pre class="abyss-rules-body">${escapeHtml(ABYSS_RULES_TEXT)}</pre>
     </details>
+    ${abyssMilestonesHtml(v)}
     ${runBlock}`;
 }
 
@@ -5991,6 +6074,10 @@ function bind() {
           setFlash("請先揀潮淵事件（2 選 1）。");
           return;
         }
+        if (abyssDiveView(state).run?.pendingMutationChoice) {
+          setFlash("請先揀本層突變（2 選 1）。");
+          return;
+        }
         if (abyssRearrangePick) {
           setFlash("請先確認或取消整理隊伍。");
           return;
@@ -6383,6 +6470,26 @@ function bind() {
           ...playback.result,
           pendingEvent: null,
           roster: r.roster || playback.result.roster,
+          pendingGrit: r.pendingGrit ?? playback.result.pendingGrit,
+          mutationIds: r.mutationIds || playback.result.mutationIds,
+          mutations: r.mutations || playback.result.mutations,
+        };
+      }
+      saveState(state);
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-abyss-mutation]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = resolveAbyssMutationChoice(state, btn.dataset.abyssMutation);
+      if (r.ok && playback?.result && isAbyssCombat(playback.result)) {
+        playback.result = {
+          ...playback.result,
+          pendingMutationChoice: null,
+          roster: r.roster || playback.result.roster,
+          mutationIds: r.mutationIds || playback.result.mutationIds,
+          mutations: r.mutations || playback.result.mutations,
         };
       }
       saveState(state);

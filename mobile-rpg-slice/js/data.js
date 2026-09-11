@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260910.2";
+export const APP_BUILD = "20260911.1";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -5275,6 +5275,8 @@ export const MATERIAL_USES = {
 /* ─── 潮淵深潛（秘境旁路；唔改潮域產物表）─── */
 
 export const ABYSS_GRIT_ID = "abyss_grit";
+/** 主脊階段 ≥ 此值（已通 ≥81）先解鎖潮淵——大後期旁路 */
+export const ABYSS_UNLOCK_SPINE_STAGE = 5;
 /** 每日首趟免費，其後每趟 */
 export const ABYSS_ENTRY_TOKEN_COST = 1;
 export const ABYSS_WIPE_KEEP_RATE = 0.4;
@@ -5285,10 +5287,11 @@ export const ABYSS_MAX_ACTIVE_MUTATIONS = 3;
 /** 潮淵規則（UI 一次講清） */
 export const ABYSS_RULES_TEXT = [
   "獨立編隊 5 寵（3 出戰 + 2 替補）；層間唔回滿血。",
-  `每 ${ABYSS_MUTATION_EVERY} 層疊加 1 條突變；同時最多 ${ABYSS_MAX_ACTIVE_MUTATIONS} 條，新突變會頂掉最舊。`,
-  "突變保險可略過當層新突變（商人物件／淵砂兌換）。",
+  `每 ${ABYSS_MUTATION_EVERY} 層進入前 2 選 1 突變；同時最多 ${ABYSS_MAX_ACTIVE_MUTATIONS} 條，新突變會頂掉最舊。`,
+  "突變保險（淵砂商店）可略過當層新突變一次。",
   "失敗保底帶走部分待結算淵砂；撤退可提早結算。",
-  "商人事件係 2 揀 1：買潛航增益，或隨機移除 1 條突變。",
+  "商人事件係 2 揀 1：花待結算淵砂買潛航增益，或隨機移除 1 條現有突變。",
+  "本週最深／歷史最深有里程碑獎勵（唔含融合核）。",
 ].join("\n");
 /** 深潛獨立編隊：5 寵（3 出戰 + 2 替補） */
 export const ABYSS_SQUAD_SIZE = 5;
@@ -5299,6 +5302,26 @@ export const ABYSS_EVENT_EVERY = 5;
 export const ABYSS_CAMPFIRE_HEAL = 0.3;
 /** 祭壇復活後血量比例 */
 export const ABYSS_ALTAR_REVIVE_HP = 0.4;
+
+/**
+ * 本週最深里程碑（每週重置；小量淵砂／材料，唔放大融合核）
+ * @type {{ depth: number, grit: number, materials?: Record<string, number>, label: string }[]}
+ */
+export const ABYSS_WEEKLY_DEPTH_MILESTONES = [
+  { depth: 10, grit: 12, materials: { coral_shard: 4 }, label: "週潛·十層" },
+  { depth: 20, grit: 25, materials: { fire_grade_stone: 2 }, label: "週潛·廿層" },
+  { depth: 30, grit: 40, materials: { seal_ember: 1 }, label: "週潛·卅層" },
+];
+
+/**
+ * 歷史最深首次突破獎勵
+ * @type {{ depth: number, grit: number, materials?: Record<string, number>, label: string }[]}
+ */
+export const ABYSS_BEST_DEPTH_MILESTONES = [
+  { depth: 10, grit: 20, materials: { coral_shard: 6 }, label: "初探淵口" },
+  { depth: 25, grit: 45, materials: { abyss_ink: 2 }, label: "中淵印記" },
+  { depth: 50, grit: 80, materials: { sky_grade_stone: 2 }, label: "深淵履痕" },
+];
 
 /** @type {Record<string, { id: string, name: string, desc: string, healMult?: number, frontDmgTakenMult?: number, foeAtkMult?: number, allySpdMult?: number, foeHpMult?: number }>} */
 export const ABYSS_MUTATIONS = {
@@ -5373,7 +5396,7 @@ export const ABYSS_EVENT_TYPES = {
   merchant: {
     id: "merchant",
     name: "行商",
-    desc: "花淵砂買本潛增益，或隨機移除突變",
+    desc: "花待結算淵砂買本潛增益，或隨機移除突變",
   },
   altar: {
     id: "altar",
@@ -5443,6 +5466,10 @@ export function emptyAbyssDive(now = Date.now()) {
     eggsWeekKey: "",
     fusionCoresBoughtWeek: 0,
     fusionCoreWeekKey: "",
+    /** @type {Record<string, boolean>} 本週已領里程碑 depth→true */
+    weekMilestonesClaimed: {},
+    /** @type {Record<string, boolean>} 歷史最深首次里程碑 */
+    bestMilestonesClaimed: {},
     run: null,
   };
 }
@@ -5465,10 +5492,30 @@ export function abyssHash(seed) {
 
 export function pickAbyssMutationId(seed, excludeIds = []) {
   let pool = ABYSS_MUTATION_IDS.filter((id) => !excludeIds.includes(id));
-  // 活躍唔設上限：池空就由全表再抽，允許重複疊加
+  // 活躍 FIFO 上限由 engine 處理；池空時由全表再抽（允許與已排除之外重複）
   if (!pool.length) pool = [...ABYSS_MUTATION_IDS];
   const h = abyssHash(seed);
   return pool[h % pool.length];
+}
+
+/** 突變層：抽 2 個唔同突變做 2 選 1（池不足時允許重複） */
+export function rollAbyssMutationChoices(seed, depth, excludeIds = []) {
+  const d = depth | 0;
+  const a = pickAbyssMutationId(`${seed}:mutA${d}`, excludeIds);
+  const b = pickAbyssMutationId(`${seed}:mutB${d}`, [...excludeIds, a]);
+  const mapOpt = (id) => {
+    const m = ABYSS_MUTATIONS[id] || { id, name: id, desc: "" };
+    return {
+      type: "mutation",
+      mutationId: id,
+      name: m.name,
+      desc: m.desc || "",
+    };
+  };
+  return {
+    depth: d,
+    options: [mapOpt(a), mapOpt(b)],
+  };
 }
 
 /** 每 5 層：由營火／行商／祭壇隨機抽 2 個做 2 選 1 */
@@ -5480,7 +5527,7 @@ export function rollAbyssFloorEvent(seed, depth) {
   const i1 = (h >>> 8) % pool.length;
   const second = pool[i1];
   const buffId = ABYSS_MERCHANT_BUFF_IDS[(h >>> 16) % ABYSS_MERCHANT_BUFF_IDS.length];
-  // 抽中行商 → 專屬 2 揀 1：買增益 或 突變保險（隨機移除 1 條突變）
+  // 抽中行商 → 專屬 2 揀 1：買增益 或 移除現有突變（花待結算淵砂）
   if (first === "merchant" || second === "merchant") {
     const buff = ABYSS_MERCHANT_BUFFS[buffId];
     return {
@@ -5489,14 +5536,14 @@ export function rollAbyssFloorEvent(seed, depth) {
         {
           type: "merchant",
           name: "行商·增益",
-          desc: `【${buff.name}】${buff.desc}（淵砂×${buff.cost}）`,
+          desc: `【${buff.name}】${buff.desc}（待結算淵砂×${buff.cost}）`,
           buffId: buff.id,
           cost: buff.cost,
         },
         {
           type: "merchant_purge",
-          name: "行商·突變保險",
-          desc: `隨機移除 1 條現有突變（淵砂×${ABYSS_INSURANCE_COST}）`,
+          name: "行商·淨潮",
+          desc: `隨機移除 1 條現有突變（待結算淵砂×${ABYSS_INSURANCE_COST}）`,
           cost: ABYSS_INSURANCE_COST,
         },
       ],

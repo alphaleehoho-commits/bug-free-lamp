@@ -239,6 +239,7 @@ import {
   ABYSS_MAX_ACTIVE_MUTATIONS,
   ABYSS_RULES_TEXT,
   APP_BUILD,
+  ABYSS_UNLOCK_SPINE_STAGE,
   ABYSS_SQUAD_SIZE,
   ABYSS_ACTIVE_SIZE,
   ABYSS_EVENT_EVERY,
@@ -255,10 +256,13 @@ import {
   ABYSS_TIDE_SHIFT_COST,
   ABYSS_FUSION_CORE_COST,
   ABYSS_FUSION_CORE_WEEKLY_LIMIT,
+  ABYSS_WEEKLY_DEPTH_MILESTONES,
+  ABYSS_BEST_DEPTH_MILESTONES,
   emptyAbyssDive,
   abyssFloorGrit,
   abyssHash,
   pickAbyssMutationId,
+  rollAbyssMutationChoices,
   rollAbyssFloorEvent,
   abyssCosmeticCombatMult,
   levelStatGains,
@@ -1023,9 +1027,8 @@ export function updateNoticeView() {
     build: APP_BUILD,
     title: "更新公告",
     body: [
-      "軟啟動信任修復：商肆分頁、融合確認、潮淵剪影。",
-      "精魂商店改為實用兌換；突破圖鑑改階段目標。",
-      "潮淵突變設上限並可讀規則；秘境 5 層+有獨特規則／掉落。",
+      "潮淵改為主脊階段五解鎖（大後期）；突變層 2 選 1；商人花待結算淵砂。",
+      "淵砂商店補回突變保險；週／歷史深度里程碑有小量獎勵。",
       "見聞錄可匯出／匯入存檔。若畫面異常請硬刷新（清 SW 快取）。",
     ].join(" "),
   };
@@ -6918,12 +6921,19 @@ function ensureAbyssDive(state, now = Date.now()) {
   }
   const ad = state.abyssDive;
   if (!ad.cosmetics) ad.cosmetics = {};
+  if (!ad.weekMilestonesClaimed || typeof ad.weekMilestonesClaimed !== "object") {
+    ad.weekMilestonesClaimed = {};
+  }
+  if (!ad.bestMilestonesClaimed || typeof ad.bestMilestonesClaimed !== "object") {
+    ad.bestMilestonesClaimed = {};
+  }
   if (typeof ad.powerNodes !== "number" || ad.powerNodes < 0) ad.powerNodes = 0;
   ad.powerNodes = Math.min(ABYSS_POWER_NODE_MAX, Math.floor(ad.powerNodes || 0));
   const wk = weekKey(now);
   if (ad.weekKey !== wk) {
     ad.weekKey = wk;
     ad.weekBestDepth = 0;
+    ad.weekMilestonesClaimed = {};
   }
   if (ad.eggsWeekKey !== wk) {
     ad.eggsWeekKey = wk;
@@ -6941,49 +6951,113 @@ function abyssPowerNodeAtkMult(state) {
   return 1 + n * ABYSS_POWER_NODE_ATK;
 }
 
+/** 主脊階段五（已通 ≥81）先開潮淵 */
 function abyssUnlocked(state) {
-  return !!(state.clearedDungeons || {}).tide_1 || (state.realm | 0) >= 1;
+  return spineStageFromState(state) >= ABYSS_UNLOCK_SPINE_STAGE;
+}
+
+function spendAbyssPendingGrit(run, cost) {
+  const need = Math.max(0, cost | 0);
+  if ((run.pendingGrit | 0) < need) return false;
+  run.pendingGrit = (run.pendingGrit | 0) - need;
+  return true;
+}
+
+/** 通關深度達標時發週／歷史里程碑（自動入帳） */
+function grantAbyssDepthMilestones(state, ad, depth) {
+  const d = depth | 0;
+  const granted = [];
+  const grantOne = (m, claimedMap, kind) => {
+    const key = String(m.depth);
+    if (d < (m.depth | 0) || claimedMap[key]) return;
+    claimedMap[key] = true;
+    if ((m.grit | 0) > 0) addMaterials(state, { [ABYSS_GRIT_ID]: m.grit | 0 });
+    if (m.materials && typeof m.materials === "object") addMaterials(state, m.materials);
+    const bits = [];
+    if ((m.grit | 0) > 0) bits.push(`淵砂×${m.grit}`);
+    for (const [mat, n] of Object.entries(m.materials || {})) {
+      if ((n | 0) > 0) bits.push(`${MATERIALS[mat]?.name || mat}×${n}`);
+    }
+    const line = `${m.label || `${kind}${m.depth}`}：${bits.join(" · ") || "獎勵已入帳"}`;
+    granted.push({ kind, depth: m.depth, label: m.label, grit: m.grit | 0, materials: { ...(m.materials || {}) }, line });
+    pushLog(state, `潮淵里程碑·${line}`);
+  };
+  for (const m of ABYSS_WEEKLY_DEPTH_MILESTONES) {
+    grantOne(m, ad.weekMilestonesClaimed, "week");
+  }
+  for (const m of ABYSS_BEST_DEPTH_MILESTONES) {
+    grantOne(m, ad.bestMilestonesClaimed, "best");
+  }
+  return granted;
+}
+
+function applyAbyssMutationId(run, mutationId) {
+  let next = [...(run.mutationIds || []), mutationId];
+  let dropped = [];
+  if (next.length > ABYSS_MAX_ACTIVE_MUTATIONS) {
+    dropped = next.slice(0, next.length - ABYSS_MAX_ACTIVE_MUTATIONS);
+    next = next.slice(next.length - ABYSS_MAX_ACTIVE_MUTATIONS);
+  }
+  run.mutationIds = next;
+  return { dropped, mutationIds: next };
 }
 
 function buildAbyssFloorWaves(depth, seed) {
   const d = Math.max(1, depth | 0);
   const h = abyssHash(`${seed}:w${d}`);
   const elems = ["tide", "flame", "gale", "stone", "gloom"];
-  const scale = 1 + (d - 1) * 0.12;
-  const mk = (name, role, baseHp, baseAtk, baseSpd, ei) => ({
+  const milestone =
+    d === 10 || d === 25 || d === 50 || d === 75 || d === 100 || (d >= 50 && d % 25 === 0);
+  const scale = 1 + (d - 1) * 0.12 + (milestone ? 0.08 : 0);
+  const mk = (name, role, baseHp, baseAtk, baseSpd, ei, tag) => ({
     name,
     role,
     hp: Math.round(baseHp * scale),
     atk: Math.round(baseAtk * scale),
     spd: Math.round(baseSpd * (1 + (d - 1) * 0.03)),
     element: elems[ei % elems.length],
-    skills: role === "boss" ? ["tide_crush", "mist_veil"].filter((id) => SKILLS[id]) : role === "elite" ? ["coral_spike"].filter((id) => SKILLS[id]) : [],
+    skills:
+      role === "boss"
+        ? ["tide_crush", "mist_veil"].filter((id) => SKILLS[id])
+        : role === "elite"
+          ? ["coral_spike"].filter((id) => SKILLS[id])
+          : [],
     actions: role === "boss" ? 2 : 1,
+    threatTag: tag || "",
   });
+  const band =
+    d >= 50 ? "深淵" : d >= 25 ? "中淵" : d >= 10 ? "淵廊" : "潮霧";
   const waves = [
     {
-      label: `淵層${d}·潮霧`,
+      label: `淵層${d}·${band}`,
       enemies: [
-        mk("淵霧卒", "normal", 42, 9, 10, h),
-        mk("淵霧卒", "normal", 40, 8, 11, h + 1),
+        mk(`${band}卒`, "normal", 42, 9, 10, h, band),
+        mk(`${band}影`, "normal", 40, 8, 11, h + 1, band),
       ],
     },
   ];
   if (d % 3 === 0) {
     waves.push({
       label: `淵層${d}·護影`,
-      enemies: [mk("淵影護衛", "elite", 70, 12, 12, h + 2)],
+      enemies: [mk(`${band}護衛`, "elite", 70, 12, 12, h + 2, "精英")],
     });
   } else {
     waves.push({
       label: `淵層${d}·暗潮`,
-      enemies: [mk("暗潮潛客", "normal", 48, 10, 12, h + 3)],
+      enemies: [mk("暗潮潛客", "normal", 48, 10, 12, h + 3, "")],
     });
   }
   if (d % 5 === 0) {
+    const bossName = milestone
+      ? d >= 50
+        ? "潮淵殘主·深影"
+        : d >= 25
+          ? "潮淵殘主·中印"
+          : "潮淵殘主·淵口"
+      : "潮淵殘主";
     waves.push({
-      label: `淵層${d}·主影`,
-      enemies: [mk("潮淵殘主", "boss", 120, 16, 13, h + 4)],
+      label: `淵層${d}·主影${milestone ? "·里程碑" : ""}`,
+      enemies: [mk(bossName, "boss", milestone ? 140 : 120, milestone ? 18 : 16, 13, h + 4, milestone ? "里程碑BOSS" : "BOSS")],
     });
   }
   return waves;
@@ -7207,7 +7281,7 @@ function abyssSquadRosterView(state, run) {
   };
 }
 
-/** 已通關 depth 之後，下一層預覽（突變／保險）；突變無活躍上限 */
+/** 已通關 depth 之後，下一層預覽（突變／保險）；活躍突變上限 FIFO */
 function previewAbyssNextFloor(clearedDepth, mutationIds, insuranceCharges) {
   const depth = (clearedDepth | 0) + 1;
   const mutationFloor = depth % ABYSS_MUTATION_EVERY === 0;
@@ -7368,14 +7442,29 @@ export function abyssDiveView(state, now = Date.now()) {
   const tokenHave = Math.floor(state.materials?.mist_token || 0);
   const unlocked = abyssUnlocked(state);
   const ownedCount = abyssOwnedPets(state).length;
+  const spineStage = spineStageFromState(state);
+  const weekMs = ABYSS_WEEKLY_DEPTH_MILESTONES.map((m) => ({
+    ...m,
+    claimed: !!(ad.weekMilestonesClaimed || {})[String(m.depth)],
+    reached: (ad.weekBestDepth | 0) >= (m.depth | 0),
+  }));
+  const bestMs = ABYSS_BEST_DEPTH_MILESTONES.map((m) => ({
+    ...m,
+    claimed: !!(ad.bestMilestonesClaimed || {})[String(m.depth)],
+    reached: (ad.bestDepth | 0) >= (m.depth | 0),
+  }));
   return {
     unlocked,
+    unlockSpineStage: ABYSS_UNLOCK_SPINE_STAGE,
+    spineStage,
     gritHave,
     tokenHave,
     freeLeft,
     entryCost: freeLeft ? 0 : ABYSS_ENTRY_TOKEN_COST,
     bestDepth: ad.bestDepth | 0,
     weekBestDepth: ad.weekBestDepth | 0,
+    weeklyMilestones: weekMs,
+    bestMilestones: bestMs,
     insuranceCharges: ad.insuranceCharges | 0,
     cosmetics: { ...ad.cosmetics },
     eggsBoughtWeek: ad.eggsBoughtWeek | 0,
@@ -7410,6 +7499,7 @@ export function abyssDiveView(state, now = Date.now()) {
           diveBuffs: [...(run.diveBuffs || [])],
           diveBuffList: (run.diveBuffs || []).map((id) => ABYSS_MERCHANT_BUFFS[id]).filter(Boolean),
           pendingEvent: run.pendingEvent || null,
+          pendingMutationChoice: run.pendingMutationChoice || null,
           roster: abyssSquadRosterView(state, run),
         }
       : null,
@@ -7440,7 +7530,10 @@ export function abyssSquadCandidates(state) {
  */
 export function startAbyssDive(state, squadUids, now = Date.now()) {
   if (!abyssUnlocked(state)) {
-    return { ok: false, msg: "先通關潮汐秘境一層，再開潮淵。" };
+    return {
+      ok: false,
+      msg: `潮淵封印中——主脊達階段${ABYSS_UNLOCK_SPINE_STAGE}（已通≥${(ABYSS_UNLOCK_SPINE_STAGE - 1) * 20 + 1}）後解鎖。`,
+    };
   }
   const ad = ensureAbyssDive(state, now);
   if (ad.run) {
@@ -7498,6 +7591,14 @@ export function advanceAbyssDive(state, now = Date.now()) {
   if (ad.run.pendingEvent) {
     return { ok: false, msg: "請先揀潮淵事件（2 選 1）。" };
   }
+  if (ad.run.pendingMutationChoice) {
+    return {
+      ok: false,
+      msg: "請先揀本層突變（2 選 1）。",
+      needMutationPick: true,
+      pendingMutationChoice: ad.run.pendingMutationChoice,
+    };
+  }
   const livingActive = (ad.run.activeUids || []).filter((uid) => (ad.run.hpByUid?.[uid]?.hp | 0) > 0);
   if (!livingActive.length) {
     return { ok: false, msg: "出戰位全數陣亡——請整理隊伍或等祭壇復活。" };
@@ -7506,21 +7607,26 @@ export function advanceAbyssDive(state, now = Date.now()) {
   const nextDepth = (ad.run.depth | 0) + 1;
   const mutationFloor = nextDepth % ABYSS_MUTATION_EVERY === 0;
   if (mutationFloor) {
-    if ((ad.insuranceCharges | 0) > 0) {
-      ad.insuranceCharges -= 1;
-      pushLog(state, "突變保險發動——本層略過新突變。");
-    } else {
-      const mid = pickAbyssMutationId(`${ad.run.seed}:mut${nextDepth}`, ad.run.mutationIds || []);
-      let next = [...(ad.run.mutationIds || []), mid];
-      if (next.length > ABYSS_MAX_ACTIVE_MUTATIONS) {
-        const dropped = next.slice(0, next.length - ABYSS_MAX_ACTIVE_MUTATIONS);
-        next = next.slice(next.length - ABYSS_MAX_ACTIVE_MUTATIONS);
-        pushLog(
-          state,
-          `突變已達上限 ${ABYSS_MAX_ACTIVE_MUTATIONS}：新突變頂替最舊（移除 ${dropped.length} 條）。`
+    const committed = (ad.run.mutationCommittedForDepth | 0) === nextDepth;
+    if (!committed) {
+      if ((ad.insuranceCharges | 0) > 0) {
+        ad.insuranceCharges -= 1;
+        ad.run.mutationCommittedForDepth = nextDepth;
+        pushLog(state, "突變保險發動——本層略過新突變。");
+      } else {
+        ad.run.pendingMutationChoice = rollAbyssMutationChoices(
+          ad.run.seed,
+          nextDepth,
+          ad.run.mutationIds || []
         );
+        return {
+          ok: false,
+          msg: "請先揀本層突變（2 選 1）。",
+          needMutationPick: true,
+          pendingMutationChoice: ad.run.pendingMutationChoice,
+          depth: nextDepth,
+        };
       }
-      ad.run.mutationIds = next;
     }
   }
   const combat = runAbyssFloorCombat(state, {
@@ -7539,6 +7645,7 @@ export function advanceAbyssDive(state, now = Date.now()) {
     ad.run.pendingGrit = (ad.run.pendingGrit | 0) + gain;
     if (nextDepth > (ad.bestDepth | 0)) ad.bestDepth = nextDepth;
     if (nextDepth > (ad.weekBestDepth | 0)) ad.weekBestDepth = nextDepth;
+    const milestones = grantAbyssDepthMilestones(state, ad, nextDepth);
     const mutIds = [...(ad.run.mutationIds || [])];
     let pendingEvent = null;
     if (nextDepth % ABYSS_EVENT_EVERY === 0) {
@@ -7560,6 +7667,7 @@ export function advanceAbyssDive(state, now = Date.now()) {
       diveBuffList: (ad.run.diveBuffs || []).map((id) => ABYSS_MERCHANT_BUFFS[id]).filter(Boolean),
       nextFloor: previewAbyssNextFloor(nextDepth, mutIds, ad.insuranceCharges | 0),
       pendingEvent,
+      milestones,
       roster: abyssSquadRosterView(state, ad.run),
       msg: `已通關第 ${nextDepth} 層 · 淵砂 +${gain}（待結算 ${ad.run.pendingGrit}）`,
     };
@@ -7649,8 +7757,8 @@ export function resolveAbyssEvent(state, optionType, opts = {}, now = Date.now()
     if ((ad.run.diveBuffs || []).includes(buffId)) {
       return { ok: false, msg: "本潛已有此增益。" };
     }
-    if (!spendMaterials(state, { [ABYSS_GRIT_ID]: buff.cost })) {
-      return { ok: false, msg: `淵砂不足（需×${buff.cost}）。` };
+    if (!spendAbyssPendingGrit(ad.run, buff.cost)) {
+      return { ok: false, msg: `待結算淵砂不足（需×${buff.cost}）。` };
     }
     ad.run.diveBuffs = [...(ad.run.diveBuffs || []), buffId];
     if (buff.hpMult && buff.hpMult !== 1) {
@@ -7667,12 +7775,13 @@ export function resolveAbyssEvent(state, optionType, opts = {}, now = Date.now()
       }
     }
     ad.run.pendingEvent = null;
-    pushLog(state, `行商成交——【${buff.name}】（本潛）。`);
+    pushLog(state, `行商成交——【${buff.name}】（本潛 · 待結算淵砂 −${buff.cost}）。`);
     return {
       ok: true,
       msg: `行商：獲得【${buff.name}】（本潛有效）。`,
       roster: abyssSquadRosterView(state, ad.run),
       diveBuffs: [...ad.run.diveBuffs],
+      pendingGrit: ad.run.pendingGrit | 0,
     };
   }
 
@@ -7681,8 +7790,8 @@ export function resolveAbyssEvent(state, optionType, opts = {}, now = Date.now()
     if (!mutIds.length) {
       return { ok: false, msg: "目前冇突變可移除。" };
     }
-    if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_INSURANCE_COST })) {
-      return { ok: false, msg: `淵砂不足（需×${ABYSS_INSURANCE_COST}）。` };
+    if (!spendAbyssPendingGrit(ad.run, ABYSS_INSURANCE_COST)) {
+      return { ok: false, msg: `待結算淵砂不足（需×${ABYSS_INSURANCE_COST}）。` };
     }
     const seed = `${ad.run.seed}:purge${ad.run.depth}:${mutIds.length}`;
     let h = 2166136261;
@@ -7696,13 +7805,14 @@ export function resolveAbyssEvent(state, optionType, opts = {}, now = Date.now()
     ad.run.pendingEvent = null;
     const mut = (typeof ABYSS_MUTATIONS !== "undefined" ? ABYSS_MUTATIONS[removed] : null)
       || { name: removed };
-    pushLog(state, `行商突變保險——移除【${mut.name || removed}】。`);
+    pushLog(state, `行商淨潮——移除【${mut.name || removed}】（待結算淵砂 −${ABYSS_INSURANCE_COST}）。`);
     return {
       ok: true,
       msg: `行商：移除突變【${mut.name || removed}】。`,
       roster: abyssSquadRosterView(state, ad.run),
       mutationIds: [...mutIds],
       removedMutationId: removed,
+      pendingGrit: ad.run.pendingGrit | 0,
     };
   }
 
@@ -7757,7 +7867,44 @@ export function retreatAbyssDive(state, now = Date.now()) {
 }
 
 
+/** 突變層 2 選 1 */
+export function resolveAbyssMutationChoice(state, mutationId, now = Date.now()) {
+  const ad = ensureAbyssDive(state, now);
+  if (!ad.run?.pendingMutationChoice) {
+    return { ok: false, msg: "沒有待選突變。" };
+  }
+  normalizeAbyssRunSquad(ad.run);
+  const choice = ad.run.pendingMutationChoice;
+  const opt = (choice.options || []).find((o) => o.mutationId === mutationId);
+  if (!opt) return { ok: false, msg: "無效突變選項。" };
+  const depth = choice.depth | 0;
+  const { dropped } = applyAbyssMutationId(ad.run, mutationId);
+  ad.run.mutationCommittedForDepth = depth;
+  ad.run.pendingMutationChoice = null;
+  const mut = ABYSS_MUTATIONS[mutationId] || { name: mutationId };
+  if (dropped.length) {
+    pushLog(
+      state,
+      `突變已達上限 ${ABYSS_MAX_ACTIVE_MUTATIONS}：接受【${mut.name}】並頂替最舊（移除 ${dropped.length} 條）。`
+    );
+  } else {
+    pushLog(state, `接受潮淵突變【${mut.name}】。`);
+  }
+  return {
+    ok: true,
+    msg: `接受突變【${mut.name}】——可挑戰第 ${depth} 層。`,
+    mutationId,
+    mutations: mapAbyssMutations(ad.run.mutationIds),
+    mutationIds: [...(ad.run.mutationIds || [])],
+    depth,
+    roster: abyssSquadRosterView(state, ad.run),
+  };
+}
+
 export function buyAbyssInsurance(state, now = Date.now()) {
+  if (!abyssUnlocked(state)) {
+    return { ok: false, msg: `潮淵未解鎖（需主脊階段${ABYSS_UNLOCK_SPINE_STAGE}）。` };
+  }
   const ad = ensureAbyssDive(state, now);
   if ((ad.insuranceCharges | 0) >= 1) {
     return { ok: false, msg: "已持有突變保險（每趟限 1）。" };
@@ -7770,6 +7917,9 @@ export function buyAbyssInsurance(state, now = Date.now()) {
 }
 
 export function buyAbyssCosmetic(state, cosmeticId, now = Date.now()) {
+  if (!abyssUnlocked(state)) {
+    return { ok: false, msg: `潮淵未解鎖（需主脊階段${ABYSS_UNLOCK_SPINE_STAGE}）。` };
+  }
   const c = ABYSS_COSMETICS[cosmeticId];
   if (!c) return { ok: false, msg: "未知外觀。" };
   const ad = ensureAbyssDive(state, now);
@@ -7783,6 +7933,9 @@ export function buyAbyssCosmetic(state, cosmeticId, now = Date.now()) {
 }
 
 export function buyAbyssEgg(state, now = Date.now()) {
+  if (!abyssUnlocked(state)) {
+    return { ok: false, msg: `潮淵未解鎖（需主脊階段${ABYSS_UNLOCK_SPINE_STAGE}）。` };
+  }
   const ad = ensureAbyssDive(state, now);
   if ((ad.eggsBoughtWeek | 0) >= ABYSS_EGG_WEEKLY_LIMIT) {
     return { ok: false, msg: `本週高階蛋已達上限（${ABYSS_EGG_WEEKLY_LIMIT}）。` };
@@ -7802,6 +7955,9 @@ export function buyAbyssEgg(state, now = Date.now()) {
 
 /** 潮淵每週限兌融合核 */
 export function buyAbyssFusionCore(state, now = Date.now()) {
+  if (!abyssUnlocked(state)) {
+    return { ok: false, msg: `潮淵未解鎖（需主脊階段${ABYSS_UNLOCK_SPINE_STAGE}）。` };
+  }
   const ad = ensureAbyssDive(state, now);
   if ((ad.fusionCoresBoughtWeek | 0) >= ABYSS_FUSION_CORE_WEEKLY_LIMIT) {
     return { ok: false, msg: `本週融合核已達上限（${ABYSS_FUSION_CORE_WEEKLY_LIMIT}）。` };
@@ -7822,6 +7978,9 @@ export function buyAbyssFusionCore(state, now = Date.now()) {
 
 /** 淵核：永久小幅攻擊加成（有 cap；淵砂長期 sink） */
 export function buyAbyssPowerNode(state, now = Date.now()) {
+  if (!abyssUnlocked(state)) {
+    return { ok: false, msg: `潮淵未解鎖（需主脊階段${ABYSS_UNLOCK_SPINE_STAGE}）。` };
+  }
   const ad = ensureAbyssDive(state, now);
   const have = ad.powerNodes | 0;
   if (have >= ABYSS_POWER_NODE_MAX) {
@@ -7842,6 +8001,9 @@ export function buyAbyssPowerNode(state, now = Date.now()) {
 
 /** 淵砂兌換潮轉符（入背包道具；永久轉屬） */
 export function buyAbyssTideShiftCharm(state, now = Date.now()) {
+  if (!abyssUnlocked(state)) {
+    return { ok: false, msg: `潮淵未解鎖（需主脊階段${ABYSS_UNLOCK_SPINE_STAGE}）。` };
+  }
   ensureAbyssDive(state, now);
   ensureItems(state);
   if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_TIDE_SHIFT_COST })) {
