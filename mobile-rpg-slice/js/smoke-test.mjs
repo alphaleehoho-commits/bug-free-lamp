@@ -29,6 +29,16 @@ import {
   bestiaryTotal,
   migrateBestiaryMap,
   PERSONALITIES,
+  MAIN_PERSONALITIES,
+  remapMainPersonalityId,
+  pickMainPersonalityId,
+  pickSubPersonalityId,
+  SUB_PERSONALITIES,
+  SUB_PERSONALITY_AWAKEN_LEVEL,
+  migratePetPersonalityFields,
+  applySubGrowthToLevelGains,
+  retroactiveSubGrowthBonus,
+  RANCH_IDLE_BASE,
   ranchCapForStage,
   RANCH_IDLE_GLOBAL_MULT,
   DISPATCH_GEN_REWARD_MULT,
@@ -209,6 +219,7 @@ import {
   elementExplain,
   kindExplain,
   personalityExplain,
+  ceilStat,
   PERSONALITY_ROLE_SHORT,
   skillTypeLabel,
   ELEMENT_EXPLAIN,
@@ -226,6 +237,7 @@ import {
   startDungeonSummon,
   dungeonTeamPreview,
   dungeonGateView,
+  resolveDungeon,
   claimAllDailies,
   claimDailyAllClear,
   dailyAllClearView,
@@ -238,6 +250,7 @@ import {
   petLineage,
   nextGoalView,
   useTemperOil,
+  awakenSubPersonality,
   deployPet,
   claimHatch,
   startHatch,
@@ -255,6 +268,8 @@ import {
   petMatchesDispatchMission,
   dispatchMissionReqLabel,
   upgradePet,
+  upgradePetSkill,
+  petDetail,
   isFusionUnlocked,
   dungeonAttackBlockReason,
   fusePets,
@@ -320,6 +335,7 @@ import {
   exportSaveJson,
   importSaveJson,
   dailyView,
+  SECOND_SKILL_UNLOCK,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -378,7 +394,11 @@ assert(SPECIES.glowfin.kind === "光", "glowfin light");
 assert(KIND_SKILLS["光"] === "glow_lance", "light skill");
 assert(Object.keys(SPECIES).length >= 40, "40+ species");
 assert(bestiaryTotal() === 2640, "bestiary 48×5×11");
-assert(Object.keys(PERSONALITIES).length === 20, "20 personalities");
+assert(Object.keys(MAIN_PERSONALITIES).length === 14, "14 main personalities");
+assert(Object.keys(SUB_PERSONALITIES).length === 12, "12 sub personalities");
+assert(Object.keys(PERSONALITIES).length === Object.keys(MAIN_PERSONALITIES).length, "PERSONALITIES aliases main pool");
+const mainSubOverlap = Object.keys(MAIN_PERSONALITIES).filter((id) => SUB_PERSONALITIES[id]);
+assert(mainSubOverlap.length === 0, "main/sub pools disjoint");
 assert(ranchCapForStage(0) === 6 && ranchCapForStage(5) === 21, "ranch cap 6+stage*3");
 assert(ITEMS.ranch_fence?.name === "欄柵" && ITEMS.hatch_nest_token?.name === "暖巢箋", "bag items defined");
 assert(ITEMS.tide_shift_charm?.name === "潮轉符" && ITEMS.tide_shift_charm?.needsTarget, "tide shift charm defined");
@@ -479,9 +499,15 @@ assert(ABYSS_TIDE_SHIFT_COST >= 1, "abyss tide shift grit cost");
 }
 assert(RANCH_IDLE_GLOBAL_MULT === 0.35, "idle global mult");
 assert(DISPATCH_GEN_REWARD_MULT[3] === 1.25, "gen3 dispatch mult");
-assert(IDLE_BY_PERSONALITY.diligent?.feed > IDLE_BY_PERSONALITY.fierce?.feed, "work>fight feed");
-assert(PERSONALITIES.blessed.workFeed >= 1 && PERSONALITIES.blessed.atk >= 1, "blessed no penalty");
-assert(PERSONALITIES.brutal.atk > 1 && PERSONALITIES.brutal.workFeed < 1, "fight tradeoff");
+assert(RANCH_IDLE_BASE.feed === IDLE_BY_PERSONALITY.fierce?.feed, "ranch idle neutral vs old pe keys");
+assert(IDLE_BY_PERSONALITY.fierce?.feed === IDLE_BY_PERSONALITY.gentle?.feed, "personality no longer changes ranch idle");
+const fierceC = personalityCombatFor("fierce");
+const sumDelta = (fierceC.atkMult - 1) + (fierceC.hpMult - 1) + (fierceC.spdMult - 1);
+assert(Math.abs(sumDelta - 0.09) < 0.001, "fierce combat totals ~+9%");
+assert(Math.abs(fierceC.atkMult - 1) <= 0.15 + 1e-9, "fierce single combat within ±15%");
+const sharpG = SUB_PERSONALITIES.sharp;
+const subDelta = (sharpG.atk - 1) + (sharpG.hp - 1) + (sharpG.spd - 1);
+assert(Math.abs(subDelta - 0.06) < 0.001, "sharp growth totals ~+6%");
 const mig = migrateBestiaryMap({
   "reefox:tide:fierce:none": true,
   "reefox:tide:gentle:none": true,
@@ -734,7 +760,7 @@ assert(spineSite?.drops.find((d) => d.mat === "mist_token")?.perSec > 0, "spine 
 assert(spineAfkDropsForStage(1).some((d) => d.mat === "tide_dew"), "stage1 dew AFK");
 assert(spineAfkDropsForStage(2).some((d) => d.mat === "earth_grade_stone"), "stage2 earth AFK");
 assert(TRAIN_SITES.length === 1, "single spine train site");
-assert(SIDE_BRANCHES.length === 3, "three side branches");
+assert(SIDE_BRANCHES.length === 0, "side branches abolished");
 const fakeState = {
   realm: 0,
   qi: 10,
@@ -868,6 +894,13 @@ assert(dungeonsForRealm(0).length === 4, "min 4 dungeons");
 const t5 = buildDungeonForTier(5);
 assert(t5.id === "tide_5" && t5.needRealm === 4, "t5 tier");
 assert(t5.reward.stones > DUNGEONS[3].reward.stones, "t5 scaled reward");
+assert(t5.encounterWeights && Object.keys(t5.encounterWeights).length > 0, "t5 inherits encounterWeights");
+assert(t5.elementWeights?.flame >= 5, "t5 flame theme element bias");
+assert(t5.encounterWeights?.glowfin >= 5, "t5 flame theme species bias");
+const t6w = buildDungeonForTier(6);
+assert(t6w.elementWeights?.gloom >= 5 && t6w.encounterWeights?.nightmoth >= 5, "t6 gloom theme bias");
+assert(resolveDungeon({ dungeonDaily: null, realm: 5 }, "tide_5")?.encounterWeights, "resolveDungeon tide_5 has weights");
+assert(resolveDungeon({ dungeonDaily: null, realm: 5 }, "earth_vein_1") == null, "resolveDungeon rejects abolished branch");
 const t2daily = generateDailyDungeon("tide_2", "2026-08-27");
 assert(countDungeonRoles(dungeonWaves(t2daily)).boss >= 1, "t2 daily boss");
 assert(dungeonTrialFor("tide_5")?.needHybrid, "t5 trial");
@@ -938,10 +971,12 @@ const synSp = partySynergy([
   { uid: "b", elementId: "flame", kind: "禽", speciesId: "ashwing", generation: 1 },
 ]);
 assert(synSp.labels.some((l) => l.includes("同族血脈")), "same species");
-assert(personalityCombatFor("fierce")?.atkMult === 1.1, "fierce passive");
+assert(personalityCombatFor("fierce")?.atkMult === 1.12, "fierce passive");
 assert(personalityCombatFor("gentle")?.sustainBias, "gentle sustain");
-assert(personalityCombatFor("diligent")?.atkMult < 1, "diligent combat soft");
-assert(personalityCombatFor("blessed")?.atkMult >= 1, "blessed combat buff");
+assert(personalityCombatFor("diligent")?.id === "gentle", "legacy diligent remaps via combat lookup? skip");
+// diligent is remapped only via remapMainPersonalityId — combat table no longer has work ids
+assert(personalityCombatFor(remapMainPersonalityId("diligent"))?.atkMult, "legacy diligent remaps to main combat");
+assert(personalityCombatFor("noble")?.atkMult >= 1, "noble combat buff");
 assert(GEAR_SETS.tide && gearSetBonus(["tide_blade", "moss_vest"]).atk === 3, "set2");
 assert(gearSetBonus(["core_fang", "abyss_plate", "gloom_sigil"]).labels.some((l) => l.includes("三件")), "set3");
 assert(DISPATCH_MISSIONS.length >= 3, "dispatch missions");
@@ -968,10 +1003,10 @@ assert(materialSourceLabel("temper_oil") === "秘境專屬", "temper dungeon-onl
 assert(materialSourceLabel("echo_resin").includes("主脊"), "resin from spine");
 assert(unlockedTrainSiteIds({ clearedDungeons: {} }).includes(SPINE_ZONE_ID), "spine free");
 assert(unlockedTrainSiteIds({ clearedDungeons: {} }).length === 1, "only spine unlocked");
-assert(!isSideBranchUnlocked({ clearedDungeons: {} }, "earth_vein"), "earth locked early");
+assert(!isSideBranchUnlocked({ clearedDungeons: {} }, "earth_vein"), "earth always locked");
 assert(
-  isSideBranchUnlocked({ clearedDungeons: { tide_21: true } }, "earth_vein"),
-  "earth unlock stage2 at floor21"
+  !isSideBranchUnlocked({ clearedDungeons: { tide_21: true } }, "earth_vein"),
+  "side branches stay abolished even at stage2"
 );
 assert(upgradeMatCost(1).tide_dew >= 1 && !upgradeMatCost(1).earth_grade_stone, "upgrade early main only");
 assert(upgradeMatCost(12).earth_grade_stone > 0, "upgrade band earth");
@@ -986,24 +1021,75 @@ assert(DISPATCH_MISSIONS.some((m) => m.id === "egg_shore"), "shore egg mission")
 assert(DISPATCH_MISSIONS.some((m) => m.needSpineStage === 3), "dispatch stage gate");
 assert(DISPATCH_MISSIONS.every((m) => !m.needSite), "dispatch no legacy needSite");
 assert(SPECIES.shellmite?.breedOnly, "shellmite");
-fox.personality2Id = "steady";
+fox.personality2Id = "hardy";
+fox.personality2Awakened = true;
 fin.personalityId = "wild";
-fin.personality2Id = "gentle";
+fin.personality2Id = "latebloomer";
+fin.personality2Awakened = true;
 let pe2 = 0;
 for (let i = 0; i < 30; i++) {
   const gg = rollBreedGenes(fox, fin);
-  if (gg.personality2) pe2 += 1;
+  if (gg.personality2 && SUB_PERSONALITIES[gg.personality2]) pe2 += 1;
 }
-assert(pe2 > 5, "second personality often rolls");
+assert(pe2 > 5, "sub personality gene often rolls");
 const dual = buildPetStats({
   id: "d",
   species: "reefox",
   element: "tide",
   personality: "fierce",
-  personality2: "gentle",
+  personality2: "latebloomer",
   cost: 1,
 });
-assert(dual.personality2Id === "gentle" && dual.personality2Name, "build dual pe");
+assert(!dual.personality2Awakened && !dual.personality2Id, "new pets sub unawakened");
+assert(SUB_PERSONALITIES[dual.genes.personality2], "sub gene pre-rolled in genes");
+const dualAwake = buildPetStats({
+  id: "d2",
+  species: "reefox",
+  element: "tide",
+  personality: "fierce",
+  personality2: "latebloomer",
+  personality2Awakened: true,
+  cost: 1,
+});
+assert(dualAwake.personality2Id === "latebloomer" && dualAwake.personality2Name, "awakened dual pe");
+/* Dual-pool awaken fairness: Lv20 awaken then to 40 ≈ Lv40 then awaken */
+{
+  const mk = (lv) => {
+    const p = {
+      ...buildPetStats({ id: "fair", species: "reefox", element: "tide", personality: "fierce", cost: 0 }),
+      uid: "fair-" + lv,
+      level: 1,
+      personality2Awakened: false,
+      personality2Id: null,
+      genes: { species: "reefox", element: "tide", personality: "fierce", personality2: "sharp" },
+    };
+    for (let i = 1; i < lv; i++) {
+      const g = applySubGrowthToLevelGains(levelStatGains(petGeneration(p)), p);
+      p.atk = ceilStat(p.atk + g.atk);
+      p.hp = ceilStat(p.hp + g.hp);
+      p.spd = ceilStat(p.spd + g.spd);
+      p.level = i + 1;
+    }
+    return p;
+  };
+  const early = mk(20);
+  const a1 = awakenSubPersonality({ pets: [], ranch: [early], materials: {}, log: [] }, early.uid);
+  assert(a1.ok && early.personality2Awakened && early.personality2Id === "sharp", "awaken at 20");
+  for (let i = 20; i < 40; i++) {
+    const g = applySubGrowthToLevelGains(levelStatGains(petGeneration(early)), early);
+    early.atk = ceilStat(early.atk + g.atk);
+    early.hp = ceilStat(early.hp + g.hp);
+    early.spd = ceilStat(early.spd + g.spd);
+    early.level = i + 1;
+  }
+  const late = mk(40);
+  const a2 = awakenSubPersonality({ pets: [], ranch: [late], materials: {}, log: [] }, late.uid);
+  assert(a2.ok && late.personality2Id === "sharp", "awaken at 40");
+  assert(early.atk === late.atk, "awaken timing atk parity");
+  assert(early.hp === late.hp, "awaken timing hp parity");
+  assert(early.spd === late.spd, "awaken timing spd parity");
+}
+
 
 /* P11: material hints + unlock helpers */
 assert(MATERIAL_SOURCE_INDEX.tide_dew?.sites?.includes("主脊潮脈"), "tide_dew spine");
@@ -1068,11 +1154,11 @@ const gen1Pet = makeStarterPet();
 const gen2Rule = DUNGEON_CHALLENGE_RULES.find((r) => r.id === "min_gen2");
 assert(!evaluateDungeonChallenge([gen1Pet], gen2Rule).ok, "gen2 challenge rejects gen1");
 
-/* Side branches */
-const earthD = buildBranchDungeon("earth_vein", 1);
-assert(earthD?.isSideBranch && earthD.matDropOverride?.weights?.earth_grade_stone >= 8, "earth branch mats");
-assert(isBranchDungeonId("earth_vein_3") && !isBranchDungeonId("tide_3"), "branch id parse");
-assert(SIDE_BRANCHES.length === 3, "legacy side branch defs kept");
+/* Side branches abolished */
+assert(buildBranchDungeon("earth_vein", 1) == null, "branch builder returns null");
+assert(isBranchDungeonId("earth_vein_3") && !isBranchDungeonId("tide_3"), "branch id parse kept");
+assert(SIDE_BRANCHES.length === 0, "side branch defs empty");
+assert(listSideBranches({ clearedDungeons: { tide_40: true } }).length === 0, "listSideBranches empty");
 assert(maxClearedTideTier({ clearedDungeons: { tide_5: true, earth_vein_1: true } }) === 5, "branch clears ignore max tide");
 assert(spineFrontierTier({ clearedDungeons: { tide_5: true } }) === 6, "frontier next");
 assert(spineStageFromState({ clearedDungeons: { tide_21: true } }) === 2, "stage from state");
@@ -1638,8 +1724,8 @@ assert(
   "preview shows main/sub hybrid rows"
 );
 assert(prev.genMult >= 1, "preview exposes genMult");
-assert(prev.temperParents?.length === 2 && prev.temperParents[1].roleShort === "戰魂", "preview temper soul tags");
-assert(prev.temperNote?.includes("戰魂"), "preview temper note");
+assert(prev.temperParents?.length === 2 && prev.temperParents[1].personalityName, "preview temper parents");
+assert(prev.temperNote?.includes("覺醒") || prev.temperNote?.includes("主性格"), "preview temper note dual-pool");
 
 const breedGoalNavSt = {
   realm: 2,
@@ -1687,9 +1773,9 @@ const kinLine = petLineage(
 );
 assert(kinLine.kinshipActive, "lineage kinship when parent co-deployed");
 
-assert(PERSONALITY_ROLE_SHORT.fight === "戰魂" && PERSONALITY_ROLE_SHORT.work === "職魂", "soul short labels");
-assert(personalityExplain("fierce")?.roleShort === "戰魂", "fierce roleShort");
-assert(personalityExplain("gentle")?.roleShort === "職魂", "gentle roleShort");
+assert(Object.keys(PERSONALITY_ROLE_SHORT).length === 0, "soul short labels retired");
+assert(personalityExplain("fierce")?.roleShort == null, "fierce no roleShort");
+assert(personalityExplain("gentle")?.roleLabel === "續航", "gentle roleLabel sustain");
 
 const inh = breedStatInheritancePreview(foxA, finB, { rarity: 1, generation: 2, hybrid: true });
 assert(inh.atk >= 0 && inh.hp >= 0, "inherit preview");
@@ -1896,10 +1982,13 @@ assert(dungeonGateView(sweepSt, "tide_1").phase === "ready", "summon ready");
 const sweepRes = runDungeonSweep(sweepSt, "tide_1", 5);
 assert(sweepRes.ok && sweepRes.sweep && sweepRes.count === 5, "sweep 5 runs");
 assert(sweepRes.wins >= 1 && sweepRes.totalStones > 0, "sweep aggregate stones");
+assert(sweepRes.tokenCost === summon.tokenCost && sweepRes.tokenCost > 0, "sweep reports summon token cost");
+assert(String(sweepRes.msg || "").includes("本批召喚已耗"), "sweep msg mentions spent tokens");
 assert(dungeonGateView(sweepSt, "tide_1").phase === "idle", "gate idle after sweep");
 const cost5 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 5);
 const cost10 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 10);
 assert(cost10.total > cost5.total, "10-sweep costs more than 5");
+assert(cost5.label.includes("每場") && cost5.perRun >= 1, "cost label shows per-run");
 assert(clampDungeonSummonCount(7) === 7, "summon count 7 ok");
 const teamPrev = dungeonTeamPreview(sweepSt, "tide_1");
 assert(teamPrev?.ok && teamPrev.allies?.length >= 1 && teamPrev.foes?.length >= 1, "team preview");
@@ -2160,7 +2249,7 @@ const idleFightSt = {
   log: [],
 };
 tickRanchIdle(idleFightSt, 100);
-assert(idleSt.feed > idleFightSt.feed, "diligent idle > fierce idle");
+assert(Math.abs(idleSt.feed - idleFightSt.feed) < 1e-9, "ranch idle ignores personality");
 
 const mission = DISPATCH_MISSIONS.find((m) => m.id === "forage") || DISPATCH_MISSIONS.find((m) => !m.needSite);
 assert(mission?.needElement === "tide", "forage needs tide");
@@ -2425,6 +2514,45 @@ const feedBefore = feedUpSt.feed;
 const upR = upgradePet(feedUpSt, "up-pet", "feed");
 assert(upR.ok && feedUpSt.feed < feedBefore, "feed upgrade deducts feed");
 assert(feedUpSt.ranch[0].level === 2, "feed upgrade levels pet");
+
+/* Split skill upgrade: primary vs second */
+{
+  const skillSt = {
+    dust: 500,
+    materials: { ...emptyMaterials(), echo_resin: 20 },
+    ranch: [
+      {
+        ...buildPetStats({
+          id: "sk1",
+          species: "reefox",
+          element: "tide",
+          personality: "gentle",
+          cost: 0,
+        }),
+        uid: "skill-pet",
+        level: 1,
+        fusionLevel: 0,
+        skillLevel: 1,
+        secondSkillLevel: 1,
+      },
+    ],
+    pets: [],
+    log: [],
+  };
+  const d0 = petDetail(skillSt, "skill-pet");
+  assert(d0 && !d0.secondUnlocked, "second skill locked at lv1");
+  const bad2 = upgradePetSkill(skillSt, "skill-pet", "second");
+  assert(!bad2.ok && bad2.msg.includes("未解鎖"), "second upgrade blocked when locked");
+  const up1 = upgradePetSkill(skillSt, "skill-pet", "primary");
+  assert(up1.ok && skillSt.ranch[0].skillLevel === 2, "primary skill levels");
+  assert(skillSt.ranch[0].secondSkillLevel === 1, "second skill unchanged by primary");
+  skillSt.ranch[0].level = SECOND_SKILL_UNLOCK.level;
+  const d1 = petDetail(skillSt, "skill-pet");
+  assert(d1?.secondUnlocked, "second unlocked by level");
+  const up2 = upgradePetSkill(skillSt, "skill-pet", "second");
+  assert(up2.ok && skillSt.ranch[0].secondSkillLevel === 2, "second skill levels");
+  assert(skillSt.ranch[0].skillLevel === 2, "primary unchanged by second");
+}
 
 assert(!isFusionUnlocked({ clearedDungeons: {} }), "fusion locked pre t3");
 assert(isFusionUnlocked({ clearedDungeons: { tide_3: true } }), "fusion unlock t3");
@@ -2818,12 +2946,19 @@ assert(uiSrc2.includes("fmtOfflineDuration"), "ui formats offline seconds");
 assert(uiSrc2.includes("bondSheetHtml"), "ui bond breakthrough sheet");
 assert(uiSrc2.includes("open-offline-claim"), "ui opens offline claim modal");
 assert(uiSrc2.includes("close-offline-claim"), "ui can close offline claim without taking");
-assert(uiSrc2.includes("離線收集"), "ui offline collect copy");
+assert(uiSrc2.includes("離線收益") || uiSrc2.includes("離線 ·"), "ui offline collect copy");
 assert(uiSrc2.includes("offline-claim-overlay"), "ui offline claim half-modal");
 assert(!uiSrc2.includes("offline-toast"), "ui no floating offline toast");
 assert(!uiSrc2.includes("clear-offline"), "ui no dismiss-offline toast act");
 assert(uiSrc2.includes("visibilitychange"), "ui catch-up on tab visible");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
+assert(uiSrc2.includes("train-qi-chip") || uiSrc2.includes("data-live=qi-bar"), "ui train qi chip");
+assert(uiSrc2.includes("goto-party-fight"), "ui empty party fight CTA");
+assert(uiSrc2.includes("train-rate-summary") || uiSrc2.includes("效率 ×"), "ui train rate summary");
+assert(uiSrc2.includes("cultivate-panel"), "ui cultivate panel class for sheen");
+assert(!uiSrc2.includes("teamBondBarHtml"), "ui unused team bond bar removed");
+assert(!uiSrc2.includes("掛機清場中（請先出戰）"), "ui no old empty-party log");
+assert(!uiSrc2.includes("離開後累積"), "ui no zero-second offline copy");
 assert(uiSrc2.includes("trainFloorNavGates"), "ui uses trainFloorNavGates");
 assert(uiSrc2.includes("data-train-floor-prev"), "ui floor prev");
 assert(uiSrc2.includes("data-train-floor-next"), "ui floor next");
@@ -2868,6 +3003,9 @@ assert(uiSrc2.includes("breakthrough-miss-note"), "ui shows remaining gate count
 const cssSrc = readFileSync(join(__dir, "../css/style.css"), "utf8");
 assert(cssSrc.includes("cond-list.is-compact"), "css compact breakthrough checklist");
 assert(cssSrc.includes("offline-home-slot"), "css offline home slot");
+assert(cssSrc.includes("offline-home-slot.is-claimable") || cssSrc.includes(".is-claimable"), "css offline claimable state");
+assert(cssSrc.includes("train-qi-chip"), "css train qi chip");
+assert(cssSrc.includes("train-rate-summary"), "css train rate summary");
 assert(cssSrc.includes("team-bond-bar"), "css team bond bar");
 assert(cssSrc.includes("panel-subnav-dock"), "css panel subnav dock");
 assert(!/stage-dock[\s\S]{0,180}safe-area-inset-bottom/.test(cssSrc), "css stage-dock no longer eats safe-area");
@@ -3222,7 +3360,7 @@ assert(cssSrc.includes("abyss-event-block"), "css abyss event block");
   const kd = kindExplain("獸");
   assert(kd?.focus && kd.skillName === "撲襲", "kind 獸 explain");
   const pe = personalityExplain("fierce");
-  assert(pe?.combatLabel.includes("攻擊") && pe.roleLabel === "戰鬥向", "fierce personality explain");
+  assert(pe?.combatLabel.includes("攻擊") && pe.roleLabel === "攻勢", "fierce personality explain");
   assert(skillTypeLabel("cleave") === "群體攻擊", "skill type label");
   assert(Object.keys(ELEMENT_EXPLAIN).length === 5, "five element explains");
   assert(Object.keys(KIND_EXPLAIN).length === KINDS.length, "kind explain covers KINDS");
@@ -3234,17 +3372,26 @@ assert(uiSrc2.includes("data-pet-detail-tab"), "ui pet detail tabs");
 assert(uiSrc2.includes("petDetailStatsHtml"), "ui stats tab helper");
 assert(uiSrc2.includes("petDetailTemperHtml"), "ui temper tab helper");
 assert(uiSrc2.includes("petDetailSkillsHtml"), "ui skills tab helper");
-assert(uiSrc2.includes("戰鬥被動"), "ui personality combat copy");
-assert(uiSrc2.includes("相剋"), "ui element matchup copy");
-assert(uiSrc2.includes("data-upgrade-skill") && uiSrc2.includes("data-temper-oil"), "ui keep upgrade/temper");
-assert(uiSrc2.includes("personalitySoulTagHtml"), "ui soul role tags");
-assert(uiSrc2.includes("pet-tag-soul"), "ui soul tag class");
+assert(uiSrc2.includes("petDetailBloodHtml"), "ui blood tab helper");
+assert(uiSrc2.includes('["blood", "血統"]') || uiSrc2.includes('"血統"'), "ui blood tab label");
+assert(uiSrc2.includes("data-rename-pen"), "ui rename pen");
+assert(uiSrc2.includes("temperOilConfirmModal"), "ui temper oil confirm modal");
+assert(uiSrc2.includes("nickRenameModal"), "ui nick rename modal");
+assert(uiSrc2.includes("data-upgrade-skill1") && uiSrc2.includes("data-upgrade-skill2"), "ui split skill upgrade");
+assert(uiSrc2.includes("data-temper-oil"), "ui temper oil on temper tab");
+assert(uiSrc2.includes("data-upgrade-feed"), "ui feed-only upgrade dock");
+assert(!uiSrc2.includes("data-upgrade-stones"), "ui no stone upgrade on detail");
+assert(uiSrc2.includes("personalitySoulTagHtml"), "ui keeps deprecated soul helper");
+assert(uiSrc2.includes("data-awaken-sub") || uiSrc2.includes("覺醒"), "ui awaken sub button");
 assert(uiSrc2.includes("pet-tag-kin"), "ui kinship tag");
 assert(uiSrc2.includes("祖父母"), "ui grandparents lineage");
 assert(uiSrc2.includes("雙親性格"), "ui breed preview temper");
 assert(uiSrc2.includes("partyKinshipUidSet"), "ui party kinship helper");
 assert(cssSrc.includes("pet-detail-tabs"), "css pet detail tabs");
 assert(cssSrc.includes("pet-explain"), "css pet explain blocks");
+assert(cssSrc.includes("pet-rename-pen"), "css rename pen");
+assert(cssSrc.includes("pet-inline-btn"), "css inline pet buttons");
+assert(uiSrc2.includes("相剋"), "ui element matchup copy");
 
 /* Pack A: star / lock / release→soul / batch release */
 {
@@ -3637,7 +3784,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v111"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v114"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");
