@@ -33,7 +33,6 @@ import {
   dungeonGateView,
   dungeonAttackBlockReason,
   isFusionUnlocked,
-  forgeHint,
   tryBreed,
   claimBreed,
   breedStatus,
@@ -143,6 +142,7 @@ import {
   useBreedTicket,
   useBloodCatalyst,
   useTemperOil,
+  awakenSubPersonality,
   nextGoalView,
   dailyHubView,
   dismissDailyHub,
@@ -170,10 +170,12 @@ import {
   DUNGEON_SUMMON_MIN,
   DUNGEON_SUMMON_MAX,
   clampDungeonSummonCount,
+  dungeonEntryTokenPerRun,
   elementExplain,
   kindExplain,
   personalityExplain,
   PERSONALITY_ROLE_SHORT,
+  SUB_PERSONALITY_AWAKEN_LEVEL,
   skillTypeLabel,
   skillPowerMult,
   SECOND_SKILL_UNLOCK,
@@ -303,6 +305,8 @@ function openRanchCullSelect(needSlots = 1) {
   const suggested = suggestRanchCullUids(state, Math.max(1, needSlots));
   ranchRelease = { phase: "select", selected: [...suggested] };
   releaseModal = null;
+  temperOilConfirmModal = null;
+  nickRenameModal = null;
   hatchClaimModal = null;
   tab = "party";
   panelSub = { ...panelSub, party: "ranch" };
@@ -322,6 +326,8 @@ function openRanchCullSelect(needSlots = 1) {
 let releaseModal = null;
 /** 融合確認半屏（取代 browser confirm） */
 let fuseConfirmModal = null;
+let temperOilConfirmModal = null;
+let nickRenameModal = null;
 /**
  * 潮轉符選寵半屏
  * @type {null | { source: "bag" | "abyss" }}
@@ -1249,6 +1255,8 @@ function fullscreenOverlayBlockReason() {
   if (sweepResult) return "掃蕩結算";
   if (offlineClaimOpen) return "離線收益";
   if (hatchClaimModal) return "孵化領取";
+  if (temperOilConfirmModal) return "洗性格確認";
+  if (nickRenameModal) return "改名";
   if (releaseModal) return "放生確認";
   if (condSheetOpen) return "敵情條件";
   if (bondSheetOpen) return "契隊連結";
@@ -2187,6 +2195,8 @@ function render() {
     ${hatchClaimModal ? hatchClaimModalHtml() : ""}
     ${releaseModal ? releaseModalHtml() : ""}
     ${fuseConfirmModal ? fuseConfirmModalHtml() : ""}
+    ${temperOilConfirmModal ? temperOilConfirmModalHtml() : ""}
+    ${nickRenameModal ? nickRenameModalHtml() : ""}
     ${tideShiftModal ? tideShiftModalHtml() : ""}
     ${dailyHubHtml()}
     ${inTutorial ? "" : installBanner()}
@@ -2611,6 +2621,51 @@ function fuseConfirmModalHtml() {
     </div>`;
 }
 
+
+
+function temperOilConfirmModalHtml() {
+  if (!temperOilConfirmModal?.uid) return "";
+  const d = petDetail(state, temperOilConfirmModal.uid);
+  const name = d ? displayPetName(d.pet) : "靈寵";
+  const oil = state.materials?.temper_oil || 0;
+  return `
+    <div class="combat-modal-overlay release-modal-overlay" data-live="temper-oil-modal" role="dialog" aria-label="洗性格確認">
+      <div class="combat-modal-card release-modal-card">
+        <div class="combat-modal-scroll">
+          <h2>確認洗性格</h2>
+          <p class="lead">${escapeHtml(name)}</p>
+          <p class="meta">消耗性格洗劑 ×1（現有 ${oil}），重抽<strong>主性格</strong>；副性格／種族／元素不變。</p>
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" class="ghost" data-act="close-temper-oil-modal">取消</button>
+          <button type="button" class="primary" data-act="confirm-temper-oil" ${oil < 1 ? "disabled" : ""}>確認洗性格</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function nickRenameModalHtml() {
+  if (!nickRenameModal?.uid) return "";
+  const d = petDetail(state, nickRenameModal.uid);
+  const pet = d?.pet;
+  const cur = pet?.nick || "";
+  return `
+    <div class="combat-modal-overlay release-modal-overlay" data-live="nick-rename-modal" role="dialog" aria-label="改名">
+      <div class="combat-modal-card release-modal-card">
+        <div class="combat-modal-scroll">
+          <h2>改名</h2>
+          <p class="lead">${escapeHtml(pet ? displayPetName(pet) : "靈寵")}</p>
+          <label class="meta">暱稱
+            <input type="text" maxlength="${NICK_MAX_LEN}" data-nick-modal-input value="${escapeHtml(cur)}" placeholder="${escapeHtml(pet?.name || "")}" />
+          </label>
+        </div>
+        <div class="combat-modal-actions row">
+          <button type="button" class="ghost" data-act="close-nick-rename-modal">取消</button>
+          <button type="button" class="primary" data-act="confirm-nick-rename">確定</button>
+        </div>
+      </div>
+    </div>`;
+}
 
 function tabBtn(id, label, busy) {
   if (isTabLocked(state, id)) return "";
@@ -3205,14 +3260,9 @@ function petFlagTags(p) {
   return bits.join("");
 }
 
-/** 戰魂／職魂短標（主性格） */
-function personalitySoulTagHtml(personalityId) {
-  const ex = personalityExplain(personalityId);
-  if (!ex?.role) return "";
-  const short = ex.roleShort || PERSONALITY_ROLE_SHORT[ex.role] || ex.roleLabel;
-  return `<span class="pet-tag pet-tag-soul pet-tag-soul-${escapeHtml(ex.role)}" title="${escapeHtml(
-    ex.roleLabel
-  )}">${escapeHtml(short)}</span>`;
+/** @deprecated 已停用卡面戰魂短標 */
+function personalitySoulTagHtml(_personalityId) {
+  return "";
 }
 
 /** 出戰陣中有親子關係的 uid */
@@ -3369,7 +3419,7 @@ function petRow(p, extraBtn = "", tagHtml = "") {
         ${tagHtml}${petFlagTags(p)}
         <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${personalitySoulTagHtml(
           p.personalityId
-        )}${p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
+        )}${p.personality2Awakened && p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
         <span class="muted">攻${fmtInt(p.atk)} 血${fmtInt(p.hp)} 速${fmtInt(p.spd)} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
@@ -3470,13 +3520,25 @@ function attackPreviewModalHtml() {
     )
     .join("");
   const synLine = prev.synergyLabels?.length ? prev.synergyLabels.join("、") : "無";
-  const modeLabel = attackPreview.mode === "sweep" ? `掃蕩 ×${dungeonGateView(state, attackPreview.dungeonId).batch || summonCount}` : "單次挑戰";
+  const previewGate = dungeonGateView(state, attackPreview.dungeonId);
+  const modeLabel = attackPreview.mode === "sweep" ? `掃蕩 ×${previewGate.batch || summonCount}` : "單次挑戰";
+  const spentTokens =
+    previewGate.needsSummon && previewGate.phase === "ready"
+      ? dungeonEntryTokenPerRun(attackPreview.dungeonId) * (previewGate.batch || 1)
+      : 0;
+  const tokenLine =
+    spentTokens > 0
+      ? `<p class="meta">令已於召喚時扣除（本批×${spentTokens}）</p>`
+      : previewGate.needsSummon
+        ? ""
+        : `<p class="meta">首通／教學：無需潮霧令</p>`;
   return `
     <div class="sheet-overlay" role="presentation" data-live="attack-preview">
       <div class="sheet-card" role="dialog" aria-label="出戰預覽" data-sheet-card>
         <div class="sheet-handle" aria-hidden="true"></div>
         <h3>出戰預覽 · ${escapeHtml(prev.dungeonName)}</h3>
         <p class="meta">${modeLabel} · ${prev.waveCount} 波（普${prev.roles.normal}/精${prev.roles.elite}/王${prev.roles.boss}） · 戰術【${escapeHtml(prev.tacticsName)}】· 陣型【${escapeHtml(prev.formationName)}】</p>
+        ${tokenLine}
         <p class="meta">羈絆：${escapeHtml(synLine)} · 條件 ${prev.conditionsMet}/${prev.conditionsTotal}${prev.challengeMet ? "" : " · 挑戰未達"}</p>
         <h4>我方</h4>
         <ul class="preview-roster">${allyRows}</ul>
@@ -4189,6 +4251,7 @@ function petDetailTabNav(active) {
     ["stats", "屬性"],
     ["temper", "性格"],
     ["skills", "技能"],
+    ["blood", "血統"],
   ];
   return `<nav class="pet-detail-tabs" aria-label="靈寵詳情分頁">${tabs
     .map(
@@ -4199,104 +4262,95 @@ function petDetailTabNav(active) {
 }
 
 function petDetailStatsHtml(pet, detail, rarity) {
-  const kindEx = kindExplain(pet.kind);
   const elEx = elementExplain(pet.elementId);
   const base = detail.baseline;
-  const bonus = detail.innateBonus || { atk: 0, hp: 0, spd: 0 };
-  const bonusLine = (n) => (n > 0 ? ` <span class="muted">（天生＋${fmtStat(n)}）</span>` : "");
+  const showFuse =
+    isFusionUnlocked(state) || (detail.fusionLevel || 0) > 0;
   return `
     <ul class="skill-list pet-detail-block">
-      <li><strong>戰力</strong> — 攻${fmtStat(pet.atk)}${bonusLine(bonus.atk)} · 血${fmtStat(pet.hp)}${bonusLine(bonus.hp)} · 速${fmtStat(pet.spd)}${bonusLine(bonus.spd)}</li>
+      <li><strong>戰力</strong> — 攻${fmtStat(pet.atk)} · 血${fmtStat(pet.hp)} · 速${fmtStat(pet.spd)}</li>
       ${
         base
-          ? `<li><strong>種族基準</strong> — 攻${base.atk} 血${base.hp} 速${base.spd}（未計等級／融階）</li>`
+          ? `<li class="muted">種族基準 攻${base.atk} 血${base.hp} 速${base.spd}</li>`
           : ""
       }
-      <li><strong>稀有</strong> — <span class="rarity rarity-${rarity.color}">${escapeHtml(rarity.name)}</span></li>
-      <li><strong>融合出戰</strong> — ×${fmtMult(detail.fusionPowerMult || 1)}（融階 ${detail.fusionLevel || 0}）</li>
-    </ul>
-    <div class="pet-explain">
-      <h3>種類 · ${escapeHtml(pet.kind)}</h3>
-      <p class="meta">${escapeHtml(kindEx?.blurb || "種類決定主技能流派。")}${
-        kindEx?.focus ? ` <span class="muted">偏向：${escapeHtml(kindEx.focus)}</span>` : ""
-      }</p>
+      <li><strong>稀有</strong> — <span class="rarity rarity-${rarity.color}">${escapeHtml(rarity.name)}</span> · ${escapeHtml(pet.kind)}·${escapeHtml(pet.elementName || "")}</li>
       ${
-        kindEx?.skillName
-          ? `<p class="meta">種類主技【${escapeHtml(kindEx.skillName)}】</p>`
+        showFuse
+          ? `<li><strong>融合</strong> — 階${detail.fusionLevel || 0} · 出戰×${fmtMult(detail.fusionPowerMult || 1)}</li>`
           : ""
       }
-    </div>
-    <div class="pet-explain">
-      <h3>元素 · ${escapeHtml(pet.elementName || elEx?.name || "—")}</h3>
-      <p class="meta">${escapeHtml(elEx?.blurb || "元素影響白板同相剋。")}${
-        elEx?.focus ? ` <span class="muted">偏向：${escapeHtml(elEx.focus)}</span>` : ""
-      }</p>
       ${
         elEx
-          ? `<p class="meta">白板倍率 攻${fmtGrowthMult(elEx.atk)} · 血${fmtGrowthMult(elEx.hp)} · 速${fmtGrowthMult(elEx.spd)}</p>
-      <p class="meta">相剋：克${escapeHtml(elEx.beats)}（×${elEx.advMult}）· 被${escapeHtml(elEx.beatenBy)}克（×${elEx.disMult}）</p>
-      <p class="meta muted">${escapeHtml(elEx.cycle)}</p>`
+          ? `<li class="muted">相剋：克${escapeHtml(elEx.beats)} · 被${escapeHtml(elEx.beatenBy)}克</li>`
           : ""
       }
-    </div>`;
+    </ul>
+    <p class="meta pet-detail-upgrade muted">升級耗 飼料×${detail.upgradeFeedCost ?? "—"}＋材料</p>`;
 }
 
 function petDetailTemperHtml(pet) {
   const main = personalityExplain(pet.personalityId);
-  const sub = pet.personality2Id ? personalityExplain(pet.personality2Id) : null;
-  const blood =
-    pet.bloodlineName && pet.bloodlineName !== "無紋"
-      ? `<li><strong>血脈</strong> — ${escapeHtml(pet.bloodlineName)}</li>`
-      : "";
-  const block = (ex, tag) => {
-    if (!ex) return "";
-    return `
-      <div class="pet-explain">
-        <h3>${escapeHtml(tag)} · ${escapeHtml(ex.name)} ${
-          ex.roleShort
-            ? `<span class="pet-tag pet-tag-soul pet-tag-soul-${escapeHtml(ex.role)}" title="${escapeHtml(
-                ex.roleLabel
-              )}">${escapeHtml(ex.roleShort)}</span>`
-            : `<span class="muted">（${escapeHtml(ex.roleLabel)}）</span>`
-        }</h3>
-        <p class="meta"><strong>戰鬥被動</strong> — ${escapeHtml(ex.combatLabel)}</p>
-        <p class="meta">成長偏向 攻${fmtGrowthMult(ex.growthAtk)} · 血${fmtGrowthMult(ex.growthHp)} · 速${fmtGrowthMult(ex.growthSpd)}</p>
-        ${ex.sustainBias ? `<p class="meta muted">續航親和：治療／減傷技較易惠及此寵</p>` : ""}
-        <p class="meta muted">牧場產出 飼料×${(+ex.workFeed).toFixed(2)} · 靈塵×${(+ex.workDust).toFixed(2)} · 潮霧令×${(+ex.workToken).toFixed(2)}</p>
-      </div>`;
-  };
+  const awakened = !!pet.personality2Awakened && !!pet.personality2Id;
+  const sub = awakened ? personalityExplain(pet.personality2Id) : null;
+  const lv = pet.level ?? 1;
+  const canAwaken = !awakened && lv >= SUB_PERSONALITY_AWAKEN_LEVEL;
+  const oil = state.materials?.temper_oil || 0;
+  const washBtn = `<button type="button" class="pet-inline-btn" data-temper-oil="${escapeHtml(pet.uid)}" ${
+    oil < 1 ? "disabled" : ""
+  } title="性格洗劑×${oil}">洗</button>`;
+  const awakenBtn = canAwaken
+    ? `<button type="button" class="pet-inline-btn primary" data-awaken-sub="${escapeHtml(pet.uid)}">覺醒</button>`
+    : "";
   return `
-    <ul class="skill-list pet-detail-block">
-      <li><strong>主性格</strong> — ${escapeHtml(pet.personalityName || main?.name || "—")}</li>
+    <div class="pet-explain pet-temper-card">
+      <h3>
+        <span>主性格 · ${escapeHtml(pet.personalityName || main?.name || "—")}</span>
+        ${washBtn}
+      </h3>
+      <p class="meta">戰鬥 · ${escapeHtml(main?.combatLabel || "—")}</p>
+    </div>
+    <div class="pet-explain pet-temper-card">
+      <h3>
+        <span>副性格 · ${
+          awakened
+            ? escapeHtml(pet.personality2Name || "—")
+            : `<span class="muted">未覺醒</span>`
+        }</span>
+        ${awakenBtn}
+      </h3>
       ${
-        pet.personality2Name
-          ? `<li><strong>副性格</strong> — ${escapeHtml(pet.personality2Name)} <span class="muted">（戰鬥被動約三成比重）</span></li>`
-          : `<li><strong>副性格</strong> — <span class="muted">未覺醒</span></li>`
+        sub
+          ? `<p class="meta">成長 攻${fmtGrowthMult(sub.growthAtk)} · 血${fmtGrowthMult(sub.growthHp)} · 速${fmtGrowthMult(sub.growthSpd)}</p>`
+          : `<p class="meta muted">達 Lv.${SUB_PERSONALITY_AWAKEN_LEVEL} 可覺醒；遲覺醒會回溯補算。</p>`
       }
-      ${blood}
-    </ul>
-    ${block(main, "主性格")}
-    ${sub ? block(sub, "副性格") : ""}
-    <p class="meta">可用性格洗劑重抽主性格（唔改種族／元素）。</p>`;
+    </div>`;
 }
 
-function petSkillCardHtml(skill, { level, maxed, dustCost, skillMatHtml, title }) {
+function petSkillCardHtml(skill, { level, maxed, dustCost, skillMatHtml, title, upgradeAttr }) {
   if (!skill) {
     return `<div class="pet-explain"><h3>${escapeHtml(title)}</h3><p class="meta muted">暫無技能資料。</p></div>`;
   }
   const pow = skill.power != null ? (skill.power * skillPowerMult(level || 1)).toFixed(2) : null;
-  const lvBit =
-    level != null
-      ? `Lv.${level}${maxed ? "（滿）" : dustCost != null ? ` · 升需靈塵${dustCost}${skillMatHtml ? `＋${skillMatHtml}` : ""}` : ""}`
+  const lvBit = level != null ? `Lv.${level}${maxed ? "（滿）" : ""}` : "";
+  const costBit =
+    !maxed && dustCost != null
+      ? `升需靈塵${dustCost}${skillMatHtml ? `＋${skillMatHtml}` : ""}`
+      : "";
+  const upBtn =
+    upgradeAttr && !maxed
+      ? `<button type="button" class="pet-inline-btn primary" ${upgradeAttr}>升級</button>`
       : "";
   return `
-    <div class="pet-explain">
-      <h3>${escapeHtml(title)} · 【${escapeHtml(skill.name)}】</h3>
-      ${lvBit ? `<p class="meta">${lvBit}</p>` : ""}
-      <p class="meta">${escapeHtml(skill.desc || "效果未註明。")}</p>
+    <div class="pet-explain pet-skill-card">
+      <h3>
+        <span>${escapeHtml(title)} · 【${escapeHtml(skill.name)}】${lvBit ? ` ${lvBit}` : ""}</span>
+        ${upBtn}
+      </h3>
+      <p class="meta">${escapeHtml(skill.desc || "")}</p>
       <p class="meta muted">${escapeHtml(skillTypeLabel(skill.type))} · CD${skill.cd ?? "—"}${
-        pow != null ? ` · 威力約×${pow}` : ""
-      }</p>
+        pow != null ? ` · 威力×${pow}` : ""
+      }${costBit ? ` · ${costBit}` : ""}</p>
     </div>`;
 }
 
@@ -4309,24 +4363,33 @@ function petDetailSkillsHtml(pet, detail) {
     skillMaxed,
     secondSkill,
     secondUnlocked,
+    secondSkillLevel,
+    secondSkillDustCost,
+    secondSkillMatCost,
+    secondSkillMaxed,
   } = detail;
   const skillMatHtml =
     skillMatsNeed && Object.keys(skillMatsNeed).length ? matAffordHtml(skillMatsNeed) : "";
+  const secondMatHtml =
+    secondSkillMatCost && Object.keys(secondSkillMatCost).length
+      ? matAffordHtml(secondSkillMatCost)
+      : "";
   const unlockNeed = `融階≥${SECOND_SKILL_UNLOCK.fusionLevel} 或 Lv≥${SECOND_SKILL_UNLOCK.level}`;
   const secondBlock = secondUnlocked
     ? petSkillCardHtml(secondSkill, {
-        level: skillLevel,
-        maxed: skillMaxed,
-        dustCost: null,
-        skillMatHtml: "",
+        level: secondSkillLevel ?? 1,
+        maxed: !!secondSkillMaxed,
+        dustCost: secondSkillDustCost,
+        skillMatHtml: secondMatHtml,
         title: "第二技能",
+        upgradeAttr: `data-upgrade-skill2="${escapeHtml(pet.uid)}"`,
       })
     : `<div class="pet-explain">
         <h3>第二技能</h3>
         <p class="meta muted">未解鎖（${escapeHtml(unlockNeed)}）</p>
         ${
           secondSkill
-            ? `<p class="meta">預覽【${escapeHtml(secondSkill.name)}】— ${escapeHtml(secondSkill.desc || "")}</p>`
+            ? `<p class="meta">預覽【${escapeHtml(secondSkill.name)}】</p>`
             : ""
         }
       </div>`;
@@ -4337,8 +4400,20 @@ function petDetailSkillsHtml(pet, detail) {
       dustCost,
       skillMatHtml,
       title: "主技能",
+      upgradeAttr: `data-upgrade-skill1="${escapeHtml(pet.uid)}"`,
     })}
     ${secondBlock}`;
+}
+
+function petDetailBloodHtml(pet, lineage) {
+  const blood =
+    pet.bloodlineName && pet.bloodlineName !== "無紋" ? pet.bloodlineName : "無紋";
+  return `
+    <div class="pet-explain">
+      <h3>血脈紋</h3>
+      <p class="meta">${escapeHtml(blood)}</p>
+    </div>
+    ${lineageHtml(lineage)}`;
 }
 
 function petsDetailView() {
@@ -4350,10 +4425,8 @@ function petsDetailView() {
   const {
     pet,
     deployed,
-    upgradeCost,
     upgradeFeedCost: feedCost,
     fuseMaxed,
-    skillMaxed,
   } = detail;
   const lv = pet.level ?? 1;
   const fus = pet.fusionLevel ?? 0;
@@ -4363,51 +4436,38 @@ function petsDetailView() {
   const onDispatch = !deployed && busySet.has(pet.uid);
   const loc = deployed ? "出戰中" : onDispatch ? "派遣中" : "牧場待命";
   const detailTab = petView.detailTab || "stats";
+  const lineage = petLineage(state, pet.uid);
   const tabBody =
     detailTab === "temper"
       ? petDetailTemperHtml(pet)
       : detailTab === "skills"
         ? petDetailSkillsHtml(pet, detail)
-        : petDetailStatsHtml(pet, detail, r);
-  const lineage = petLineage(state, pet.uid);
+        : detailTab === "blood"
+          ? petDetailBloodHtml(pet, lineage)
+          : petDetailStatsHtml(pet, detail, r);
   const soulGain = releaseSoulGain(pet);
-  const starOn = !!pet.starred;
   const lockOn = !!pet.locked;
   const matingBusy = breedBusyUids(state).has(pet.uid);
+  const fuseUnlocked = isFusionUnlocked(state);
+  const fusBit = fuseUnlocked || fus > 0 ? ` · 融${fus}` : "";
   return wrapStage(
     "",
     `<div class="pet-detail-hero">
       ${petArtFromPet(pet, { size: 52, generation: g, className: "pet-art--detail" })}
       <div class="pet-detail-hero-text">
-        <h2>${escapeHtml(displayPetName(pet))}${petFlagTags(pet)}${personalitySoulTagHtml(pet.personalityId)}</h2>
-        <p class="lead">${escapeHtml(loc)} · ${genTagHtml(g)} · Lv.${lv} 融${fus}</p>
+        <h2>
+          <span class="pet-detail-name">${escapeHtml(displayPetName(pet))}</span>${petFlagTags(pet)}
+          <button type="button" class="pet-rename-pen" data-rename-pen="${escapeHtml(pet.uid)}" aria-label="改名" title="改名">✎</button>
+        </h2>
+        <p class="lead">${escapeHtml(loc)} · Lv.${lv}${fusBit}</p>
       </div>
     </div>
     ${petDetailTabNav(detailTab)}
-    ${tabBody}
-    <p class="meta pet-detail-upgrade"><strong>升級</strong> — ${upgradeCostLine(upgradeCost, feedCost, lv)}</p>
-    ${lineageHtml(lineage)}
-    <div class="row gear-row">
-      <label>暱稱<input type="text" maxlength="${NICK_MAX_LEN}" data-nick-input value="${escapeHtml(pet.nick || "")}" placeholder="${escapeHtml(pet.name)}" /></label>
-      <button type="button" data-rename="${escapeHtml(pet.uid)}">命名</button>
-    </div>
-    <div class="row pet-flag-row">
-      <button type="button" class="secondary${starOn ? " on" : ""}" data-toggle-star="${escapeHtml(pet.uid)}">${
-        starOn ? "★ 已星標" : "☆ 星標"
-      }</button>
-      <button type="button" class="secondary${lockOn ? " on" : ""}" data-toggle-lock="${escapeHtml(pet.uid)}">${
-        lockOn ? "已上鎖" : "上鎖"
-      }</button>
-    </div>`,
+    ${tabBody}`,
     `<div class="row">
-      <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade-feed="${escapeHtml(pet.uid)}">飼料升級</button>
-      <button type="button" class="secondary" data-upgrade="${escapeHtml(pet.uid)}">靈石升級</button>
-      <button type="button" data-upgrade-skill="${escapeHtml(pet.uid)}" ${skillMaxed ? "disabled" : ""}>技能</button>
-      <button type="button" data-temper-oil="${escapeHtml(pet.uid)}" ${(state.materials?.temper_oil || 0) < 1 ? "disabled" : ""}>洗性格${(state.materials?.temper_oil || 0) > 0 ? `（${state.materials.temper_oil}）` : ""}</button>
-    </div>
-    <div class="row">
+      <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade-feed="${escapeHtml(pet.uid)}">升級（飼料×${feedCost ?? "—"}）</button>
       ${
-        isFusionUnlocked(state)
+        fuseUnlocked
           ? `<button type="button" class="primary${tutGlow({ type: "start-fuse" })}" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>`
           : ""
       }
@@ -4681,7 +4741,7 @@ function sweepModalHtml() {
           <div class="settle-summary-row">
             <div>
               <strong class="settle-total">+${r.totalStones} 靈石</strong>
-              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 耗潮霧令×${r.tokenCost || 0} · 碎片 +${r.totalScrap || 0}</span>
+              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 本批召喚已耗潮霧令×${r.tokenCost || 0} · 碎片 +${r.totalScrap || 0}</span>
             </div>
           </div>
           ${encounterLine}
@@ -5130,15 +5190,17 @@ function dungeonPanel() {
     : "";
   const gateNote = !gate
     ? ""
-    : gate.summoning
-      ? ` · 凝聚中 ${summonSec}s`
-      : gate.needsSummon && gate.phase === "ready"
-        ? gate.batch > 1
-          ? ` · 就緒 · 掃蕩×${gate.batch}`
-          : " · 就緒可挑戰"
-        : gate.needsSummon
-          ? " · 待召喚"
-          : "";
+    : locked
+      ? ` · 需${escapeHtml(stageAt(dCur.needRealm).name)}`
+      : gate.summoning
+        ? ` · 凝聚中 ${summonSec}s`
+        : gate.needsSummon && gate.phase === "ready"
+          ? gate.batch > 1
+            ? ` · 就緒 · 掃蕩×${gate.batch}`
+            : " · 就緒可挑戰"
+          : gate.needsSummon
+            ? " · 待召喚"
+            : "";
 
   let metN = 0;
   let missN = 0;
@@ -5173,9 +5235,7 @@ function dungeonPanel() {
           <div>
             <strong>${escapeHtml(dCur.name)}</strong>
             ${variantLine}
-            <span class="muted">${escapeHtml(roleBits)} · ${dCur.reward.stones}石 · ${clearNote}${
-              locked ? ` · 需${escapeHtml(stageAt(dCur.needRealm).name)}` : ""
-            }${gateNote}</span>
+            <span class="muted">${escapeHtml(roleBits)} · ${dCur.reward.stones}石 · ${clearNote}${gateNote}</span>
             ${passiveLine ? `<span class="muted">${escapeHtml(passiveLine)}</span>` : ""}
           </div>
         </div>
@@ -5196,6 +5256,7 @@ function dungeonPanel() {
           if (!dCur) return `<div class="row dungeon-dock-row">${pager}</div>`;
           const tokenHave = Math.floor(state.materials?.mist_token || 0);
           const baseCdMs = dCur.cooldownMs || gate?.baseCdMs || 20_000;
+          const tokenName = "潮霧令";
 
           // 首通／教學：直接進攻（鎖階段仍可撳，彈原因）
           if (!gate?.needsSummon) {
@@ -5220,12 +5281,13 @@ function dungeonPanel() {
           // 凝聚中
           if (gate.summoning) {
             const batch = gate.batch || 1;
+            const spent = dungeonEntryTokenPerRun(dCur.id) * batch;
             const totalMs = Math.max(1, baseCdMs * batch);
             const summonPct = Math.min(100, Math.round(((totalMs - (gate.summonLeftMs || 0)) / totalMs) * 100));
             return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">${pager}</div>
           <div class="summon-progress-wrap">
-            <p class="sweep-label">潮霧凝聚中 · ${summonSec}s${batch > 1 ? ` · ×${batch}` : ""}</p>
+            <p class="sweep-label">潮霧凝聚中 · ${summonSec}s${batch > 1 ? ` · ×${batch}` : ""} · 已扣${tokenName}×${spent}</p>
             <div class="bar summon-bar"><i data-live="summon-bar" style="width:${summonPct}%"></i></div>
           </div>
         </div>`;
@@ -5234,6 +5296,7 @@ function dungeonPanel() {
           // 就緒：開始挑戰／掃蕩
           if (gate.phase === "ready") {
             const batch = gate.batch || 1;
+            const spent = dungeonEntryTokenPerRun(dCur.id) * batch;
             const challengeBtn =
               batch > 1
                 ? `<button type="button" class="primary dungeon-attack-btn sweep-run-btn" data-attack-preview="${escapeHtml(dCur.id)}" data-attack-mode="sweep" data-dungeon="${escapeHtml(dCur.id)}">開始掃蕩 ×${batch}</button>`
@@ -5243,7 +5306,7 @@ function dungeonPanel() {
             ${pager}
             ${challengeBtn}
           </div>
-          <p class="sweep-label">秘境已現形 — 開戰後將散去，需再召喚</p>
+          <p class="sweep-label">秘境已現形 · 本批召喚已耗${tokenName}×${spent} — 開戰後散去</p>
         </div>`;
           }
 
@@ -5251,6 +5314,11 @@ function dungeonPanel() {
           const costInfo = dungeonSweepCost(state, dCur.id, summonCount);
           const affordOk = !!costInfo?.canAfford;
           const summonSecEst = Math.ceil((baseCdMs * summonCount) / 1000);
+          const summonBlockReason = locked
+            ? dungeonAttackBlockReason(state, dCur.id)
+            : !affordOk
+              ? `潮霧令不足（需 ${costInfo.total}，現 ${costInfo.have}）`
+              : "";
           return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">${pager}</div>
           <div class="summon-controls">
@@ -5259,10 +5327,10 @@ function dungeonPanel() {
               <input type="range" class="summon-slider" min="${DUNGEON_SUMMON_MIN}" max="${DUNGEON_SUMMON_MAX}" value="${summonCount}" data-summon-slider aria-label="召喚場數" />
               <span class="muted">${DUNGEON_SUMMON_MIN}–${DUNGEON_SUMMON_MAX}</span>
             </div>
-            <p class="sweep-label">潮霧令 ${fmtInt(tokenHave)}（秘境不掉令）· ${costInfo.label} · 約 ${summonSecEst}s</p>
+            <p class="sweep-label">持有${tokenName} ${fmtInt(tokenHave)}（秘境不掉）· ${costInfo.label} · 約 ${summonSecEst}s</p>
             <button type="button" class="primary sweep-run-btn" data-summon="${escapeHtml(dCur.id)}" data-summon-count="${summonCount}" ${
               locked || !affordOk ? "disabled" : ""
-            }>召喚 ×${summonCount}</button>
+            }${summonBlockReason ? ` data-summon-block="${escapeHtml(summonBlockReason)}"` : ""}>召喚 ×${summonCount}</button>
           </div>
         </div>`;
         })()
@@ -5295,10 +5363,14 @@ function dungeonPanel() {
     return wrapStage(nav, abyssPanelHtml());
   }
 
+  const leadLine = gate?.needsSummon
+    ? "已通關：召喚凝聚 → 就緒挑戰 → 戰後散去（耗潮霧令）"
+    : "首通可直接進攻 · 通關後需召喚凝聚再挑戰";
+
   return wrapStage(
     nav,
     `<h2>潮汐秘境</h2>
-    <p class="lead">已通關層需先召喚凝聚 · 就緒後挑戰 · 戰後散去</p>
+    <p class="lead">${leadLine}</p>
     <label class="combat-pref-toggle"><input type="checkbox" data-act="toggle-combat-fast" ${combatPrefs.fastMode ? "checked" : ""}/> 已通關秘境快速戰鬥</label>
     ${
       dailyMod
@@ -5664,6 +5736,31 @@ function bind() {
         }
         render();
         flashResult(r);
+      } else if (act === "close-temper-oil-modal") {
+        temperOilConfirmModal = null;
+        render();
+      } else if (act === "confirm-temper-oil") {
+        if (!temperOilConfirmModal?.uid) return;
+        const uid = temperOilConfirmModal.uid;
+        temperOilConfirmModal = null;
+        const r = useTemperOil(state, uid);
+        if (r.ok) petView = { ...petView, detailTab: "temper" };
+        saveState(state);
+        render();
+        setFlash(r.msg);
+      } else if (act === "close-nick-rename-modal") {
+        nickRenameModal = null;
+        render();
+      } else if (act === "confirm-nick-rename") {
+        if (!nickRenameModal?.uid) return;
+        const uid = nickRenameModal.uid;
+        const input = document.querySelector("[data-nick-modal-input]");
+        const nick = input ? input.value : "";
+        nickRenameModal = null;
+        const r = renamePet(state, uid, nick);
+        saveState(state);
+        render();
+        setFlash(r.msg);
       } else if (act === "close-tide-shift-modal") {
         tideShiftModal = null;
         render();
@@ -6078,24 +6175,48 @@ function bind() {
       flashResult(r);
     });
   });
-  app.querySelectorAll("[data-upgrade-skill]").forEach((btn) => {
+  app.querySelectorAll("[data-awaken-sub]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = awakenSubPersonality(state, btn.dataset.awakenSub);
+      if (r.ok) {
+        petView = { ...petView, detailTab: "temper" };
+        saveState(state);
+      }
+      render();
+      setFlash(r.msg);
+    });
+  });
+  app.querySelectorAll("[data-temper-oil]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
-      const r = upgradePetSkill(state, btn.dataset.upgradeSkill);
+      temperOilConfirmModal = { uid: btn.dataset.temperOil };
+      render();
+    });
+  });
+  app.querySelectorAll("[data-rename-pen]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      nickRenameModal = { uid: btn.dataset.renamePen };
+      render();
+    });
+  });
+  app.querySelectorAll("[data-upgrade-skill1]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const r = upgradePetSkill(state, btn.dataset.upgradeSkill1, "primary");
       if (r.ok) petView = { ...petView, detailTab: "skills" };
       saveState(state);
       render();
       flashResult(r);
     });
   });
-  app.querySelectorAll("[data-temper-oil]").forEach((btn) => {
+  app.querySelectorAll("[data-upgrade-skill2]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
-      const r = useTemperOil(state, btn.dataset.temperOil);
-      if (r.ok) petView = { ...petView, detailTab: "temper" };
+      const r = upgradePetSkill(state, btn.dataset.upgradeSkill2, "second");
+      if (r.ok) petView = { ...petView, detailTab: "skills" };
       saveState(state);
       render();
-      setFlash(r.msg);
+      flashResult(r);
     });
   });
   app.querySelectorAll("[data-dismiss-pending]").forEach((btn) => {
@@ -6117,15 +6238,6 @@ function bind() {
       }
       releaseModal = { uids: [uid], fromDetail: true };
       render();
-    });
-  });
-  app.querySelectorAll("[data-rename]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const input = app.querySelector("[data-nick-input]");
-      const r = renamePet(state, btn.dataset.rename, input?.value || "");
-      saveState(state);
-      render();
-      setFlash(r.msg);
     });
   });
   app.querySelectorAll("[data-claim-daily]").forEach((btn) => {
@@ -6590,7 +6702,9 @@ function bind() {
   });
   app.querySelectorAll("[data-pet-back]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+      temperOilConfirmModal = null;
+      nickRenameModal = null;
+      petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [], detailTab: "stats" };
       render();
     });
   });
@@ -6609,7 +6723,7 @@ function bind() {
   app.querySelectorAll("[data-summon]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) {
-        setFlash("潮霧令不足或尚未解鎖。");
+        setFlash(btn.dataset.summonBlock || "潮霧令不足或尚未解鎖。");
         return;
       }
       const n = clampDungeonSummonCount(btn.dataset.summonCount || summonCount);

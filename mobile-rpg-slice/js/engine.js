@@ -52,7 +52,6 @@ import {
   petSkillIds,
   KIND_SECOND_SKILLS,
   SECOND_SKILL_UNLOCK,
-  rollGearDrop,
   rollDungeonMatDrop,
   partySynergy,
   MASTER_EQUIP_SLOTS,
@@ -90,8 +89,17 @@ import {
   RARITY_MAX,
   SPECIES,
   PERSONALITIES,
+  MAIN_PERSONALITIES,
+  SUB_PERSONALITIES,
   PERSONALITY_ROLE_LABEL,
   PERSONALITY_ROLE_SHORT,
+  migratePetPersonalityFields,
+  applySubGrowthToLevelGains,
+  retroactiveSubGrowthBonus,
+  SUB_PERSONALITY_AWAKEN_LEVEL,
+  pickMainPersonalityId,
+  pickSubPersonalityId,
+  RANCH_IDLE_BASE,
   petGeneration,
   genLabel,
   childGenerationOdds,
@@ -690,16 +698,21 @@ function normalizePet(p) {
   // 舊存檔融2／3 保留；新規則終身一次靠 nextFusionStage 攔截
   if (next.skillLevel == null) next.skillLevel = 1;
   if (next.skillLevel > SKILL_MAX_LEVEL) next.skillLevel = SKILL_MAX_LEVEL;
+  {
+    const lv = next.level ?? 1;
+    const fus = next.fusionLevel ?? 0;
+    const secondUnlocked =
+      fus >= SECOND_SKILL_UNLOCK.fusionLevel || lv >= SECOND_SKILL_UNLOCK.level;
+    if (next.secondSkillLevel == null) {
+      next.secondSkillLevel = secondUnlocked ? next.skillLevel : 1;
+    }
+    if (next.secondSkillLevel > SKILL_MAX_LEVEL) next.secondSkillLevel = SKILL_MAX_LEVEL;
+  }
   if (next.rarity == null) next.rarity = 0;
   if (next.rarity > RARITY_MAX) next.rarity = RARITY_MAX;
   if (!next.rarityName) next.rarityName = rarityInfo(next.rarity).name;
   next.generation = petGeneration(next);
-  if (next.personality2Id && PERSONALITIES[next.personality2Id]) {
-    next.personality2Name = PERSONALITIES[next.personality2Id].name;
-  } else {
-    next.personality2Id = next.personality2Id || null;
-    next.personality2Name = next.personality2Name || null;
-  }
+  migratePetPersonalityFields(next);
   next.bloodmarks = normalizeBloodmarks(next.bloodmarks);
   next.bloodlineName = bloodlineLabel(next.bloodmarks);
   // 種族↔種類同步：舊熒鰭可能仍標鱗
@@ -1027,10 +1040,10 @@ export function nextRealm(state) {
   return nextStageAt(state.realm);
 }
 
-/** 當日秘境完整定義（tier 公式 + 每日變體）；側枝走獨立 builder */
+/** 當日秘境完整定義（tier 公式 + 每日變體）；側枝已廢止 */
 export function resolveDungeon(state, dungeonId) {
   if (isBranchDungeonId(dungeonId)) {
-    return resolveBranchDungeon(dungeonId);
+    return null;
   }
   ensureDungeonDaily(state);
   const key = state.dungeonDaily?.date || todayKey();
@@ -1050,12 +1063,11 @@ export function tickRanchIdle(state, elapsedSec) {
   const g = RANCH_IDLE_GLOBAL_MULT;
   for (const p of ranch) {
     if (!p || busy.has(p.uid)) continue;
-    const pe = IDLE_BY_PERSONALITY[p.personalityId] || { feed: 0.06, dust: 0.025, token: 0.004 };
-    const pe2 = p.personality2Id ? IDLE_BY_PERSONALITY[p.personality2Id] : null;
+    const pe = RANCH_IDLE_BASE;
     const el = IDLE_BY_ELEMENT[p.elementId] || { feed: 1, dust: 1 };
-    const feedRate = pe2 ? pe.feed * 0.7 + pe2.feed * 0.3 : pe.feed;
-    const dustRate = pe2 ? pe.dust * 0.7 + pe2.dust * 0.3 : pe.dust;
-    const tokenRate = pe2 ? pe.token * 0.7 + (pe2.token || 0) * 0.3 : pe.token || 0;
+    const feedRate = pe.feed;
+    const dustRate = pe.dust;
+    const tokenRate = pe.token || 0;
     feed += feedRate * (el.feed || 1) * g * sec;
     dust += dustRate * (el.dust || 1) * g * sec;
     token += tokenRate * g * sec;
@@ -1502,6 +1514,14 @@ function buildTrainCombatAllies(state) {
       spd: Math.round(p.spd * synergy.spdMult * fSpd * pSpd * bm.spd),
       elementId: p.elementId,
       skillLevel: p.skillLevel ?? 1,
+      secondSkillId: (() => {
+        const sid = secondSkillIdForPet(p);
+        const unlocked =
+          (p.fusionLevel ?? 0) >= SECOND_SKILL_UNLOCK.fusionLevel ||
+          (p.level ?? 1) >= SECOND_SKILL_UNLOCK.level;
+        return unlocked && sid ? sid : null;
+      })(),
+      secondSkillLevel: p.secondSkillLevel ?? 1,
       skills,
       skillCd: Object.fromEntries(skills.map((id) => [id, 0])),
       guardTurns: 0,
@@ -3442,20 +3462,6 @@ export function startDispatch(state, missionId, petUids) {
   }
   const now = Date.now();
   let durationMs = mission.durationMs;
-  const timeMults = uids.map((uid) => {
-    const hit = findOwnedPet(state, uid);
-    const pe = PERSONALITIES[hit?.pet?.personalityId];
-    const pe2 = PERSONALITIES[hit?.pet?.personality2Id];
-    if (!pe && !pe2) return 1;
-    if (!pe2) return pe.dispatchTime ?? 1;
-    if (!pe) return pe2.dispatchTime ?? 1;
-    return (pe.dispatchTime ?? 1) * 0.7 + (pe2.dispatchTime ?? 1) * 0.3;
-  });
-  if (timeMults.length) {
-    durationMs = Math.round(
-      durationMs * (timeMults.reduce((a, b) => a + b, 0) / timeMults.length)
-    );
-  }
   state.dispatches.push({
     dispatchId: `disp-${now}-${Math.floor(Math.random() * 999)}`,
     missionId: mission.id,
@@ -3556,17 +3562,12 @@ export function isFusionUnlocked(state) {
 export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
   const d = resolveDungeon(state, dungeonId);
   if (!d) return "秘境不存在。";
-  if ((state.realm | 0) < (d.needRealm | 0)) {
-    return `需要階段【${stageAt(d.needRealm).name}】才能進攻（現【${stageAt(state.realm).name}】）。敵情條件達標仍要先突破。`;
-  }
+  const realmMsg = dungeonRealmGateMsg(state, d);
+  if (realmMsg) return realmMsg;
   if (!state.pets?.length) return "請先派出至少一隻靈寵再進秘境。";
   const gate = dungeonGateView(state, dungeonId, now);
-  if (gate.needsSummon && gate.phase !== "ready") {
-    if (gate.phase === "summoning") {
-      return `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……就緒後才可挑戰。`;
-    }
-    return "已通關層需先「召喚」凝聚秘境，再開始挑戰。";
-  }
+  const summonMsg = dungeonSummonGateMsg(gate);
+  if (summonMsg) return summonMsg;
   const tutWaiveChallenge = tutorialWaivesDungeonChallenge(state, dungeonId);
   const challenge = tutWaiveChallenge ? null : d.challenge || null;
   if (!tutWaiveChallenge && challenge?.banElement) {
@@ -3579,6 +3580,24 @@ export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
     }
   }
   return null;
+}
+
+/** 統一：階段／realm 閘門文案 */
+export function dungeonRealmGateMsg(state, d) {
+  if (!d) return "秘境不存在。";
+  if ((state.realm | 0) < (d.needRealm | 0)) {
+    return `需要階段【${stageAt(d.needRealm).name}】（現【${stageAt(state.realm).name}】）`;
+  }
+  return null;
+}
+
+/** 統一：已通關召喚閘門文案 */
+export function dungeonSummonGateMsg(gate) {
+  if (!gate?.needsSummon || gate.phase === "ready") return null;
+  if (gate.phase === "summoning") {
+    return `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……就緒後才可挑戰`;
+  }
+  return "已通關層需先召喚凝聚，再開始挑戰";
 }
 
 /**
@@ -3613,7 +3632,7 @@ export function findOwnedPet(state, uid) {
   return null;
 }
 
-/** 打本後嘗試遇見野生靈寵（用秘境遇寵權重） */
+/** 打本後嘗試遇見野生靈寵（用秘境遇寵權重；含 formula 高層） */
 export function maybeEncounterAfterDungeon(state, dungeonId, won) {
   if (state.pending.length >= PENDING_BOND_MAX) {
     return { blocked: true, encounter: null };
@@ -3622,7 +3641,7 @@ export function maybeEncounterAfterDungeon(state, dungeonId, won) {
   if (state.pets.length === 0 && (state.ranch?.length || 0) === 0) rate = won ? 0.92 : 0.4;
   if (Math.random() > rate) return { blocked: false, encounter: null };
 
-  const dungeonDef = DUNGEONS.find((x) => x.id === dungeonId) || null;
+  const dungeonDef = resolveDungeon(state, dungeonId) || null;
   const enc = rollWildEncounter(dungeonId, dungeonDef, state.realm || 0);
   state.pending.push(enc);
   return { blocked: false, encounter: enc };
@@ -4249,7 +4268,7 @@ export function upgradePet(state, uid, payWith = "stones") {
       return { ok: false, msg: `飼料不足（需 ${cost}）。` };
     }
     state.feed = Math.max(0, (state.feed || 0) - cost);
-    const gains = levelStatGains(petGeneration(pet));
+    const gains = applySubGrowthToLevelGains(levelStatGains(petGeneration(pet)), pet);
     pet.atk = ceilStat(pet.atk + gains.atk);
     pet.hp = ceilStat(pet.hp + gains.hp);
     pet.spd = ceilStat(pet.spd + gains.spd);
@@ -4268,7 +4287,7 @@ export function upgradePet(state, uid, payWith = "stones") {
     return { ok: false, msg: `靈石不足（需 ${cost}）。` };
   }
   state.stones -= cost;
-  const gains = levelStatGains(petGeneration(pet));
+  const gains = applySubGrowthToLevelGains(levelStatGains(petGeneration(pet)), pet);
   pet.atk = ceilStat(pet.atk + gains.atk);
   pet.hp = ceilStat(pet.hp + gains.hp);
   pet.spd = ceilStat(pet.spd + gains.spd);
@@ -4292,12 +4311,25 @@ function maybeAnnounceSecondSkill(state, pet, prevLevel) {
   }
 }
 
-/** 靈塵＋靈響脂升級寵物技能等級（含第二技能威力） */
-export function upgradePetSkill(state, uid) {
+/** 靈塵＋靈響脂升級寵物技能（主技／二技分開） */
+export function upgradePetSkill(state, uid, which = "primary") {
   const found = findOwnedPet(state, uid);
   if (!found) return { ok: false, msg: "找不到靈寵。" };
   const pet = found.pet;
-  const lv = pet.skillLevel ?? 1;
+  const slot = which === "second" ? "second" : "primary";
+  if (slot === "second") {
+    const fusion = pet.fusionLevel ?? 0;
+    const level = pet.level ?? 1;
+    const unlocked =
+      fusion >= SECOND_SKILL_UNLOCK.fusionLevel || level >= SECOND_SKILL_UNLOCK.level;
+    if (!unlocked) {
+      return {
+        ok: false,
+        msg: `第二技能未解鎖（融階≥${SECOND_SKILL_UNLOCK.fusionLevel} 或 Lv≥${SECOND_SKILL_UNLOCK.level}）。`,
+      };
+    }
+  }
+  const lv = slot === "second" ? pet.secondSkillLevel ?? 1 : pet.skillLevel ?? 1;
   if (lv >= SKILL_MAX_LEVEL) return { ok: false, msg: `技能已滿級（${SKILL_MAX_LEVEL}）。` };
   const cost = skillDustCost(lv);
   if ((state.dust || 0) < cost) return { ok: false, msg: `靈塵不足（需 ${cost}）。` };
@@ -4311,13 +4343,16 @@ export function upgradePetSkill(state, uid) {
     };
   }
   state.dust -= cost;
-  pet.skillLevel = lv + 1;
+  if (slot === "second") pet.secondSkillLevel = lv + 1;
+  else pet.skillLevel = lv + 1;
+  const newLv = slot === "second" ? pet.secondSkillLevel : pet.skillLevel;
+  const label = slot === "second" ? "第二技能" : "主技能";
   const matNote = formatMats(mats);
   pushLog(
     state,
-    `${pet.name} 技能升至 Lv.${pet.skillLevel}（威力↑）${matNote ? `｜耗 ${matNote}` : ""}。`
+    `${pet.name} ${label}升至 Lv.${newLv}（威力↑）${matNote ? `｜耗 ${matNote}` : ""}。`
   );
-  return { ok: true, msg: `${pet.name} 技能 Lv.${pet.skillLevel}` };
+  return { ok: true, msg: `${pet.name} ${label} Lv.${newLv}` };
 }
 
 function isItemEquipped(state, itemUid) {
@@ -4498,6 +4533,7 @@ export function petDetail(state, uid) {
   const secondId = secondSkillIdForPet(pet);
   const secondUnlocked =
     fusion >= SECOND_SKILL_UNLOCK.fusionLevel || level >= SECOND_SKILL_UNLOCK.level;
+  const secondLv = pet.secondSkillLevel ?? 1;
   const baseline = petSpeciesBaseline(pet.speciesId, pet.elementId, pet.personalityId);
   const innateBonus = {
     atk: roundStat(Math.max(0, (pet.atk || 0) - baseline.atk)),
@@ -4511,11 +4547,17 @@ export function petDetail(state, uid) {
     level,
     fusionLevel: fusion,
     skillLevel: skillLv,
+    secondSkillLevel: secondLv,
     upgradeCost: upgradeStoneCost(level),
     upgradeFeedCost: upgradeFeedCost(level),
     skillDustCost: skillLv < SKILL_MAX_LEVEL ? skillDustCost(skillLv) : null,
     skillMatCost: skillLv < SKILL_MAX_LEVEL ? skillMatCost(skillLv) : null,
     skillMaxed: skillLv >= SKILL_MAX_LEVEL,
+    secondSkillDustCost:
+      secondUnlocked && secondLv < SKILL_MAX_LEVEL ? skillDustCost(secondLv) : null,
+    secondSkillMatCost:
+      secondUnlocked && secondLv < SKILL_MAX_LEVEL ? skillMatCost(secondLv) : null,
+    secondSkillMaxed: secondLv >= SKILL_MAX_LEVEL,
     nextFusionStage: target,
     fuseNeedLevel: rule?.needLevel ?? null,
     fuseTotalPets: rule?.totalPets ?? null,
@@ -4585,9 +4627,9 @@ function pushCombatText(events, text) {
   events.push({ type: "text", text });
 }
 
-function dealStrike(actor, target, power, transcript, events, skillName) {
+function dealStrike(actor, target, power, transcript, events, skillName, skillId = null) {
   if (!target || target.hp <= 0) return;
-  const pMult = skillPowerMult(actor.skillLevel || 1);
+  const pMult = skillPowerMult(actorSkillLevel(actor, skillId));
   let dmg = Math.max(1, Math.floor(actor.atk * power * pMult) + Math.floor(Math.random() * 4) - 1);
   if (skillName === "嵐擊" || skillName === "穿空" || skillName === "礁襲" || skillName === "珊嵐槍" || skillName === "嵐虛斬") {
     dmg += Math.floor(actor.spd / 4);
@@ -4631,16 +4673,23 @@ function dealStrike(actor, target, power, transcript, events, skillName) {
   }
 }
 
+function actorSkillLevel(actor, skillId) {
+  if (skillId && actor?.secondSkillId && skillId === actor.secondSkillId) {
+    return Math.max(1, actor.secondSkillLevel ?? 1);
+  }
+  return Math.max(1, actor?.skillLevel ?? 1);
+}
+
 function useSkill(actor, skill, allies, foes, transcript, events, tactics = "balanced") {
   const cdMap = actor.skillCd;
   if ((cdMap[skill.id] || 0) > 0) return false;
-  const pMult = skillPowerMult(actor.skillLevel || 1);
+  const pMult = skillPowerMult(actorSkillLevel(actor, skill.id));
   const power = skill.power * pMult;
 
   if (skill.type === "strike") {
     const t = pickFoe(foes, tactics);
     if (!t) return false;
-    dealStrike(actor, t, skill.power, transcript, events, skill.name);
+    dealStrike(actor, t, skill.power, transcript, events, skill.name, skill.id);
   } else if (skill.type === "cleave") {
     const live = foes.filter((f) => f.hp > 0);
     if (!live.length) return false;
@@ -4648,7 +4697,7 @@ function useSkill(actor, skill, allies, foes, transcript, events, tactics = "bal
     const line = `${actor.name} 施展【${skill.name}】！`;
     transcript.push(line);
     pushCombatText(events, line);
-    for (const t of targets) dealStrike(actor, t, skill.power, transcript, events, null);
+    for (const t of targets) dealStrike(actor, t, skill.power, transcript, events, null, skill.id);
   } else if (skill.type === "heal") {
     const t = lowestHp(allies);
     if (!t) return false;
@@ -4798,10 +4847,9 @@ function buildDungeonAllyUnits(state, d, { dailyMod = null, challenge = null } =
   const synergy = partySynergy(state.pets);
   const dex = bestiaryStatus(state);
   const sealMult = tideSealCombatMult(state.tideSeals || 0);
-  const cos = abyssCosmeticCombatMult(state.abyssDive?.cosmetics || {});
-  const nodeMult = abyssPowerNodeAtkMult(state);
-  const atkMult = synergy.atkMult * dex.atkMult * sealMult * cos.atkMult * nodeMult;
-  const hpMult = synergy.hpMult * dex.hpMult * sealMult * cos.hpMult;
+  // 秘境唔食潮淵 cosmetic／power node 乘區
+  const atkMult = synergy.atkMult * dex.atkMult * sealMult;
+  const hpMult = synergy.hpMult * dex.hpMult * sealMult;
   const condEval = evaluateDungeonConditions(state.pets, d);
   const passives = condEval.filter((c) => c.passive);
   const combatPassives = [...passives];
@@ -4906,8 +4954,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
     if (!already && tier !== frontier) {
       return { ok: false, msg: `請先打通主脊第 ${frontier} 關。` };
     }
-  } else if (state.realm < d.needRealm) {
-    return { ok: false, msg: `需要階段：${stageAt(d.needRealm).name}` };
+  } else {
+    const realmMsg = dungeonRealmGateMsg(state, d);
+    if (realmMsg) return { ok: false, msg: realmMsg };
   }
   if (!state.dungeonReadyAt) state.dungeonReadyAt = {};
   if (!state.clearedDungeons) state.clearedDungeons = {};
@@ -4929,10 +4978,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
   const gate = dungeonGateView(state, dungeonId, now);
   // 已通關：必須先召喚就緒；教學／首通可直打
   if (!sweepInternal && gate.needsSummon && gate.phase !== "ready") {
-    if (gate.phase === "summoning") {
-      return { ok: false, msg: `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……` };
-    }
-    return { ok: false, msg: "請先召喚秘境。" };
+    return { ok: false, msg: dungeonSummonGateMsg(gate) };
   }
 
   const dailyPack = ensureDungeonDaily(state);
@@ -4959,10 +5005,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
   const synergy = partySynergy(state.pets);
   const dex = bestiaryStatus(state);
   const sealMult = tideSealCombatMult(state.tideSeals || 0);
-  const cos = abyssCosmeticCombatMult(state.abyssDive?.cosmetics || {});
-  const nodeMult = abyssPowerNodeAtkMult(state);
-  const atkMult = synergy.atkMult * dex.atkMult * sealMult * cos.atkMult * nodeMult;
-  const hpMult = synergy.hpMult * dex.hpMult * sealMult * cos.hpMult;
+  // 秘境唔食潮淵 cosmetic／power node 乘區（潮淵戰鬥自留）
+  const atkMult = synergy.atkMult * dex.atkMult * sealMult;
+  const hpMult = synergy.hpMult * dex.hpMult * sealMult;
   const condEval = evaluateDungeonConditions(state.pets, d);
   const passives = condEval.filter((c) => c.passive);
   const challenges = condEval.filter((c) => !c.passive);
@@ -5006,6 +5051,14 @@ export function runDungeon(state, dungeonId, opts = {}) {
       isMaster: false,
       elementId: p.elementId,
       skillLevel: p.skillLevel ?? 1,
+      secondSkillId: (() => {
+        const sid = secondSkillIdForPet(p);
+        const unlocked =
+          (p.fusionLevel ?? 0) >= SECOND_SKILL_UNLOCK.fusionLevel ||
+          (p.level ?? 1) >= SECOND_SKILL_UNLOCK.level;
+        return unlocked && sid ? sid : null;
+      })(),
+      secondSkillLevel: p.secondSkillLevel ?? 1,
       skills,
       skillCd: Object.fromEntries(skills.map((id) => [id, 0])),
       guardTurns: 0,
@@ -5135,8 +5188,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
   let condDust = 0;
   let roleStones = 0;
   let roleScrap = 0;
-  let eliteCleared = roles.elite > 0;
-  let bossCleared = roles.boss > 0;
+  // 僅全勝清關時計；唔喺開戰前預設（敗戰唔應顯示精英／BOSS 獎）
+  let eliteCleared = false;
+  let bossCleared = false;
   let dailyStoneBonus = 0;
   let dailyScrapBonus = 0;
   let challengeStones = 0;
@@ -5201,6 +5255,8 @@ export function runDungeon(state, dungeonId, opts = {}) {
     }
 
     if (won && ended) {
+      eliteCleared = roles.elite > 0;
+      bossCleared = roles.boss > 0;
       state.stones += d.reward.stones;
       state.scrap += d.reward.scrap;
       state.combatsWon += 1;
@@ -5505,7 +5561,7 @@ export function dungeonSweepCost(state, dungeonId, count) {
     mats,
     canAfford: have >= total,
     have,
-    label: `${name}×${total}`,
+    label: n > 1 ? `${name}×${total}（每場×${perRun}）` : `${name}×${total}`,
   };
 }
 
@@ -5578,16 +5634,15 @@ export function startDungeonSummon(state, dungeonId, count = 1) {
   const d = resolveDungeon(state, dungeonId);
   if (!d) return { ok: false, msg: "秘境不存在。" };
   if (tutorialActive(state)) return { ok: false, msg: "教學期間請直接進攻。" };
-  if (state.realm < d.needRealm) {
-    return { ok: false, msg: `需要階段：${stageAt(d.needRealm).name}` };
-  }
+  const realmMsg = dungeonRealmGateMsg(state, d);
+  if (realmMsg) return { ok: false, msg: realmMsg };
   if (!state.pets?.length) return { ok: false, msg: "請先派出靈寵。" };
   if (!state.clearedDungeons?.[dungeonId]) {
     return { ok: false, msg: "首通無需召喚，直接進攻即可。" };
   }
   const gate = dungeonGateView(state, dungeonId);
   if (gate.phase === "summoning") {
-    return { ok: false, msg: `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……` };
+    return { ok: false, msg: dungeonSummonGateMsg(gate) };
   }
   if (gate.phase === "ready") {
     return { ok: false, msg: "秘境已就緒，請開始挑戰。" };
@@ -5623,14 +5678,13 @@ export function canDungeonSweep(state, dungeonId, count = null) {
   const d = resolveDungeon(state, dungeonId);
   if (!d) return { ok: false, reason: "秘境不存在。" };
   if (tutorialActive(state)) return { ok: false, reason: "教學期間請單次進攻。" };
-  if (state.realm < d.needRealm) {
-    return { ok: false, reason: `需${stageAt(d.needRealm).name}` };
-  }
+  const realmMsg = dungeonRealmGateMsg(state, d);
+  if (realmMsg) return { ok: false, reason: realmMsg };
   if (!state.pets?.length) return { ok: false, reason: "請先派出靈寵。" };
   if (!state.clearedDungeons?.[dungeonId]) return { ok: false, reason: "需先通關本層。" };
   const gate = dungeonGateView(state, dungeonId);
   if (gate.phase === "summoning") {
-    return { ok: false, reason: `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）` };
+    return { ok: false, reason: dungeonSummonGateMsg(gate) };
   }
   // idle：可發起召喚連刷；ready：batch 須吻合
   if (gate.phase === "ready") {
@@ -5674,6 +5728,7 @@ function aggregateSweepRewards(results) {
 
 /**
  * 已通關層連刷：須先召喚就緒（batch=N）；開戰時唔再扣令。
+ * tokenCost 回報本批召喚已耗令（召喚時已扣），俾結算 UI 誠實顯示。
  */
 export function runDungeonSweep(state, dungeonId, count) {
   const n = clampDungeonSummonCount(count);
@@ -5683,6 +5738,7 @@ export function runDungeonSweep(state, dungeonId, count) {
   }
   const check = canDungeonSweep(state, dungeonId, n);
   if (!check.ok) return { ok: false, msg: check.reason };
+  const tokenCost = dungeonEntryTokenPerRun(dungeonId) * n;
   const results = [];
   for (let i = 0; i < n; i += 1) {
     const r = runDungeon(state, dungeonId, { sweepInternal: true, deferEncounter: true });
@@ -5709,7 +5765,8 @@ export function runDungeonSweep(state, dungeonId, count) {
       );
     }
   }
-  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 合計 +${agg.totalStones} 石 · 秘境已散去`;
+  const tokenName = MATERIALS[DUNGEON_ENTRY_MAT_ID]?.name || "潮霧令";
+  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 合計 +${agg.totalStones} 石 · 本批召喚已耗${tokenName}×${tokenCost} · 秘境已散去`;
   pushLog(state, msg);
   return {
     ok: true,
@@ -5721,7 +5778,7 @@ export function runDungeonSweep(state, dungeonId, count) {
     totalStones: agg.totalStones,
     totalScrap: agg.totalScrap,
     stoneCost: 0,
-    tokenCost: 0,
+    tokenCost,
     cooldownMs: 0,
     perRun: agg.perRun,
     encounter,
@@ -5765,10 +5822,6 @@ export function dungeonStatus(state, dungeonId) {
     challengeWaived: tutWaive,
     dailyVariantLabel: d.dailyVariantLabel || null,
   };
-}
-
-export function forgeHint(_state) {
-  return { ok: false, msg: "靈紋鍛造已廢止——秘境改掉落寵用素材。" };
 }
 
 /** 催生符：將最早孕育中的交配立即就緒（可領全部剩餘蛋） */
@@ -5834,30 +5887,61 @@ export function useTemperOil(state, uid) {
   if (!found) return { ok: false, msg: "找不到靈寵。" };
   const pet = found.pet;
   const oldId = pet.personalityId;
-  const others = Object.keys(PERSONALITIES).filter((id) => id !== oldId);
-  if (!others.length) return { ok: false, msg: "無可替換性格。" };
-  const newId = others[Math.floor(Math.random() * others.length)];
-  const oldPe = PERSONALITIES[oldId];
-  const newPe = PERSONALITIES[newId];
+  const newId = pickMainPersonalityId(oldId);
+  const oldPe = MAIN_PERSONALITIES[oldId] || MAIN_PERSONALITIES[remapSafe(oldId)];
+  const newPe = MAIN_PERSONALITIES[newId];
+  if (!newPe) return { ok: false, msg: "無可替換性格。" };
   state.materials.temper_oil -= 1;
-  /* 按性格倍率差調整白板 */
-  if (oldPe && newPe) {
-    pet.atk = Math.max(1, Math.round((pet.atk / (oldPe.atk || 1)) * newPe.atk));
-    pet.hp = Math.max(1, Math.round((pet.hp / (oldPe.hp || 1)) * newPe.hp));
-    pet.spd = Math.max(1, Math.round((pet.spd / (oldPe.spd || 1)) * newPe.spd));
-  }
+  /* 主性格只影響戰鬥；唔再重算白板 */
   pet.personalityId = newId;
   pet.personalityName = newPe.name;
-  if (pet.personality2Id === newId) {
-    pet.personality2Id = null;
-    pet.personality2Name = null;
-  }
   if (pet.genes) {
     pet.genes = { ...pet.genes, personality: newId };
   }
   registerBestiary(state, pet);
   pushLog(state, `【${displayPetName(pet)}】使用性格洗劑：${oldPe?.name || oldId} → ${newPe.name}。`);
-  return { ok: true, msg: `${pet.name} 性格 → ${newPe.name}` };
+  return { ok: true, msg: `${pet.name} 主性格 → ${newPe.name}` };
+}
+
+function remapSafe(id) {
+  return MAIN_PERSONALITIES[id] ? id : pickMainPersonalityId();
+}
+
+/** 副性格覺醒（Lv≥20）；回溯補算成長差額 */
+export function awakenSubPersonality(state, uid) {
+  const found = findOwnedPet(state, uid);
+  if (!found) return { ok: false, msg: "找不到靈寵。" };
+  const pet = found.pet;
+  if (pet.personality2Awakened) return { ok: false, msg: "副性格已覺醒。" };
+  const lv = pet.level ?? 1;
+  if (lv < SUB_PERSONALITY_AWAKEN_LEVEL) {
+    return { ok: false, msg: `需達到 Lv.${SUB_PERSONALITY_AWAKEN_LEVEL} 方可覺醒副性格。` };
+  }
+  const subId =
+    (pet.genes?.personality2 && SUB_PERSONALITIES[pet.genes.personality2]
+      ? pet.genes.personality2
+      : null) || pickSubPersonalityId();
+  const sub = SUB_PERSONALITIES[subId];
+  if (!sub) return { ok: false, msg: "副性格池異常。" };
+  const bonus = retroactiveSubGrowthBonus({ ...pet, personality2Id: subId }, subId);
+  pet.personality2Id = subId;
+  pet.personality2Name = sub.name;
+  pet.personality2Awakened = true;
+  if (!pet.genes) pet.genes = {};
+  pet.genes = { ...pet.genes, personality2: subId };
+  pet.atk = ceilStat((pet.atk || 0) + bonus.atk);
+  pet.hp = ceilStat((pet.hp || 0) + bonus.hp);
+  pet.spd = ceilStat((pet.spd || 0) + bonus.spd);
+  pushLog(
+    state,
+    `【${displayPetName(pet)}】副性格覺醒為「${sub.name}」（回溯成長 攻${bonus.atk >= 0 ? "+" : ""}${ceilStat(bonus.atk)} 血${bonus.hp >= 0 ? "+" : ""}${ceilStat(bonus.hp)} 速${bonus.spd >= 0 ? "+" : ""}${ceilStat(bonus.spd)}）。`
+  );
+  return {
+    ok: true,
+    msg: `${pet.name} 覺醒副性格「${sub.name}」`,
+    pet,
+    bonus,
+  };
 }
 
 function ensureLoginStreak(state, now = Date.now()) {
@@ -6556,7 +6640,7 @@ export function breedPreview(petA, petB) {
         };
       })(),
     ],
-    temperNote: "子代性格多從雙親主／副性格池遺傳（約一成突變）；戰魂偏打、職魂偏牧場",
+    temperNote: "子代主性格從雙親主池遺傳；副性格基因入副池，孵出後未覺醒，達 Lv.20 可於性格頁覺醒",
     statPreview: {
       atk: [statLo.atk + (loAwaken?.atk || 0), statHi.atk + (hiAwaken?.atk || 0)],
       hp: [statLo.hp + (loAwaken?.hp || 0), statHi.hp + (hiAwaken?.hp || 0)],
@@ -7056,6 +7140,14 @@ function buildAbyssCombatAllies(state, run) {
       spd: st.spd,
       elementId: p.elementId,
       skillLevel: p.skillLevel ?? 1,
+      secondSkillId: (() => {
+        const sid = secondSkillIdForPet(p);
+        const unlocked =
+          (p.fusionLevel ?? 0) >= SECOND_SKILL_UNLOCK.fusionLevel ||
+          (p.level ?? 1) >= SECOND_SKILL_UNLOCK.level;
+        return unlocked && sid ? sid : null;
+      })(),
+      secondSkillLevel: p.secondSkillLevel ?? 1,
       skills: st.skills,
       skillCd: Object.fromEntries(st.skills.map((id) => [id, 0])),
       guardTurns: 0,
