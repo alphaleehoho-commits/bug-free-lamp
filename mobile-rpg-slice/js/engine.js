@@ -52,7 +52,6 @@ import {
   petSkillIds,
   KIND_SECOND_SKILLS,
   SECOND_SKILL_UNLOCK,
-  rollGearDrop,
   rollDungeonMatDrop,
   partySynergy,
   MASTER_EQUIP_SLOTS,
@@ -1041,10 +1040,10 @@ export function nextRealm(state) {
   return nextStageAt(state.realm);
 }
 
-/** 當日秘境完整定義（tier 公式 + 每日變體）；側枝走獨立 builder */
+/** 當日秘境完整定義（tier 公式 + 每日變體）；側枝已廢止 */
 export function resolveDungeon(state, dungeonId) {
   if (isBranchDungeonId(dungeonId)) {
-    return resolveBranchDungeon(dungeonId);
+    return null;
   }
   ensureDungeonDaily(state);
   const key = state.dungeonDaily?.date || todayKey();
@@ -3563,17 +3562,12 @@ export function isFusionUnlocked(state) {
 export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
   const d = resolveDungeon(state, dungeonId);
   if (!d) return "秘境不存在。";
-  if ((state.realm | 0) < (d.needRealm | 0)) {
-    return `需要階段【${stageAt(d.needRealm).name}】才能進攻（現【${stageAt(state.realm).name}】）。敵情條件達標仍要先突破。`;
-  }
+  const realmMsg = dungeonRealmGateMsg(state, d);
+  if (realmMsg) return realmMsg;
   if (!state.pets?.length) return "請先派出至少一隻靈寵再進秘境。";
   const gate = dungeonGateView(state, dungeonId, now);
-  if (gate.needsSummon && gate.phase !== "ready") {
-    if (gate.phase === "summoning") {
-      return `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……就緒後才可挑戰。`;
-    }
-    return "已通關層需先「召喚」凝聚秘境，再開始挑戰。";
-  }
+  const summonMsg = dungeonSummonGateMsg(gate);
+  if (summonMsg) return summonMsg;
   const tutWaiveChallenge = tutorialWaivesDungeonChallenge(state, dungeonId);
   const challenge = tutWaiveChallenge ? null : d.challenge || null;
   if (!tutWaiveChallenge && challenge?.banElement) {
@@ -3586,6 +3580,24 @@ export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
     }
   }
   return null;
+}
+
+/** 統一：階段／realm 閘門文案 */
+export function dungeonRealmGateMsg(state, d) {
+  if (!d) return "秘境不存在。";
+  if ((state.realm | 0) < (d.needRealm | 0)) {
+    return `需要階段【${stageAt(d.needRealm).name}】（現【${stageAt(state.realm).name}】）`;
+  }
+  return null;
+}
+
+/** 統一：已通關召喚閘門文案 */
+export function dungeonSummonGateMsg(gate) {
+  if (!gate?.needsSummon || gate.phase === "ready") return null;
+  if (gate.phase === "summoning") {
+    return `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……就緒後才可挑戰`;
+  }
+  return "已通關層需先召喚凝聚，再開始挑戰";
 }
 
 /**
@@ -3620,7 +3632,7 @@ export function findOwnedPet(state, uid) {
   return null;
 }
 
-/** 打本後嘗試遇見野生靈寵（用秘境遇寵權重） */
+/** 打本後嘗試遇見野生靈寵（用秘境遇寵權重；含 formula 高層） */
 export function maybeEncounterAfterDungeon(state, dungeonId, won) {
   if (state.pending.length >= PENDING_BOND_MAX) {
     return { blocked: true, encounter: null };
@@ -3629,7 +3641,7 @@ export function maybeEncounterAfterDungeon(state, dungeonId, won) {
   if (state.pets.length === 0 && (state.ranch?.length || 0) === 0) rate = won ? 0.92 : 0.4;
   if (Math.random() > rate) return { blocked: false, encounter: null };
 
-  const dungeonDef = DUNGEONS.find((x) => x.id === dungeonId) || null;
+  const dungeonDef = resolveDungeon(state, dungeonId) || null;
   const enc = rollWildEncounter(dungeonId, dungeonDef, state.realm || 0);
   state.pending.push(enc);
   return { blocked: false, encounter: enc };
@@ -4835,10 +4847,9 @@ function buildDungeonAllyUnits(state, d, { dailyMod = null, challenge = null } =
   const synergy = partySynergy(state.pets);
   const dex = bestiaryStatus(state);
   const sealMult = tideSealCombatMult(state.tideSeals || 0);
-  const cos = abyssCosmeticCombatMult(state.abyssDive?.cosmetics || {});
-  const nodeMult = abyssPowerNodeAtkMult(state);
-  const atkMult = synergy.atkMult * dex.atkMult * sealMult * cos.atkMult * nodeMult;
-  const hpMult = synergy.hpMult * dex.hpMult * sealMult * cos.hpMult;
+  // 秘境唔食潮淵 cosmetic／power node 乘區
+  const atkMult = synergy.atkMult * dex.atkMult * sealMult;
+  const hpMult = synergy.hpMult * dex.hpMult * sealMult;
   const condEval = evaluateDungeonConditions(state.pets, d);
   const passives = condEval.filter((c) => c.passive);
   const combatPassives = [...passives];
@@ -4943,8 +4954,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
     if (!already && tier !== frontier) {
       return { ok: false, msg: `請先打通主脊第 ${frontier} 關。` };
     }
-  } else if (state.realm < d.needRealm) {
-    return { ok: false, msg: `需要階段：${stageAt(d.needRealm).name}` };
+  } else {
+    const realmMsg = dungeonRealmGateMsg(state, d);
+    if (realmMsg) return { ok: false, msg: realmMsg };
   }
   if (!state.dungeonReadyAt) state.dungeonReadyAt = {};
   if (!state.clearedDungeons) state.clearedDungeons = {};
@@ -4966,10 +4978,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
   const gate = dungeonGateView(state, dungeonId, now);
   // 已通關：必須先召喚就緒；教學／首通可直打
   if (!sweepInternal && gate.needsSummon && gate.phase !== "ready") {
-    if (gate.phase === "summoning") {
-      return { ok: false, msg: `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……` };
-    }
-    return { ok: false, msg: "請先召喚秘境。" };
+    return { ok: false, msg: dungeonSummonGateMsg(gate) };
   }
 
   const dailyPack = ensureDungeonDaily(state);
@@ -4996,10 +5005,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
   const synergy = partySynergy(state.pets);
   const dex = bestiaryStatus(state);
   const sealMult = tideSealCombatMult(state.tideSeals || 0);
-  const cos = abyssCosmeticCombatMult(state.abyssDive?.cosmetics || {});
-  const nodeMult = abyssPowerNodeAtkMult(state);
-  const atkMult = synergy.atkMult * dex.atkMult * sealMult * cos.atkMult * nodeMult;
-  const hpMult = synergy.hpMult * dex.hpMult * sealMult * cos.hpMult;
+  // 秘境唔食潮淵 cosmetic／power node 乘區（潮淵戰鬥自留）
+  const atkMult = synergy.atkMult * dex.atkMult * sealMult;
+  const hpMult = synergy.hpMult * dex.hpMult * sealMult;
   const condEval = evaluateDungeonConditions(state.pets, d);
   const passives = condEval.filter((c) => c.passive);
   const challenges = condEval.filter((c) => !c.passive);
@@ -5180,8 +5188,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
   let condDust = 0;
   let roleStones = 0;
   let roleScrap = 0;
-  let eliteCleared = roles.elite > 0;
-  let bossCleared = roles.boss > 0;
+  // 僅全勝清關時計；唔喺開戰前預設（敗戰唔應顯示精英／BOSS 獎）
+  let eliteCleared = false;
+  let bossCleared = false;
   let dailyStoneBonus = 0;
   let dailyScrapBonus = 0;
   let challengeStones = 0;
@@ -5246,6 +5255,8 @@ export function runDungeon(state, dungeonId, opts = {}) {
     }
 
     if (won && ended) {
+      eliteCleared = roles.elite > 0;
+      bossCleared = roles.boss > 0;
       state.stones += d.reward.stones;
       state.scrap += d.reward.scrap;
       state.combatsWon += 1;
@@ -5550,7 +5561,7 @@ export function dungeonSweepCost(state, dungeonId, count) {
     mats,
     canAfford: have >= total,
     have,
-    label: `${name}×${total}`,
+    label: n > 1 ? `${name}×${total}（每場×${perRun}）` : `${name}×${total}`,
   };
 }
 
@@ -5623,16 +5634,15 @@ export function startDungeonSummon(state, dungeonId, count = 1) {
   const d = resolveDungeon(state, dungeonId);
   if (!d) return { ok: false, msg: "秘境不存在。" };
   if (tutorialActive(state)) return { ok: false, msg: "教學期間請直接進攻。" };
-  if (state.realm < d.needRealm) {
-    return { ok: false, msg: `需要階段：${stageAt(d.needRealm).name}` };
-  }
+  const realmMsg = dungeonRealmGateMsg(state, d);
+  if (realmMsg) return { ok: false, msg: realmMsg };
   if (!state.pets?.length) return { ok: false, msg: "請先派出靈寵。" };
   if (!state.clearedDungeons?.[dungeonId]) {
     return { ok: false, msg: "首通無需召喚，直接進攻即可。" };
   }
   const gate = dungeonGateView(state, dungeonId);
   if (gate.phase === "summoning") {
-    return { ok: false, msg: `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）……` };
+    return { ok: false, msg: dungeonSummonGateMsg(gate) };
   }
   if (gate.phase === "ready") {
     return { ok: false, msg: "秘境已就緒，請開始挑戰。" };
@@ -5668,14 +5678,13 @@ export function canDungeonSweep(state, dungeonId, count = null) {
   const d = resolveDungeon(state, dungeonId);
   if (!d) return { ok: false, reason: "秘境不存在。" };
   if (tutorialActive(state)) return { ok: false, reason: "教學期間請單次進攻。" };
-  if (state.realm < d.needRealm) {
-    return { ok: false, reason: `需${stageAt(d.needRealm).name}` };
-  }
+  const realmMsg = dungeonRealmGateMsg(state, d);
+  if (realmMsg) return { ok: false, reason: realmMsg };
   if (!state.pets?.length) return { ok: false, reason: "請先派出靈寵。" };
   if (!state.clearedDungeons?.[dungeonId]) return { ok: false, reason: "需先通關本層。" };
   const gate = dungeonGateView(state, dungeonId);
   if (gate.phase === "summoning") {
-    return { ok: false, reason: `潮霧凝聚中（${Math.ceil(gate.summonLeftMs / 1000)}s）` };
+    return { ok: false, reason: dungeonSummonGateMsg(gate) };
   }
   // idle：可發起召喚連刷；ready：batch 須吻合
   if (gate.phase === "ready") {
@@ -5719,6 +5728,7 @@ function aggregateSweepRewards(results) {
 
 /**
  * 已通關層連刷：須先召喚就緒（batch=N）；開戰時唔再扣令。
+ * tokenCost 回報本批召喚已耗令（召喚時已扣），俾結算 UI 誠實顯示。
  */
 export function runDungeonSweep(state, dungeonId, count) {
   const n = clampDungeonSummonCount(count);
@@ -5728,6 +5738,7 @@ export function runDungeonSweep(state, dungeonId, count) {
   }
   const check = canDungeonSweep(state, dungeonId, n);
   if (!check.ok) return { ok: false, msg: check.reason };
+  const tokenCost = dungeonEntryTokenPerRun(dungeonId) * n;
   const results = [];
   for (let i = 0; i < n; i += 1) {
     const r = runDungeon(state, dungeonId, { sweepInternal: true, deferEncounter: true });
@@ -5754,7 +5765,8 @@ export function runDungeonSweep(state, dungeonId, count) {
       );
     }
   }
-  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 合計 +${agg.totalStones} 石 · 秘境已散去`;
+  const tokenName = MATERIALS[DUNGEON_ENTRY_MAT_ID]?.name || "潮霧令";
+  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 合計 +${agg.totalStones} 石 · 本批召喚已耗${tokenName}×${tokenCost} · 秘境已散去`;
   pushLog(state, msg);
   return {
     ok: true,
@@ -5766,7 +5778,7 @@ export function runDungeonSweep(state, dungeonId, count) {
     totalStones: agg.totalStones,
     totalScrap: agg.totalScrap,
     stoneCost: 0,
-    tokenCost: 0,
+    tokenCost,
     cooldownMs: 0,
     perRun: agg.perRun,
     encounter,
@@ -5810,10 +5822,6 @@ export function dungeonStatus(state, dungeonId) {
     challengeWaived: tutWaive,
     dailyVariantLabel: d.dailyVariantLabel || null,
   };
-}
-
-export function forgeHint(_state) {
-  return { ok: false, msg: "靈紋鍛造已廢止——秘境改掉落寵用素材。" };
 }
 
 /** 催生符：將最早孕育中的交配立即就緒（可領全部剩餘蛋） */

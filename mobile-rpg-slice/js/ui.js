@@ -33,7 +33,6 @@ import {
   dungeonGateView,
   dungeonAttackBlockReason,
   isFusionUnlocked,
-  forgeHint,
   tryBreed,
   claimBreed,
   breedStatus,
@@ -175,6 +174,7 @@ import {
   DUNGEON_SUMMON_MIN,
   DUNGEON_SUMMON_MAX,
   clampDungeonSummonCount,
+  dungeonEntryTokenPerRun,
   elementExplain,
   kindExplain,
   personalityExplain,
@@ -3535,13 +3535,25 @@ function attackPreviewModalHtml() {
     )
     .join("");
   const synLine = prev.synergyLabels?.length ? prev.synergyLabels.join("、") : "無";
-  const modeLabel = attackPreview.mode === "sweep" ? `掃蕩 ×${dungeonGateView(state, attackPreview.dungeonId).batch || summonCount}` : "單次挑戰";
+  const previewGate = dungeonGateView(state, attackPreview.dungeonId);
+  const modeLabel = attackPreview.mode === "sweep" ? `掃蕩 ×${previewGate.batch || summonCount}` : "單次挑戰";
+  const spentTokens =
+    previewGate.needsSummon && previewGate.phase === "ready"
+      ? dungeonEntryTokenPerRun(attackPreview.dungeonId) * (previewGate.batch || 1)
+      : 0;
+  const tokenLine =
+    spentTokens > 0
+      ? `<p class="meta">令已於召喚時扣除（本批×${spentTokens}）</p>`
+      : previewGate.needsSummon
+        ? ""
+        : `<p class="meta">首通／教學：無需潮霧令</p>`;
   return `
     <div class="sheet-overlay" role="presentation" data-live="attack-preview">
       <div class="sheet-card" role="dialog" aria-label="出戰預覽" data-sheet-card>
         <div class="sheet-handle" aria-hidden="true"></div>
         <h3>出戰預覽 · ${escapeHtml(prev.dungeonName)}</h3>
         <p class="meta">${modeLabel} · ${prev.waveCount} 波（普${prev.roles.normal}/精${prev.roles.elite}/王${prev.roles.boss}） · 戰術【${escapeHtml(prev.tacticsName)}】· 陣型【${escapeHtml(prev.formationName)}】</p>
+        ${tokenLine}
         <p class="meta">羈絆：${escapeHtml(synLine)} · 條件 ${prev.conditionsMet}/${prev.conditionsTotal}${prev.challengeMet ? "" : " · 挑戰未達"}</p>
         <h4>我方</h4>
         <ul class="preview-roster">${allyRows}</ul>
@@ -4744,7 +4756,7 @@ function sweepModalHtml() {
           <div class="settle-summary-row">
             <div>
               <strong class="settle-total">+${r.totalStones} 靈石</strong>
-              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 耗潮霧令×${r.tokenCost || 0} · 碎片 +${r.totalScrap || 0}</span>
+              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 本批召喚已耗潮霧令×${r.tokenCost || 0} · 碎片 +${r.totalScrap || 0}</span>
             </div>
           </div>
           ${encounterLine}
@@ -5193,15 +5205,17 @@ function dungeonPanel() {
     : "";
   const gateNote = !gate
     ? ""
-    : gate.summoning
-      ? ` · 凝聚中 ${summonSec}s`
-      : gate.needsSummon && gate.phase === "ready"
-        ? gate.batch > 1
-          ? ` · 就緒 · 掃蕩×${gate.batch}`
-          : " · 就緒可挑戰"
-        : gate.needsSummon
-          ? " · 待召喚"
-          : "";
+    : locked
+      ? ` · 需${escapeHtml(stageAt(dCur.needRealm).name)}`
+      : gate.summoning
+        ? ` · 凝聚中 ${summonSec}s`
+        : gate.needsSummon && gate.phase === "ready"
+          ? gate.batch > 1
+            ? ` · 就緒 · 掃蕩×${gate.batch}`
+            : " · 就緒可挑戰"
+          : gate.needsSummon
+            ? " · 待召喚"
+            : "";
 
   let metN = 0;
   let missN = 0;
@@ -5236,9 +5250,7 @@ function dungeonPanel() {
           <div>
             <strong>${escapeHtml(dCur.name)}</strong>
             ${variantLine}
-            <span class="muted">${escapeHtml(roleBits)} · ${dCur.reward.stones}石 · ${clearNote}${
-              locked ? ` · 需${escapeHtml(stageAt(dCur.needRealm).name)}` : ""
-            }${gateNote}</span>
+            <span class="muted">${escapeHtml(roleBits)} · ${dCur.reward.stones}石 · ${clearNote}${gateNote}</span>
             ${passiveLine ? `<span class="muted">${escapeHtml(passiveLine)}</span>` : ""}
           </div>
         </div>
@@ -5259,6 +5271,7 @@ function dungeonPanel() {
           if (!dCur) return `<div class="row dungeon-dock-row">${pager}</div>`;
           const tokenHave = Math.floor(state.materials?.mist_token || 0);
           const baseCdMs = dCur.cooldownMs || gate?.baseCdMs || 20_000;
+          const tokenName = "潮霧令";
 
           // 首通／教學：直接進攻（鎖階段仍可撳，彈原因）
           if (!gate?.needsSummon) {
@@ -5283,12 +5296,13 @@ function dungeonPanel() {
           // 凝聚中
           if (gate.summoning) {
             const batch = gate.batch || 1;
+            const spent = dungeonEntryTokenPerRun(dCur.id) * batch;
             const totalMs = Math.max(1, baseCdMs * batch);
             const summonPct = Math.min(100, Math.round(((totalMs - (gate.summonLeftMs || 0)) / totalMs) * 100));
             return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">${pager}</div>
           <div class="summon-progress-wrap">
-            <p class="sweep-label">潮霧凝聚中 · ${summonSec}s${batch > 1 ? ` · ×${batch}` : ""}</p>
+            <p class="sweep-label">潮霧凝聚中 · ${summonSec}s${batch > 1 ? ` · ×${batch}` : ""} · 已扣${tokenName}×${spent}</p>
             <div class="bar summon-bar"><i data-live="summon-bar" style="width:${summonPct}%"></i></div>
           </div>
         </div>`;
@@ -5297,6 +5311,7 @@ function dungeonPanel() {
           // 就緒：開始挑戰／掃蕩
           if (gate.phase === "ready") {
             const batch = gate.batch || 1;
+            const spent = dungeonEntryTokenPerRun(dCur.id) * batch;
             const challengeBtn =
               batch > 1
                 ? `<button type="button" class="primary dungeon-attack-btn sweep-run-btn" data-attack-preview="${escapeHtml(dCur.id)}" data-attack-mode="sweep" data-dungeon="${escapeHtml(dCur.id)}">開始掃蕩 ×${batch}</button>`
@@ -5306,7 +5321,7 @@ function dungeonPanel() {
             ${pager}
             ${challengeBtn}
           </div>
-          <p class="sweep-label">秘境已現形 — 開戰後將散去，需再召喚</p>
+          <p class="sweep-label">秘境已現形 · 本批召喚已耗${tokenName}×${spent} — 開戰後散去</p>
         </div>`;
           }
 
@@ -5314,6 +5329,11 @@ function dungeonPanel() {
           const costInfo = dungeonSweepCost(state, dCur.id, summonCount);
           const affordOk = !!costInfo?.canAfford;
           const summonSecEst = Math.ceil((baseCdMs * summonCount) / 1000);
+          const summonBlockReason = locked
+            ? dungeonAttackBlockReason(state, dCur.id)
+            : !affordOk
+              ? `潮霧令不足（需 ${costInfo.total}，現 ${costInfo.have}）`
+              : "";
           return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">${pager}</div>
           <div class="summon-controls">
@@ -5322,10 +5342,10 @@ function dungeonPanel() {
               <input type="range" class="summon-slider" min="${DUNGEON_SUMMON_MIN}" max="${DUNGEON_SUMMON_MAX}" value="${summonCount}" data-summon-slider aria-label="召喚場數" />
               <span class="muted">${DUNGEON_SUMMON_MIN}–${DUNGEON_SUMMON_MAX}</span>
             </div>
-            <p class="sweep-label">潮霧令 ${fmtInt(tokenHave)}（秘境不掉令）· ${costInfo.label} · 約 ${summonSecEst}s</p>
+            <p class="sweep-label">持有${tokenName} ${fmtInt(tokenHave)}（秘境不掉）· ${costInfo.label} · 約 ${summonSecEst}s</p>
             <button type="button" class="primary sweep-run-btn" data-summon="${escapeHtml(dCur.id)}" data-summon-count="${summonCount}" ${
               locked || !affordOk ? "disabled" : ""
-            }>召喚 ×${summonCount}</button>
+            }${summonBlockReason ? ` data-summon-block="${escapeHtml(summonBlockReason)}"` : ""}>召喚 ×${summonCount}</button>
           </div>
         </div>`;
         })()
@@ -5358,10 +5378,14 @@ function dungeonPanel() {
     return wrapStage(nav, abyssPanelHtml());
   }
 
+  const leadLine = gate?.needsSummon
+    ? "已通關：召喚凝聚 → 就緒挑戰 → 戰後散去（耗潮霧令）"
+    : "首通可直接進攻 · 通關後需召喚凝聚再挑戰";
+
   return wrapStage(
     nav,
     `<h2>潮汐秘境</h2>
-    <p class="lead">已通關層需先召喚凝聚 · 就緒後挑戰 · 戰後散去</p>
+    <p class="lead">${leadLine}</p>
     <label class="combat-pref-toggle"><input type="checkbox" data-act="toggle-combat-fast" ${combatPrefs.fastMode ? "checked" : ""}/> 已通關秘境快速戰鬥</label>
     ${
       dailyMod
@@ -6710,7 +6734,7 @@ function bind() {
   app.querySelectorAll("[data-summon]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) {
-        setFlash("潮霧令不足或尚未解鎖。");
+        setFlash(btn.dataset.summonBlock || "潮霧令不足或尚未解鎖。");
         return;
       }
       const n = clampDungeonSummonCount(btn.dataset.summonCount || summonCount);

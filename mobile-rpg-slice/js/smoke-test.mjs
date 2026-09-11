@@ -233,6 +233,7 @@ import {
   startDungeonSummon,
   dungeonTeamPreview,
   dungeonGateView,
+  resolveDungeon,
   claimAllDailies,
   claimDailyAllClear,
   dailyAllClearView,
@@ -753,7 +754,7 @@ assert(spineSite?.drops.find((d) => d.mat === "mist_token")?.perSec > 0, "spine 
 assert(spineAfkDropsForStage(1).some((d) => d.mat === "tide_dew"), "stage1 dew AFK");
 assert(spineAfkDropsForStage(2).some((d) => d.mat === "earth_grade_stone"), "stage2 earth AFK");
 assert(TRAIN_SITES.length === 1, "single spine train site");
-assert(SIDE_BRANCHES.length === 3, "three side branches");
+assert(SIDE_BRANCHES.length === 0, "side branches abolished");
 const fakeState = {
   realm: 0,
   qi: 10,
@@ -887,6 +888,13 @@ assert(dungeonsForRealm(0).length === 4, "min 4 dungeons");
 const t5 = buildDungeonForTier(5);
 assert(t5.id === "tide_5" && t5.needRealm === 4, "t5 tier");
 assert(t5.reward.stones > DUNGEONS[3].reward.stones, "t5 scaled reward");
+assert(t5.encounterWeights && Object.keys(t5.encounterWeights).length > 0, "t5 inherits encounterWeights");
+assert(t5.elementWeights?.flame >= 5, "t5 flame theme element bias");
+assert(t5.encounterWeights?.glowfin >= 5, "t5 flame theme species bias");
+const t6w = buildDungeonForTier(6);
+assert(t6w.elementWeights?.gloom >= 5 && t6w.encounterWeights?.nightmoth >= 5, "t6 gloom theme bias");
+assert(resolveDungeon({ dungeonDaily: null, realm: 5 }, "tide_5")?.encounterWeights, "resolveDungeon tide_5 has weights");
+assert(resolveDungeon({ dungeonDaily: null, realm: 5 }, "earth_vein_1") == null, "resolveDungeon rejects abolished branch");
 const t2daily = generateDailyDungeon("tide_2", "2026-08-27");
 assert(countDungeonRoles(dungeonWaves(t2daily)).boss >= 1, "t2 daily boss");
 assert(dungeonTrialFor("tide_5")?.needHybrid, "t5 trial");
@@ -989,10 +997,10 @@ assert(materialSourceLabel("temper_oil") === "秘境專屬", "temper dungeon-onl
 assert(materialSourceLabel("echo_resin").includes("主脊"), "resin from spine");
 assert(unlockedTrainSiteIds({ clearedDungeons: {} }).includes(SPINE_ZONE_ID), "spine free");
 assert(unlockedTrainSiteIds({ clearedDungeons: {} }).length === 1, "only spine unlocked");
-assert(!isSideBranchUnlocked({ clearedDungeons: {} }, "earth_vein"), "earth locked early");
+assert(!isSideBranchUnlocked({ clearedDungeons: {} }, "earth_vein"), "earth always locked");
 assert(
-  isSideBranchUnlocked({ clearedDungeons: { tide_21: true } }, "earth_vein"),
-  "earth unlock stage2 at floor21"
+  !isSideBranchUnlocked({ clearedDungeons: { tide_21: true } }, "earth_vein"),
+  "side branches stay abolished even at stage2"
 );
 assert(upgradeMatCost(1).tide_dew >= 1 && !upgradeMatCost(1).earth_grade_stone, "upgrade early main only");
 assert(upgradeMatCost(12).earth_grade_stone > 0, "upgrade band earth");
@@ -1140,11 +1148,11 @@ const gen1Pet = makeStarterPet();
 const gen2Rule = DUNGEON_CHALLENGE_RULES.find((r) => r.id === "min_gen2");
 assert(!evaluateDungeonChallenge([gen1Pet], gen2Rule).ok, "gen2 challenge rejects gen1");
 
-/* Side branches */
-const earthD = buildBranchDungeon("earth_vein", 1);
-assert(earthD?.isSideBranch && earthD.matDropOverride?.weights?.earth_grade_stone >= 8, "earth branch mats");
-assert(isBranchDungeonId("earth_vein_3") && !isBranchDungeonId("tide_3"), "branch id parse");
-assert(SIDE_BRANCHES.length === 3, "legacy side branch defs kept");
+/* Side branches abolished */
+assert(buildBranchDungeon("earth_vein", 1) == null, "branch builder returns null");
+assert(isBranchDungeonId("earth_vein_3") && !isBranchDungeonId("tide_3"), "branch id parse kept");
+assert(SIDE_BRANCHES.length === 0, "side branch defs empty");
+assert(listSideBranches({ clearedDungeons: { tide_40: true } }).length === 0, "listSideBranches empty");
 assert(maxClearedTideTier({ clearedDungeons: { tide_5: true, earth_vein_1: true } }) === 5, "branch clears ignore max tide");
 assert(spineFrontierTier({ clearedDungeons: { tide_5: true } }) === 6, "frontier next");
 assert(spineStageFromState({ clearedDungeons: { tide_21: true } }) === 2, "stage from state");
@@ -1960,10 +1968,13 @@ assert(dungeonGateView(sweepSt, "tide_1").phase === "ready", "summon ready");
 const sweepRes = runDungeonSweep(sweepSt, "tide_1", 5);
 assert(sweepRes.ok && sweepRes.sweep && sweepRes.count === 5, "sweep 5 runs");
 assert(sweepRes.wins >= 1 && sweepRes.totalStones > 0, "sweep aggregate stones");
+assert(sweepRes.tokenCost === summon.tokenCost && sweepRes.tokenCost > 0, "sweep reports summon token cost");
+assert(String(sweepRes.msg || "").includes("本批召喚已耗"), "sweep msg mentions spent tokens");
 assert(dungeonGateView(sweepSt, "tide_1").phase === "idle", "gate idle after sweep");
 const cost5 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 5);
 const cost10 = dungeonSweepCost({ ...sweepSt, materials: { mist_token: 999 }, dungeonReadyAt: {}, dungeonSummon: {} }, "tide_1", 10);
 assert(cost10.total > cost5.total, "10-sweep costs more than 5");
+assert(cost5.label.includes("每場") && cost5.perRun >= 1, "cost label shows per-run");
 assert(clampDungeonSummonCount(7) === 7, "summon count 7 ok");
 const teamPrev = dungeonTeamPreview(sweepSt, "tide_1");
 assert(teamPrev?.ok && teamPrev.allies?.length >= 1 && teamPrev.foes?.length >= 1, "team preview");
@@ -3666,7 +3677,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v111"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v112"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

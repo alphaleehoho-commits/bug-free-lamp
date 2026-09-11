@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260909.6";
+export const APP_BUILD = "20260910.2";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -2578,6 +2578,48 @@ function scaleReward(obj, mult) {
   return out;
 }
 
+/** 高層遇寵：按主題屬性偏置 element／species 權重 */
+function themeElementWeights(favored) {
+  const w = { flame: 1, gloom: 1, tide: 1, stone: 1, gale: 1 };
+  if (favored && w[favored] != null) w[favored] = 5;
+  // 鄰屬略抬，保持多樣性
+  const neighbors = {
+    flame: ["gale", "tide"],
+    gale: ["flame", "gloom"],
+    gloom: ["gale", "stone"],
+    stone: ["gloom", "tide"],
+    tide: ["stone", "flame"],
+  };
+  for (const n of neighbors[favored] || []) {
+    if (w[n] != null) w[n] = Math.max(w[n], 2);
+  }
+  return w;
+}
+
+function themeEncounterWeights(favored) {
+  const base = {
+    reefox: 2,
+    tidecarp: 2,
+    mossback: 2,
+    ashwing: 2,
+    nightmoth: 2,
+    glowfin: 2,
+    saltpup: 1,
+    brineeel: 1,
+    cliffkite: 1,
+    barnshell: 1,
+  };
+  const boost = {
+    flame: { glowfin: 5, ashwing: 4, reefox: 2 },
+    gloom: { nightmoth: 5, glowfin: 3, ashwing: 2 },
+    stone: { mossback: 5, brineeel: 4, barnshell: 3, tidecarp: 2 },
+    tide: { reefox: 4, tidecarp: 5, saltpup: 4, glowfin: 2 },
+    gale: { ashwing: 5, cliffkite: 4, nightmoth: 3, reefox: 2 },
+  };
+  const extra = boost[favored] || {};
+  return { ...base, ...extra };
+}
+
 /** 5 層以上：以第 4 層為基準按 tier 公式放大 */
 export function scaleDungeonForTier(base, tier) {
   const d = cloneDungeon(base);
@@ -2687,6 +2729,18 @@ export function scaleDungeonForTier(base, tier) {
     chance: Math.min(0.62, 0.42 + Math.min(extra, 40) * 0.004),
     weights: matBias,
   };
+  const favored = theme.passive?.element || "gale";
+  d.elementWeights = themeElementWeights(favored);
+  d.encounterWeights = themeEncounterWeights(favored);
+  // 深層略抬稀有野生種權重（仍受 wildSpeciesIds／realm 過濾）
+  if (spineStage >= 4) {
+    d.encounterWeights = {
+      ...d.encounterWeights,
+      nightmoth: (d.encounterWeights.nightmoth || 1) + 1,
+      cliffkite: (d.encounterWeights.cliffkite || 1) + 1,
+      glowfin: (d.encounterWeights.glowfin || 1) + 1,
+    };
+  }
   return d;
 }
 
@@ -3904,51 +3958,6 @@ export function tideSealGainForRealm(realm) {
   return 0;
 }
 
-/** 秘境掉落（僅人物裝） */
-export const DUNGEON_GEAR_DROPS = {
-  tide_1: {
-    chance: 0.38,
-    weights: { tide_blade: 3, moss_vest: 3, mist_charm: 3, reef_cleaver: 1 },
-  },
-  tide_2: {
-    chance: 0.48,
-    weights: {
-      reef_cleaver: 3,
-      tide_mail: 3,
-      reef_ring: 3,
-      mist_charm: 2,
-      moss_vest: 1,
-    },
-  },
-  tide_3: {
-    chance: 0.58,
-    weights: {
-      core_fang: 2,
-      abyss_plate: 2,
-      gloom_sigil: 3,
-      reef_cleaver: 2,
-      tide_mail: 2,
-      reef_ring: 2,
-    },
-  },
-  tide_4: {
-    chance: 0.72,
-    weights: {
-      core_fang: 4,
-      abyss_plate: 4,
-      gloom_sigil: 4,
-      reef_cleaver: 2,
-      tide_mail: 2,
-      reef_ring: 2,
-    },
-  },
-};
-
-export function rollGearDrop(dungeonId, opts = {}) {
-  /* 人物裝備已移除：改掉落寵用素材 */
-  return null;
-}
-
 /** 秘境勝利掉落：主脊階段解鎖制（1–4 層對應階段一至四） */
 export const DUNGEON_MAT_DROPS = {
   tide_1: {
@@ -5013,40 +5022,14 @@ export function trainWardenThreat(zoneId, opts = {}) {
   return trainTierThreat(zoneId, TRAIN_TIER_COUNT, opts);
 }
 
-/* ─── 練功側枝（地／火／天）；入口在練功樹，唔改秘境 UI ─── */
+/* ─── 練功側枝（地／火／天）已廢止；保留 id 解析相容舊存檔 ─── */
 
-export const SIDE_BRANCHES = [
-  {
-    id: "earth_vein",
-    name: "地脈",
-    needSpineStage: 2,
-    floors: 8,
-    specialty: "earth_grade_stone",
-    element: "stone",
-    prefix: "地脈",
-  },
-  {
-    id: "fire_vein",
-    name: "火脈",
-    needSpineStage: 4,
-    floors: 8,
-    specialty: "fire_grade_stone",
-    element: "flame",
-    prefix: "火脈",
-  },
-  {
-    id: "sky_vein",
-    name: "天脈",
-    needSpineStage: 5,
-    floors: 8,
-    specialty: "sky_grade_stone",
-    element: "gale",
-    prefix: "天脈",
-  },
-];
+/** @deprecated 階石改主脊掛機；空表避免誤用 */
+export const SIDE_BRANCHES = [];
 
 export function sideBranchById(branchId) {
-  return SIDE_BRANCHES.find((b) => b.id === branchId) || null;
+  void branchId;
+  return null;
 }
 
 export function parseBranchDungeonId(dungeonId) {
@@ -5064,62 +5047,31 @@ export function branchDungeonId(branchId, floor) {
 }
 
 export function branchFloors(branchId) {
-  const b = sideBranchById(branchId);
-  if (!b) return [];
-  const out = [];
-  for (let f = 1; f <= b.floors; f++) out.push(branchDungeonId(branchId, f));
-  return out;
+  void branchId;
+  return [];
 }
 
 export function isSideBranchUnlocked(state, branchId) {
-  const b = sideBranchById(branchId);
-  if (!b) return false;
-  return spineStageFromState(state) >= (b.needSpineStage | 0);
+  void state;
+  void branchId;
+  return false;
 }
 
 export function listSideBranches(state) {
-  return SIDE_BRANCHES.map((b) => ({
-    ...b,
-    unlocked: isSideBranchUnlocked(state, b.id),
-    lockHint: `主脊階段≥${b.needSpineStage} 解鎖`,
-  }));
+  void state;
+  return [];
 }
 
-/** 側枝關卡：短線農場；cleared 唔餵突破／主幹前沿 */
+/** @deprecated 側枝已廢；永遠回 null */
 export function buildBranchDungeon(branchId, floor) {
-  const b = sideBranchById(branchId);
-  if (!b) return null;
-  const f = Math.max(1, Math.min(b.floors, floor | 0));
-  const baseTier = Math.max(2, b.needSpineStage * 8 + f);
-  const base = buildDungeonForTier(Math.min(baseTier, 40)) || buildDungeonForTier(4);
-  if (!base) return null;
-  const d = JSON.parse(JSON.stringify(base));
-  d.id = branchDungeonId(branchId, f);
-  d.name = `${b.name} · ${f}層`;
-  d.needRealm = Math.max(0, b.needSpineStage - 1);
-  d.branchId = branchId;
-  d.branchFloor = f;
-  d.isSideBranch = true;
-  d.loreTag = `側枝·${b.name}`;
-  const weights = { [b.specialty]: 8, tide_dew: 1 };
-  if (b.id === "sky_vein" && f >= 6) weights.void_grade_stone = 2;
-  if (f >= 4) weights[b.specialty] = 10;
-  d.matDropOverride = {
-    chance: 0.72,
-    weights,
-  };
-  d.reward = d.reward || { stones: 20, scrap: 1 };
-  d.reward.stones = Math.max(12, Math.round((d.reward.stones || 20) * 0.55));
-  d.firstClearBonus = d.firstClearBonus || { stones: 30, scrap: 1 };
-  d.firstClearBonus.stones = Math.max(20, Math.round((d.firstClearBonus.stones || 30) * 0.5));
-  if (d.firstClearBonus.seal_ember) delete d.firstClearBonus.seal_ember;
-  return d;
+  void branchId;
+  void floor;
+  return null;
 }
 
 export function resolveBranchDungeon(dungeonId) {
-  const parsed = parseBranchDungeonId(dungeonId);
-  if (!parsed) return null;
-  return buildBranchDungeon(parsed.branchId, parsed.floor);
+  void dungeonId;
+  return null;
 }
 
 /** 秘境→潮鑰對照 */
