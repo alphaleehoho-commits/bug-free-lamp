@@ -263,6 +263,8 @@ import {
   petMatchesDispatchMission,
   dispatchMissionReqLabel,
   upgradePet,
+  upgradePetSkill,
+  petDetail,
   isFusionUnlocked,
   dungeonAttackBlockReason,
   fusePets,
@@ -327,6 +329,7 @@ import {
   exportSaveJson,
   importSaveJson,
   dailyView,
+  SECOND_SKILL_UNLOCK,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -2487,6 +2490,45 @@ const upR = upgradePet(feedUpSt, "up-pet", "feed");
 assert(upR.ok && feedUpSt.feed < feedBefore, "feed upgrade deducts feed");
 assert(feedUpSt.ranch[0].level === 2, "feed upgrade levels pet");
 
+/* Split skill upgrade: primary vs second */
+{
+  const skillSt = {
+    dust: 500,
+    materials: { ...emptyMaterials(), echo_resin: 20 },
+    ranch: [
+      {
+        ...buildPetStats({
+          id: "sk1",
+          species: "reefox",
+          element: "tide",
+          personality: "gentle",
+          cost: 0,
+        }),
+        uid: "skill-pet",
+        level: 1,
+        fusionLevel: 0,
+        skillLevel: 1,
+        secondSkillLevel: 1,
+      },
+    ],
+    pets: [],
+    log: [],
+  };
+  const d0 = petDetail(skillSt, "skill-pet");
+  assert(d0 && !d0.secondUnlocked, "second skill locked at lv1");
+  const bad2 = upgradePetSkill(skillSt, "skill-pet", "second");
+  assert(!bad2.ok && bad2.msg.includes("未解鎖"), "second upgrade blocked when locked");
+  const up1 = upgradePetSkill(skillSt, "skill-pet", "primary");
+  assert(up1.ok && skillSt.ranch[0].skillLevel === 2, "primary skill levels");
+  assert(skillSt.ranch[0].secondSkillLevel === 1, "second skill unchanged by primary");
+  skillSt.ranch[0].level = SECOND_SKILL_UNLOCK.level;
+  const d1 = petDetail(skillSt, "skill-pet");
+  assert(d1?.secondUnlocked, "second unlocked by level");
+  const up2 = upgradePetSkill(skillSt, "skill-pet", "second");
+  assert(up2.ok && skillSt.ranch[0].secondSkillLevel === 2, "second skill levels");
+  assert(skillSt.ranch[0].skillLevel === 2, "primary unchanged by second");
+}
+
 assert(!isFusionUnlocked({ clearedDungeons: {} }), "fusion locked pre t3");
 assert(isFusionUnlocked({ clearedDungeons: { tide_3: true } }), "fusion unlock t3");
 const fuseLock = fusePets({ clearedDungeons: {}, pets: [], ranch: [], stones: 999, materials: {} }, "x", ["y"]);
@@ -3212,17 +3254,26 @@ assert(uiSrc2.includes("data-pet-detail-tab"), "ui pet detail tabs");
 assert(uiSrc2.includes("petDetailStatsHtml"), "ui stats tab helper");
 assert(uiSrc2.includes("petDetailTemperHtml"), "ui temper tab helper");
 assert(uiSrc2.includes("petDetailSkillsHtml"), "ui skills tab helper");
-assert(uiSrc2.includes("戰鬥被動"), "ui personality combat copy");
-assert(uiSrc2.includes("相剋"), "ui element matchup copy");
-assert(uiSrc2.includes("data-upgrade-skill") && uiSrc2.includes("data-temper-oil"), "ui keep upgrade/temper");
+assert(uiSrc2.includes("petDetailBloodHtml"), "ui blood tab helper");
+assert(uiSrc2.includes('["blood", "血統"]') || uiSrc2.includes('"血統"'), "ui blood tab label");
+assert(uiSrc2.includes("data-rename-pen"), "ui rename pen");
+assert(uiSrc2.includes("temperOilConfirmModal"), "ui temper oil confirm modal");
+assert(uiSrc2.includes("nickRenameModal"), "ui nick rename modal");
+assert(uiSrc2.includes("data-upgrade-skill1") && uiSrc2.includes("data-upgrade-skill2"), "ui split skill upgrade");
+assert(uiSrc2.includes("data-temper-oil"), "ui temper oil on temper tab");
+assert(uiSrc2.includes("data-upgrade-feed"), "ui feed-only upgrade dock");
+assert(!uiSrc2.includes("data-upgrade-stones"), "ui no stone upgrade on detail");
 assert(uiSrc2.includes("personalitySoulTagHtml"), "ui keeps deprecated soul helper");
-assert(uiSrc2.includes("data-awaken-sub") || uiSrc2.includes("覺醒副性格"), "ui awaken sub button");
+assert(uiSrc2.includes("data-awaken-sub") || uiSrc2.includes("覺醒"), "ui awaken sub button");
 assert(uiSrc2.includes("pet-tag-kin"), "ui kinship tag");
 assert(uiSrc2.includes("祖父母"), "ui grandparents lineage");
 assert(uiSrc2.includes("雙親性格"), "ui breed preview temper");
 assert(uiSrc2.includes("partyKinshipUidSet"), "ui party kinship helper");
 assert(cssSrc.includes("pet-detail-tabs"), "css pet detail tabs");
 assert(cssSrc.includes("pet-explain"), "css pet explain blocks");
+assert(cssSrc.includes("pet-rename-pen"), "css rename pen");
+assert(cssSrc.includes("pet-inline-btn"), "css inline pet buttons");
+assert(uiSrc2.includes("相剋"), "ui element matchup copy");
 
 /* Pack A: star / lock / release→soul / batch release */
 {

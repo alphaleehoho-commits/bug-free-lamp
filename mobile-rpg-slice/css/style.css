@@ -1931,6 +1931,62 @@ button.ghost {
   color: var(--jade-bright);
   background: rgba(40, 72, 68, 0.45);
 }
+.pet-detail-hero-text h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.35rem;
+}
+.pet-detail-name {
+  font-family: var(--font-display);
+}
+.pet-rename-pen {
+  flex: 0 0 auto;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  margin: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(126, 168, 160, 0.35);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--jade-bright);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.pet-rename-pen:hover {
+  border-color: rgba(126, 168, 160, 0.65);
+}
+.pet-temper-card h3,
+.pet-skill-card h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+.pet-temper-card h3 > span,
+.pet-skill-card h3 > span {
+  min-width: 0;
+}
+.pet-inline-btn {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  padding: 0.22rem 0.45rem;
+  border-radius: 7px;
+  border: 1px solid rgba(126, 168, 160, 0.4);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--fog);
+  cursor: pointer;
+}
+.pet-inline-btn.primary {
+  border-color: rgba(126, 168, 160, 0.65);
+  color: var(--jade-bright);
+  background: rgba(40, 72, 68, 0.5);
+}
+.pet-inline-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .pet-explain {
   margin: 0.35rem 0;
   padding: 0.4rem 0.45rem;
