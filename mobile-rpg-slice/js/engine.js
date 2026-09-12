@@ -175,6 +175,7 @@ import {
   spineFrontierTier,
   spineStageFromState,
   isSpineStageBossFloor,
+  isSpinePreBossFloor,
   spineKeyMatForStage,
   spineThreatBase,
   maxClearedTideTier,
@@ -1389,7 +1390,12 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
   const prefix = TRAIN_FOE_PREFIX[zoneId] || TRAIN_FOE_PREFIX.spine;
   const elem = TRAIN_FOE_ELEMENT[zoneId] || "tide";
   const tier = tierIndex | 0;
-  const tierScale = 1 + tier * 0.06;
+  const floor = tier + 1;
+  // 威脅已按預期等級錨定；唔再疊階段 tierScale（否則同 ratio 下後期頭目會無解）
+  const tierScale = 1;
+  const preBoss = isSpinePreBossFloor(floor);
+  const stageBoss = isSpineStageBossFloor(floor);
+  const lateMult = stageBoss ? 1.04 : preBoss ? 1.04 : 1;
 
   const mkNormal = (name, scale = 1) => ({
     name,
@@ -1402,8 +1408,8 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
 
   const mkElite = (name, scale = 1.35) => ({
     name,
-    hp: Math.max(40, Math.round(threat * 1.62 * scale * tierScale)),
-    atk: Math.max(5, Math.round(threat * 0.2 * scale * tierScale)),
+    hp: Math.max(40, Math.round(threat * 1.62 * scale * tierScale * lateMult)),
+    atk: Math.max(5, Math.round(threat * 0.2 * scale * tierScale * (preBoss || stageBoss ? 1.06 : 1))),
     spd: Math.max(6, Math.round(6 + threat * 0.065 * scale)),
     element: elem,
     role: "elite",
@@ -1412,9 +1418,9 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
 
   const mkBoss = (name) => ({
     name,
-    hp: Math.max(80, Math.round(threat * 2.55 * tierScale)),
-    atk: Math.max(8, Math.round(threat * 0.24 * tierScale)),
-    spd: Math.max(7, Math.round(7 + threat * 0.075)),
+    hp: Math.max(80, Math.round(threat * 2.05 * lateMult)),
+    atk: Math.max(8, Math.round(threat * 0.2)),
+    spd: Math.max(7, Math.round(7 + threat * 0.06)),
     element: "gloom",
     role: "boss",
     actions: 2,
@@ -1422,8 +1428,6 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
   });
 
   if (!warden) {
-    const floor = tier + 1;
-    const stageBoss = isSpineStageBossFloor(floor);
     const waves = [
       {
         label: `${prefix}散霧`,
@@ -1438,8 +1442,8 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
         enemies: [mkNormal(`${prefix}獸`, 1.02), mkNormal(`${prefix}衛`, 0.98)],
       },
       {
-        label: stageBoss ? `第${floor}層·先鋒` : `第${floor}層·精英`,
-        enemies: [mkElite(`${prefix}精英`, 1.08 + tier * 0.04)],
+        label: stageBoss ? `第${floor}層·先鋒` : preBoss ? `第${floor}層·試煉精英` : `第${floor}層·精英`,
+        enemies: [mkElite(`${prefix}精英`, stageBoss ? 1.05 : preBoss ? 1.14 + (tier % 20) * 0.008 : 1.08 + (tier % 20) * 0.008)],
       },
     ];
     if (stageBoss) {
@@ -1450,8 +1454,8 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
       });
     } else {
       waves.push({
-        label: `第${floor}層·守門`,
-        enemies: [mkElite(`${prefix}守門`, 1.22 + tier * 0.06)],
+        label: preBoss ? `第${floor}層·升階試煉` : `第${floor}層·守門`,
+        enemies: [mkElite(`${prefix}守門`, (preBoss ? 1.3 : 1.2) + (tier % 20) * 0.006)],
       });
     }
     return waves;
