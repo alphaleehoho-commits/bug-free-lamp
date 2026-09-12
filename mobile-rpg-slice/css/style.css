@@ -3552,6 +3552,7 @@ button.pet-badge {
 }
 
 #app.is-title {
+  max-width: 640px;
   justify-content: flex-start;
   overflow-y: auto;
 }
@@ -3639,6 +3640,10 @@ button.pet-badge {
 .title-start {
   min-height: 2.8rem;
   font-size: 1.02rem;
+}
+.title-skip {
+  min-height: 2.4rem;
+  font-size: 0.92rem;
 }
 .title-note {
   margin: 0;

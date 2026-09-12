@@ -2154,7 +2154,7 @@ function titleScreenHtml() {
       </section>
       <div class="title-actions">
         <button type="button" class="primary title-start" data-act="enter-title">開始教學</button>
-        <button type="button" class="ghost" data-act="enter-title-skip">跳過教學，自由探索</button>
+        <button type="button" class="secondary title-skip" data-act="enter-title-skip">跳過教學，自由探索</button>
       </div>
       <p class="title-note">教學約十餘步，可隨時跳過。存檔留在此裝置。</p>
     </div>`;
