@@ -287,6 +287,8 @@ import {
   createTrainIdleSession,
   stepTrainIdleSession,
   markTrainIdleClearReady,
+  trainAutoNextFloorEnabled,
+  setTrainAutoNextFloor,
   persistTrainIdleClearResult,
   idleFailAdvice,
   shouldShowTitleScreen,
@@ -2888,8 +2890,9 @@ while (idleSteps < 500 && !idleWon) {
   idleSteps += 1;
   if (step.status === "won") {
     idleWon = true;
+    setTrainAutoNextFloor(tzSt, false);
     const marked = markTrainIdleClearReady(tzSt, idleSess);
-    assert(marked.ok && !marked.autoClaimed, "mark clear ready for floor1");
+    assert(marked.ok && !marked.autoClaimed, "mark clear ready for floor1 (auto off)");
     assert(/首次通關：\d+s/.test(idleSess.resultLine || ""), "first clear time line");
     assert(idleSess.clearSec >= 90, "clear sec uses wall clock not fight ticks");
     break;
@@ -2944,6 +2947,28 @@ assert(titled.entered, "markTitleEntered sets flag");
 assert(GAME_TERMS.tide_dew?.name === "潮露" && GAME_TERMS.qi?.name === "靈契", "glossary core terms");
 assert(GAME_TERMS.spine && GAME_TERMS.mist_token && GAME_TERMS.soul, "glossary spine/token/soul");
 assert(tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady, "clearReady persisted");
+assert(trainAutoNextFloorEnabled({}), "auto next default on");
+assert(!trainAutoNextFloorEnabled({ trainAutoNextFloor: false }), "auto next can disable");
+{
+  const autoSt = {
+    trainAutoNextFloor: true,
+    trainMap: { zones: { [SPINE_ZONE_ID]: { tiersCleared: 0, idleFloor: 1, clearReady: false } }, wardenCleared: {} },
+    clearedDungeons: {},
+    materials: {},
+    stones: 0,
+    pets: [],
+    daily: { date: "t", progress: {}, claimed: {} },
+  };
+  const autoMark = markTrainIdleClearReady(autoSt, { won: true, zoneId: SPINE_ZONE_ID });
+  assert(autoMark.ok && autoMark.autoClaimed && autoMark.floor === 2, "auto next claims frontier");
+  assert(trainIdleFloor(autoSt) === 2 && autoSt.clearedDungeons.tide_1, "auto next clears floor1");
+  setTrainAutoNextFloor(autoSt, false);
+  autoSt.trainMap.zones[SPINE_ZONE_ID].clearReady = false;
+  const manualMark = markTrainIdleClearReady(autoSt, { won: true, zoneId: SPINE_ZONE_ID });
+  assert(manualMark.ok && !manualMark.autoClaimed, "auto off stays on floor");
+  assert(trainIdleFloor(autoSt) === 2 && autoSt.trainMap.zones[SPINE_ZONE_ID].clearReady, "manual clearReady only");
+}
+
 assert(persistTrainIdleClearResult(tzSt, idleSess), "persist spine lastClear");
 assert(ACTIVE_PET_BASE === 3 && ACTIVE_PET_MAX === 4, "party 3 base / 4 unlock");
 assert(activePetMaxForState({ clearedDungeons: {} }) === 3, "party max stage1");
@@ -3066,6 +3091,8 @@ assert(uiSrc2.includes("trainFloorNavGates"), "ui uses trainFloorNavGates");
 assert(uiSrc2.includes("data-train-floor-prev"), "ui floor prev");
 assert(uiSrc2.includes("data-train-floor-next"), "ui floor next");
 assert(uiSrc2.includes("navTrainIdleFloor"), "ui uses navTrainIdleFloor");
+assert(uiSrc2.includes("data-train-auto-next"), "ui auto next toggle");
+assert(uiSrc2.includes("setTrainAutoNextFloor"), "ui wires auto next setter");
 assert(!uiSrc2.includes("data-train-branch-attack"), "ui no branch combat from train");
 assert(uiSrc2.includes("is-stage-boss") || uiSrc2.includes("train-boss-banner"), "ui stage boss highlight");
 assert(!uiSrc2.includes("data-train-spine-attack"), "ui no spine dungeon challenge");
@@ -3900,7 +3927,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v116"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v117"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

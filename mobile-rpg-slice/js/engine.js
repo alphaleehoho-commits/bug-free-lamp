@@ -613,6 +613,8 @@ function defaultState() {
     itemBonus: emptyItemBonus(),
     trainSite: SPINE_ZONE_ID,
     trainMap: emptyTrainMap(),
+    /** 掛機打通 frontier 後自動挑戰下一層（可關返農本層） */
+    trainAutoNextFloor: true,
     inventory: [],
     master: defaultMaster(),
     pets: [],
@@ -930,6 +932,7 @@ export function loadState() {
       itemBonus: normalizeItemBonus(parsed.itemBonus),
       trainSite: SPINE_ZONE_ID,
       trainMap: migrateTrainMap(parsed),
+      trainAutoNextFloor: parsed.trainAutoNextFloor !== false,
       inventory,
       pending: Array.isArray(parsed.pending) ? parsed.pending : [],
       clearedDungeons: parsed.clearedDungeons || {},
@@ -1944,8 +1947,23 @@ export function persistTrainIdleClearResult(state, session) {
   return true;
 }
 
+/** 掛機通關後是否自動挑戰下一層（預設開） */
+export function trainAutoNextFloorEnabled(state) {
+  return state?.trainAutoNextFloor !== false;
+}
+
+export function setTrainAutoNextFloor(state, enabled) {
+  state.trainAutoNextFloor = !!enabled;
+  return {
+    ok: true,
+    enabled: !!state.trainAutoNextFloor,
+    msg: state.trainAutoNextFloor ? "已開自動下一層" : "已關自動下一層（留喺本層掛機）",
+  };
+}
+
 /**
  * 掛機清完一輪後標記 clearReady（frontier 先解鎖「下一層」）。
+ * 若開啟自動下一層且當前係 frontier，會即時 nav 推進。
  */
 export function markTrainIdleClearReady(state, session) {
   if (!session?.won) {
@@ -1954,6 +1972,20 @@ export function markTrainIdleClearReady(state, session) {
   const z = ensureZoneProgress(state, session.zoneId || SPINE_ZONE_ID);
   z.clearReady = true;
   session.clearReady = true;
+  const floor = trainIdleFloor(state);
+  const frontier = spineFrontierTier(state);
+  if (trainAutoNextFloorEnabled(state) && floor === frontier) {
+    const nav = navTrainIdleFloor(state, 1);
+    if (nav.ok) {
+      return {
+        ok: true,
+        autoClaimed: true,
+        floor: nav.floor,
+        firstClear: !!nav.firstClear,
+        msg: nav.msg,
+      };
+    }
+  }
   return { ok: true, autoClaimed: false };
 }
 
