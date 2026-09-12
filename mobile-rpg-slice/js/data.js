@@ -1,7 +1,21 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260912.2";
+export const APP_BUILD = "20260912.3";
+
+/** 新手／資源列用語（短解，配合 title／tooltip） */
+export const GAME_TERMS = {
+  stones: { name: "靈石", blurb: "通用貨幣。商肆買蛋、升級靈寵會消耗。" },
+  scrap: { name: "碎片", blurb: "秘境掉落。部分養成與兌換會用到。" },
+  feed: { name: "飼料", blurb: "餵食／契約用。掛機與牧場待命可產出。" },
+  dust: { name: "靈塵", blurb: "技能與進階養成材料。掛機與牧場可產出。" },
+  qi: { name: "靈契", blurb: "修行進度。掛機累積，滿後可到「進階」突破階段。" },
+  tide_dew: { name: "潮露", blurb: "升級靈寵的主材料。在「修行 → 練功」掛機取得。" },
+  spine: { name: "主脊", blurb: "掛機練功的主戰場／關卡鏈。打通一層再開下一層。" },
+  mist_token: { name: "潮霧令", blurb: "再挑戰已通關秘境的入場憑證。練功、每日與升階可獲。" },
+  soul: { name: "精魂", blurb: "放生靈寵或潮還未孵蛋所得。可在商肆兌換物資。" },
+  realm: { name: "階段", blurb: "修行境界。突破後掛機效率與可挑戰內容會提升。" },
+};
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
