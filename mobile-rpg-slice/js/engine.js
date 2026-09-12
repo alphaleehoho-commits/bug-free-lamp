@@ -674,6 +674,8 @@ function defaultState() {
     dispatchBoardDate: null,
     tideSeals: 0,
     tutorial: { done: false, step: "hatch_starter", flags: {} },
+    /** 已看過標題／開始畫面（舊存檔缺此欄＝依進度推斷） */
+    entered: false,
     loginStreak: emptyLoginStreak(now),
     /** 潮淵深潛 */
     abyssDive: emptyAbyssDive(now),
@@ -1770,16 +1772,17 @@ export function stepTrainIdleSession(session) {
   const allies = session.allies;
   const foes = session.foes;
 
-  const finishIdleResult = (won, now = Date.now()) => {
+  const finishIdleResult = (won, now = Date.now(), failKind = null) => {
     // 牆鐘秒數（含攻擊動畫等待）；唔再用出手步數冒充秒
     const started = session.startedAt || now;
     const sec = Math.max(1, Math.round((now - started) / 1000));
     session.clearSec = sec;
     session.won = !!won;
+    session.failKind = won ? null : failKind || "wipe";
     if (won) {
       session.resultLine = session.isFirstClear ? `首次通關：${sec}s` : `通關時間：${sec}s`;
     } else {
-      session.resultLine = "挑戰失敗";
+      session.resultLine = session.failKind === "timeout" ? "挑戰失敗 · 逾時" : "挑戰失敗 · 全滅";
     }
   };
 
@@ -1789,7 +1792,7 @@ export function stepTrainIdleSession(session) {
       session.ended = true;
       session.won = false;
       session.lastText = "戰鬥逾時，重新開始…";
-      finishIdleResult(false);
+      finishIdleResult(false, Date.now(), "timeout");
       session.phase = "pause";
       session.pauseLeft = 2;
       return { status: "lost", session };
@@ -1839,7 +1842,7 @@ export function stepTrainIdleSession(session) {
     session.ended = true;
     session.won = false;
     session.lastText = `折戟【${session.siteName}】${session.layerLabel}……全滅，重新開始`;
-    finishIdleResult(false);
+    finishIdleResult(false, Date.now(), "wipe");
     session.phase = "pause";
     session.pauseLeft = 2;
     return { status: "lost", session, events };
@@ -1866,6 +1869,62 @@ export function stepTrainIdleSession(session) {
   }
 
   return { status: "fight", session, events };
+}
+
+/**
+ * 掛機失敗建議（全滅／逾時）：解釋原因 + 下一步。
+ */
+export function idleFailAdvice(state, session) {
+  const last = session?.lastText || "";
+  const kind =
+    session?.failKind ||
+    (last.includes("逾時") ? "timeout" : "wipe");
+  const floor = session?.floor || trainIdleFloor(state);
+  const petN = (state.pets || []).length;
+  const maxN = activePetMaxForState(state);
+  const tips = [];
+  if (kind === "timeout") {
+    tips.push("未能在時限內清完波次——攻擊或速度不足。");
+  } else {
+    tips.push("出戰隊被擊倒——生存或輸出不足。");
+  }
+  if (petN < maxN) {
+    tips.push(`隊伍未滿（${petN}/${maxN}）。到「靈寵 → 牧場」再派出戰。`);
+  }
+  const underleveled = (state.pets || []).some((p) => (p.level || 1) < Math.max(3, floor));
+  if (underleveled || !petN) {
+    tips.push("升級出戰靈寵（潮露在「修行 → 練功」掛機取得）可提高效率。");
+  }
+  if (floor > 1) {
+    tips.push("可按「上一層」打已通關卡攞材料，再回來挑戰。");
+  } else {
+    tips.push("先在牧場升級、擴隊，再繼續掛機。");
+  }
+  return {
+    kind,
+    title: kind === "timeout" ? "戰鬥逾時" : "出戰隊全滅",
+    line: session?.resultLine || "挑戰失敗",
+    tips,
+  };
+}
+
+/** 新玩家未看過開始畫面 */
+export function shouldShowTitleScreen(state) {
+  if (state?.entered) return false;
+  if ((state?.realm || 0) > 0 || (state?.combatsWon || 0) > 0) return false;
+  if (state?.tutorial?.done) return false;
+  const step = state?.tutorial?.step || "hatch_starter";
+  if (step !== "hatch_starter") return false;
+  const flags = state?.tutorial?.flags || {};
+  if (flags.starterHatched || flags.shopBought || flags.dungeonStarted) return false;
+  const owned = (state?.pets?.length || 0) + (state?.ranch?.length || 0);
+  if (owned > 0) return false;
+  return true;
+}
+
+export function markTitleEntered(state) {
+  if (state) state.entered = true;
+  return state;
 }
 
 /**

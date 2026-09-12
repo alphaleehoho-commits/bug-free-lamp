@@ -18,7 +18,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "train_pet",
     title: "練功升級",
-    hint: "潮岸掛機攞潮露；夠料後到「靈寵 → 牧場 → 詳情」點升級，升至 Lv.3。",
+    hint: "潮岸掛機攞潮露（升級主材料）；夠料後到「靈寵 → 牧場 → 詳情」點升級，升至 Lv.3。",
   },
   {
     id: "deploy",
@@ -48,12 +48,12 @@ export const TUTORIAL_STEPS = [
   {
     id: "cultivate_qi",
     title: "靈契修行",
-    hint: "在契壇掛機累積靈契（教學需稍作等候，感受修行節奏）。",
+    hint: "在契壇掛機累積靈契（突破階段的修行值；教學需稍作等候）。",
   },
   {
     id: "breakthrough",
     title: "突破初階",
-    hint: "打開「進階」分頁，突破至【通靈初期】。",
+    hint: "打開「修行 → 進階」，突破至【通靈初期】。",
   },
   {
     id: "breed_intro",
@@ -1066,11 +1066,36 @@ export function tutorialBannerHint(state) {
   return info.hint;
 }
 
+const TUTORIAL_NEXT_WHERE = {
+  hatch_starter: "底部「靈寵」→「孵化」領取",
+  meet_pet: "「靈寵 → 牧場」點開首寵詳情",
+  train_pet: "先「修行 → 練功」掛機，夠潮露再回「靈寵」升級",
+  deploy: "「靈寵 → 牧場」點「出戰」",
+  dungeon_fight: "底部「秘境」→ 進攻一層",
+  dungeon_win: "繼續在「秘境」戰勝一層",
+  shop_egg: "「修行 → 商肆」購入一枚蛋",
+  hatch_second: "「靈寵 → 孵化」等候並領取",
+  cultivate_qi: "留在「修行 → 練功」累積靈契",
+  breakthrough: "「修行 → 進階」突破",
+  breed_intro: "「靈寵 → 繁殖」看一眼即可",
+  codex: "底部「圖鑑」查看收藏",
+  dispatch: "「靈寵 → 派遣」",
+  tactics: "「秘境 → 戰術」",
+  fuse_intro: "打開靈寵詳情 → 融合頁",
+  fuse_once: "用同種素材完成一次融合",
+};
+
+export function tutorialNextWhere(state) {
+  const info = tutorialStepInfo(state);
+  return TUTORIAL_NEXT_WHERE[info.stepId] || "";
+}
+
 export function tutorialBannerHtml(state, opts = {}) {
   if (!tutorialActive(state)) return "";
   const collapsed = !!opts.collapsed;
   const info = tutorialStepInfo(state);
   const hint = tutorialBannerHint(state);
+  const nextWhere = tutorialNextWhere(state);
   const phaseNote = info.inLate
     ? `<p class="tutorial-phase">進階引導 · 達【通靈後期】解鎖</p>`
     : "";
@@ -1095,5 +1120,6 @@ export function tutorialBannerHtml(state, opts = {}) {
         <button type="button" class="ghost tutorial-skip" data-act="skip-tutorial">跳過教學</button>
       </div>
       <p class="tutorial-hint" data-live="tutorial-hint">${hint}</p>
+      ${nextWhere ? `<p class="tutorial-next" data-live="tutorial-next">下一步：${nextWhere}</p>` : ""}
     </div>`;
 }

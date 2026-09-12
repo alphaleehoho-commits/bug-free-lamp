@@ -228,6 +228,7 @@ import {
   ELEMENT_EXPLAIN,
   KIND_EXPLAIN,
   APP_BUILD,
+  GAME_TERMS,
   ABYSS_MAX_ACTIVE_MUTATIONS,
   ABYSS_RULES_TEXT,
 } from "./data.js";
@@ -287,6 +288,9 @@ import {
   stepTrainIdleSession,
   markTrainIdleClearReady,
   persistTrainIdleClearResult,
+  idleFailAdvice,
+  shouldShowTitleScreen,
+  markTitleEntered,
   persistTrainIdleCombatState,
   restoreTrainIdleCombatState,
   clearTrainIdleCombatState,
@@ -360,6 +364,8 @@ import {
   maybeStartLateTutorial,
   tutorialWaivesDungeonChallenge,
   tutorialStepInfo,
+  tutorialNextWhere,
+  tutorialBannerHtml,
   LATE_TUTORIAL_MIN_REALM,
   trainPetCanUpgrade,
   TUTORIAL_STARTER_TIDE_DEW,
@@ -1683,6 +1689,8 @@ const tutSt = {
 };
 normalizeTutorial(tutSt);
 assert(tutorialActive(tutSt), "tutorial on for new");
+assert(tutorialNextWhere(tutSt).includes("孵化"), "tutorial next-where for hatch");
+assert(tutorialBannerHtml(tutSt).includes("下一步"), "tutorial banner shows next step");
 assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "meet_pet", "hatch_starter done");
 tutSt.tutorial.flags.petDetailVisited = true;
 assert(advanceTutorialIfReady(tutSt).advanced && tutSt.tutorial.step === "train_pet", "meet_pet step");
@@ -2889,6 +2897,52 @@ while (idleSteps < 500 && !idleWon) {
   if (step.status === "restart") break;
 }
 assert(idleWon, "idle session can clear with strong party");
+
+const wipeAdvice = idleFailAdvice(
+  { pets: [{ level: 1, uid: "a" }], realm: 0 },
+  { failKind: "wipe", floor: 1, resultLine: "挑戰失敗 · 全滅" }
+);
+assert(wipeAdvice.title.includes("全滅"), "wipe advice title");
+assert(wipeAdvice.tips.length >= 2, "wipe advice has next steps");
+assert(wipeAdvice.tips.some((t) => t.includes("牧場") || t.includes("升級")), "wipe advice mentions upgrade/party");
+const timeoutAdvice = idleFailAdvice(
+  { pets: [{ level: 2, uid: "a" }, { level: 2, uid: "b" }], realm: 0 },
+  { failKind: "timeout", floor: 4, resultLine: "挑戰失敗 · 逾時" }
+);
+assert(timeoutAdvice.title.includes("逾時"), "timeout advice title");
+assert(timeoutAdvice.tips.some((t) => t.includes("上一層")), "timeout advice suggests lower floor");
+assert(
+  shouldShowTitleScreen({
+    entered: false,
+    tutorial: { done: false, step: "hatch_starter", flags: {} },
+    pets: [],
+    ranch: [],
+  }),
+  "fresh save shows title"
+);
+assert(
+  !shouldShowTitleScreen({
+    entered: true,
+    tutorial: { done: false, step: "hatch_starter", flags: {} },
+    pets: [],
+    ranch: [],
+  }),
+  "entered skips title"
+);
+assert(
+  !shouldShowTitleScreen({
+    entered: false,
+    combatsWon: 1,
+    tutorial: { done: false, step: "hatch_starter", flags: {} },
+    pets: [],
+    ranch: [],
+  }),
+  "veteran skips title"
+);
+const titled = markTitleEntered({ entered: false });
+assert(titled.entered, "markTitleEntered sets flag");
+assert(GAME_TERMS.tide_dew?.name === "潮露" && GAME_TERMS.qi?.name === "靈契", "glossary core terms");
+assert(GAME_TERMS.spine && GAME_TERMS.mist_token && GAME_TERMS.soul, "glossary spine/token/soul");
 assert(tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady, "clearReady persisted");
 assert(persistTrainIdleClearResult(tzSt, idleSess), "persist spine lastClear");
 assert(ACTIVE_PET_BASE === 3 && ACTIVE_PET_MAX === 4, "party 3 base / 4 unlock");
@@ -2992,6 +3046,15 @@ assert(!uiSrc2.includes("offline-toast"), "ui no floating offline toast");
 assert(!uiSrc2.includes("clear-offline"), "ui no dismiss-offline toast act");
 assert(uiSrc2.includes("visibilitychange"), "ui catch-up on tab visible");
 assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
+assert(uiSrc2.includes("title-screen"), "ui title / start screen");
+assert(uiSrc2.includes("enter-title"), "ui title start action");
+assert(uiSrc2.includes("enter-title-skip"), "ui title skip-tutorial action");
+assert(uiSrc2.includes("idleFailAdvice"), "ui shows idle fail advice");
+assert(uiSrc2.includes("train-idle-fail"), "ui idle fail card");
+assert(uiSrc2.includes("shop-cost"), "ui larger shop cost line");
+assert(uiSrc2.includes("GAME_TERMS"), "ui uses glossary terms");
+assert(uiSrc2.includes("titleScreenOpen || playback"), "ui pauses idle while title or combat modal open");
+assert(!/全滅／逾時，重開中/.test(uiSrc2), "ui no vague wipe/timeout combo copy");
 assert(uiSrc2.includes("train-qi-chip") || uiSrc2.includes("data-live=qi-bar"), "ui train qi chip");
 assert(uiSrc2.includes("goto-party-fight"), "ui empty party fight CTA");
 assert(uiSrc2.includes("train-rate-summary") || uiSrc2.includes("效率 ×"), "ui train rate summary");
@@ -3837,7 +3900,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v115"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v116"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

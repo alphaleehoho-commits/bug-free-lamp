@@ -38,15 +38,21 @@ body {
 }
 
 #app {
-  max-width: 430px;
+  max-width: 520px;
   margin: 0 auto;
   height: var(--app-h);
   max-height: var(--app-h);
   overflow: hidden;
-  padding: 0.3rem 0.55rem 0;
+  padding: 0.4rem 0.75rem 0;
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
+  gap: 0.32rem;
+}
+@media (min-width: 760px) {
+  #app {
+    max-width: 560px;
+    padding: 0.5rem 0.9rem 0;
+  }
 }
 
 .top {
@@ -59,10 +65,23 @@ body {
 }
 .brand-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: center;
   gap: 0.45rem;
   flex-wrap: wrap;
+}
+.brand-help {
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(18, 32, 44, 0.72);
+  color: var(--jade-bright);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
 }
 .brand {
   margin: 0;
@@ -187,20 +206,20 @@ body {
 }
 .stats span {
   display: block;
-  font-size: 0.58rem;
+  font-size: 0.66rem;
   color: var(--muted);
   letter-spacing: 0.04em;
 }
 .stats-compact span {
-  font-size: 0.5rem;
+  font-size: 0.62rem;
 }
 .stats strong {
   font-family: var(--font-display);
-  font-size: 0.78rem;
+  font-size: 0.88rem;
   font-weight: 500;
 }
 .stats-compact strong {
-  font-size: 0.68rem;
+  font-size: 0.82rem;
 }
 
 .stats-tappable {
@@ -448,11 +467,11 @@ body {
   justify-content: center;
   flex-wrap: wrap;
   gap: 0.35rem 0.55rem;
-  padding: 0.22rem 0.45rem;
+  padding: 0.28rem 0.5rem;
   border-radius: 8px;
   border: 1px solid var(--line);
   background: rgba(18, 32, 44, 0.72);
-  font-size: 0.62rem;
+  font-size: 0.74rem;
   color: var(--fog);
   flex-shrink: 0;
 }
@@ -1328,6 +1347,31 @@ button.flash-act {
 .train-idle-hit.is-clear { color: color-mix(in srgb, var(--jade-bright) 75%, var(--fog)); }
 .train-idle-hit.is-fail { color: color-mix(in srgb, #e89078 70%, var(--fog)); }
 .train-idle-hit[hidden] { display: none; }
+.train-idle-fail {
+  margin: 0.4rem 0 0.1rem;
+  padding: 0.5rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid rgba(224, 138, 106, 0.35);
+  background: rgba(42, 24, 20, 0.55);
+}
+.train-idle-fail[hidden] { display: none; }
+.train-idle-fail strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  color: #f0c2b0;
+  margin-bottom: 0.28rem;
+}
+.train-idle-fail ul {
+  margin: 0;
+  padding: 0 0 0 1.05rem;
+}
+.train-idle-fail li {
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: #e6eef2;
+  margin: 0.12rem 0;
+}
 .train-idle-meta {
   margin: 0.15rem 0 0.28rem;
   font-size: 0.74rem;
@@ -2131,7 +2175,7 @@ button.ghost {
 .card-row strong {
   display: block;
   font-family: var(--font-display);
-  font-size: 0.78rem;
+  font-size: 0.88rem;
 }
 button.linkish {
   display: block;
@@ -2147,9 +2191,17 @@ button.linkish strong { color: var(--jade); }
 .muted {
   display: block;
   margin-top: 0.08rem;
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   color: var(--muted);
-  line-height: 1.25;
+  line-height: 1.35;
+}
+.shop-cost {
+  display: block;
+  margin-top: 0.16rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--jade-bright);
 }
 .empty { color: var(--muted); padding: 0.35rem; font-size: 0.72rem; }
 .row-actions {
@@ -3497,4 +3549,141 @@ button.pet-badge {
   color: var(--text);
   font-size: 0.72rem;
   padding: 0.45rem;
+}
+
+#app.is-title {
+  justify-content: flex-start;
+  overflow-y: auto;
+}
+.title-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.6rem 0.15rem 1.2rem;
+  min-height: 100%;
+}
+.title-hero {
+  text-align: center;
+  padding: 0.7rem 0 0.2rem;
+}
+.title-kicker {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  color: var(--fog);
+  text-transform: uppercase;
+}
+.title-brand {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-display);
+  font-size: 2.35rem;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-indent: 0.32em;
+  color: var(--jade-bright);
+  text-shadow: 0 0 28px rgba(126, 168, 160, 0.32);
+}
+.title-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.18em;
+  color: var(--fog);
+}
+.title-howto,
+.title-glossary {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.8rem 0.75rem;
+}
+.title-howto h2,
+.title-glossary h2 {
+  margin: 0 0 0.4rem;
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  color: var(--jade-bright);
+}
+.title-howto ol {
+  margin: 0;
+  padding: 0 0 0 1.15rem;
+}
+.title-howto li {
+  margin: 0.28rem 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.title-glossary ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.title-glossary li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  padding: 0.38rem 0;
+  border-top: 1px solid rgba(126, 168, 160, 0.14);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.title-glossary li:first-child { border-top: 0; padding-top: 0; }
+.title-glossary strong {
+  font-family: var(--font-display);
+  color: var(--jade-bright);
+}
+.title-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.title-start {
+  min-height: 2.8rem;
+  font-size: 1.02rem;
+}
+.title-note {
+  margin: 0;
+  text-align: center;
+  font-size: 0.74rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.term-tip {
+  text-decoration: underline dotted rgba(183, 212, 204, 0.45);
+  text-underline-offset: 0.12em;
+  cursor: help;
+}
+.term-glossary {
+  margin: 0.2rem 0 0.7rem;
+}
+.term-glossary-row {
+  display: grid;
+  grid-template-columns: 4.2rem 1fr;
+  gap: 0.35rem 0.55rem;
+  padding: 0.32rem 0;
+  border-top: 1px solid rgba(126, 168, 160, 0.12);
+}
+.term-glossary-row:first-child { border-top: 0; }
+.term-glossary dt {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  color: var(--jade-bright);
+}
+.term-glossary dd {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--fog);
+}
+.tutorial-next {
+  margin: 0.28rem 0 0;
+  padding: 0.32rem 0.42rem;
+  border-radius: 8px;
+  background: rgba(126, 168, 160, 0.12);
+  border: 1px solid rgba(126, 168, 160, 0.22);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #d8efe6;
+}
+.train-qi-label {
+  font-size: 0.74rem;
 }

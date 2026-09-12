@@ -110,6 +110,9 @@ import {
   stepTrainIdleSession,
   markTrainIdleClearReady,
   persistTrainIdleClearResult,
+  idleFailAdvice,
+  shouldShowTitleScreen,
+  markTitleEntered,
   navTrainIdleFloor,
   trainIdleFloor,
   trainFloorNavGates,
@@ -185,6 +188,7 @@ import {
   ABYSS_RULES_TEXT,
   ABYSS_UNLOCK_SPINE_STAGE,
   APP_BUILD,
+  GAME_TERMS,
   fusionMaterialRarityFactor,
   fusionPowerMultFromParts,
   roundStat,
@@ -251,6 +255,8 @@ let updateNoticeDismissed = localStorage.getItem(`void-tide-update-seen:${APP_BU
 let state = loadState();
 state = tickCultivation(state);
 saveState(state);
+/** 新玩家先睇標題／玩法，唔好直接跌入教學 */
+let titleScreenOpen = shouldShowTitleScreen(state);
 
 let flash = "";
 /** @type {'' | 'celebrate' | 'hybrid' | 'legend' | 'unlock'} */
@@ -2117,7 +2123,65 @@ function skipPlayback() {
   render();
 }
 
+function titleScreenHtml() {
+  const termIds = ["tide_dew", "qi", "spine", "mist_token", "soul", "stones"];
+  const terms = termIds
+    .map((id) => {
+      const t = GAME_TERMS[id];
+      if (!t) return "";
+      return `<li><strong>${escapeHtml(t.name)}</strong><span>${escapeHtml(t.blurb)}</span></li>`;
+    })
+    .join("");
+  return `
+    <div class="title-screen" data-live="title-screen">
+      <header class="title-hero">
+        <p class="title-kicker">Void Tide</p>
+        <h1 class="title-brand">暗潮</h1>
+        <p class="title-sub">靈寵修行</p>
+      </header>
+      <section class="title-howto">
+        <h2>如何遊玩</h2>
+        <ol>
+          <li>戰鬥多為自動——靈寵會自己出手，毋須連點。</li>
+          <li>「修行」掛機攞<strong>潮露</strong>與<strong>靈契</strong>；「靈寵」升級、出戰。</li>
+          <li>「商肆」買蛋擴隊；「秘境」挑戰拿掉落與碎片。</li>
+          <li><strong>靈契</strong>滿後到「進階」突破階段，解鎖更深內容。</li>
+        </ol>
+      </section>
+      <section class="title-glossary">
+        <h2>常用詞</h2>
+        <ul>${terms}</ul>
+      </section>
+      <div class="title-actions">
+        <button type="button" class="primary title-start" data-act="enter-title">開始教學</button>
+        <button type="button" class="ghost" data-act="enter-title-skip">跳過教學，自由探索</button>
+      </div>
+      <p class="title-note">教學約十餘步，可隨時跳過。存檔留在此裝置。</p>
+    </div>`;
+}
+
+function bindTitleScreen() {
+  app.querySelectorAll("[data-act=enter-title], [data-act=enter-title-skip]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      markTitleEntered(state);
+      if (btn.dataset.act === "enter-title-skip") {
+        skipTutorial(state);
+      }
+      titleScreenOpen = false;
+      saveState(state);
+      render();
+    });
+  });
+}
+
 function render() {
+  if (titleScreenOpen) {
+    app.className = "is-title";
+    app.innerHTML = titleScreenHtml();
+    bindTitleScreen();
+    return;
+  }
   state = tickCultivation(state);
 
   const nav = syncTutorialNavigation(state, { tab, panelSub });
@@ -2159,6 +2223,7 @@ function render() {
       <div class="brand-row">
         <p class="brand" data-brand="void-tide">暗潮</p>
         <p class="tag">Void Tide · 靈寵修行</p>
+        <button type="button" class="brand-help" data-act="toggle-stats-sheet" aria-label="詞語與資源說明">？</button>
       </div>
     </header>
 
@@ -2241,13 +2306,26 @@ function dispatchMatBits(mission) {
     .join(" ");
 }
 
+function termLabelHtml(id, fallback = "") {
+  const t = GAME_TERMS[id];
+  const name = t?.name || fallback || id;
+  if (!t) return escapeHtml(name);
+  return `<abbr class="term-tip" title="${escapeHtml(t.blurb)}">${escapeHtml(name)}</abbr>`;
+}
+
+function termGlossaryHtml() {
+  return Object.values(GAME_TERMS)
+    .map((t) => `<div class="term-glossary-row"><dt>${escapeHtml(t.name)}</dt><dd>${escapeHtml(t.blurb)}</dd></div>`)
+    .join("");
+}
+
 function statsStripHtml(stage) {
   return `<button type="button" class="stats stats-compact stats-tappable" data-act="toggle-stats-sheet" aria-label="查看資源詳情">
-      <div><span>階段</span><strong data-live="stage">${stage.name}</strong></div>
-      <div><span>靈石</span><strong data-live="stones">${Math.floor(state.stones)}</strong></div>
-      <div><span>碎片</span><strong data-live="scrap">${state.scrap}</strong></div>
-      <div><span>飼料</span><strong data-live="feed">${Math.floor(state.feed || 0)}</strong></div>
-      <div><span>靈塵</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
+      <div><span title="${escapeHtml(GAME_TERMS.realm.blurb)}">階段</span><strong data-live="stage">${stage.name}</strong></div>
+      <div><span title="${escapeHtml(GAME_TERMS.stones.blurb)}">靈石</span><strong data-live="stones">${Math.floor(state.stones)}</strong></div>
+      <div><span title="${escapeHtml(GAME_TERMS.scrap.blurb)}">碎片</span><strong data-live="scrap">${state.scrap}</strong></div>
+      <div><span title="${escapeHtml(GAME_TERMS.feed.blurb)}">飼料</span><strong data-live="feed">${Math.floor(state.feed || 0)}</strong></div>
+      <div><span title="${escapeHtml(GAME_TERMS.dust.blurb)}">靈塵</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
     </button>`;
 }
 
@@ -2271,18 +2349,20 @@ function statsSheetHtml() {
         <div class="sheet-handle" aria-hidden="true"></div>
         <h3>資源詳情</h3>
         <ul class="stat-sheet-grid">
-          <li><span>階段</span><strong>${escapeHtml(stage.name)}</strong></li>
-          <li><span>靈石</span><strong>${Math.floor(state.stones)}</strong></li>
-          <li><span>碎片</span><strong>${state.scrap}</strong></li>
-          <li><span>飼料</span><strong>${Math.floor(state.feed || 0)}</strong></li>
-          <li><span>靈塵</span><strong>${Math.floor(state.dust || 0)}</strong></li>
-          <li><span>精魂</span><strong>${Math.floor(state.materials?.soul_essence || 0)}</strong></li>
+          <li><span title="${escapeHtml(GAME_TERMS.realm.blurb)}">階段</span><strong>${escapeHtml(stage.name)}</strong></li>
+          <li><span title="${escapeHtml(GAME_TERMS.stones.blurb)}">靈石</span><strong>${Math.floor(state.stones)}</strong></li>
+          <li><span title="${escapeHtml(GAME_TERMS.scrap.blurb)}">碎片</span><strong>${state.scrap}</strong></li>
+          <li><span title="${escapeHtml(GAME_TERMS.feed.blurb)}">飼料</span><strong>${Math.floor(state.feed || 0)}</strong></li>
+          <li><span title="${escapeHtml(GAME_TERMS.dust.blurb)}">靈塵</span><strong>${Math.floor(state.dust || 0)}</strong></li>
+          <li><span title="${escapeHtml(GAME_TERMS.soul.blurb)}">精魂</span><strong>${Math.floor(state.materials?.soul_essence || 0)}</strong></li>
           <li><span>勝場</span><strong>${state.combatsWon}</strong></li>
           <li><span>牧場</span><strong>${ranchN}／${ranchCap(state)}</strong></li>
           <li><span>出戰</span><strong>${state.pets.length}／${activePetMaxForState(state)}</strong></li>
         </ul>
-        <p class="meta">靈契 ${Math.floor(state.qi)} / ${next?.need || "—"} · ${qiPct}% →【${escapeHtml(br.next?.name || "")}】</p>
+        <p class="meta">${termLabelHtml("qi")} ${Math.floor(state.qi)} / ${next?.need || "—"} · ${qiPct}% →【${escapeHtml(br.next?.name || "")}】</p>
         ${matRows ? `<h4>持有材料</h4><ul class="stat-sheet-mats">${matRows}</ul>` : ""}
+        <h4>常用詞</h4>
+        <dl class="term-glossary">${termGlossaryHtml()}</dl>
         <button type="button" class="primary sheet-close" data-act="close-stats-sheet">關閉</button>
       </div>
     </div>`;
@@ -2997,21 +3077,15 @@ function trainIdleStripHtml() {
   }
   const s = wrap.session;
   const formationId = wrap.formationId || currentFormationId();
-  const meta =
-    s.phase === "pause"
-      ? s.won
-        ? `清完 ${s.waveCount} 波！`
-        : s.ended
-          ? "全滅／逾時，重開中…"
-          : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`
-      : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`;
+  const meta = idleCombatMetaText(s);
   const pct = Math.min(
     100,
     Math.round(((s.waveIndex + (s.ended && s.won ? 1 : 0)) / Math.max(1, s.waveCount)) * 100)
   );
   const resultLine = idleCombatResultLine(wrap);
+  const failAdvice = isIdleFailLine(resultLine) ? idleFailAdvice(state, s) : null;
   const resultCls = resultLine
-    ? resultLine === "挑戰失敗"
+    ? isIdleFailLine(resultLine)
       ? " is-fail"
       : " is-clear"
     : "";
@@ -3037,6 +3111,31 @@ function trainIdleStripHtml() {
       )}</div>
     </div>
     <p class="train-idle-hit${resultCls}" data-live="train-idle-hit"${resultLine ? "" : " hidden"}>${escapeHtml(resultLine)}</p>
+    ${idleFailCardHtml(failAdvice)}
+  </div>`;
+}
+
+function idleCombatMetaText(s) {
+  if (!s) return "";
+  if (s.phase === "pause") {
+    if (s.won) return `清完 ${s.waveCount} 波！`;
+    if (s.ended) {
+      return s.failKind === "timeout" ? "逾時，重開中…" : "全滅，重開中…";
+    }
+  }
+  return `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`;
+}
+
+function isIdleFailLine(line) {
+  return !!line && String(line).includes("挑戰失敗");
+}
+
+function idleFailCardHtml(advice) {
+  if (!advice) return `<div class="train-idle-fail" data-live="train-idle-fail" hidden></div>`;
+  const tips = (advice.tips || []).map((t) => `<li>${escapeHtml(t)}</li>`).join("");
+  return `<div class="train-idle-fail" data-live="train-idle-fail">
+    <strong>${escapeHtml(advice.title)}</strong>
+    <ul>${tips}</ul>
   </div>`;
 }
 
@@ -3083,7 +3182,8 @@ function cultivatePanel() {
         <li class="card-row">
           <div>
             <strong>${escapeHtml(o.speciesName || o.name)}${isEgg ? " ·蛋" : ""}</strong>
-            <span class="muted">${sub} · ${o.tutorialDeal ? `教學 ${o.cost} 靈石` : `${o.cost} 靈石`}</span>
+            <span class="muted">${sub}</span>
+            <span class="shop-cost">${o.tutorialDeal ? "教學優惠 · " : ""}${o.cost} 靈石</span>
           </div>
           <button type="button" class="primary${tutGlow({ type: "shop-buy" })}" data-shop-buy="${escapeHtml(o.offerId)}">購入</button>
         </li>`;
@@ -3141,7 +3241,8 @@ function cultivatePanel() {
         <li class="card-row${o.capped ? " is-capped" : ""}">
           <div>
             <strong>${escapeHtml(o.name)}</strong>
-            <span class="muted">${escapeHtml(o.desc || "")} · ${note}</span>
+            <span class="muted">${escapeHtml(o.desc || "")}</span>
+            <span class="shop-cost">${escapeHtml(note)}</span>
           </div>
           <button type="button" class="primary" data-soul-shop-buy="${escapeHtml(o.id)}" ${
             o.canBuy ? "" : "disabled"
@@ -6916,7 +7017,8 @@ document.addEventListener("visibilitychange", () => {
     cancelIdleAnim();
     return;
   }
-  // 回到前景：用牆鐘追趕掛機戰鬥步數
+  // 標題／戰報開啟時唔追趕，避免秘境結算後一返嚟就顯示全滅
+  if (titleScreenOpen || playback) return;
   const onTrainPanel = tab === "cultivate" && panelSub.cultivate === "train";
   tickIdleCombat({ background: !onTrainPanel });
   if (onTrainPanel) render();
@@ -6929,13 +7031,13 @@ window.addEventListener("beforeinstallprompt", (e) => {
 });
 
 setInterval(() => {
-  if (playback && !playback.done) return;
+  if (titleScreenOpen || playback) return;
   const onTrainPanel = tab === "cultivate" && panelSub.cultivate === "train";
   tickIdleCombat({ background: !onTrainPanel });
 }, 380);
 
 setInterval(() => {
-  if (playback && !playback.done) return;
+  if (titleScreenOpen || (playback && !playback.done)) return;
   const eggReadyNow = patchLive();
   const adv = advanceTutorialIfReady(state);
   const snap = tutorialLiveSnapshot(state);
@@ -6992,14 +7094,7 @@ setInterval(() => {
         if (log) log.textContent = wrap.logLine || "";
         const meta = strip.querySelector("[data-live=train-idle-meta]");
         if (meta) {
-          meta.textContent =
-            s.phase === "pause"
-              ? s.won
-                ? `清完 ${s.waveCount} 波！`
-                : s.ended
-                  ? "全滅／逾時，重開中…"
-                  : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`
-              : `第 ${s.round || 1} 回合 · ${s.waveLabel || ""}`;
+          meta.textContent = idleCombatMetaText(s);
         }
         const bar = strip.querySelector("[data-live=train-idle-bar]");
         if (bar) {
@@ -7020,8 +7115,21 @@ setInterval(() => {
           const resultLine = idleCombatResultLine(wrap);
           hitEl.textContent = resultLine;
           hitEl.hidden = !resultLine;
-          hitEl.classList.toggle("is-fail", resultLine === "挑戰失敗");
-          hitEl.classList.toggle("is-clear", !!resultLine && resultLine !== "挑戰失敗");
+          hitEl.classList.toggle("is-fail", isIdleFailLine(resultLine));
+          hitEl.classList.toggle("is-clear", !!resultLine && !isIdleFailLine(resultLine));
+          const failEl = strip.querySelector("[data-live=train-idle-fail]");
+          if (failEl) {
+            const advice = isIdleFailLine(resultLine) ? idleFailAdvice(state, s) : null;
+            if (!advice) {
+              failEl.hidden = true;
+              failEl.innerHTML = "";
+            } else {
+              failEl.hidden = false;
+              failEl.innerHTML = `<strong>${escapeHtml(advice.title)}</strong><ul>${(advice.tips || [])
+                .map((t) => `<li>${escapeHtml(t)}</li>`)
+                .join("")}</ul>`;
+            }
+          }
         }
         // 上一層永遠可返；下一層喺已通範圍常開，frontier 要打贏五波
         const gates = trainFloorNavGates(state);
@@ -7036,7 +7144,10 @@ setInterval(() => {
   if (eggReadyNow || adv.advanced || snap !== tutorialSnapCache) {
     tutorialSnapCache = snap;
     saveState(state);
-    if (adv.advanced && adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+    if (adv.advanced) {
+      tutorialCollapsed = false;
+      if (adv.unlockMsg) setFlash(adv.unlockMsg, "unlock");
+    }
     render();
     return;
   }
