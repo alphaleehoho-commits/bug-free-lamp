@@ -1367,8 +1367,22 @@ button.flash-act {
 .train-tier-actions { flex-wrap: wrap; gap: 0.4rem; }
 .train-depth-row { flex-wrap: wrap; gap: 0.3rem; align-items: center; margin: 0.3rem 0; }
 .train-depth-btn { min-width: 2.6rem; padding: 0.25rem 0.4rem; font-size: 0.78rem; }
-.train-floor-nav { gap: 0.5rem; margin: 0.15rem 0 0.35rem; justify-content: center; }
+.train-floor-nav { gap: 0.5rem; margin: 0.15rem 0 0.35rem; justify-content: center; flex-wrap: wrap; align-items: center; }
 .train-floor-nav button { min-width: 5.5rem; }
+.train-auto-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.72rem;
+  color: var(--fog, #c8d0dc);
+  user-select: none;
+  cursor: pointer;
+}
+.train-auto-next input {
+  width: 0.95rem;
+  height: 0.95rem;
+  accent-color: var(--jade, #3d9b8f);
+}
 .train-daily-spot {
   margin: 0.15rem 0 0.35rem;
   font-size: 0.62rem;

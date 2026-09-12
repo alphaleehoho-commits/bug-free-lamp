@@ -113,6 +113,8 @@ import {
   navTrainIdleFloor,
   trainIdleFloor,
   trainFloorNavGates,
+  trainAutoNextFloorEnabled,
+  setTrainAutoNextFloor,
   SPINE_ZONE_ID,
   spineTrunkView,
   dungeonDisplayName,
@@ -2854,6 +2856,7 @@ function tickIdleCombat({ background = false } = {}) {
   let lastResult = null;
   let playEvents = null;
   let needRosterPatch = false;
+  let autoAdvanceMsg = null;
 
   for (let i = 0; i < steps; i++) {
     if (!wrap.session) break;
@@ -2891,7 +2894,13 @@ function tickIdleCombat({ background = false } = {}) {
     if (result.status === "won") {
       const marked = markTrainIdleClearReady(state, wrap.session);
       if (marked?.ok) {
-        wrap.clearReady = true;
+        if (marked.autoClaimed) {
+          wrap.clearReady = false;
+          wrap.tierIndex = Math.max(0, (marked.floor || trainIdleFloor(state)) - 1);
+          autoAdvanceMsg = marked.msg || `自動前往第 ${marked.floor} 層`;
+        } else {
+          wrap.clearReady = true;
+        }
       }
     }
 
@@ -2906,6 +2915,13 @@ function tickIdleCombat({ background = false } = {}) {
 
   persistTrainIdleCombatState(state, idleCombat);
   saveState(state);
+
+  if (autoAdvanceMsg) {
+    idleCombat = null;
+    setFlash(autoAdvanceMsg, "unlock");
+    render();
+    return;
+  }
 
   if (playEvents) {
     idleAnimBusy = true;
@@ -2982,6 +2998,11 @@ function trainIdleStripHtml() {
     <button type="button" class="secondary" data-train-floor-next ${
       gates.canNext ? "" : "disabled"
     }>下一層</button>
+    <label class="train-auto-next">
+      <input type="checkbox" data-train-auto-next ${
+        trainAutoNextFloorEnabled(state) ? "checked" : ""
+      }/>自動下一層
+    </label>
   </div>`;
   if (!wrap?.session) {
     return `<div class="train-idle-strip${bossCls}" data-live="train-idle">
@@ -6411,6 +6432,17 @@ function bind() {
       setFlash(r.msg, r.ok ? "unlock" : "");
     });
   });
+  app.querySelectorAll("[data-train-auto-next]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const r = setTrainAutoNextFloor(state, input.checked);
+      saveState(state);
+      setFlash(r.msg);
+      const box = input.closest(".train-floor-nav");
+      if (box) {
+        input.checked = trainAutoNextFloorEnabled(state);
+      }
+    });
+  });
   app.querySelectorAll("[data-abyss-start]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
@@ -7029,6 +7061,8 @@ setInterval(() => {
         const nextBtn = strip.querySelector("[data-train-floor-next]");
         if (prevBtn) prevBtn.disabled = !gates.canPrev;
         if (nextBtn) nextBtn.disabled = !gates.canNext;
+        const autoBox = strip.querySelector("[data-train-auto-next]");
+        if (autoBox) autoBox.checked = trainAutoNextFloorEnabled(state);
         strip.querySelector(".train-idle-claim")?.remove();
       }
     }
