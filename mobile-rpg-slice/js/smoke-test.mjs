@@ -184,6 +184,9 @@ import {
   ACTIVE_PET_UNLOCK_STAGE,
   activePetMaxForState,
   isSpineStageBossFloor,
+  isSpinePreBossFloor,
+  expectedSpineLevelForFloor,
+  gradeStoneUnlockClearedFloor,
   ABYSS_MUTATION_IDS,
   ABYSS_COSMETIC_IDS,
   ABYSS_WIPE_KEEP_RATE,
@@ -1134,11 +1137,29 @@ const sug = suggestTrainForShortage(shortSt, { coral_shard: 2 });
 assert(sug?.siteId === SPINE_ZONE_ID && sug.unlocked && sug.alreadyThere, "suggest spine");
 const dungSug = suggestTrainForShortage(shortSt, { temper_oil: 1 });
 assert(dungSug?.dungeonOnly, "temper dungeon suggest");
+const earthLockedSug = suggestTrainForShortage(
+  { ...shortSt, clearedDungeons: { tide_20: true } },
+  { earth_grade_stone: 1 }
+);
+assert(
+  earthLockedSug?.siteId === SPINE_ZONE_ID &&
+    earthLockedSug.unlocked === false &&
+    /頭目|已通/.test(earthLockedSug.unlockHint || ""),
+  "earth locked until floor21 clear"
+);
 const earthSug = suggestTrainForShortage(
   { ...shortSt, clearedDungeons: { tide_21: true } },
   { earth_grade_stone: 1 }
 );
-assert(earthSug?.siteId === SPINE_ZONE_ID && !earthSug.isBranch, "suggest earth spine");
+assert(
+  earthSug?.siteId === SPINE_ZONE_ID && earthSug.unlocked && !earthSug.isBranch,
+  "suggest earth spine unlocked after 21"
+);
+const cloudLockedSug = suggestTrainForShortage(
+  { ...shortSt, clearedDungeons: { tide_40: true } },
+  { cloud_grade_stone: 1 }
+);
+assert(cloudLockedSug?.unlocked === false, "cloud locked until floor41 clear");
 
 /* P20: spine spotlight */
 const spot = pickDailyTrainSpotlight("2026-08-30");
@@ -1171,11 +1192,18 @@ assert(trunk4.frontierName && trunk4.progressLabel.includes("4／200"), "trunk p
 const trunk200 = spineTrunkView({ clearedDungeons: { tide_200: true } });
 assert(trunk200.frontier === 201 && trunk200.progressLabel.includes("無限"), "trunk beyond theme");
 
-/* P12: combat events */
+/* P12: combat events — pick element not banned by today's challenge (date-stable) */
+function smokeSafeElement(dungeonId, preferred = "tide") {
+  const ban = pickDailyChallenge(todayKey(), dungeonId)?.banElement;
+  const pool = ["tide", "flame", "gloom", "stone", "gale"];
+  if (!ban || preferred !== ban) return preferred;
+  return pool.find((e) => e !== ban) || "gale";
+}
+const combatElem = smokeSafeElement("tide_1");
 const combatFox = buildPetStats({
   id: "p1",
   species: "reefox",
-  element: "flame",
+  element: combatElem,
   personality: "gentle",
   cost: 1,
 });
@@ -1221,9 +1249,21 @@ assert(
 );
 
 /* Train spine: sequential floor push waives realm gate */
+const spineElem = smokeSafeElement("tide_5");
+const spineFox = buildPetStats({
+  id: "spine-push",
+  species: "reefox",
+  element: spineElem,
+  personality: "gentle",
+  cost: 1,
+});
+spineFox.uid = "spine-push";
+spineFox.atk = 200;
+spineFox.hp = 800;
+spineFox.spd = 40;
 const spinePushSt = {
   ...combatSt,
-  pets: [{ ...combatFox, atk: 200, hp: 800, spd: 40, uid: "spine-push" }],
+  pets: [spineFox],
   realm: 0,
   clearedDungeons: { tide_1: true, tide_2: true, tide_3: true, tide_4: true },
   materials: emptyMaterials(),
@@ -3756,6 +3796,13 @@ assert(launchTide5 && launchTide5.loreTag === "裂潮" && launchTide5.name.inclu
 assert(launchTide5.matDropOverride?.weights?.tide_dew > 0, "tide_5 spine stage1 mats");
 assert(spineStageForTier(1) === 1 && spineStageForTier(20) === 1 && spineStageForTier(21) === 2, "spine stages 20/band");
 assert(spineStageForTier(40) === 2 && spineStageForTier(41) === 3, "spine mid bands");
+assert(expectedSpineLevelForFloor(1) === 1 && expectedSpineLevelForFloor(20) === 10, "stage1 level band 1–10");
+assert(expectedSpineLevelForFloor(21) === 11 && expectedSpineLevelForFloor(40) === 20, "stage2 level band 11–20");
+assert(expectedSpineLevelForFloor(41) === 21 && expectedSpineLevelForFloor(60) === 30, "stage3 level band 21–30");
+assert(isSpinePreBossFloor(18) && isSpinePreBossFloor(19) && !isSpinePreBossFloor(20), "pre-boss floors 18/19");
+assert(isSpinePreBossFloor(38) && isSpinePreBossFloor(39) && isSpineStageBossFloor(40), "stage2 late/boss floors");
+assert(gradeStoneUnlockClearedFloor("earth_grade_stone") === 21, "earth unlock after floor20 boss");
+assert(gradeStoneUnlockClearedFloor("cloud_grade_stone") === 41, "cloud unlock after floor40 boss");
 assert(spineStageMatBias(1).coral_shard > 0 && !spineStageMatBias(1).earth_grade_stone, "spine1 no early earth");
 assert(
   !spineAfkDropsForStage(1).some((d) => d.mat === "earth_grade_stone"),
@@ -3763,11 +3810,17 @@ assert(
 );
 assert(spineStageMatBias(2).earth_grade_stone > 0, "spine2 earth in bias");
 assert(spineAfkDropsForStage(2).some((d) => d.mat === "earth_grade_stone"), "spine2 earth AFK");
+assert(!spineAfkDropsForStage(2).some((d) => d.mat === "cloud_grade_stone"), "spine2 no early cloud");
 assert(spineStageMatBias(3).cloud_grade_stone > 0, "spine3 cloud chapter");
 assert(ACTIVE_PET_UNLOCK_STAGE === 3, "4th slot at stage3");
 assert(
-  trainTierThreat(SPINE_ZONE_ID, 19, { frontierTier: 20 }) < 350,
-  "floor20 threat softened for early party"
+  trainTierThreat(SPINE_ZONE_ID, 19, { frontierTier: 20 }) < 200,
+  "floor20 threat aligned to expected Lv10 party"
+);
+assert(
+  trainTierThreat(SPINE_ZONE_ID, 23, { frontierTier: 24 }) <
+    trainTierThreat(SPINE_ZONE_ID, 19, { frontierTier: 20 }) * 1.35,
+  "floor24 not wildly above floor20 for stage2 entry"
 );
 assert(FUSION_MAX_STAGE === 1 && FUSION_NEED_LEVEL === 50, "fusion once at 50");
 const launchTide6 = buildDungeonForTier(6);
@@ -3784,7 +3837,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v114"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v115"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

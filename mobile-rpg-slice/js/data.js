@@ -1,7 +1,7 @@
 /** Data tables — 靈寵修行 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260911.1";
+export const APP_BUILD = "20260912.1";
 
 export const STAGES = [
   { id: 0, name: "初契", need: 0, rate: 1.05 },
@@ -4828,6 +4828,51 @@ export function isSpineStageBossFloor(floor) {
   return f % SPINE_STAGE_FLOORS === 0;
 }
 
+/** 階段內層序 1..SPINE_STAGE_FLOORS（F21→1，F40→20） */
+export function spineFloorIntoStage(floor) {
+  const f = Math.max(1, floor | 0);
+  return ((f - 1) % SPINE_STAGE_FLOORS) + 1;
+}
+
+/**
+ * 升階前挑戰關（每段第 18／19 層：18/19、28/29、38/39…）
+ * 難度尖峰用同階段戰力；唔提早派下階段產物。
+ */
+export function isSpinePreBossFloor(floor) {
+  const into = spineFloorIntoStage(floor);
+  return into === SPINE_STAGE_FLOORS - 2 || into === SPINE_STAGE_FLOORS - 1;
+}
+
+/**
+ * 主脊層預期出戰等級（對齊：每階段 20 層 ↔ 10 級）
+ * F1–20→1–10；F21–40→11–20；F41–60→21–30…
+ */
+export function expectedSpineLevelForFloor(floor) {
+  const f = Math.max(1, floor | 0);
+  const stage = spineStageForTier(f);
+  const into = spineFloorIntoStage(f);
+  return 10 * (stage - 1) + Math.max(1, Math.ceil((into * 10) / SPINE_STAGE_FLOORS));
+}
+
+/**
+ * 普通三寵 gen0 戰力粗估（對齊威脅錨；實戰仍走 partyCombatPower）
+ * 實測：Lv1≈87、Lv10≈172、Lv20≈267 → 約 87+(L-1)*9.5
+ */
+export function expectedPartyPowerForLevel(level) {
+  const lv = Math.max(1, level | 0);
+  return Math.round(87 + (lv - 1) * 9.5);
+}
+
+/** 階石開始 AFK 所需「已通層」（過頭目後）；階段一無任何階石 */
+export function gradeStoneUnlockClearedFloor(matId) {
+  if (matId === "earth_grade_stone") return 21;
+  if (matId === "cloud_grade_stone") return 41;
+  if (matId === "fire_grade_stone") return 61;
+  if (matId === "sky_grade_stone") return 81;
+  if (matId === "void_grade_stone") return 101;
+  return null;
+}
+
 /** 下一未通主脊層（至少 1） */
 export function spineFrontierTier(state) {
   return Math.max(1, maxClearedTideTier(state) + 1);
@@ -4871,11 +4916,24 @@ export function spineKeyMatForStage(stage) {
   return "tide_key_1";
 }
 
+/**
+ * 主脊威脅錨：跟「該層預期等級」戰力對齊，再按階段內進度調鬆緊。
+ * 中段舒適（高 power/threat）；第 18–20 層收緊做升階前挑戰；唔靠下階石。
+ */
 export function spineThreatBase(frontierTier) {
-  const t = Math.max(1, frontierTier | 0);
-  const stage = spineStageForTier(t);
-  // 放緩層數成長，避免 Lv10 隊喺十層後完全斷線
-  return Math.round(26 + (t - 1) * 2.35 + (stage - 1) * 6);
+  const floor = Math.max(1, frontierTier | 0);
+  const lv = expectedSpineLevelForFloor(floor);
+  const power = expectedPartyPowerForLevel(lv);
+  const into = spineFloorIntoStage(floor);
+  let comfort = 2.35;
+  if (into <= 5) comfort = 3.05;
+  else if (into <= 10) comfort = 2.55;
+  else if (into <= 14) comfort = 2.15;
+  else if (into <= 17) comfort = 1.85;
+  else if (into === 18) comfort = 1.35;
+  else if (into === 19) comfort = 1.25;
+  else comfort = 1.4; // 頭目：本階預期等級可挑戰
+  return Math.max(18, Math.round(power / comfort));
 }
 
 /** AFK 產物表：跟 spineStageMatBias；總 mat 預算約舊七域合計量級 */
@@ -5004,18 +5062,19 @@ export function trainZoneOrderIndex(zoneId) {
   return 0;
 }
 
-/** 霧階／主脊層威脅值；tierIndex 0＝第1層，可無限延伸（早期斜率放緩） */
+/**
+ * 霧階／主脊層威脅值；tierIndex 0＝第1層。
+ * 以「正在打嘅層」為錨（唔再 base×層數雙重放大）；自訂 threatBase 仍可用。
+ */
 export function trainTierThreat(zoneId, tierIndex, opts = {}) {
   void zoneId;
-  const base =
-    opts.threatBase != null
-      ? opts.threatBase
-      : opts.frontierTier != null
-        ? spineThreatBase(opts.frontierTier)
-        : trainZoneMeta(SPINE_ZONE_ID).threatBase || 30;
-  const t = Math.max(0, tierIndex | 0);
-  // 舊 0.22 令第20層已遠超 Lv10 隊；改 0.11 保留層數壓迫但可跟寵
-  return Math.round(base * (1 + t * 0.11));
+  if (opts.threatBase != null) {
+    const t = Math.max(0, tierIndex | 0);
+    return Math.round(opts.threatBase * (1 + t * 0.04));
+  }
+  const floor =
+    opts.fightFloor != null ? Math.max(1, opts.fightFloor | 0) : Math.max(1, (tierIndex | 0) + 1);
+  return spineThreatBase(floor);
 }
 
 export function trainWardenThreat(zoneId, opts = {}) {
@@ -5649,6 +5708,7 @@ export function primaryTrainSiteForMat(matId) {
 
 /** 缺料時建議去主脊掛機／標明秘境專屬 */
 export function suggestTrainForShortage(state, cost) {
+  const cleared = maxClearedTideTier(state);
   const items = Object.entries(cost || {})
     .filter(([, n]) => n > 0)
     .map(([id, need]) => {
@@ -5668,6 +5728,14 @@ export function suggestTrainForShortage(state, cost) {
     }
     const site = primaryTrainSiteForMat(it.id);
     if (!site) continue;
+    const unlockAt = gradeStoneUnlockClearedFloor(it.id);
+    const unlocked = unlockAt == null ? true : cleared >= unlockAt;
+    const unlockHint =
+      unlockAt != null && !unlocked
+        ? `已通第 ${unlockAt - 1} 層階段頭目後，主脊掛機先產${MATERIALS[it.id]?.name || it.id}`
+        : unlockAt != null
+          ? `主脊階段掛機產（需已通 ≥${unlockAt}）`
+          : null;
     return {
       matId: it.id,
       matName: MATERIALS[it.id]?.name || it.id,
@@ -5675,9 +5743,9 @@ export function suggestTrainForShortage(state, cost) {
       siteId: site.id,
       siteName: site.name,
       focus: site.focus || "",
-      unlocked: true,
-      unlockHint: null,
-      alreadyThere: true,
+      unlocked,
+      unlockHint,
+      alreadyThere: !!(unlocked && (state?.trainSite === site.id || state?.trainSite === SPINE_ZONE_ID)),
       isBranch: false,
     };
   }
