@@ -723,6 +723,17 @@ function normalizePet(p) {
   if (!next.rarityName) next.rarityName = rarityInfo(next.rarity).name;
   next.generation = petGeneration(next);
   migratePetPersonalityFields(next);
+  {
+    const el = ELEMENTS[next.elementId];
+    if (el) {
+      const prevElName = next.elementName;
+      next.elementName = el.name;
+      const spName = SPECIES[next.speciesId]?.name || next.speciesName || "";
+      if (prevElName && spName && next.name === `${prevElName}${spName}`) {
+        next.name = `${el.name}${spName}`;
+      }
+    }
+  }
   next.bloodmarks = normalizeBloodmarks(next.bloodmarks);
   next.bloodlineName = bloodlineLabel(next.bloodmarks);
   // 種族↔種類同步：舊熒鰭可能仍標鱗
@@ -3064,7 +3075,7 @@ function rollShopOffer(seedSalt = 0) {
     cost: pick.cost || 60,
     name: SPECIES[pick.species]?.name || pick.species,
     petKind: SPECIES[pick.species]?.kind || "?",
-    elementName: { tide: "潮", stone: "岩", flame: "焰", gale: "嵐", gloom: "幽" }[pick.element] || pick.element,
+    elementName: ELEMENTS[pick.element]?.name || pick.element,
   };
 }
 
@@ -3682,10 +3693,8 @@ export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
   if (!tutWaiveChallenge && challenge?.banElement) {
     const banned = state.pets.filter((p) => p.elementId === challenge.banElement);
     if (banned.length) {
-      const elName = { flame: "焰", gloom: "幽", tide: "潮", stone: "岩", gale: "嵐" }[
-        challenge.banElement
-      ];
-      return `今日挑戰禁${elName || challenge.banElement}屬出戰。`;
+      const elName = ELEMENTS[challenge.banElement]?.name || challenge.banElement;
+      return `今日挑戰禁${elName}屬出戰。`;
     }
   }
   return null;
@@ -5103,10 +5112,8 @@ export function runDungeon(state, dungeonId, opts = {}) {
   if (!tutWaiveChallenge && challenge?.banElement) {
     const banned = state.pets.filter((p) => p.elementId === challenge.banElement);
     if (banned.length) {
-      const elName = { flame: "焰", gloom: "幽", tide: "潮", stone: "岩", gale: "嵐" }[
-        challenge.banElement
-      ];
-      return { ok: false, msg: `今日挑戰禁${elName || challenge.banElement}屬出戰。` };
+      const elName = ELEMENTS[challenge.banElement]?.name || challenge.banElement;
+      return { ok: false, msg: `今日挑戰禁${elName}屬出戰。` };
     }
   }
 
@@ -5222,7 +5229,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
 
   const lead =
     state.pets.length > 0
-      ? `育成者率水母進入【${d.name}】。（水克焰→嵐→岩→幽→水）`
+      ? `育成者率水母進入【${d.name}】。（水克焰→嵐→岩→雷→水）`
       : `你獨自踏入【${d.name}】，海霧裡似有共鳴。`;
   note(lead);
   note(

@@ -7,7 +7,7 @@ const ELEMENT_COLORS = {
   stone: { fill: "#8a7d6a", glow: "#b8a992", wash: "rgba(138, 125, 106, 0.22)" },
   flame: { fill: "#c45c3e", glow: "#e08a6a", wash: "rgba(196, 92, 62, 0.22)" },
   gale: { fill: "#6a9a8a", glow: "#9ec4b4", wash: "rgba(106, 154, 138, 0.22)" },
-  gloom: { fill: "#5a5a8a", glow: "#8888b8", wash: "rgba(90, 90, 138, 0.24)" },
+  gloom: { fill: "#8b3dff", glow: "#ffe14a", wash: "rgba(200, 255, 61, 0.28)" },
 };
 
 const RARITY_GLOW = {

@@ -451,11 +451,11 @@ assert(ABYSS_TIDE_SHIFT_COST >= 1, "abyss tide shift grit cost");
 {
   const pet = {
     uid: "shift1",
-    name: "潮礁狐",
+    name: "水礁狐",
     speciesId: "reefox",
     speciesName: "礁狐",
     elementId: "tide",
-    elementName: "潮",
+    elementName: "水",
     personalityId: "fierce",
     personalityName: "兇猛",
     atk: 20,
@@ -1380,7 +1380,7 @@ pitySt.pending.push({
   encounterId: "test-enc",
   name: "測試靈",
   kind: "獸",
-  elementName: "潮",
+  elementName: "水",
   elementId: "tide",
   bondRate: 0,
   cost: 20,
@@ -2335,7 +2335,7 @@ const mission = DISPATCH_MISSIONS.find((m) => m.id === "forage") || DISPATCH_MIS
 assert(mission?.needElement === "tide", "forage needs tide");
 assert(petMatchesDispatchMission({ elementId: "tide", kind: "獸" }, mission), "tide beast matches forage");
 assert(!petMatchesDispatchMission({ elementId: "flame", kind: "獸" }, mission), "flame fails forage");
-assert(dispatchMissionReqLabel(mission).includes("潮"), "req label tide");
+assert(dispatchMissionReqLabel(mission).includes("水"), "req label tide");
 const kindMission = DISPATCH_MISSIONS.find((m) => m.needKind && !m.needElement);
 assert(kindMission && !petMatchesDispatchMission({ elementId: "tide", kind: "獸" }, kindMission), "kind gate rejects");
 assert(petMatchesDispatchMission({ elementId: "tide", kind: kindMission.needKind }, kindMission), "kind gate accepts");
@@ -3175,12 +3175,16 @@ assert(dataSrcBag.includes("欄柵") && dataSrcBag.includes("暖巢箋"), "data 
 assert(dataSrcBag.includes("ranch_fence") && dataSrcBag.includes("hatch_nest_token"), "data bag item ids");
 assert(dataSrcBag.includes("tide_shift_charm") && dataSrcBag.includes("轉屬符"), "data tide shift charm");
 assert(dataSrcBag.includes("ABYSS_TIDE_SHIFT_COST"), "data abyss tide shift cost");
+assert(!dataSrcBag.includes("潮屬") && !dataSrcBag.includes("幽屬"), "data no old element labels");
+assert(ELEMENTS.tide.name === "水" && ELEMENTS.gloom.name === "雷", "element display 水/雷");
+assert(!uiSrc2.includes('tide: "潮"') && !uiSrc2.includes('gloom: "幽"'), "ui no hardcoded old element maps");
 assert(!uiSrc2.includes("br.items.slice(0, 6)"), "ui breakthrough checklist shows all gates");
 assert(!uiSrc2.includes("gateCompact"), "ui no truncated gateCompact list");
 assert(uiSrc2.includes("breakthrough-gates"), "ui breakthrough gates list class");
 assert(uiSrc2.includes("未齊·"), "ui break button hints first unmet");
 assert(uiSrc2.includes("breakthrough-miss-note"), "ui shows remaining gate count");
 const cssSrc = readFileSync(join(__dir, "../css/style.css"), "utf8");
+assert(cssSrc.includes("#8b3dff") && cssSrc.includes("#ffe14a"), "css gloom bar uses thunder palette");
 assert(cssSrc.includes("cond-list.is-compact"), "css compact breakthrough checklist");
 assert(cssSrc.includes("offline-home-slot"), "css offline home slot");
 assert(cssSrc.includes("offline-home-slot.is-claimable") || cssSrc.includes(".is-claimable"), "css offline claimable state");
@@ -3535,8 +3539,15 @@ assert(cssSrc.includes("abyss-event-block"), "css abyss event block");
 /* Pet detail explain tabs */
 {
   const el = elementExplain("tide");
-  assert(el?.name === "潮" && el.beats === "焰" && el.beatenBy === "幽", "tide element explain");
-  assert(el.blurb.includes("潮"), "tide blurb");
+  assert(el?.name === "水" && el.beats === "焰" && el.beatenBy === "雷", "tide element explain");
+  assert(el.blurb.includes("水"), "tide blurb");
+  const gloomEl = elementExplain("gloom");
+  assert(gloomEl?.name === "雷" && gloomEl.beats === "水" && gloomEl.beatenBy === "岩", "gloom element explain");
+  assert(gloomEl.blurb.includes("雷"), "gloom blurb");
+  assert(
+    Object.values(ELEMENTS).map((e) => e.name).join("／") === "水／岩／焰／嵐／雷",
+    "five element display names"
+  );
   const kd = kindExplain("獸");
   assert(kd?.focus && kd.skillName === "撲襲", "kind 獸 explain");
   const pe = personalityExplain("fierce");
@@ -3855,6 +3866,8 @@ assert(cssSrc.includes("pet-pick-sheet"), "css pet-pick-sheet");
 }
 
 const engineSrcPackA = readFileSync(join(__dir, "engine.js"), "utf8");
+assert(!engineSrcPackA.includes('tide: "潮"') && !engineSrcPackA.includes('gloom: "幽"'), "engine no hardcoded old element maps");
+assert(engineSrcPackA.includes("next.elementName = el.name"), "engine syncs element labels on load");
 assert(engineSrcPackA.includes("next.starred = !!next.starred"), "engine normalize starred");
 assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize locked");
 
@@ -3982,7 +3995,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v121"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v122"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

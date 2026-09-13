@@ -1,7 +1,7 @@
 /** Data tables — 水母漂漂 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260913.4";
+export const APP_BUILD = "20260913.5";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
@@ -304,16 +304,16 @@ export function breakthroughView(state) {
 }
 
 export const ELEMENTS = {
-  tide: { id: "tide", name: "潮", atk: 1.05, hp: 1.0, spd: 1.05 },
+  tide: { id: "tide", name: "水", atk: 1.05, hp: 1.0, spd: 1.05 },
   stone: { id: "stone", name: "岩", atk: 1.0, hp: 1.12, spd: 0.92 },
   flame: { id: "flame", name: "焰", atk: 1.12, hp: 0.94, spd: 1.0 },
   gale: { id: "gale", name: "嵐", atk: 1.0, hp: 0.95, spd: 1.15 },
-  gloom: { id: "gloom", name: "幽", atk: 1.08, hp: 1.0, spd: 1.0 },
+  gloom: { id: "gloom", name: "雷", atk: 1.08, hp: 1.0, spd: 1.0 },
 };
 
 /**
  * 元素相剋（攻 → 被克方）
- * 水克焰、焰克嵐、嵐克岩、岩克幽、幽克潮
+ * 水克焰、焰克嵐、嵐克岩、岩克雷、雷克水
  */
 export const ELEMENT_BEATS = {
   tide: "flame",
@@ -329,7 +329,7 @@ export const ELEMENT_DIS = 0.8;
 /** 元素說明（詳情頁；粵語繁中） */
 export const ELEMENT_EXPLAIN = {
   tide: {
-    blurb: "潮屬攻速均衡，擅長跟住節奏推壓。",
+    blurb: "水屬攻速均衡，擅長跟住節奏推壓。",
     focus: "攻／速微升",
   },
   stone: {
@@ -345,7 +345,7 @@ export const ELEMENT_EXPLAIN = {
     focus: "速度↑ · 血量微↓",
   },
   gloom: {
-    blurb: "幽屬攻擊偏強，屬性輪轉入位時殺傷突出。",
+    blurb: "雷屬攻擊偏強，屬性輪轉入位時殺傷突出。",
     focus: "攻擊↑",
   },
 };
@@ -379,7 +379,7 @@ export function elementExplain(elementId) {
     spd: el.spd,
     beats,
     beatenBy,
-    cycle: "水克焰→嵐→岩→幽→水",
+    cycle: "水克焰→嵐→岩→雷→水",
     advMult: ELEMENT_ADV,
     disMult: ELEMENT_DIS,
   };
@@ -563,7 +563,7 @@ export const SPECIES = {
   },
   gloomfang: {
     id: "gloomfang",
-    name: "幽牙",
+    name: "雷牙",
     kind: "蟲",
     breedOnly: true,
     base: { atk: 19, hp: 80, spd: 14 },
@@ -870,7 +870,7 @@ export const BLOODLINE_MARKS = {
   tide_sigil: { id: "tide_sigil", name: "泡印", atk: 1.03, hp: 1.02, spd: 1.0 },
   reef_bone: { id: "reef_bone", name: "礁骨", atk: 1.0, hp: 1.06, spd: 0.98 },
   gale_plume: { id: "gale_plume", name: "嵐羽", atk: 1.02, hp: 0.98, spd: 1.06 },
-  gloom_spark: { id: "gloom_spark", name: "幽螢", atk: 1.05, hp: 0.97, spd: 1.03 },
+  gloom_spark: { id: "gloom_spark", name: "雷螢", atk: 1.05, hp: 0.97, spd: 1.03 },
 };
 
 export const BLOODLINE_MARK_IDS = Object.keys(BLOODLINE_MARKS);
@@ -2017,7 +2017,7 @@ export const DUNGEON_CHALLENGE_RULES = [
   },
   {
     id: "ban_gloom",
-    label: "挑戰：禁幽屬出戰",
+    label: "挑戰：禁雷屬出戰",
     banElement: "gloom",
     bonus: { stones: 16, dust: 4 },
   },
@@ -2036,7 +2036,7 @@ export const DUNGEON_CHALLENGE_RULES = [
   },
   {
     id: "ban_tide",
-    label: "挑戰：禁潮屬出戰",
+    label: "挑戰：禁水屬出戰",
     banElement: "tide",
     bonus: { stones: 16, dust: 4 },
   },
@@ -2117,12 +2117,12 @@ export const DUNGEON_DAILY_MODS = [
   },
   {
     id: "tide_favor",
-    label: "今日：潮屬友方攻擊 +15%",
+    label: "今日：水屬友方攻擊 +15%",
     allyElemAtk: { element: "tide", mult: 1.15 },
   },
   {
     id: "gloom_favor",
-    label: "今日：幽屬友方攻擊 +15%",
+    label: "今日：雷屬友方攻擊 +15%",
     allyElemAtk: { element: "gloom", mult: 1.15 },
   },
   {
@@ -2385,7 +2385,7 @@ export const DUNGEONS = [
             skills: ["tide_crush", "abyss_slam"],
           },
           {
-            name: "幽甲祭司",
+            name: "雷甲祭司",
             hp: 140,
             atk: 15,
             spd: 7,
@@ -2468,7 +2468,7 @@ export const DUNGEONS = [
         enemies: [
           { name: "深海骸兵", hp: 140, atk: 18, spd: 10, element: "tide", role: "normal" },
           { name: "裂岩影", hp: 150, atk: 16, spd: 7, element: "stone", role: "normal" },
-          { name: "幽霧刺", hp: 120, atk: 20, spd: 12, element: "gloom", role: "normal" },
+          { name: "雷霧刺", hp: 120, atk: 20, spd: 12, element: "gloom", role: "normal" },
         ],
       },
       {
@@ -2670,7 +2670,7 @@ export function scaleDungeonForTier(base, tier) {
         type: "min_element",
         element: "tide",
         count: 1,
-        label: "條件：出戰含潮屬",
+        label: "條件：出戰含水屬",
         bonus: { stones: 55, scrap: 2 },
       },
     },
@@ -2681,7 +2681,7 @@ export function scaleDungeonForTier(base, tier) {
         type: "elem_atk",
         element: "gloom",
         mult: 1.1,
-        label: "關卡：沉淵幽印 · 幽屬友方攻擊 +10%",
+        label: "關卡：沉淵雷印 · 雷屬友方攻擊 +10%",
       },
       condition: {
         id: "tide_6_gen",
@@ -2835,7 +2835,7 @@ const BOSS_VARIANTS = {
       waveLabel: "心核 BOSS",
     },
     {
-      name: "幽霧巫首",
+      name: "雷霧巫首",
       hp: 300,
       atk: 23,
       spd: 9,
@@ -2940,7 +2940,7 @@ const CONDITION_TEMPLATES = {
       type: "min_element",
       element: "tide",
       count: 1,
-      label: "條件：出戰含潮屬",
+      label: "條件：出戰含水屬",
       bonus: { stones: 10, scrap: 0 },
     },
     {
@@ -3039,11 +3039,11 @@ const CONDITION_TEMPLATES = {
 const PASSIVE_TEMPLATES = {
   1: [
     { type: "elem_atk", element: "flame", mult: 1.12, label: "關卡：焰屬友方攻擊 +12%" },
-    { type: "elem_atk", element: "tide", mult: 1.1, label: "關卡：潮屬友方攻擊 +10%" },
+    { type: "elem_atk", element: "tide", mult: 1.1, label: "關卡：水屬友方攻擊 +10%" },
   ],
   2: [
     { type: "elem_atk", element: "gale", mult: 1.1, label: "關卡：嵐屬友方攻擊 +10%" },
-    { type: "elem_atk", element: "gloom", mult: 1.08, label: "關卡：幽屬友方攻擊 +8%" },
+    { type: "elem_atk", element: "gloom", mult: 1.08, label: "關卡：雷屬友方攻擊 +8%" },
   ],
   3: [
     { type: "elem_atk", element: "gale", mult: 1.15, label: "關卡：嵐屬友方攻擊 +15%（剋岩）" },
@@ -3338,7 +3338,7 @@ export function buildPetStats(template) {
   };
 }
 
-/** 開局贈送首寵（潮屬礁狐）— 亦可由蛋孵化產出 */
+/** 開局贈送首寵（水屬礁狐）— 亦可由蛋孵化產出 */
 export function makeStarterPet() {
   const built = buildPetStats({
     id: "starter-reefox-tide",
@@ -3722,7 +3722,7 @@ export const GEAR = {
   },
   gloom_sigil: {
     id: "gloom_sigil",
-    name: "幽印符",
+    name: "雷印符",
     slot: "accessory",
     atk: 8,
     hp: 22,
@@ -3818,7 +3818,7 @@ export const DISPATCH_MISSIONS = [
     needElement: "tide",
     reward: { feed: 10, stones: 12, materials: { tide_dew: 2 } },
     eggChance: { tier: "C", rate: 0.12 },
-    desc: "1 隻 · 需潮屬 · 約 1.5 分 → 小餌／露珠 · 低機率霧傘蛋",
+    desc: "1 隻 · 需水屬 · 約 1.5 分 → 小餌／露珠 · 低機率霧傘蛋",
   },
   {
     id: "egg_shore",
@@ -3842,7 +3842,7 @@ export const DISPATCH_MISSIONS = [
     needElement: "gloom",
     reward: { dust: 12, stones: 10, materials: { coral_shard: 3 } },
     eggChance: { tier: "C", rate: 0.18 },
-    desc: "1 隻 · 需幽屬 · 漂路2章 · 星砂／珊瑚屑 · 偶得蛋",
+    desc: "1 隻 · 需雷屬 · 漂路2章 · 星砂／珊瑚屑 · 偶得蛋",
   },
   {
     id: "egg_ruins",
@@ -3903,7 +3903,7 @@ export const DISPATCH_MISSIONS = [
     needKind: "光",
     reward: { dust: 8, stones: 30, materials: { abyss_ink: 3 } },
     eggChance: { tier: "B", rate: 0.2 },
-    desc: "2 隻 · 需幽屬光類 · 漂路4章 · 深淵墨",
+    desc: "2 隻 · 需雷屬光類 · 漂路4章 · 深淵墨",
   },
   {
     id: "sand_haul",
