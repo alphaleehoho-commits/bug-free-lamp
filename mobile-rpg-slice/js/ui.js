@@ -5672,7 +5672,7 @@ function dungeonPanel() {
 
   return wrapStage(
     nav,
-    `<h2>秘境</h2>`
+    `<h2>秘境</h2>
     <p class="lead">${leadLine}</p>
     <label class="combat-pref-toggle"><input type="checkbox" data-act="toggle-combat-fast" ${combatPrefs.fastMode ? "checked" : ""}/> 已通關秘境快速戰鬥</label>
     ${
