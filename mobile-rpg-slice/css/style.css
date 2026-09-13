@@ -2373,7 +2373,7 @@ button.linkish strong { color: var(--jade); }
 .combat-unit[data-element="flame"] .cu-bar i { background: linear-gradient(90deg, #a86048, #e89070); }
 .combat-unit[data-element="gale"] .cu-bar i { background: linear-gradient(90deg, #6888a8, #a8c4d8); }
 .combat-unit[data-element="stone"] .cu-bar i { background: linear-gradient(90deg, #887848, #b8a878); }
-.combat-unit[data-element="gloom"] .cu-bar i { background: linear-gradient(90deg, #685888, #a888c8); }
+.combat-unit[data-element="gloom"] .cu-bar i { background: linear-gradient(90deg, #8b3dff, #c8ff3d 55%, #ffe14a); }
 .cu-name {
   display: block;
   white-space: nowrap;

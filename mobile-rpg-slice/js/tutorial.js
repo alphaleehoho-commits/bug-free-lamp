@@ -7,68 +7,68 @@ import { nextStageAt, upgradeMatCost, upgradeStoneCost, FUSION_MAX_STAGE } from 
 export const TUTORIAL_STEPS = [
   {
     id: "hatch_starter",
-    title: "孵化首寵",
-    hint: "潮霧蛋孵化中。可先「修行 → 練功」掛機；完成後打開「靈寵 → 孵化」領取。",
+    title: "孵化首隻",
+    hint: "霧傘蛋孵化中。可先「育成 → 練功」掛機；完成後打開「水母 → 孵化」領取。",
   },
   {
     id: "meet_pet",
-    title: "認寵",
-    hint: "點開首隻靈寵的「詳情」，認識牠的屬性與升級入口。",
+    title: "認識水母",
+    hint: "點開首隻水母的「詳情」，認識牠的屬性與升級入口。",
   },
   {
     id: "train_pet",
     title: "練功升級",
-    hint: "潮岸掛機攞潮露（升級主材料）；夠料後到「靈寵 → 牧場 → 詳情」點升級，升至 Lv.3。",
+    hint: "育成掛機攞露珠（升級主材料）；夠料後到「水母 → 水母池 → 詳情」點升級，升至 Lv.3。",
   },
   {
     id: "deploy",
     title: "派出戰",
-    hint: "在牧場點「出戰」，讓靈寵加入秘境隊伍。",
+    hint: "在水母池點「出戰」，讓水母加入秘境隊伍。",
   },
   {
     id: "dungeon_fight",
     title: "踏入秘境",
-    hint: "進入「秘境」，挑戰【潮汐廢墟 · 一層】（教學豁免今日挑戰限制）。",
+    hint: "進入「秘境」，挑戰【1-1】（教學豁免今日挑戰限制）。",
   },
   {
     id: "dungeon_win",
-    title: "攻克一層",
-    hint: "帶靈寵戰勝秘境一層；教學中不檢查今日禁屬／試煉條件。",
+    title: "攻克 1-1",
+    hint: "帶水母戰勝秘境 1-1；教學中不檢查今日禁屬／試煉條件。",
   },
   {
     id: "shop_egg",
     title: "商肆購蛋",
-    hint: "在商肆購入一枚寵物蛋（教學優惠），開始孵化擴隊。",
+    hint: "在商肆購入一枚水母蛋（教學優惠），開始孵化擴隊。",
   },
   {
     id: "hatch_second",
     title: "孵化擴隊",
-    hint: "第二枚蛋孵化中。等待期間可先「修行 → 練功」，完成後回「孵化」領取。",
+    hint: "第二枚蛋孵化中。等待期間可先「育成 → 練功」，完成後回「孵化」領取。",
   },
   {
     id: "cultivate_qi",
-    title: "靈契修行",
-    hint: "在契壇掛機累積靈契（突破階段的修行值；教學需稍作等候）。",
+    title: "共鳴漂漂",
+    hint: "在育成掛機累積共鳴（滿後可到「進階」成長；教學需稍作等候）。",
   },
   {
     id: "breakthrough",
-    title: "突破初階",
-    hint: "打開「修行 → 進階」，突破至【通靈初期】。",
+    title: "成長初階",
+    hint: "打開「育成 → 進階」，成長至【浮游初期】。",
   },
   {
     id: "breed_intro",
     title: "血脈催生",
-    hint: "打開「靈寵 → 繁殖」分頁，了解雜交與血脈。",
+    hint: "打開「水母 → 繁殖」分頁，了解雜交與血脈。",
   },
   {
     id: "codex",
-    title: "圖鑑求道",
-    hint: "打開「圖鑑」查看收藏與求道目標。",
+    title: "圖鑑出發",
+    hint: "打開「圖鑑」查看收藏與出發目標。",
   },
   {
     id: "dispatch",
-    title: "牧場派遣",
-    hint: "「靈寵 → 派遣」可派牧場靈寵外派取資，亦可能帶回寵物蛋。",
+    title: "水母池派遣",
+    hint: "「水母 → 派遣」可派水母池水母外派取資，亦可能帶回水母蛋。",
   },
   {
     id: "tactics",
@@ -78,7 +78,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "fuse_intro",
     title: "融合覺醒",
-    hint: "通關秘境三後解鎖融合。打開靈寵詳情，進入融合頁了解流程（唔使即刻融合）。",
+    hint: "通關【1-3】後解鎖融合。打開水母詳情，進入融合頁了解流程（唔使即刻融合）。",
   },
   {
     id: "fuse_once",
@@ -114,7 +114,7 @@ export const LATE_TUTORIAL_MIN_REALM = 2;
 
 /** 教學：首寵升級門檻 */
 export const TUTORIAL_TRAIN_LEVEL = 3;
-/** 教學：靈契步最少掛機秒數（節奏） */
+/** 教學：共鳴步最少掛機秒數（節奏） */
 export const TUTORIAL_QI_IDLE_SEC = 45;
 
 function isLateStep(stepId) {
@@ -146,7 +146,7 @@ function tutorialTrainTargetPet(state) {
   );
 }
 
-/** 目前是否有足夠材料＋靈石升一級（朝 Lv.3） */
+/** 目前是否有足夠材料＋泡泡晶升一級（朝 Lv.3） */
 export function trainPetCanUpgrade(state) {
   const pet = tutorialTrainTargetPet(state);
   if (!pet) return false;
@@ -159,14 +159,14 @@ export function trainPetCanUpgrade(state) {
   return (state.stones || 0) >= upgradeStoneCost(lv);
 }
 
-/** 教學開局潮露：夠連升兩級至 Lv.3（+1 備用） */
+/** 教學開局露珠：夠連升兩級至 Lv.3（+1 備用） */
 export const TUTORIAL_STARTER_TIDE_DEW = 3;
 
 export function tutorialEggReady(state) {
   return (state.eggs || []).some((e) => e.startedAt != null && (e.readyAt || 0) <= Date.now());
 }
 
-/** 教學步驟需要牧場 sub 時（認寵／升級／出戰等） */
+/** 教學步驟需要水母池 sub 時（認寵／升級／出戰等） */
 export function tutorialNeedsRanchSub(step) {
   return (
     step === "meet_pet" ||
@@ -181,7 +181,7 @@ export function tutorialNeedsHatchSub(step) {
   return step === "hatch_starter" || step === "hatch_second";
 }
 
-/** 教學標示用：只挑一隻目標靈寵（唔好成欄發光） */
+/** 教學標示用：只挑一隻目標水母（唔好成欄發光） */
 export function tutorialCoachDetailUid(state) {
   const owned = [...(state.pets || []), ...(state.ranch || [])];
   if (!owned.length) return null;
@@ -603,7 +603,7 @@ export function healTutorialProgress(state) {
   if ((state.daily?.idleSec || 0) >= TUTORIAL_QI_IDLE_SEC) {
     state.tutorial.flags.qiIdleDone = true;
   }
-  // 練功步：確保至少有足夠潮露升一級，避免卡喺「有 highlight 但升唔到」
+  // 練功步：確保至少有足夠露珠升一級，避免卡喺「有 highlight 但升唔到」
   if (state.tutorial.step === "train_pet" && !state.tutorial.flags.trainMatsGranted) {
     if (!state.materials) state.materials = {};
     const pet = tutorialTrainTargetPet(state);
@@ -740,7 +740,7 @@ export function syncTutorialNavigation(state, nav) {
       break;
     case "tactics":
       next = clampTutorialTabs(nav, ["dungeon"]);
-      // 只趕走已鎖嘅 field；潮淵／戰術可停留（唔好每 frame 強制 setup 令潮淵無反應）
+      // 只趕走已鎖嘅 field；深潛／戰術可停留（唔好每 frame 強制 setup 令深潛無反應）
       {
         const dungSub = next.panelSub?.dungeon || "field";
         if (dungSub === "field" || isDungeonSubLocked(state, dungSub)) {
@@ -1029,16 +1029,16 @@ export function tutorialBannerHint(state) {
   const info = tutorialStepInfo(state);
   if (info.stepId === "cultivate_qi") {
     if (tutorialQiReady(state)) {
-      return "靈契已足，打開「進階」突破！";
+      return "共鳴已足，打開「進階」成長！";
     }
     const idle = Math.floor(state.daily?.idleSec || 0);
     const left = Math.max(0, TUTORIAL_QI_IDLE_SEC - idle);
     const next = nextStageAt(state.realm);
     if (left > 0) {
-      return `契壇掛機中… 還需約 ${left}s（靈契 ${Math.floor(state.qi)}/${next.need}）。`;
+      return `育成掛機中… 還需約 ${left}s（共鳴 ${Math.floor(state.qi)}/${next.need}）。`;
     }
     if (state.qi < next.need) {
-      return `掛機時間已足，繼續累積靈契（${Math.floor(state.qi)}/${next.need}）。`;
+      return `掛機時間已足，繼續累積共鳴（${Math.floor(state.qi)}/${next.need}）。`;
     }
   }
   if (info.stepId === "train_pet") {
@@ -1049,14 +1049,14 @@ export function tutorialBannerHint(state) {
     const needDew = upgradeMatCost(needLv).tide_dew || 1;
     const haveDew = Math.floor(state.materials?.tide_dew || 0);
     if (!trainPetCanUpgrade(state)) {
-      return `首寵 Lv.${lv}／需 Lv.${TUTORIAL_TRAIN_LEVEL}。潮露 ${haveDew}／升級需 ${needDew} — 潮岸掛機中，夠料再去靈寵升級。`;
+      return `首隻 Lv.${lv}／需 Lv.${TUTORIAL_TRAIN_LEVEL}。露珠 ${haveDew}／升級需 ${needDew} — 育成掛機中，夠料再去水母升級。`;
     }
-    return `潮露已夠（${haveDew}）！打開「靈寵 → 牧場 → 詳情」點「升級」（Lv.${lv}→${lv + 1}）。`;
+    return `露珠已夠（${haveDew}）！打開「水母 → 水母池 → 詳情」點「升級」（Lv.${lv}→${lv + 1}）。`;
   }
   if (info.stepId === "hatch_starter" || info.stepId === "hatch_second") {
     const eggs = state.eggs || [];
     const ready = eggs.find((e) => e.startedAt != null && (e.readyAt || 0) <= Date.now());
-    if (ready) return `【${ready.name || "蛋"}】已就緒！打開「靈寵 → 孵化」點「領取」。`;
+    if (ready) return `【${ready.name || "蛋"}】已就緒！打開「水母 → 孵化」點「領取」。`;
     const hatching = eggs.find((e) => e.startedAt != null);
     if (hatching) {
       const sec = Math.max(0, Math.ceil(((hatching.readyAt || 0) - Date.now()) / 1000));
@@ -1067,21 +1067,21 @@ export function tutorialBannerHint(state) {
 }
 
 const TUTORIAL_NEXT_WHERE = {
-  hatch_starter: "底部「靈寵」→「孵化」領取",
-  meet_pet: "「靈寵 → 牧場」點開首寵詳情",
-  train_pet: "先「修行 → 練功」掛機，夠潮露再回「靈寵」升級",
-  deploy: "「靈寵 → 牧場」點「出戰」",
-  dungeon_fight: "底部「秘境」→ 進攻一層",
-  dungeon_win: "繼續在「秘境」戰勝一層",
-  shop_egg: "「修行 → 商肆」購入一枚蛋",
-  hatch_second: "「靈寵 → 孵化」等候並領取",
-  cultivate_qi: "留在「修行 → 練功」累積靈契",
-  breakthrough: "「修行 → 進階」突破",
-  breed_intro: "「靈寵 → 繁殖」看一眼即可",
+  hatch_starter: "底部「水母」→「孵化」領取",
+  meet_pet: "「水母 → 水母池」點開首隻詳情",
+  train_pet: "先「育成 → 練功」掛機，夠露珠再回「水母」升級",
+  deploy: "「水母 → 水母池」點「出戰」",
+  dungeon_fight: "底部「秘境」→ 進攻 1-1",
+  dungeon_win: "繼續在「秘境」戰勝 1-1",
+  shop_egg: "「育成 → 商肆」購入一枚蛋",
+  hatch_second: "「水母 → 孵化」等候並領取",
+  cultivate_qi: "留在「育成 → 練功」累積共鳴",
+  breakthrough: "「育成 → 進階」成長",
+  breed_intro: "「水母 → 繁殖」看一眼即可",
   codex: "底部「圖鑑」查看收藏",
-  dispatch: "「靈寵 → 派遣」",
+  dispatch: "「水母 → 派遣」",
   tactics: "「秘境 → 戰術」",
-  fuse_intro: "打開靈寵詳情 → 融合頁",
+  fuse_intro: "打開水母詳情 → 融合頁",
   fuse_once: "用同種素材完成一次融合",
 };
 
@@ -1097,7 +1097,7 @@ export function tutorialBannerHtml(state, opts = {}) {
   const hint = tutorialBannerHint(state);
   const nextWhere = tutorialNextWhere(state);
   const phaseNote = info.inLate
-    ? `<p class="tutorial-phase">進階引導 · 達【通靈後期】解鎖</p>`
+    ? `<p class="tutorial-phase">進階引導 · 達【浮游後期】解鎖</p>`
     : "";
   if (collapsed) {
     return `

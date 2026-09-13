@@ -1,6 +1,6 @@
-# 暗潮 · Void Tide
+# 暗潮 · 水母漂漂
 
-豎屏靈寵修行 PWA（vanilla HTML/CSS/JS）。
+豎屏水母漂漂 PWA（vanilla HTML/CSS/JS）。Void Tide 為英文副標。
 
 ## 玩
 
