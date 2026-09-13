@@ -113,6 +113,25 @@ body {
   font-size: 0.58rem;
   letter-spacing: 0.06em;
 }
+.build-chip {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 0.12rem 0.38rem;
+  border-radius: 999px;
+  border: 1px solid rgba(126, 168, 160, 0.28);
+  background: rgba(12, 22, 30, 0.55);
+  color: var(--fog);
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.brand-reset {
+  padding: 0.12rem 0.4rem;
+  min-height: 1.55rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+}
 #app.is-enter .tag {
   animation: fadeUp 0.6s 0.1s ease-out both;
 }
@@ -1349,18 +1368,34 @@ button.flash-act {
 .train-idle-hit[hidden] { display: none; }
 .train-idle-fail {
   margin: 0.4rem 0 0.1rem;
-  padding: 0.5rem 0.55rem;
+  padding: 0.55rem 0.6rem 0.6rem;
   border-radius: 10px;
-  border: 1px solid rgba(224, 138, 106, 0.35);
-  background: rgba(42, 24, 20, 0.55);
+  border: 1px solid rgba(224, 138, 106, 0.42);
+  background: rgba(42, 24, 20, 0.62);
+}
+.train-idle-fail.is-timeout {
+  border-color: rgba(214, 176, 96, 0.45);
+  background: rgba(40, 32, 16, 0.62);
 }
 .train-idle-fail[hidden] { display: none; }
+.train-idle-fail-kicker {
+  margin: 0 0 0.18rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  color: #f0c2b0;
+}
+.train-idle-fail.is-timeout .train-idle-fail-kicker {
+  color: #ead59a;
+}
 .train-idle-fail strong {
   display: block;
   font-family: var(--font-display);
-  font-size: 0.86rem;
-  color: #f0c2b0;
+  font-size: 0.92rem;
+  color: #f6d4c6;
   margin-bottom: 0.28rem;
+}
+.train-idle-fail.is-timeout strong {
+  color: #f3e3b0;
 }
 .train-idle-fail ul {
   margin: 0;
@@ -2591,6 +2626,60 @@ button.linkish strong { color: var(--jade); }
   to { transform: translateY(0); opacity: 1; }
 }
 
+.settle-outcome {
+  margin: 0.15rem 0 0.35rem;
+  padding: 0.55rem 0.6rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid rgba(126, 184, 163, 0.42);
+  background: rgba(28, 64, 54, 0.28);
+}
+.settle-outcome--loss {
+  border-color: rgba(224, 138, 106, 0.42);
+  background: rgba(42, 24, 20, 0.55);
+}
+.settle-outcome--timeout {
+  border-color: rgba(214, 176, 96, 0.42);
+  background: rgba(40, 32, 16, 0.55);
+}
+.settle-outcome-kicker {
+  margin: 0 0 0.12rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  color: var(--fog);
+}
+.settle-outcome strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  color: var(--jade-bright);
+  letter-spacing: 0.06em;
+}
+.settle-outcome--loss strong {
+  color: #f0c2b0;
+}
+.settle-outcome--timeout strong {
+  color: #f3e3b0;
+}
+.settle-outcome-line,
+.settle-outcome-msg {
+  margin: 0.22rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+.settle-outcome-tips {
+  margin: 0.35rem 0 0;
+  padding: 0 0 0 1.05rem;
+}
+.settle-outcome-tips li {
+  margin: 0.12rem 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: #e6eef2;
+}
+.combat-report-card--settle h2 {
+  letter-spacing: 0.04em;
+}
 .settle-summary-row {
   display: flex;
   align-items: center;
@@ -3604,6 +3693,13 @@ button.pet-badge {
   letter-spacing: 0.18em;
   color: var(--fog);
 }
+.title-build {
+  margin: 0.45rem 0 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .title-howto,
 .title-glossary {
   background: var(--panel);
@@ -3658,6 +3754,10 @@ button.pet-badge {
 .title-skip {
   min-height: 2.4rem;
   font-size: 0.92rem;
+}
+.title-reset {
+  min-height: 2.2rem;
+  font-size: 0.86rem;
 }
 .title-note {
   margin: 0;
