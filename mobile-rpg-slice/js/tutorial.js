@@ -8,7 +8,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "hatch_starter",
     title: "孵化首隻",
-    hint: "潮霧蛋孵化中。可先「潮岸 → 練功」掛機；完成後打開「水母 → 孵化」領取。",
+    hint: "潮霧蛋孵化中。可先「育成 → 練功」掛機；完成後打開「水母 → 孵化」領取。",
   },
   {
     id: "meet_pet",
@@ -18,12 +18,12 @@ export const TUTORIAL_STEPS = [
   {
     id: "train_pet",
     title: "練功升級",
-    hint: "潮岸掛機攞潮露（升級主材料）；夠料後到「水母 → 潮池 → 詳情」點升級，升至 Lv.3。",
+    hint: "育成掛機攞潮露（升級主材料）；夠料後到「水母 → 水母池 → 詳情」點升級，升至 Lv.3。",
   },
   {
     id: "deploy",
     title: "派出戰",
-    hint: "在潮池點「出戰」，讓水母加入秘境隊伍。",
+    hint: "在水母池點「出戰」，讓水母加入秘境隊伍。",
   },
   {
     id: "dungeon_fight",
@@ -43,32 +43,32 @@ export const TUTORIAL_STEPS = [
   {
     id: "hatch_second",
     title: "孵化擴隊",
-    hint: "第二枚蛋孵化中。等待期間可先「潮岸 → 練功」，完成後回「孵化」領取。",
+    hint: "第二枚蛋孵化中。等待期間可先「育成 → 練功」，完成後回「孵化」領取。",
   },
   {
     id: "cultivate_qi",
-    title: "潮息浮游",
-    hint: "在潮岸掛機累積潮息（滿後可到「進階」升潮；教學需稍作等候）。",
+    title: "共鳴漂漂",
+    hint: "在育成掛機累積共鳴（滿後可到「進階」成長；教學需稍作等候）。",
   },
   {
     id: "breakthrough",
-    title: "升潮初階",
-    hint: "打開「潮岸 → 進階」，升潮至【浮游初期】。",
+    title: "成長初階",
+    hint: "打開「育成 → 進階」，成長至【浮游初期】。",
   },
   {
     id: "breed_intro",
-    title: "血脈催潮",
+    title: "血脈催生",
     hint: "打開「水母 → 繁殖」分頁，了解雜交與血脈。",
   },
   {
     id: "codex",
-    title: "圖鑑求潮",
-    hint: "打開「圖鑑」查看收藏與求潮目標。",
+    title: "圖鑑出發",
+    hint: "打開「圖鑑」查看收藏與出發目標。",
   },
   {
     id: "dispatch",
-    title: "潮池派遣",
-    hint: "「水母 → 派遣」可派潮池水母外派取資，亦可能帶回水母蛋。",
+    title: "水母池派遣",
+    hint: "「水母 → 派遣」可派水母池水母外派取資，亦可能帶回水母蛋。",
   },
   {
     id: "tactics",
@@ -114,7 +114,7 @@ export const LATE_TUTORIAL_MIN_REALM = 2;
 
 /** 教學：首寵升級門檻 */
 export const TUTORIAL_TRAIN_LEVEL = 3;
-/** 教學：潮息步最少掛機秒數（節奏） */
+/** 教學：共鳴步最少掛機秒數（節奏） */
 export const TUTORIAL_QI_IDLE_SEC = 45;
 
 function isLateStep(stepId) {
@@ -146,7 +146,7 @@ function tutorialTrainTargetPet(state) {
   );
 }
 
-/** 目前是否有足夠材料＋潮晶升一級（朝 Lv.3） */
+/** 目前是否有足夠材料＋泡泡晶升一級（朝 Lv.3） */
 export function trainPetCanUpgrade(state) {
   const pet = tutorialTrainTargetPet(state);
   if (!pet) return false;
@@ -166,7 +166,7 @@ export function tutorialEggReady(state) {
   return (state.eggs || []).some((e) => e.startedAt != null && (e.readyAt || 0) <= Date.now());
 }
 
-/** 教學步驟需要潮池 sub 時（認寵／升級／出戰等） */
+/** 教學步驟需要水母池 sub 時（認寵／升級／出戰等） */
 export function tutorialNeedsRanchSub(step) {
   return (
     step === "meet_pet" ||
@@ -1029,16 +1029,16 @@ export function tutorialBannerHint(state) {
   const info = tutorialStepInfo(state);
   if (info.stepId === "cultivate_qi") {
     if (tutorialQiReady(state)) {
-      return "潮息已足，打開「進階」升潮！";
+      return "共鳴已足，打開「進階」成長！";
     }
     const idle = Math.floor(state.daily?.idleSec || 0);
     const left = Math.max(0, TUTORIAL_QI_IDLE_SEC - idle);
     const next = nextStageAt(state.realm);
     if (left > 0) {
-      return `潮壇掛機中… 還需約 ${left}s（潮息 ${Math.floor(state.qi)}/${next.need}）。`;
+      return `育成掛機中… 還需約 ${left}s（共鳴 ${Math.floor(state.qi)}/${next.need}）。`;
     }
     if (state.qi < next.need) {
-      return `掛機時間已足，繼續累積潮息（${Math.floor(state.qi)}/${next.need}）。`;
+      return `掛機時間已足，繼續累積共鳴（${Math.floor(state.qi)}/${next.need}）。`;
     }
   }
   if (info.stepId === "train_pet") {
@@ -1049,9 +1049,9 @@ export function tutorialBannerHint(state) {
     const needDew = upgradeMatCost(needLv).tide_dew || 1;
     const haveDew = Math.floor(state.materials?.tide_dew || 0);
     if (!trainPetCanUpgrade(state)) {
-      return `首隻 Lv.${lv}／需 Lv.${TUTORIAL_TRAIN_LEVEL}。潮露 ${haveDew}／升級需 ${needDew} — 潮岸掛機中，夠料再去水母升級。`;
+      return `首隻 Lv.${lv}／需 Lv.${TUTORIAL_TRAIN_LEVEL}。潮露 ${haveDew}／升級需 ${needDew} — 育成掛機中，夠料再去水母升級。`;
     }
-    return `潮露已夠（${haveDew}）！打開「水母 → 潮池 → 詳情」點「升級」（Lv.${lv}→${lv + 1}）。`;
+    return `潮露已夠（${haveDew}）！打開「水母 → 水母池 → 詳情」點「升級」（Lv.${lv}→${lv + 1}）。`;
   }
   if (info.stepId === "hatch_starter" || info.stepId === "hatch_second") {
     const eggs = state.eggs || [];
@@ -1068,15 +1068,15 @@ export function tutorialBannerHint(state) {
 
 const TUTORIAL_NEXT_WHERE = {
   hatch_starter: "底部「水母」→「孵化」領取",
-  meet_pet: "「水母 → 潮池」點開首隻詳情",
-  train_pet: "先「潮岸 → 練功」掛機，夠潮露再回「水母」升級",
-  deploy: "「水母 → 潮池」點「出戰」",
+  meet_pet: "「水母 → 水母池」點開首隻詳情",
+  train_pet: "先「育成 → 練功」掛機，夠潮露再回「水母」升級",
+  deploy: "「水母 → 水母池」點「出戰」",
   dungeon_fight: "底部「秘境」→ 進攻一層",
   dungeon_win: "繼續在「秘境」戰勝一層",
-  shop_egg: "「潮岸 → 商肆」購入一枚蛋",
+  shop_egg: "「育成 → 商肆」購入一枚蛋",
   hatch_second: "「水母 → 孵化」等候並領取",
-  cultivate_qi: "留在「潮岸 → 練功」累積潮息",
-  breakthrough: "「潮岸 → 進階」升潮",
+  cultivate_qi: "留在「育成 → 練功」累積共鳴",
+  breakthrough: "「育成 → 進階」成長",
   breed_intro: "「水母 → 繁殖」看一眼即可",
   codex: "底部「圖鑑」查看收藏",
   dispatch: "「水母 → 派遣」",

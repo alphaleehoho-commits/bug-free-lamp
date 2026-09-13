@@ -1,27 +1,27 @@
-/** Data tables — 潮母浮游 */
+/** Data tables — 水母漂漂 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260913.2";
+export const APP_BUILD = "20260913.3";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
-  stones: { name: "潮晶", blurb: "暗潮凝成的晶幣。商肆買蛋、升級水母會消耗。" },
+  stones: { name: "泡泡晶", blurb: "亮晶晶的貨幣。商肆買蛋、升級水母會消耗。" },
   scrap: { name: "碎片", blurb: "秘境掉落。部分養成與兌換會用到。" },
-  feed: { name: "浮游餌", blurb: "餵食／契約用的浮游生物。掛機與潮池待命可產出。" },
-  dust: { name: "潮砂", blurb: "技能與進階養成材料。掛機與潮池可產出。" },
-  qi: { name: "潮息", blurb: "潮階進度。掛機累積，滿後可到「潮岸 → 進階」升潮。" },
-  tide_dew: { name: "潮露", blurb: "升級水母的主材料。在「潮岸 → 練功」掛機取得。" },
+  feed: { name: "小餌", blurb: "餵水母／契約用。掛機與水母池待命可產出。" },
+  dust: { name: "星砂", blurb: "技能與進階材料。掛機與水母池可產出。" },
+  qi: { name: "共鳴", blurb: "體階進度。掛機累積，滿後到「育成 → 進階」成長。" },
+  tide_dew: { name: "潮露", blurb: "升級水母的主材料。在「育成 → 練功」掛機取得。" },
   spine: { name: "主脊", blurb: "掛機練功的主戰場／關卡鏈。打通一層再開下一層。" },
-  mist_token: { name: "潮霧令", blurb: "再挑戰已通關秘境的入場憑證。練功、每日與升潮可獲。" },
-  soul: { name: "潮魂", blurb: "放流水母或潮還未孵蛋所得。可在商肆兌換物資。" },
-  realm: { name: "潮階", blurb: "潮行者與水母的綻放等階。升潮後掛機效率與可挑戰內容會提升。" },
+  mist_token: { name: "潮霧令", blurb: "再挑戰已通關秘境的入場憑證。練功、每日與成長可獲。" },
+  soul: { name: "光核", blurb: "放生或退蛋所得。可在商肆兌換物資。" },
+  realm: { name: "體階", blurb: "水母的成長等階。成長後掛機效率與可挑戰內容會提升。" },
 };
 
 export const STAGES = [
-  { id: 0, name: "初潮", need: 0, rate: 1.05 },
+  { id: 0, name: "幼體", need: 0, rate: 1.05 },
   { id: 1, name: "浮游初期", need: 55, rate: 1.35 },
   { id: 2, name: "浮游後期", need: 200, rate: 1.75 },
-  { id: 3, name: "深潮", need: 520, rate: 2.2 },
+  { id: 3, name: "成體", need: 520, rate: 2.2 },
   { id: 4, name: "礁主", need: 1400, rate: 2.8 },
   { id: 5, name: "潮主", need: 3200, rate: 3.5 },
 ];
@@ -31,7 +31,7 @@ export const REALMS = STAGES;
 /** 固定表最後一階（潮主）；之後用公式延伸 */
 export const STAGE_FORMULA_BASE = 5;
 
-/** 潮階（0..∞）：固定表 + 指數公式 */
+/** 體階（0..∞）：固定表 + 指數公式 */
 export function stageAt(realmId) {
   const id = Math.max(0, realmId | 0);
   if (id < STAGES.length) return { ...STAGES[id] };
@@ -51,8 +51,8 @@ export function nextStageAt(realmId) {
 }
 
 /**
- * 晉升至目標階段的額外門檻（潮息仍用 STAGES[target].need）
- * costs: 升潮時扣除；checks: 硬性條件
+ * 晉升至目標階段的額外門檻（共鳴仍用 STAGES[target].need）
+ * costs: 成長時扣除；checks: 硬性條件
  */
 export const BREAKTHROUGH_GATES = {
   1: {
@@ -84,7 +84,7 @@ export const BREAKTHROUGH_GATES = {
       { type: "cleared", dungeonId: "tide_3", label: "通關【心核】" },
       { type: "hybrid_owned", need: 1, label: "擁有雜交種 ≥ 1" },
       { type: "fusions", need: 1, label: "完成融合 ≥ 1" },
-      { type: "bestiary", need: 18, label: "圖鑑登錄 ≥ 18 格（潮階目標）" },
+      { type: "bestiary", need: 18, label: "圖鑑登錄 ≥ 18 格（體階目標）" },
       { type: "min_gen", gen: 1, label: "擁有 ≥ 1 代水母" },
     ],
   },
@@ -95,13 +95,13 @@ export const BREAKTHROUGH_GATES = {
       { type: "min_gen", gen: 2, label: "擁有 ≥ 2 代水母" },
       { type: "breeds", need: 5, label: "繁殖次數 ≥ 5" },
       { type: "hybrid_owned", need: 2, label: "擁有雜交種 ≥ 2" },
-      { type: "bestiary", need: 36, label: "圖鑑登錄 ≥ 36 格（潮階目標）" },
+      { type: "bestiary", need: 36, label: "圖鑑登錄 ≥ 36 格（體階目標）" },
       { type: "bloodmark_owned", need: 1, label: "擁有帶血脈紋水母 ≥ 1" },
     ],
   },
 };
 
-/** 潮主之後的升潮門檻（公式生成） */
+/** 潮主之後的成長門檻（公式生成） */
 export function breakthroughGateFor(targetRealmId) {
   if (BREAKTHROUGH_GATES[targetRealmId]) return BREAKTHROUGH_GATES[targetRealmId];
   const extra = Math.max(1, targetRealmId - STAGE_FORMULA_BASE);
@@ -134,7 +134,7 @@ export function breakthroughGateFor(targetRealmId) {
       {
         type: "bestiary",
         need: 30 + extra * 12,
-        label: `圖鑑登錄 ≥ ${30 + extra * 12} 格（潮階目標）`,
+        label: `圖鑑登錄 ≥ ${30 + extra * 12} 格（體階目標）`,
       },
       {
         type: "breeds",
@@ -153,7 +153,7 @@ function countEquippedGear(state) {
   return 0;
 }
 
-/** 評估單項升潮檢查 */
+/** 評估單項成長檢查 */
 export function evalBreakthroughCheck(state, check) {
   const stats = state.stats || {};
   const owned = ownedPetList(state);
@@ -207,16 +207,16 @@ export function evalBreakthroughCheck(state, check) {
 function formatCostBits(costs) {
   if (!costs) return "";
   const bits = [];
-  if (costs.stones) bits.push(`${costs.stones}潮晶`);
+  if (costs.stones) bits.push(`${costs.stones}泡泡晶`);
   if (costs.scrap) bits.push(`${costs.scrap}碎片`);
-  if (costs.dust) bits.push(`${costs.dust}潮砂`);
-  if (costs.feed) bits.push(`${costs.feed}浮游餌`);
-  if (costs.seal_ember) bits.push(`${costs.seal_ember}潮焰`);
+  if (costs.dust) bits.push(`${costs.dust}星砂`);
+  if (costs.feed) bits.push(`${costs.feed}小餌`);
+  if (costs.seal_ember) bits.push(`${costs.seal_ember}焰珠`);
   return bits.join("／");
 }
 
 /**
- * 下一潮階升潮檢視：分項達標狀態（供 UI 清單表）
+ * 下一體階成長檢視：分項達標狀態（供 UI 清單表）
  */
 export function breakthroughView(state) {
   const cur = stageAt(state.realm);
@@ -228,7 +228,7 @@ export function breakthroughView(state) {
   const qiOk = state.qi >= next.need;
   items.push({
     id: "qi",
-    label: `潮息 ≥ ${next.need}`,
+    label: `共鳴 ≥ ${next.need}`,
     ok: qiOk,
     progress: `${Math.floor(state.qi)}/${next.need}`,
     kind: "qi",
@@ -237,7 +237,7 @@ export function breakthroughView(state) {
   if (costs.stones) {
     items.push({
       id: "cost_stones",
-      label: `潮晶 ≥ ${costs.stones}`,
+      label: `泡泡晶 ≥ ${costs.stones}`,
       ok: state.stones >= costs.stones,
       progress: `${Math.floor(state.stones)}/${costs.stones}`,
       kind: "cost",
@@ -255,7 +255,7 @@ export function breakthroughView(state) {
   if (costs.dust) {
     items.push({
       id: "cost_dust",
-      label: `潮砂 ≥ ${costs.dust}`,
+      label: `星砂 ≥ ${costs.dust}`,
       ok: (state.dust || 0) >= costs.dust,
       progress: `${Math.floor(state.dust || 0)}/${costs.dust}`,
       kind: "cost",
@@ -264,7 +264,7 @@ export function breakthroughView(state) {
   if (costs.feed) {
     items.push({
       id: "cost_feed",
-      label: `浮游餌 ≥ ${costs.feed}`,
+      label: `小餌 ≥ ${costs.feed}`,
       ok: (state.feed || 0) >= costs.feed,
       progress: `${Math.floor(state.feed || 0)}/${costs.feed}`,
       kind: "cost",
@@ -274,7 +274,7 @@ export function breakthroughView(state) {
     const have = state.materials?.seal_ember || 0;
     items.push({
       id: "cost_seal_ember",
-      label: `潮焰 ≥ ${costs.seal_ember}`,
+      label: `焰珠 ≥ ${costs.seal_ember}`,
       ok: have >= costs.seal_ember,
       progress: `${have}/${costs.seal_ember}`,
       kind: "cost",
@@ -720,7 +720,7 @@ export function shopSpeciesIds(realm = 0) {
 
 /**
  * 主性格池（戰鬥加成 only）：三項 (m-1) 總計 ≈ +9%，單項最多 ±15%。
- * 唔影響面板白板／潮池／派遣。
+ * 唔影響面板白板／水母池／派遣。
  */
 export const MAIN_PERSONALITIES = {
   fierce: { id: "fierce", name: "烈性", role: "atk" },
@@ -859,7 +859,7 @@ export function pickSubPersonalityId(excludeId = null) {
   return pool[Math.floor(Math.random() * pool.length)] || "evenhanded";
 }
 
-/** 潮池待命全局倍率（避免疊練功地爆倉） */
+/** 水母池待命全局倍率（避免疊練功地爆倉） */
 export const RANCH_IDLE_GLOBAL_MULT = 0.35;
 
 /** 派遣高代獎勵倍率 */
@@ -867,7 +867,7 @@ export const DISPATCH_GEN_REWARD_MULT = { 2: 1.1, 3: 1.25 };
 
 /** 血脈紋（每寵 0–2）：圖鑑組合軸之一 */
 export const BLOODLINE_MARKS = {
-  tide_sigil: { id: "tide_sigil", name: "潮印", atk: 1.03, hp: 1.02, spd: 1.0 },
+  tide_sigil: { id: "tide_sigil", name: "泡印", atk: 1.03, hp: 1.02, spd: 1.0 },
   reef_bone: { id: "reef_bone", name: "礁骨", atk: 1.0, hp: 1.06, spd: 0.98 },
   gale_plume: { id: "gale_plume", name: "嵐羽", atk: 1.02, hp: 0.98, spd: 1.06 },
   gloom_spark: { id: "gloom_spark", name: "幽螢", atk: 1.05, hp: 0.97, spd: 1.03 },
@@ -935,7 +935,7 @@ export const SKILLS = {
   // —— 人物 ——
   seal_strike: {
     id: "seal_strike",
-    name: "潮印斬",
+    name: "泡印斬",
     owner: "master",
     type: "strike",
     cd: 2,
@@ -1330,14 +1330,14 @@ export const ACTIVE_PET_BASE = 3;
 export const ACTIVE_PET_UNLOCK_STAGE = 3;
 
 /**
- * 潮池待命上限：隨人物階段提升
- * 初潮 6 → 浮游初 9 → … → 潮主 21
+ * 水母池待命上限：隨人物階段提升
+ * 幼體 6 → 浮游初 9 → … → 潮主 21
  */
 export function ranchCapForStage(stageId) {
   return 6 + Math.max(0, stageId) * 3;
 }
 
-/** 升級耗潮晶（無等級上限；平滑曲線，中後期明顯變貴） */
+/** 升級耗泡泡晶（無等級上限；平滑曲線，中後期明顯變貴） */
 export function upgradeStoneCost(level) {
   const lv = Math.max(1, level | 0);
   // 早期平：~10（Lv1）、~120（Lv8）；中後期加速，50+ 繼續二次增長
@@ -1369,7 +1369,7 @@ export function fusionMaterialNeed(targetStage) {
 }
 
 /**
- * 融合耗潮晶
+ * 融合耗泡泡晶
  */
 export function fusionStoneCost(targetStage) {
   const n = Math.max(1, Math.min(FUSION_MAX_STAGE, targetStage | 0));
@@ -1383,7 +1383,7 @@ export const BOND_RATE_BY_PERSONALITY = Object.fromEntries(
   MAIN_PERSONALITY_IDS.map((id) => [id, BOND_RATE_DEFAULT])
 );
 
-/** 契約潮晶上限（秘境遇寵） */
+/** 契約泡泡晶上限（秘境遇寵） */
 export const BOND_COST_MAX = 42;
 /** 每次同隻失敗契約累加成功率 */
 export const BOND_FAIL_RATE_BONUS = 0.1;
@@ -1408,7 +1408,7 @@ function pickWeighted(weightMap) {
   return entries[entries.length - 1][0];
 }
 
-/** 繁殖：潮晶消耗、冷卻 */
+/** 繁殖：泡泡晶消耗、冷卻 */
 export const BREED_STONE_COST = 45;
 /** 單次交配孕育時長（似秘境召喚凝聚） */
 export const BREED_COOLDOWN_MS = 45_000;
@@ -2112,7 +2112,7 @@ export const DUNGEON_DAILY_MODS = [
   },
   {
     id: "stone_bonus",
-    label: "今日：通關額外 +15 潮晶",
+    label: "今日：通關額外 +15 泡泡晶",
     clearStoneBonus: 15,
   },
   {
@@ -2127,12 +2127,12 @@ export const DUNGEON_DAILY_MODS = [
   },
   {
     id: "dust_bonus",
-    label: "今日：通關額外 +6 潮砂",
+    label: "今日：通關額外 +6 星砂",
     clearDustBonus: 6,
   },
   {
     id: "feed_bonus",
-    label: "今日：通關額外 +8 浮游餌",
+    label: "今日：通關額外 +8 小餌",
     clearFeedBonus: 8,
   },
 ];
@@ -3566,9 +3566,9 @@ export function petLabel(pet) {
   return `${pet.name}（${r}·${pet.kind}·${pet.elementName}·${pet.personalityName}${pe2}${blood}）`;
 }
 
-/* ─── P1：潮池掛機產物 ─── */
+/* ─── P1：水母池掛機產物 ─── */
 
-/** 潮池待命中性產量（性格唔再影響；再乘 RANCH_IDLE_GLOBAL_MULT） */
+/** 水母池待命中性產量（性格唔再影響；再乘 RANCH_IDLE_GLOBAL_MULT） */
 export const RANCH_IDLE_BASE = { feed: 0.06, dust: 0.025, token: 0.004 };
 
 /** @deprecated 兼容舊引用；一律中性 */
@@ -3585,11 +3585,11 @@ export const IDLE_BY_ELEMENT = {
   gloom: { feed: 0.95, dust: 1.12 },
 };
 
-/** 浮游餌契約：消耗浮游餌換取成功率加成 */
+/** 小餌契約：消耗小餌換取成功率加成 */
 export const BOND_FEED_COST = 8;
 export const BOND_FEED_BONUS = 0.18;
 
-/** 用浮游餌升級（可替代潮晶） */
+/** 用小餌升級（可替代泡泡晶） */
 export function upgradeFeedCost(level) {
   const lv = Math.max(1, level | 0);
   return 6 + lv * 5 + Math.floor(lv * lv * 0.5);
@@ -3599,7 +3599,7 @@ export function upgradeFeedCost(level) {
 
 export const SKILL_MAX_LEVEL = 5;
 
-/** 潮砂升級技能消耗 */
+/** 星砂升級技能消耗 */
 export function skillDustCost(skillLevel) {
   const lv = Math.max(1, skillLevel | 0);
   return 4 + lv * 6;
@@ -3807,7 +3807,7 @@ export function gearSetBonus(gearIds) {
   return { atk, hp, spd, labels };
 }
 
-/* ─── P9：潮池派遣 ─── */
+/* ─── P9：水母池派遣 ─── */
 
 /**
  * 派遣任務。needElement／needKind 為派出限制（每隻派出寵都要符合）。
@@ -3825,11 +3825,11 @@ export const DISPATCH_MISSIONS = [
     needElement: "tide",
     reward: { feed: 10, stones: 12, materials: { tide_dew: 2 } },
     eggChance: { tier: "C", rate: 0.12 },
-    desc: "1 隻 · 需潮屬 · 約 1.5 分 → 浮游餌／潮露 · 低機率潮霧蛋",
+    desc: "1 隻 · 需潮屬 · 約 1.5 分 → 小餌／潮露 · 低機率潮霧蛋",
   },
   {
     id: "egg_shore",
-    name: "潮岸拾蛋",
+    name: "岸邊拾蛋",
     durationMs: 180_000,
     needPets: 1,
     needSite: null,
@@ -3841,7 +3841,7 @@ export const DISPATCH_MISSIONS = [
   },
   {
     id: "dust_hunt",
-    name: "潮砂拾遺",
+    name: "星砂拾遺",
     durationMs: 150_000,
     needPets: 1,
     needSite: null,
@@ -3849,7 +3849,7 @@ export const DISPATCH_MISSIONS = [
     needElement: "gloom",
     reward: { dust: 12, stones: 10, materials: { coral_shard: 3 } },
     eggChance: { tier: "C", rate: 0.18 },
-    desc: "1 隻 · 需幽屬 · 主脊階段2 · 潮砂／珊瑚屑 · 偶得蛋",
+    desc: "1 隻 · 需幽屬 · 主脊階段2 · 星砂／珊瑚屑 · 偶得蛋",
   },
   {
     id: "egg_ruins",
@@ -3897,7 +3897,7 @@ export const DISPATCH_MISSIONS = [
     needKind: "禽",
     reward: { dust: 6, stones: 18, materials: { echo_resin: 3 } },
     eggChance: { tier: "B", rate: 0.12 },
-    desc: "1 隻 · 需禽類 · 主脊階段3 · 潮響脂",
+    desc: "1 隻 · 需禽類 · 主脊階段3 · 回響脂",
   },
   {
     id: "ink_scout",
@@ -3926,7 +3926,7 @@ export const DISPATCH_MISSIONS = [
   },
   {
     id: "ember_rite",
-    name: "潮焰祭巡",
+    name: "焰珠祭巡",
     durationMs: 360_000,
     needPets: 2,
     needSite: null,
@@ -3934,7 +3934,7 @@ export const DISPATCH_MISSIONS = [
     needElement: "flame",
     reward: { stones: 40, materials: { seal_ember: 3 } },
     eggChance: { tier: "A", rate: 0.1 },
-    desc: "2 隻 · 需焰屬 · 主脊階段5 · 潮焰 · 低機率心核蛋",
+    desc: "2 隻 · 需焰屬 · 主脊階段5 · 焰珠 · 低機率心核蛋",
   },
   {
     id: "egg_abyss",
@@ -3964,7 +3964,7 @@ export const TIDE_SEAL_MIN_REALM = 5;
 
 export function tideSealCombatMult(seals) {
   void seals;
-  return 1; // 鑄潮印已廢除
+  return 1; // 鑄印已廢除
 }
 
 export function tideSealGainForRealm(realm) {
@@ -4470,8 +4470,8 @@ export const MATERIALS = {
   coral_shard: { id: "coral_shard", name: "珊瑚屑", desc: "原生繁殖", tier: "bulk" },
   mist_silk: { id: "mist_silk", name: "霧絲", desc: "中階養成", tier: "bulk" },
   abyss_ink: { id: "abyss_ink", name: "深淵墨", desc: "高代繁殖", tier: "bulk" },
-  seal_ember: { id: "seal_ember", name: "潮焰", desc: "升潮與進化", tier: "bulk" },
-  echo_resin: { id: "echo_resin", name: "潮響脂", desc: "技能升級", tier: "bulk" },
+  seal_ember: { id: "seal_ember", name: "焰珠", desc: "成長與進化", tier: "bulk" },
+  echo_resin: { id: "echo_resin", name: "回響脂", desc: "技能升級", tier: "bulk" },
   fuse_sand: { id: "fuse_sand", name: "融砂", desc: "舊融合催化（兼容）", tier: "bulk" },
   /** 升級副材：每 10 級一帶 */
   earth_grade_stone: {
@@ -4525,7 +4525,7 @@ export const MATERIALS = {
   },
   breed_ticket: {
     id: "breed_ticket",
-    name: "催潮符",
+    name: "催生符",
     desc: "令最早孕育中的交配即時就緒，可領蛋",
     tier: "dungeon",
   },
@@ -4540,7 +4540,7 @@ export const MATERIALS = {
   tide_key_1: {
     id: "tide_key_1",
     name: "一層潮鑰",
-    desc: "開啟／挑戰潮岸·廢墟域主 · 秘境一層高機率掉落",
+    desc: "開啟／挑戰廢墟域主 · 秘境一層高機率掉落",
     tier: "key",
   },
   tide_key_2: {
@@ -4574,31 +4574,31 @@ export const MATERIALS = {
     desc: "潮淵深潛結算所得 · 換突變保險、深潛外觀、高階水母蛋",
     tier: "abyss",
   },
-  /** 放生所得：潮魂商人兌換 */
+  /** 放生所得：光核商人兌換 */
   soul_essence: {
     id: "soul_essence",
-    name: "潮魂",
-    desc: "放生／潮還蛋所得 · 養成／稀有／融合越高越賺 · 潮魂商人兌換",
+    name: "光核",
+    desc: "放生／退蛋所得 · 養成／稀有／融合越高越賺 · 光核商人兌換",
     tier: "soul",
   },
 };
 
 /**
- * 潮魂商人固定目錄（實用兌換；耗潮魂，唔轉潮晶）
+ * 光核商人固定目錄（實用兌換；耗光核，唔轉泡泡晶）
  * grant: feed／materials／items 可並存
  */
 export const SOUL_SHOP_OFFERS = [
   {
     id: "feed_pouch",
-    name: "浮游餌小包",
-    desc: "潮池救急 · 放生潮魂回補浮游餌",
+    name: "小餌包",
+    desc: "水母池救急 · 放生光核回補小餌",
     cost: 8,
     grant: { feed: 30 },
   },
   {
     id: "tide_dew_pack",
     name: "潮露小瓶",
-    desc: "水母升級催化（唔影響潮晶經濟）",
+    desc: "水母升級催化（唔影響泡泡晶經濟）",
     cost: 10,
     grant: { materials: { tide_dew: 6 } },
   },
@@ -4612,13 +4612,13 @@ export const SOUL_SHOP_OFFERS = [
   {
     id: "mist_token_pack",
     name: "潮霧令×2",
-    desc: "已通關秘境掃蕩入場（小量，防刷崩潮晶）",
+    desc: "已通關秘境掃蕩入場（小量，防刷崩泡泡晶）",
     cost: 18,
     grant: { materials: { mist_token: 2 } },
   },
   {
     id: "breed_ticket_pack",
-    name: "催潮符",
+    name: "催生符",
     desc: "令最早孕育中的交配即時就緒，可領蛋",
     cost: 22,
     grant: { materials: { breed_ticket: 1 } },
@@ -4633,13 +4633,13 @@ export const SOUL_SHOP_OFFERS = [
   {
     id: "ranch_fence",
     name: "欄柵",
-    desc: "永久擴潮池 · 使用後 +1 潮池容量",
+    desc: "永久擴水母池 · 使用後 +1 水母池容量",
     cost: 35,
     grant: { items: { ranch_fence: 1 } },
   },
   {
     id: "tide_shift_charm",
-    name: "潮轉符",
+    name: "轉屬符",
     desc: "永久隨機轉屬 · 對一隻水母使用",
     cost: 45,
     grant: { items: { tide_shift_charm: 1 } },
@@ -4660,10 +4660,10 @@ export function emptyMaterials() {
 
 /* ─── 背包道具（消耗品；與 materials 分開）───
  * 規則（永久加成，按「使用次數」而非持有量）：
- * - 欄柵 ranch_fence：每次使用永久 +1 潮池待命上限；itemBonus.ranchCap 累加，上限 RANCH_CAP_BONUS_MAX（+12）。
+ * - 欄柵 ranch_fence：每次使用永久 +1 水母池待命上限；itemBonus.ranchCap 累加，上限 RANCH_CAP_BONUS_MAX（+12）。
  * - 暖巢箋 hatch_nest_token：每次使用永久 +1 孵化欄；itemBonus.hatchSlots 累加，上限 HATCH_SLOT_BONUS_MAX（+3）。
  *   基準欄位 HATCH_SLOT_BASE=3 → 理論上限 6（孵化 UI 見 pack B）。
- * - 潮轉符 tide_shift_charm：指定水母永久隨機轉屬（唔可轉回同一屬；白板按元素倍率重算）。
+ * - 轉屬符 tide_shift_charm：指定水母永久隨機轉屬（唔可轉回同一屬；白板按元素倍率重算）。
  */
 export const RANCH_CAP_BONUS_MAX = 12;
 export const HATCH_SLOT_BASE = 3;
@@ -4673,8 +4673,8 @@ export const ITEMS = {
   ranch_fence: {
     id: "ranch_fence",
     name: "欄柵",
-    desc: "加固潮池圍欄 · 使用後永久 +1 潮池容量（最多 +12）",
-    use: "擴潮池",
+    desc: "加固水母池圍欄 · 使用後永久 +1 水母池容量（最多 +12）",
+    use: "擴水母池",
   },
   hatch_nest_token: {
     id: "hatch_nest_token",
@@ -4684,7 +4684,7 @@ export const ITEMS = {
   },
   tide_shift_charm: {
     id: "tide_shift_charm",
-    name: "潮轉符",
+    name: "轉屬符",
     desc: "潮淵轉屬符箋 · 對一隻水母永久隨機轉換元素（唔會轉成同一屬）",
     use: "轉屬",
     needsTarget: true,
@@ -4791,7 +4791,7 @@ export function spineStageMatBias(stage) {
   if (s === 4) {
     return { cloud_grade_stone: 1, fire_grade_stone: 7, abyss_ink: 2, temper_oil: 1 };
   }
-  // 5+：天階／潮焰／極低權重融合核
+  // 5+：天階／焰珠／極低權重融合核
   return {
     fire_grade_stone: 1,
     sky_grade_stone: 6,
@@ -5262,7 +5262,7 @@ export function trainSiteRatesView(site, dateKey = todayKey()) {
       const perHr = ((drop.feed || 0) * mult * 3600).toFixed(0);
       lines.push({
         kind: "feed",
-        name: "浮游餌",
+        name: "小餌",
         perHr,
         tag: isSpot ? `今日+${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%` : "",
       });
@@ -5270,7 +5270,7 @@ export function trainSiteRatesView(site, dateKey = todayKey()) {
       const perHr = ((drop.dust || 0) * mult * 3600).toFixed(0);
       lines.push({
         kind: "dust",
-        name: "潮砂",
+        name: "星砂",
         perHr,
         tag: isSpot ? `今日+${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%` : "",
       });
@@ -5323,7 +5323,7 @@ export const MATERIAL_USES = {
   coral_shard: "原生繁殖",
   mist_silk: "中階養成",
   abyss_ink: "高代繁殖",
-  seal_ember: "升潮",
+  seal_ember: "成長",
   echo_resin: "技能升級",
   fuse_sand: "舊融合催化",
   earth_grade_stone: "升級副材·地",
@@ -5342,7 +5342,7 @@ export const MATERIAL_USES = {
   tide_key_4: "主脊段主（終段）",
   warden_echo: "段主複打殘響",
   abyss_grit: "潮淵兌換",
-  soul_essence: "放生／潮魂商店",
+  soul_essence: "放生／光核商店",
 };
 
 /* ─── 潮淵深潛（秘境旁路；唔改潮域產物表）─── */
@@ -5387,7 +5387,7 @@ export const ABYSS_WEEKLY_DEPTH_MILESTONES = [
 ];
 
 /**
- * 歷史最深首次升潮獎勵
+ * 歷史最深首次成長獎勵
  * @type {{ depth: number, grit: number, materials?: Record<string, number>, label: string }[]}
  */
 export const ABYSS_BEST_DEPTH_MILESTONES = [
@@ -5500,7 +5500,7 @@ export const ABYSS_COSMETICS = {
   },
   tide_sigil: {
     id: "tide_sigil",
-    name: "潮印華",
+    name: "泡印華",
     desc: "深潛外觀 · 攻血各 +1%",
     cost: 70,
     atkMult: 1.01,
@@ -5519,7 +5519,7 @@ export const ABYSS_EGG_WEEKLY_LIMIT = 2;
 export const ABYSS_POWER_NODE_COST = 55;
 export const ABYSS_POWER_NODE_MAX = 8;
 export const ABYSS_POWER_NODE_ATK = 0.01;
-/** 淵砂兌換潮轉符（永久轉屬道具） */
+/** 淵砂兌換轉屬符（永久轉屬道具） */
 export const ABYSS_TIDE_SHIFT_COST = 35;
 /** 潮淵每週兌換融合核（極罕） */
 export const ABYSS_FUSION_CORE_COST = 180;
@@ -5952,7 +5952,7 @@ export function bestiaryCombatBonus(discoveredCount) {
 }
 
 /**
- * 放生潮魂：壓低出殼即賣，抬高養成／稀有／融合（星標只係 UI 標記，唔加潮魂）。
+ * 放生光核：壓低出殼即賣，抬高養成／稀有／融合（星標只係 UI 標記，唔加光核）。
  * 基礎 2 ＋ 等級×2 ＋ 稀有×8 ＋ 融階×5 ＋（代數−1）×2
  * 未養成普通幼寵（Lv≤1、無融、普通）：封頂 2＋（代數−1）
  * 例：普 Lv1 → 2；稀有 Lv10 融1 二代 → 2+20+8+5+2 = 37
@@ -5971,7 +5971,7 @@ export function releaseSoulGain(pet) {
 }
 
 /**
- * 未孵蛋化精（潮還）：潮魂低於孵出後放生，鼓勵早篩唔好雙重等待。
+ * 未孵蛋化精（退蛋）：光核低於孵出後放生，鼓勵早篩唔好雙重等待。
  * 繁殖蛋跟 genes 代數／稀有；商店蛋跟品階。
  */
 export function eggDissolveSoul(egg) {
@@ -5988,7 +5988,7 @@ export function eggDissolveSoul(egg) {
   return 1;
 }
 
-/** @deprecated 舊放生石／浮游餌／塵；保留別名以便舊測試／註解對照 */
+/** @deprecated 舊放生石／小餌／塵；保留別名以便舊測試／註解對照 */
 export function releaseRefund(pet) {
   return { soul: releaseSoulGain(pet), stones: 0, feed: 0, dust: 0 };
 }
@@ -5999,8 +5999,8 @@ export const NICK_MAX_LEN = 8;
 export const DAILY_QUESTS = [
   {
     id: "idle",
-    name: "靜潮浮游",
-    desc: "完成 1 次升潮，或累積掛機滿 3 分鐘",
+    name: "靜靜漂漂",
+    desc: "完成 1 次成長，或累積掛機滿 3 分鐘",
     need: 1,
     reward: { stones: 20, feed: 6 },
   },
@@ -6013,14 +6013,14 @@ export const DAILY_QUESTS = [
   },
   {
     id: "bond",
-    name: "結潮之緣",
+    name: "結伴之緣",
     desc: "嘗試契約 1 次（成功或失敗皆可）",
     need: 1,
     reward: { stones: 25, dust: 5 },
   },
   {
     id: "breed",
-    name: "血脈催潮",
+    name: "血脈催生",
     desc: "完成 1 次繁殖",
     need: 1,
     reward: { stones: 28, feed: 5 },
@@ -6035,7 +6035,7 @@ export const DAILY_QUESTS = [
   {
     id: "dispatch",
     name: "外派歸來",
-    desc: "領取 1 次潮池派遣獎勵",
+    desc: "領取 1 次水母池派遣獎勵",
     need: 1,
     reward: { stones: 22, materials: { tide_dew: 1, mist_token: 1 } },
   },
@@ -6106,7 +6106,7 @@ export function dungeonEntryMatCost(dungeonId, count = 1) {
 }
 
 /**
- * 求潮目標板：三條長線（收集／育成／挑戰）
+ * 出發目標板：三條長線（收集／育成／挑戰）
  * need 為累積門檻；領獎後進度保留，可領下一檔
  */
 export const PATH_QUESTS = [
@@ -6114,7 +6114,7 @@ export const PATH_QUESTS = [
     track: "collect",
     trackName: "收集",
     id: "collect_20",
-    name: "潮錄二十",
+    name: "圖錄二十",
     desc: "圖鑑登錄 ≥ 20 格",
     type: "bestiary",
     need: 20,
@@ -6124,7 +6124,7 @@ export const PATH_QUESTS = [
     track: "collect",
     trackName: "收集",
     id: "collect_80",
-    name: "潮錄八十",
+    name: "圖錄八十",
     desc: "圖鑑登錄 ≥ 80 格",
     type: "bestiary",
     need: 80,
@@ -6134,7 +6134,7 @@ export const PATH_QUESTS = [
     track: "collect",
     trackName: "收集",
     id: "collect_200",
-    name: "潮錄二百",
+    name: "圖錄二百",
     desc: "圖鑑登錄 ≥ 200 格",
     type: "bestiary",
     need: 200,
@@ -6144,7 +6144,7 @@ export const PATH_QUESTS = [
     track: "collect",
     trackName: "收集",
     id: "collect_500",
-    name: "潮錄五百",
+    name: "圖錄五百",
     desc: "圖鑑登錄 ≥ 500 格",
     type: "bestiary",
     need: 500,
@@ -6296,7 +6296,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: "bestiary_10",
-    name: "潮錄十影",
+    name: "圖錄十影",
     desc: "圖鑑收集滿 10 格",
     reward: { stones: 60, dust: 10 },
   },
@@ -6315,7 +6315,7 @@ export const ACHIEVEMENTS = [
   {
     id: "stage_2",
     name: "浮游有成",
-    desc: "達到浮游後期（潮階 2）",
+    desc: "達到浮游後期（體階 2）",
     reward: { stones: 80 },
   },
   {
@@ -6332,13 +6332,13 @@ export const ACHIEVEMENTS = [
   },
   {
     id: "bestiary_30",
-    name: "潮錄三十",
+    name: "圖錄三十",
     desc: "圖鑑收集滿 30 格",
     reward: { stones: 90, dust: 15 },
   },
   {
     id: "bestiary_full",
-    name: "全潮錄成",
+    name: "全圖錄成",
     desc: "圖鑑全部登錄",
     reward: { stones: 200, scrap: 3, dust: 20 },
   },
@@ -6392,7 +6392,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: "streak_5",
-    name: "連勝五潮",
+    name: "連勝五日",
     desc: "秘境連勝達 5 場",
     reward: { stones: 85, dust: 10 },
   },
@@ -6404,8 +6404,8 @@ export const ACHIEVEMENTS = [
   },
   {
     id: "tide_seal_1",
-    name: "潮印初鑄",
-    desc: "鑄成潮印 1 枚",
+    name: "初鑄印記",
+    desc: "鑄成印記 1 枚",
     reward: { stones: 100, scrap: 2 },
   },
   {
@@ -6436,11 +6436,11 @@ export const ACHIEVEMENTS = [
 
 /** 7 日登入連續獎勵（cycle） */
 export const LOGIN_STREAK_REWARDS = [
-  { day: 1, name: "初潮", reward: { stones: 30, feed: 5, materials: { mist_token: 2 } } },
-  { day: 2, name: "雙契", reward: { stones: 35, feed: 8, materials: { mist_token: 2 } } },
-  { day: 3, name: "三潮", reward: { stones: 40, dust: 6, materials: { tide_dew: 2, mist_token: 3 } } },
+  { day: 1, name: "見面禮", reward: { stones: 30, feed: 5, materials: { mist_token: 2 } } },
+  { day: 2, name: "雙倍小餌", reward: { stones: 35, feed: 8, materials: { mist_token: 2 } } },
+  { day: 3, name: "三日禮", reward: { stones: 40, dust: 6, materials: { tide_dew: 2, mist_token: 3 } } },
   { day: 4, name: "暗潮蛋", reward: { stones: 45, eggTier: "B", materials: { mist_token: 3 } } },
-  { day: 5, name: "五潮", reward: { stones: 50, scrap: 1, materials: { coral_shard: 2, mist_token: 3 } } },
+  { day: 5, name: "五日禮", reward: { stones: 50, scrap: 1, materials: { coral_shard: 2, mist_token: 3 } } },
   { day: 6, name: "血脈", reward: { stones: 55, materials: { breed_ticket: 1, blood_catalyst: 1, mist_token: 4 } } },
   { day: 7, name: "心核", reward: { stones: 80, eggTier: "A", materials: { mist_silk: 2, mist_token: 5 } } },
 ];

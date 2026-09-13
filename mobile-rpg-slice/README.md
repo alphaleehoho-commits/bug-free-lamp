@@ -1,6 +1,6 @@
-# 暗潮 · 潮母浮游
+# 暗潮 · 水母漂漂
 
-豎屏水母潮行 PWA（vanilla HTML/CSS/JS）。Void Tide 為英文副標。
+豎屏水母漂漂 PWA（vanilla HTML/CSS/JS）。Void Tide 為英文副標。
 
 ## 玩
 

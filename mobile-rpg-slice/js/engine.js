@@ -300,7 +300,7 @@ const SAVE_KEY = "void-tide-pets-v25";
 
 function defaultMaster() {
   return {
-    name: "潮行者",
+    name: "育成者",
     /** 敘事殼：唔再出戰；數值僅供顯示 */
     atk: 6,
     hp: 90,
@@ -622,8 +622,8 @@ function defaultState() {
     eggs: [starterEgg],
     pending: [],
     log: [
-      "你沿暗潮抵達荒廢潮壇，霧中擱著一枚潮霧蛋。",
-      "先孵化第一隻水母、潮岸掛機升級，再踏入秘境——潮壇會逐步解鎖。",
+      "你沿暗潮抵達荒廢育成窩，霧中擱著一枚潮霧蛋。",
+      "先孵化第一隻水母、育成掛機升級，再踏入秘境——育成窩會逐步解鎖。",
     ],
     lastTick: now,
     combatsWon: 0,
@@ -884,7 +884,7 @@ export function loadState() {
 
     let ranch = normalizePetList(parsed.ranch);
 
-    // 舊存檔：出戰超過上限且無潮池 → 多餘移入牧場
+    // 舊存檔：出戰超過上限且無水母池 → 多餘移入牧場
     if (!Array.isArray(parsed.ranch) && pets.length > ACTIVE_PET_MAX) {
       ranch = pets.slice(ACTIVE_PET_MAX);
       pets = pets.slice(0, ACTIVE_PET_MAX);
@@ -1033,7 +1033,7 @@ export function updateNoticeView() {
     build: APP_BUILD,
     title: "更新公告",
     body: [
-      "用語已統一為水母／暗潮：潮晶、浮游餌、潮息、潮階。存檔進度不變。",
+      "用語改為水母漂漂：泡泡晶、小餌、共鳴、體階、育成。存檔進度不變。",
       "秘境結算會標明勝利／戰敗（全滅或逾時）與獎勵。",
       "掛機失敗會留下全滅／逾時說明卡，與「未出戰」分開。",
       "開始畫面與頂欄可見建置號；可重置存檔返回開始。若畫面異常請硬刷新。",
@@ -1060,7 +1060,7 @@ export function resolveDungeon(state, dungeonId) {
   return generateDailyDungeon(dungeonId, key) || buildDungeonForTier(parseDungeonTier(dungeonId));
 }
 
-/** 潮池待命：性格×屬性慢產（全局再 × RANCH_IDLE_GLOBAL_MULT） */
+/** 水母池待命：性格×屬性慢產（全局再 × RANCH_IDLE_GLOBAL_MULT） */
 export function tickRanchIdle(state, elapsedSec) {
   const sec = Math.max(0, Number(elapsedSec) || 0);
   if (sec <= 0) return state;
@@ -1350,7 +1350,7 @@ export function challengeTrainWarden(state) {
   if (rem.stones) state.stones = (state.stones || 0) + rem.stones;
   if (rem.materials) addMaterials(state, rem.materials);
   const bits = [];
-  if (rem.stones) bits.push(`${rem.stones}潮晶`);
+  if (rem.stones) bits.push(`${rem.stones}泡泡晶`);
   for (const [id, n] of Object.entries(rem.materials || {})) {
     bits.push(`${MATERIALS[id]?.name || id}×${n}`);
   }
@@ -1600,7 +1600,7 @@ export function runTrainLayerCombat(state, { zoneId, tierIndex = 0, mode = "tier
   };
 
   const layerLabel = warden ? `段主關` : `霧階${tier + 1}`;
-  transcript.push(`潮行者進入【主脊潮脈】${layerLabel}（${waves.length} 波）。`);
+  transcript.push(`育成者進入【主脊潮脈】${layerLabel}（${waves.length} 波）。`);
   transcript.push(
     `戰術【${TACTICS[tactics]?.name || tactics}】· 陣型【${formation.name}】· 自動戰鬥。`
   );
@@ -1893,16 +1893,16 @@ export function idleFailAdvice(state, session) {
     tips.push("出戰隊被擊倒——生存或輸出不足。");
   }
   if (petN < maxN) {
-    tips.push(`隊伍未滿（${petN}/${maxN}）。到「水母 → 潮池」再派出戰。`);
+    tips.push(`隊伍未滿（${petN}/${maxN}）。到「水母 → 水母池」再派出戰。`);
   }
   const underleveled = (state.pets || []).some((p) => (p.level || 1) < Math.max(3, floor));
   if (underleveled || !petN) {
-    tips.push("升級出戰水母（潮露在「潮岸 → 練功」掛機取得）可提高效率。");
+    tips.push("升級出戰水母（潮露在「育成 → 練功」掛機取得）可提高效率。");
   }
   if (floor > 1) {
     tips.push("可按「上一層」打已通關卡攞材料，再回來挑戰。");
   } else {
-    tips.push("先在潮池升級、擴隊，再繼續掛機。");
+    tips.push("先在水母池升級、擴隊，再繼續掛機。");
   }
   return {
     kind,
@@ -2082,7 +2082,7 @@ function ensureItems(state) {
   else state.itemBonus = normalizeItemBonus(state.itemBonus);
 }
 
-/** 使用背包道具（欄柵／暖巢箋／潮轉符）；永久加成按使用次數計 */
+/** 使用背包道具（欄柵／暖巢箋／轉屬符）；永久加成按使用次數計 */
 export function useBagItem(state, itemId, petUid = null) {
   ensureItems(state);
   const def = ITEMS[itemId];
@@ -2092,15 +2092,15 @@ export function useBagItem(state, itemId, petUid = null) {
 
   if (itemId === "ranch_fence") {
     if (state.itemBonus.ranchCap >= RANCH_CAP_BONUS_MAX) {
-      return { ok: false, msg: `潮池擴容已達上限（+${RANCH_CAP_BONUS_MAX}）。` };
+      return { ok: false, msg: `水母池擴容已達上限（+${RANCH_CAP_BONUS_MAX}）。` };
     }
     state.items[itemId] = have - 1;
     state.itemBonus.ranchCap += 1;
     const cap = ranchCap(state);
-    pushLog(state, `用咗欄柵，潮池容量變 ${cap}（永久 +${state.itemBonus.ranchCap}）。`);
+    pushLog(state, `用咗欄柵，水母池容量變 ${cap}（永久 +${state.itemBonus.ranchCap}）。`);
     return {
       ok: true,
-      msg: `潮池容量 → ${cap}（永久 +${state.itemBonus.ranchCap}/${RANCH_CAP_BONUS_MAX}）`,
+      msg: `水母池容量 → ${cap}（永久 +${state.itemBonus.ranchCap}/${RANCH_CAP_BONUS_MAX}）`,
       ranchCap: cap,
     };
   }
@@ -2121,7 +2121,7 @@ export function useBagItem(state, itemId, petUid = null) {
   }
 
   if (itemId === "tide_shift_charm") {
-    if (!petUid) return { ok: false, msg: "請先揀一隻水母使用潮轉符。", needsTarget: true };
+    if (!petUid) return { ok: false, msg: "請先揀一隻水母使用轉屬符。", needsTarget: true };
     return useTideShiftCharm(state, petUid);
   }
 
@@ -2129,13 +2129,13 @@ export function useBagItem(state, itemId, petUid = null) {
 }
 
 /**
- * 潮轉符：永久隨機轉換水母元素（唔可轉成同一屬）
+ * 轉屬符：永久隨機轉換水母元素（唔可轉成同一屬）
  * 白板按元素倍率比例重算；寫入 pet 記錄並登錄新屬性圖鑑。
  */
 export function useTideShiftCharm(state, uid) {
   ensureItems(state);
   const have = Math.floor(state.items.tide_shift_charm || 0);
-  if (have < 1) return { ok: false, msg: "沒有潮轉符。" };
+  if (have < 1) return { ok: false, msg: "沒有轉屬符。" };
   const found = findOwnedPet(state, uid);
   if (!found) return { ok: false, msg: "找不到水母。" };
   const pet = found.pet;
@@ -2172,7 +2172,7 @@ export function useTideShiftCharm(state, uid) {
   registerBestiary(state, pet);
   pushLog(
     state,
-    `【${displayPetName(pet)}】使用潮轉符：${oldEl?.name || oldId} → ${newEl.name}（永久）。`
+    `【${displayPetName(pet)}】使用轉屬符：${oldEl?.name || oldId} → ${newEl.name}（永久）。`
   );
   return {
     ok: true,
@@ -2368,7 +2368,7 @@ export function claimOfflineBank(state) {
   return { ok: true, msg: `已領取約 ${dur} 離線收益`, claimed };
 }
 
-/** 頂欄潮隊連結：出戰隊進度 + 升潮捷徑（甲＋丙） */
+/** 頂欄隊伍連結：出戰隊進度 + 成長捷徑（甲＋丙） */
 export function teamBondBarView(state) {
   const br = breakthroughView(state);
   const pets = state.pets || [];
@@ -2602,9 +2602,9 @@ export function claimDaily(state, questId) {
   state.daily.claimed[questId] = true;
   applyReward(state, q.reward);
   const bits = [];
-  if (q.reward.stones) bits.push(`${q.reward.stones} 潮晶`);
-  if (q.reward.feed) bits.push(`${q.reward.feed} 浮游餌`);
-  if (q.reward.dust) bits.push(`${q.reward.dust} 潮砂`);
+  if (q.reward.stones) bits.push(`${q.reward.stones} 泡泡晶`);
+  if (q.reward.feed) bits.push(`${q.reward.feed} 小餌`);
+  if (q.reward.dust) bits.push(`${q.reward.dust} 星砂`);
   if (q.reward.scrap) bits.push(`${q.reward.scrap} 碎片`);
   pushLog(state, `每日任務【${q.name}】領獎：${bits.join("／")}。`);
   checkAchievements(state);
@@ -2656,9 +2656,9 @@ export function claimDailyAllClear(state) {
     state.eggs.push(makeEgg("C", "daily_all_clear"));
   }
   const bits = [];
-  if (DAILY_ALL_CLEAR_BONUS.stones) bits.push(`${DAILY_ALL_CLEAR_BONUS.stones}潮晶`);
+  if (DAILY_ALL_CLEAR_BONUS.stones) bits.push(`${DAILY_ALL_CLEAR_BONUS.stones}泡泡晶`);
   if (DAILY_ALL_CLEAR_BONUS.materials?.breed_ticket) {
-    bits.push(`催潮符×${DAILY_ALL_CLEAR_BONUS.materials.breed_ticket}`);
+    bits.push(`催生符×${DAILY_ALL_CLEAR_BONUS.materials.breed_ticket}`);
   }
   if (eggAdded) bits.push("潮霧蛋×1");
   pushLog(state, `每日全清獎：${bits.join("／")}。`);
@@ -2738,9 +2738,9 @@ export function checkAchievements(state) {
     applyReward(state, a.reward);
     unlocked.push(a);
     const bits = [];
-    if (a.reward.stones) bits.push(`${a.reward.stones}潮晶`);
-    if (a.reward.feed) bits.push(`${a.reward.feed}浮游餌`);
-    if (a.reward.dust) bits.push(`${a.reward.dust}潮砂`);
+    if (a.reward.stones) bits.push(`${a.reward.stones}泡泡晶`);
+    if (a.reward.feed) bits.push(`${a.reward.feed}小餌`);
+    if (a.reward.dust) bits.push(`${a.reward.dust}星砂`);
     if (a.reward.scrap) bits.push(`${a.reward.scrap}碎片`);
     pushLog(state, `成就【${a.name}】達成！獎勵 ${bits.join("／")}。`);
   }
@@ -2880,9 +2880,9 @@ export function claimBreedGoal(state, goalId) {
   state.breedGoals.claimed[goalId] = true;
   applyReward(state, g.reward);
   const bits = [];
-  if (g.reward.stones) bits.push(`${g.reward.stones} 潮晶`);
-  if (g.reward.feed) bits.push(`${g.reward.feed} 浮游餌`);
-  if (g.reward.dust) bits.push(`${g.reward.dust} 潮砂`);
+  if (g.reward.stones) bits.push(`${g.reward.stones} 泡泡晶`);
+  if (g.reward.feed) bits.push(`${g.reward.feed} 小餌`);
+  if (g.reward.dust) bits.push(`${g.reward.dust} 星砂`);
   if (g.reward.scrap) bits.push(`${g.reward.scrap} 碎片`);
   pushLog(state, `繁殖目標【${g.name}】領獎：${bits.join("／")}。`);
   return { ok: true, msg: `領取 ${bits.join("／")}` };
@@ -2944,7 +2944,7 @@ export function tryBreakthrough(state) {
   const view = breakthroughView(state);
   if (!view.ready) {
     const miss = view.items.filter((i) => !i.ok).slice(0, 3).map((i) => i.label);
-    return { ok: false, msg: `升潮條件未齊：${miss.join("；")}` };
+    return { ok: false, msg: `成長條件未齊：${miss.join("；")}` };
   }
   const next = view.next;
   const costs = view.costs || {};
@@ -2964,8 +2964,8 @@ export function tryBreakthrough(state) {
   state.master.spd += next.id >= 3 ? 2 : 1;
   state.master.skillIds = masterSkillsForStage(state.realm);
   const costNote = view.costLabel ? `（耗 ${view.costLabel}）` : "";
-  pushLog(state, `潮階升潮——晉升【${next.name}】${costNote}。潮脈加深。`);
-  pushLog(state, `潮池容量擴展至 ${ranchCap(state)}。`);
+  pushLog(state, `成長——晉升【${next.name}】${costNote}。共鳴加深。`);
+  pushLog(state, `水母池容量擴展至 ${ranchCap(state)}。`);
   const tokenGain = 3 + Math.floor(next.id * 1.5);
   addMaterials(state, { [DUNGEON_ENTRY_MAT_ID]: tokenGain });
   pushLog(state, `升階賜潮霧令×${tokenGain}（秘境入場憑證）。`);
@@ -2974,7 +2974,7 @@ export function tryBreakthrough(state) {
   if (unlocked) pushLog(state, unlocked);
   if (Math.random() < 0.55) {
     const ev = EVENTS[Math.floor(Math.random() * EVENTS.length)];
-    pushLog(state, `潮兆：${ev}`);
+    pushLog(state, `徵兆：${ev}`);
     state.stones += 15 + state.realm * 8;
   }
   checkAchievements(state);
@@ -2982,14 +2982,14 @@ export function tryBreakthrough(state) {
   const late = maybeStartLateTutorial(state);
   return {
     ok: true,
-    msg: `潮階：${next.name}${costNote}${late.started ? ` · ${late.msg}` : ""}`,
+    msg: `體階：${next.name}${costNote}${late.started ? ` · ${late.msg}` : ""}`,
     lateTutorial: late,
   };
 }
 
 function MASTER_UNLOCK_MSG(stage) {
-  if (stage === 1) return "學會潮行技能【潮霧庇護】。";
-  if (stage === 3) return "學會潮行技能【暗潮令旗】。";
+  if (stage === 1) return "學會主角技能【潮霧庇護】。";
+  if (stage === 3) return "學會主角技能【暗潮令旗】。";
   return null;
 }
 
@@ -3109,14 +3109,14 @@ export function shopView(state) {
   });
 }
 
-/** 潮魂商人目錄（固定佔位貨） */
+/** 光核商人目錄（固定佔位貨） */
 export function soulShopView(state) {
   if (!state.materials) state.materials = emptyMaterials();
   const soul = Math.floor(state.materials.soul_essence || 0);
   const bonus = state.itemBonus || emptyItemBonus();
   return SOUL_SHOP_OFFERS.map((o) => {
     const grantBits = [];
-    if (o.grant?.feed) grantBits.push(`浮游餌×${o.grant.feed}`);
+    if (o.grant?.feed) grantBits.push(`小餌×${o.grant.feed}`);
     if (o.grant?.materials) {
       for (const [id, n] of Object.entries(o.grant.materials)) {
         if (!n) continue;
@@ -3133,7 +3133,7 @@ export function soulShopView(state) {
     let capReason = "";
     if (o.grant?.items?.ranch_fence && (bonus.ranchCap | 0) >= RANCH_CAP_BONUS_MAX) {
       capped = true;
-      capReason = `潮池加成已達上限（+${RANCH_CAP_BONUS_MAX}）`;
+      capReason = `水母池加成已達上限（+${RANCH_CAP_BONUS_MAX}）`;
     } else if (o.grant?.items?.hatch_nest_token && (bonus.hatchSlots | 0) >= HATCH_SLOT_BONUS_MAX) {
       capped = true;
       capReason = `孵化欄加成已達上限（+${HATCH_SLOT_BONUS_MAX}）`;
@@ -3151,27 +3151,27 @@ export function soulShopView(state) {
   });
 }
 
-/** 潮魂商人購入（afford 潮魂後發放浮游餌／材料／道具） */
+/** 光核商人購入（afford 光核後發放小餌／材料／道具） */
 export function buySoulShopOffer(state, offerId) {
   const offer = soulShopOfferById(offerId);
   if (!offer) return { ok: false, msg: "商品不存在。" };
   if (!state.materials) state.materials = emptyMaterials();
   const bonus = state.itemBonus || emptyItemBonus();
   if (offer.grant?.items?.ranch_fence && (bonus.ranchCap | 0) >= RANCH_CAP_BONUS_MAX) {
-    return { ok: false, msg: `潮池加成已達上限（+${RANCH_CAP_BONUS_MAX}），無需再換欄柵。` };
+    return { ok: false, msg: `水母池加成已達上限（+${RANCH_CAP_BONUS_MAX}），無需再換欄柵。` };
   }
   if (offer.grant?.items?.hatch_nest_token && (bonus.hatchSlots | 0) >= HATCH_SLOT_BONUS_MAX) {
     return { ok: false, msg: `孵化欄加成已達上限（+${HATCH_SLOT_BONUS_MAX}），無需再換暖巢箋。` };
   }
   const have = Math.floor(state.materials.soul_essence || 0);
   if (have < offer.cost) {
-    return { ok: false, msg: `潮魂不足（需 ${offer.cost}，現有 ${have}）。` };
+    return { ok: false, msg: `光核不足（需 ${offer.cost}，現有 ${have}）。` };
   }
   state.materials.soul_essence = have - offer.cost;
   const granted = [];
   if (offer.grant?.feed) {
     state.feed = (state.feed || 0) + offer.grant.feed;
-    granted.push(`浮游餌×${offer.grant.feed}`);
+    granted.push(`小餌×${offer.grant.feed}`);
   }
   if (offer.grant?.materials) {
     addMaterials(state, offer.grant.materials);
@@ -3189,10 +3189,10 @@ export function buySoulShopOffer(state, offerId) {
     }
   }
   const grantTxt = granted.join("／") || "貨物";
-  pushLog(state, `潮魂商人購入【${offer.name}】，耗潮魂 ${offer.cost}，獲 ${grantTxt}。`);
+  pushLog(state, `光核商人購入【${offer.name}】，耗光核 ${offer.cost}，獲 ${grantTxt}。`);
   return {
     ok: true,
-    msg: `購入 ${offer.name}（耗潮魂 ${offer.cost}）· ${grantTxt}`,
+    msg: `購入 ${offer.name}（耗光核 ${offer.cost}）· ${grantTxt}`,
     offerId: offer.id,
     cost: offer.cost,
     grant: offer.grant,
@@ -3205,7 +3205,7 @@ export function buyShopOffer(state, offerId) {
   if (!offer) return { ok: false, msg: "商品不存在。" };
   if (offer.bought) return { ok: false, msg: "已售出。" };
   const payCost = tutorialShopPrice(state, offer.cost);
-  if (state.stones < payCost) return { ok: false, msg: `潮晶不足（需 ${payCost}）。` };
+  if (state.stones < payCost) return { ok: false, msg: `泡泡晶不足（需 ${payCost}）。` };
 
   if (offer.kind === "egg") {
     if (!state.eggs) state.eggs = [];
@@ -3222,7 +3222,7 @@ export function buyShopOffer(state, offerId) {
     if (state.tutorial && !state.tutorial.done) {
       state.tutorial.flags.shopBought = true;
     }
-    pushLog(state, `商肆購入【${egg.name}】，耗 ${payCost} 潮晶。可開始孵化。`);
+    pushLog(state, `商肆購入【${egg.name}】，耗 ${payCost} 泡泡晶。可開始孵化。`);
     advanceTutorialCascade(state);
     return { ok: true, msg: `購入 ${egg.name}（請開始孵化）`, egg };
   }
@@ -3231,7 +3231,7 @@ export function buyShopOffer(state, offerId) {
   const owned = state.pets.length + state.ranch.length;
   const cap = ranchCap(state);
   if (owned >= cap) {
-    return { ok: false, msg: `潮池已滿（${cap}）。可先放流或升階擴容。` };
+    return { ok: false, msg: `水母池已滿（${cap}）。可先放流或升階擴容。` };
   }
 
   const template = {
@@ -3258,11 +3258,11 @@ export function buyShopOffer(state, offerId) {
   registerBestiary(state, pet);
   pushLog(
     state,
-    `商肆購入【${pet.name}】（${pet.kind}·${pet.elementName}）直入潮池，耗 ${payCost} 潮晶。`
+    `商肆購入【${pet.name}】（${pet.kind}·${pet.elementName}）直入水母池，耗 ${payCost} 泡泡晶。`
   );
   checkAchievements(state);
   advanceTutorialCascade(state);
-  return { ok: true, msg: `購入 ${pet.name}（已入潮池，可派出戰）` };
+  return { ok: true, msg: `購入 ${pet.name}（已入水母池，可派出戰）` };
 }
 
 export function setTactics(state, tacticId) {
@@ -3545,7 +3545,7 @@ export function startDispatch(state, missionId, petUids) {
   }
   const uids = Array.isArray(petUids) ? [...new Set(petUids)] : [];
   if (uids.length !== mission.needPets) {
-    return { ok: false, msg: `需要派出 ${mission.needPets} 隻潮池水母。` };
+    return { ok: false, msg: `需要派出 ${mission.needPets} 隻水母池水母。` };
   }
   const busy = dispatchBusyUids(state);
   const reqLabel = dispatchMissionReqLabel(mission);
@@ -3554,10 +3554,10 @@ export function startDispatch(state, missionId, petUids) {
     if (busy.has(uid)) return { ok: false, msg: "有水母已在派遣中。" };
     if (matingBusy.has(uid)) return { ok: false, msg: "交配孕育中的水母不能派遣。" };
     if (state.pets.some((p) => p.uid === uid)) {
-      return { ok: false, msg: "請先將水母撤回潮池再派遣。" };
+      return { ok: false, msg: "請先將水母撤回水母池再派遣。" };
     }
     const hit = findOwnedPet(state, uid);
-    if (!hit || hit.list !== "ranch") return { ok: false, msg: "只能派遣潮池待命水母。" };
+    if (!hit || hit.list !== "ranch") return { ok: false, msg: "只能派遣水母池待命水母。" };
     if (!petMatchesDispatchMission(hit.pet, mission)) {
       return { ok: false, msg: reqLabel ? `派出水母唔符合限制（${reqLabel}）。` : "派出水母唔符合限制。" };
     }
@@ -3626,9 +3626,9 @@ export function claimDispatch(state, dispatchId, rng = Math.random) {
     filledId = (state.dispatchBoard || []).find((id) => id !== d.missionId) || null;
   }
   const bits = [];
-  if (scaled?.stones) bits.push(`${scaled.stones}潮晶`);
-  if (scaled?.feed) bits.push(`${scaled.feed}浮游餌`);
-  if (scaled?.dust) bits.push(`${scaled.dust}潮砂`);
+  if (scaled?.stones) bits.push(`${scaled.stones}泡泡晶`);
+  if (scaled?.feed) bits.push(`${scaled.feed}小餌`);
+  if (scaled?.dust) bits.push(`${scaled.dust}星砂`);
   if (scaled?.scrap) bits.push(`${scaled.scrap}碎片`);
   if (scaled?.materials) {
     for (const [id, n] of Object.entries(scaled.materials)) {
@@ -3688,7 +3688,7 @@ export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
 export function dungeonRealmGateMsg(state, d) {
   if (!d) return "秘境不存在。";
   if ((state.realm | 0) < (d.needRealm | 0)) {
-    return `需要潮階【${stageAt(d.needRealm).name}】（現【${stageAt(state.realm).name}】）`;
+    return `需要體階【${stageAt(d.needRealm).name}】（現【${stageAt(state.realm).name}】）`;
   }
   return null;
 }
@@ -3703,11 +3703,11 @@ export function dungeonSummonGateMsg(gate) {
 }
 
 /**
- * Soft prestige：潮主後鑄潮印，重置階段／潮息，保留寵／裝／圖鑑／通關
+ * Soft prestige：潮主後鑄印，重置階段／共鳴，保留寵／裝／圖鑑／通關
  */
 export function tryTideSeal(state) {
   void state;
-  return { ok: false, msg: "鑄潮印已廢除——潮主階段本身即無限指標。" };
+  return { ok: false, msg: "鑄印已廢除——潮主階段本身即無限指標。" };
 }
 
 export function tideSealView(state) {
@@ -3723,7 +3723,7 @@ export function tideSealView(state) {
   };
 }
 
-/** 在出戰／潮池中查找水母；回傳 { pet, list, index } */
+/** 在出戰／水母池中查找水母；回傳 { pet, list, index } */
 export function findOwnedPet(state, uid) {
   if (!state.pets) state.pets = [];
   if (!state.ranch) state.ranch = [];
@@ -3749,22 +3749,22 @@ export function maybeEncounterAfterDungeon(state, dungeonId, won) {
   return { blocked: false, encounter: enc };
 }
 
-/** 嘗試契約待契約寵物（成功進入潮池）；useFeed 耗浮游餌提升成功率 */
+/** 嘗試契約待契約寵物（成功進入水母池）；useFeed 耗小餌提升成功率 */
 export function tryBondPending(state, encounterId, useFeed = false) {
   if (!state.ranch) state.ranch = [];
   const cap = ranchCap(state);
   if (state.ranch.length >= cap) {
-    return { ok: false, msg: `潮池已滿（${cap}）。可先放流或升階擴容。` };
+    return { ok: false, msg: `水母池已滿（${cap}）。可先放流或升階擴容。` };
   }
   const i = state.pending.findIndex((p) => p.encounterId === encounterId);
   if (i < 0) return { ok: false, msg: "找不到這隻待契約水母。" };
   const cand = state.pending[i];
-  if (state.stones < cand.cost) return { ok: false, msg: "潮晶不足。" };
+  if (state.stones < cand.cost) return { ok: false, msg: "泡泡晶不足。" };
 
   let rateBonus = 0;
   if (useFeed) {
     if ((state.feed || 0) < BOND_FEED_COST) {
-      return { ok: false, msg: `浮游餌不足（需 ${BOND_FEED_COST}）。` };
+      return { ok: false, msg: `小餌不足（需 ${BOND_FEED_COST}）。` };
     }
     state.feed -= BOND_FEED_COST;
     rateBonus = BOND_FEED_BONUS;
@@ -3791,10 +3791,10 @@ export function tryBondPending(state, encounterId, useFeed = false) {
     state.ranch.push(pet);
     state.stats.bonds += 1;
     registerBestiary(state, pet);
-    const feedNote = useFeed ? `（浮游餌加成）` : "";
-    pushLog(state, `契約成功${feedNote}：${petLabel(pet)} 進入潮池｜技能【${pet.skillName}】。`);
+    const feedNote = useFeed ? `（小餌加成）` : "";
+    pushLog(state, `契約成功${feedNote}：${petLabel(pet)} 進入水母池｜技能【${pet.skillName}】。`);
     checkAchievements(state);
-    return { ok: true, success: true, msg: `契約成功！${pet.name} 已入潮池` };
+    return { ok: true, success: true, msg: `契約成功！${pet.name} 已入水母池` };
   }
 
   const ownedBeforeFail = state.pets.length + (state.ranch?.length || 0);
@@ -3814,11 +3814,11 @@ export function tryBondPending(state, encounterId, useFeed = false) {
   }
 
   state.pending.splice(i, 1);
-  pushLog(state, `契約失敗——${cand.name} 掙脫潮印逃入潮霧。`);
+  pushLog(state, `契約失敗——${cand.name} 掙脫印記逃入潮霧。`);
   return { ok: true, success: false, msg: `${cand.name} 逃脫了` };
 }
 
-/** 放棄待契約（不花潮晶） */
+/** 放棄待契約（不花泡泡晶） */
 export function dismissPending(state, encounterId) {
   const i = state.pending.findIndex((p) => p.encounterId === encounterId);
   if (i < 0) return { ok: false, msg: "找不到。" };
@@ -3827,7 +3827,7 @@ export function dismissPending(state, encounterId) {
   return { ok: true, msg: `已放過 ${gone.name}` };
 }
 
-/** 潮池 → 出戰 */
+/** 水母池 → 出戰 */
 export function deployPet(state, uid) {
   if (!state.ranch) state.ranch = [];
   const petMax = activePetMaxForState(state);
@@ -3845,7 +3845,7 @@ export function deployPet(state, uid) {
     return { ok: false, msg: "該水母派遣中，無法出戰。" };
   }
   const i = state.ranch.findIndex((p) => p.uid === uid || p.templateId === uid);
-  if (i < 0) return { ok: false, msg: "潮池中找不到這隻水母。" };
+  if (i < 0) return { ok: false, msg: "水母池中找不到這隻水母。" };
   const [pet] = state.ranch.splice(i, 1);
   state.pets.push(pet);
   pushLog(state, `派出 ${pet.name} 出戰。`);
@@ -3955,12 +3955,12 @@ export function claimHatch(state, eggUid) {
     const sec = Math.ceil((egg.readyAt - Date.now()) / 1000);
     return { ok: false, msg: `尚未孵出（${sec}s）。` };
   }
-  // 蛋入牧場欄；出戰欄唔佔潮池容量（同契約／繁殖／撤回一致）
+  // 蛋入牧場欄；出戰欄唔佔水母池容量（同契約／繁殖／撤回一致）
   const cap = ranchCap(state);
   if (state.ranch.length >= cap) {
     return {
       ok: false,
-      msg: `潮池已滿（${state.ranch.length}/${cap}），無法領取。可先清倉放生或出戰。`,
+      msg: `水母池已滿（${state.ranch.length}/${cap}），無法領取。可先清倉放生或出戰。`,
       ranchFull: true,
     };
   }
@@ -4115,25 +4115,25 @@ export function claimAllReadyHatches(state, now = Date.now()) {
   return payload;
 }
 
-/** 出戰 → 潮池 */
+/** 出戰 → 水母池 */
 export function undeployPet(state, uid) {
   if (!state.ranch) state.ranch = [];
   const cap = ranchCap(state);
   if (state.ranch.length >= cap) {
-    return { ok: false, msg: `潮池已滿（${cap}），無法撤回。` };
+    return { ok: false, msg: `水母池已滿（${cap}），無法撤回。` };
   }
   const i = state.pets.findIndex((p) => p.uid === uid || p.templateId === uid);
   if (i < 0) return { ok: false, msg: "出戰欄找不到這隻水母。" };
   const [pet] = state.pets.splice(i, 1);
   state.ranch.push(pet);
-  pushLog(state, `${pet.name} 撤回潮池。`);
-  return { ok: true, msg: `${pet.name} 已回潮池` };
+  pushLog(state, `${pet.name} 撤回水母池。`);
+  return { ok: true, msg: `${pet.name} 已回水母池` };
 }
 
 export function releasePet(state, uid) {
   if (!state.ranch) state.ranch = [];
   const found = findOwnedPet(state, uid);
-  if (!found) return { ok: false, msg: "不在水母欄／潮池。" };
+  if (!found) return { ok: false, msg: "不在水母欄／水母池。" };
   if (breedBusyUids(state).has(uid)) {
     return { ok: false, msg: "交配孕育中，唔可以放生。領蛋後先得。" };
   }
@@ -4148,10 +4148,10 @@ export function releasePet(state, uid) {
   if (!state.stats) state.stats = { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 };
   state.stats.releases += 1;
   const label = gone.nick || gone.name;
-  pushLog(state, `放生 ${label}，獲潮魂 ${soul}。`);
+  pushLog(state, `放生 ${label}，獲光核 ${soul}。`);
   return {
     ok: true,
-    msg: `放生 ${label}，獲潮魂 ${soul}`,
+    msg: `放生 ${label}，獲光核 ${soul}`,
     soul,
     refund: { soul, stones: 0, feed: 0, dust: 0 },
   };
@@ -4169,7 +4169,7 @@ export function releasePets(state, uids) {
     if (!r.ok) {
       return {
         ok: false,
-        msg: count ? `${r.msg}（已放生 ${count} 隻，潮魂 +${totalSoul}）` : r.msg,
+        msg: count ? `${r.msg}（已放生 ${count} 隻，光核 +${totalSoul}）` : r.msg,
         soul: totalSoul,
         count,
         partial: count > 0,
@@ -4181,7 +4181,7 @@ export function releasePets(state, uids) {
   }
   return {
     ok: true,
-    msg: count === 1 ? names[0] : `放生 ${count} 隻，共獲潮魂 ${totalSoul}`,
+    msg: count === 1 ? names[0] : `放生 ${count} 隻，共獲光核 ${totalSoul}`,
     soul: totalSoul,
     count,
   };
@@ -4217,7 +4217,7 @@ export function togglePetLocked(state, uid) {
   return setPetLocked(state, uid, !found.pet.locked);
 }
 
-/** 預覽放生潮魂總額（唔改狀態） */
+/** 預覽放生光核總額（唔改狀態） */
 export function previewReleaseSoul(state, uids) {
   const ids = Array.isArray(uids) ? uids : [uids];
   let soul = 0;
@@ -4258,7 +4258,7 @@ export function suggestRanchCullUids(state, limit = 1) {
   return rows.slice(0, need).map((r) => r.uid);
 }
 
-/** 潮池容量視圖（UI 滿倉提示） */
+/** 水母池容量視圖（UI 滿倉提示） */
 export function ranchCapView(state) {
   const cap = ranchCap(state);
   const used = state.ranch?.length || 0;
@@ -4273,7 +4273,7 @@ export function ranchCapView(state) {
 }
 
 /**
- * 未孵蛋化精（潮還）：只接受庫存蛋（未開始孵化）。
+ * 未孵蛋化精（退蛋）：只接受庫存蛋（未開始孵化）。
  */
 export function dissolveEgg(state, eggUid) {
   if (!state.eggs) state.eggs = [];
@@ -4290,11 +4290,11 @@ export function dissolveEgg(state, eggUid) {
   if (!state.stats) state.stats = {};
   state.stats.eggDissolves = (state.stats.eggDissolves || 0) + 1;
   const label = egg.name || eggTierInfo(egg.tier).name;
-  pushLog(state, `潮還【${label}】，獲潮魂 ${soul}。`);
-  return { ok: true, msg: `潮還 ${label}，潮魂 +${soul}`, soul, egg };
+  pushLog(state, `退蛋【${label}】，獲光核 ${soul}。`);
+  return { ok: true, msg: `退蛋 ${label}，光核 +${soul}`, soul, egg };
 }
 
-/** 批量潮還庫存蛋 */
+/** 批量退蛋庫存蛋 */
 export function dissolveEggs(state, eggUids) {
   const ids = Array.isArray(eggUids) ? eggUids.filter(Boolean) : [];
   if (!ids.length) return { ok: false, msg: "未揀蛋。", soul: 0, count: 0 };
@@ -4305,7 +4305,7 @@ export function dissolveEggs(state, eggUids) {
     if (!r.ok) {
       return {
         ok: false,
-        msg: count ? `${r.msg}（已潮還 ${count} 枚，潮魂 +${total}）` : r.msg,
+        msg: count ? `${r.msg}（已退蛋 ${count} 枚，光核 +${total}）` : r.msg,
         soul: total,
         count,
         partial: count > 0,
@@ -4316,7 +4316,7 @@ export function dissolveEggs(state, eggUids) {
   }
   return {
     ok: true,
-    msg: count === 1 ? `潮還 1 枚，潮魂 +${total}` : `潮還 ${count} 枚，潮魂 +${total}`,
+    msg: count === 1 ? `退蛋 1 枚，光核 +${total}` : `退蛋 ${count} 枚，光核 +${total}`,
     soul: total,
     count,
   };
@@ -4367,7 +4367,7 @@ export function upgradePet(state, uid, payWith = "stones") {
     const cost = upgradeFeedCost(level);
     if ((state.feed || 0) < cost) {
       addMaterials(state, matCost); // refund mats
-      return { ok: false, msg: `浮游餌不足（需 ${cost}）。` };
+      return { ok: false, msg: `小餌不足（需 ${cost}）。` };
     }
     state.feed = Math.max(0, (state.feed || 0) - cost);
     const gains = applySubGrowthToLevelGains(levelStatGains(petGeneration(pet)), pet);
@@ -4378,15 +4378,15 @@ export function upgradePet(state, uid, payWith = "stones") {
     const matNote = formatMats(matCost);
     pushLog(
       state,
-      `${pet.name} 以浮游餌×${cost} 升級至 Lv.${pet.level}（攻+${ceilStat(gains.atk)} 血+${ceilStat(gains.hp)} 速+${ceilStat(gains.spd)}）${matNote ? `｜耗 ${matNote}` : ""}。`
+      `${pet.name} 以小餌×${cost} 升級至 Lv.${pet.level}（攻+${ceilStat(gains.atk)} 血+${ceilStat(gains.hp)} 速+${ceilStat(gains.spd)}）${matNote ? `｜耗 ${matNote}` : ""}。`
     );
     maybeAnnounceSecondSkill(state, pet, level);
-    return { ok: true, msg: `${pet.name} → Lv.${pet.level}（耗浮游餌×${cost}）` };
+    return { ok: true, msg: `${pet.name} → Lv.${pet.level}（耗小餌×${cost}）` };
   }
   const cost = upgradeStoneCost(level);
   if (state.stones < cost) {
     addMaterials(state, matCost);
-    return { ok: false, msg: `潮晶不足（需 ${cost}）。` };
+    return { ok: false, msg: `泡泡晶不足（需 ${cost}）。` };
   }
   state.stones -= cost;
   const gains = applySubGrowthToLevelGains(levelStatGains(petGeneration(pet)), pet);
@@ -4413,7 +4413,7 @@ function maybeAnnounceSecondSkill(state, pet, prevLevel) {
   }
 }
 
-/** 潮砂＋潮響脂升級寵物技能（主技／二技分開） */
+/** 星砂＋回響脂升級寵物技能（主技／二技分開） */
 export function upgradePetSkill(state, uid, which = "primary") {
   const found = findOwnedPet(state, uid);
   if (!found) return { ok: false, msg: "找不到水母。" };
@@ -4434,7 +4434,7 @@ export function upgradePetSkill(state, uid, which = "primary") {
   const lv = slot === "second" ? pet.secondSkillLevel ?? 1 : pet.skillLevel ?? 1;
   if (lv >= SKILL_MAX_LEVEL) return { ok: false, msg: `技能已滿級（${SKILL_MAX_LEVEL}）。` };
   const cost = skillDustCost(lv);
-  if ((state.dust || 0) < cost) return { ok: false, msg: `潮砂不足（需 ${cost}）。` };
+  if ((state.dust || 0) < cost) return { ok: false, msg: `星砂不足（需 ${cost}）。` };
   const mats = skillMatCost(lv);
   if (!spendMaterials(state, mats)) {
     const sh = shortageHint(state, mats);
@@ -4549,7 +4549,7 @@ export function fusePets(state, baseUid, matUids) {
   }
 
   const cost = fusionStoneCost(targetStage);
-  if (state.stones < cost) return { ok: false, msg: `潮晶不足（需 ${cost}）。` };
+  if (state.stones < cost) return { ok: false, msg: `泡泡晶不足（需 ${cost}）。` };
   const fuseMats = fusionMatCost(targetStage);
   if (!spendMaterials(state, fuseMats)) {
     const sh = shortageHint(state, fuseMats);
@@ -4598,7 +4598,7 @@ export function fusePets(state, baseUid, matUids) {
 
   pushLog(
     state,
-    `融合完成：${base.name} → 融階 ${targetStage}（繼承 Lv.${keepLevel}，出戰×${Number(base.fusionPowerMult || 1).toFixed(2)}，耗 ${needMats} 素材／${cost} 潮晶${
+    `融合完成：${base.name} → 融階 ${targetStage}（繼承 Lv.${keepLevel}，出戰×${Number(base.fusionPowerMult || 1).toFixed(2)}，耗 ${needMats} 素材／${cost} 泡泡晶${
       formatMats(fuseMats) ? `／${formatMats(fuseMats)}` : ""
     }${rarityFactor < 1 ? `｜素材稀有不足×${rarityFactor}` : ""}）。`
   );
@@ -5215,8 +5215,8 @@ export function runDungeon(state, dungeonId, opts = {}) {
 
   const lead =
     state.pets.length > 0
-      ? `潮行者率水母進入【${d.name}】。（潮克焰→嵐→岩→幽→潮）`
-      : `你獨自踏入【${d.name}】，潮霧裡似有潮息。`;
+      ? `育成者率水母進入【${d.name}】。（潮克焰→嵐→岩→幽→潮）`
+      : `你獨自踏入【${d.name}】，潮霧裡似有共鳴。`;
   note(lead);
   note(
     `本關 ${waves.length} 波 · ${roles.total} 敵（普通${roles.normal}／精英${roles.elite}／BOSS${roles.boss}）。`
@@ -5246,7 +5246,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
   }
   if ((state.tideSeals || 0) > 0) {
     note(
-      `潮印 ×${state.tideSeals}（全隊攻血 ×${tideSealCombatMult(state.tideSeals).toFixed(2)}）。`
+      `印記 ×${state.tideSeals}（全隊攻血 ×${tideSealCombatMult(state.tideSeals).toFixed(2)}）。`
     );
   }
   if (dex.label) {
@@ -5343,7 +5343,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
       if (down === "lose") {
         ended = true;
         state.winStreak = 0;
-        say(`折戟【${d.name}】……退回潮壇休養。`);
+        say(`折戟【${d.name}】……退回育成窩休養。`);
         break;
       }
       if (down === "wave") {
@@ -5393,10 +5393,10 @@ export function runDungeon(state, dungeonId, opts = {}) {
       }
       if (dailyStoneBonus || dailyScrapBonus || dailyDustBonus || dailyFeedBonus) {
         const bits = [];
-        if (dailyStoneBonus) bits.push(`+${dailyStoneBonus}潮晶`);
+        if (dailyStoneBonus) bits.push(`+${dailyStoneBonus}泡泡晶`);
         if (dailyScrapBonus) bits.push(`+${dailyScrapBonus}碎片`);
-        if (dailyDustBonus) bits.push(`+${dailyDustBonus}塵`);
-        if (dailyFeedBonus) bits.push(`+${dailyFeedBonus}飼`);
+        if (dailyDustBonus) bits.push(`+${dailyDustBonus}星砂`);
+        if (dailyFeedBonus) bits.push(`+${dailyFeedBonus}小餌`);
         note(`今日修飾結算：${bits.join("／")}。`);
       }
       const first = !state.clearedDungeons[dungeonId];
@@ -5412,7 +5412,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
           pushLog(state, `主脊回響：掛機產出已對齊階段${stage}。`);
         }
         note(
-          `攻克【${d.name}】，獲潮晶 ${d.reward.stones}、碎片 ${d.reward.scrap}。首通額外 +${bonusStones} 潮晶／+${bonusScrap} 碎片！`
+          `攻克【${d.name}】，獲泡泡晶 ${d.reward.stones}、碎片 ${d.reward.scrap}。首通額外 +${bonusStones} 泡泡晶／+${bonusScrap} 碎片！`
         );
         // 首通保底潮鑰 1（側枝唔掉潮鑰）
         if (!d.isSideBranch && !isBranchDungeonId(dungeonId)) {
@@ -5430,9 +5430,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
           if (lateFuse.started) pushLog(state, lateFuse.msg);
         }
       } else {
-        const streakNote = streakBonus > 0 ? ` · 連勝 +${streakBonus} 潮晶` : "";
+        const streakNote = streakBonus > 0 ? ` · 連勝 +${streakBonus} 泡泡晶` : "";
         note(
-          `攻克【${d.name}】，獲潮晶 ${d.reward.stones}、碎片 ${d.reward.scrap}${streakNote}。`
+          `攻克【${d.name}】，獲泡泡晶 ${d.reward.stones}、碎片 ${d.reward.scrap}${streakNote}。`
         );
       }
 
@@ -5445,9 +5445,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
         applyReward(state, challenge.bonus);
         state.stats.challengeWins = (state.stats.challengeWins || 0) + 1;
         const bits = [];
-        if (challengeStones) bits.push(`${challengeStones}潮晶`);
+        if (challengeStones) bits.push(`${challengeStones}泡泡晶`);
         if (challengeScrap) bits.push(`${challengeScrap}碎片`);
-        if (challengeDust) bits.push(`${challengeDust}潮砂`);
+        if (challengeDust) bits.push(`${challengeDust}星砂`);
         note(`挑戰達成【${challenge.label}】→ +${bits.join("／")}`);
       } else if (challenge) {
         note(`挑戰未達成【${challenge.label}】→ 無挑戰獎`);
@@ -5459,14 +5459,14 @@ export function runDungeon(state, dungeonId, opts = {}) {
         roleStones += d.eliteBonus.stones || 0;
         roleScrap += d.eliteBonus.scrap || 0;
         note(
-          `擊破精英！額外 +${d.eliteBonus.stones || 0} 潮晶${d.eliteBonus.scrap ? `／+${d.eliteBonus.scrap} 碎片` : ""}。`
+          `擊破精英！額外 +${d.eliteBonus.stones || 0} 泡泡晶${d.eliteBonus.scrap ? `／+${d.eliteBonus.scrap} 碎片` : ""}。`
         );
       }
       if (bossCleared && d.bossBonus) {
         roleStones += d.bossBonus.stones || 0;
         roleScrap += d.bossBonus.scrap || 0;
         note(
-          `擊破 BOSS！額外 +${d.bossBonus.stones || 0} 潮晶${d.bossBonus.scrap ? `／+${d.bossBonus.scrap} 碎片` : ""}。`
+          `擊破 BOSS！額外 +${d.bossBonus.stones || 0} 泡泡晶${d.bossBonus.scrap ? `／+${d.bossBonus.scrap} 碎片` : ""}。`
         );
       }
       if (roleStones || roleScrap) {
@@ -5478,10 +5478,10 @@ export function runDungeon(state, dungeonId, opts = {}) {
       conditionResults = [];
       for (const c of challenges) {
         const bits = [];
-        if (c.bonus?.stones) bits.push(`${c.bonus.stones}潮晶`);
+        if (c.bonus?.stones) bits.push(`${c.bonus.stones}泡泡晶`);
         if (c.bonus?.scrap) bits.push(`${c.bonus.scrap}碎片`);
-        if (c.bonus?.feed) bits.push(`${c.bonus.feed}浮游餌`);
-        if (c.bonus?.dust) bits.push(`${c.bonus.dust}潮砂`);
+        if (c.bonus?.feed) bits.push(`${c.bonus.feed}小餌`);
+        if (c.bonus?.dust) bits.push(`${c.bonus.dust}星砂`);
         if (c.ok && c.bonus) {
           condHits += 1;
           condStones += c.bonus.stones || 0;
@@ -5609,7 +5609,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
   const failKind = won ? null : ended ? "wipe" : "timeout";
   let msg;
   if (won) {
-    const parts = [`基礎+${baseStones}潮晶`];
+    const parts = [`基礎+${baseStones}泡泡晶`];
     if (bonusStones) parts.push(`首通+${bonusStones}`);
     if (dailyStoneBonus || dailyScrapBonus) {
       parts.push(`今日+${dailyStoneBonus}石/${dailyScrapBonus}碎`);
@@ -5621,9 +5621,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
       parts.push(c.ok ? `${short}✓+${c.bits || "獎"}` : `${short}✗`);
     }
     if (rewardBreakdown.trial) {
-      parts.push(rewardBreakdown.trial.ok ? `試煉✓+${rewardBreakdown.trial.stones}潮晶` : "試煉✗");
+      parts.push(rewardBreakdown.trial.ok ? `試煉✓+${rewardBreakdown.trial.stones}泡泡晶` : "試煉✗");
     }
-    msg = `勝利！合計 +${totalStones} 潮晶｜${parts.join(" · ")}`;
+    msg = `勝利！合計 +${totalStones} 泡泡晶｜${parts.join(" · ")}`;
   } else if (failKind === "timeout") {
     msg = "戰敗 · 戰鬥逾時。本場無通關獎勵。";
   } else {
@@ -5872,7 +5872,7 @@ export function runDungeonSweep(state, dungeonId, count) {
     }
   }
   const tokenName = MATERIALS[DUNGEON_ENTRY_MAT_ID]?.name || "潮霧令";
-  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 合計 +${agg.totalStones} 潮晶 · 本批召喚已耗${tokenName}×${tokenCost} · 秘境已散去`;
+  const msg = `掃蕩 ${agg.runs} 次：勝 ${agg.wins}／敗 ${agg.losses} · 合計 +${agg.totalStones} 泡泡晶 · 本批召喚已耗${tokenName}×${tokenCost} · 秘境已散去`;
   pushLog(state, msg);
   return {
     ok: true,
@@ -5930,10 +5930,10 @@ export function dungeonStatus(state, dungeonId) {
   };
 }
 
-/** 催潮符：將最早孕育中的交配立即就緒（可領全部剩餘蛋） */
+/** 催生符：將最早孕育中的交配立即就緒（可領全部剩餘蛋） */
 export function useBreedTicket(state) {
   if ((state.materials?.breed_ticket || 0) < 1) {
-    return { ok: false, msg: "沒有催潮符。" };
+    return { ok: false, msg: "沒有催生符。" };
   }
   ensureBreedJobs(state);
   const now = Date.now();
@@ -5951,7 +5951,7 @@ export function useBreedTicket(state) {
       if ((c.readyAt || 0) > now) c.readyAt = now;
     }
   }
-  pushLog(state, `使用催潮符，【${job.names?.join("×") || "交配"}】提前就緒。`);
+  pushLog(state, `使用催生符，【${job.names?.join("×") || "交配"}】提前就緒。`);
   return { ok: true, msg: "交配已就緒，可領取蛋" };
 }
 
@@ -6133,7 +6133,7 @@ function goalNavForPathQuest(q) {
   return { tab: "codex", sub: "path" };
 }
 
-/** 下一個短期目標（升潮門檻或求潮） */
+/** 下一個短期目標（成長門檻或出發） */
 export function nextGoalView(state) {
   const bt = breakthroughView(state);
   if (!bt.ready) {
@@ -6143,7 +6143,7 @@ export function nextGoalView(state) {
       const nav = goalNavForBreakthroughItem(first);
       return {
         kind: "breakthrough",
-        title: `升潮【${bt.next.name}】`,
+        title: `成長【${bt.next.name}】`,
         label: first.label,
         progress: first.progress,
         targetName: bt.next.name,
@@ -6158,7 +6158,7 @@ export function nextGoalView(state) {
       const nav = goalNavForPathQuest(q);
       return {
         kind: "path",
-        title: `求潮 · ${q.trackName}`,
+        title: `出發 · ${q.trackName}`,
         label: q.name,
         progress: ev.progress,
         desc: q.desc,
@@ -6270,14 +6270,14 @@ export function claimPathQuest(state, questId) {
   state.pathQuests.claimed[questId] = true;
   applyReward(state, q.reward);
   const bits = [];
-  if (q.reward.stones) bits.push(`${q.reward.stones}潮晶`);
+  if (q.reward.stones) bits.push(`${q.reward.stones}泡泡晶`);
   if (q.reward.scrap) bits.push(`${q.reward.scrap}碎片`);
   if (q.reward.materials) {
     for (const [id, n] of Object.entries(q.reward.materials)) {
       bits.push(`${MATERIALS[id]?.name || id}×${n}`);
     }
   }
-  pushLog(state, `求潮【${q.name}】達成，獲 ${bits.join("／")}。`);
+  pushLog(state, `出發【${q.name}】達成，獲 ${bits.join("／")}。`);
   return { ok: true, msg: `領取 ${bits.join("／")}` };
 }
 
@@ -6445,7 +6445,7 @@ function applyBreedEggClaimStats(state, egg, genes, parents) {
  */
 export function tryBreed(state, uidA, uidB, count = 1) {
   if (!uidA || !uidB || uidA === uidB) {
-    return { ok: false, msg: "請選擇兩隻不同的潮池水母。" };
+    return { ok: false, msg: "請選擇兩隻不同的水母池水母。" };
   }
   const batch = clampBreedBatchCount(count);
   ensureBreedJobs(state);
@@ -6457,12 +6457,12 @@ export function tryBreed(state, uidA, uidB, count = 1) {
   if (!state.eggs) state.eggs = [];
   const stoneCost = BREED_STONE_COST * batch;
   if (state.stones < stoneCost) {
-    return { ok: false, msg: `潮晶不足（需 ${stoneCost}）。` };
+    return { ok: false, msg: `泡泡晶不足（需 ${stoneCost}）。` };
   }
 
   const a = state.ranch.find((p) => p.uid === uidA);
   const b = state.ranch.find((p) => p.uid === uidB);
-  if (!a || !b) return { ok: false, msg: "雙親必須都在潮池待命。" };
+  if (!a || !b) return { ok: false, msg: "雙親必須都在水母池待命。" };
   const dispatchBusy = dispatchBusyUids(state);
   if (dispatchBusy.has(uidA) || dispatchBusy.has(uidB)) {
     return { ok: false, msg: "派遣中的水母不能交配。" };
@@ -6528,7 +6528,7 @@ export function tryBreed(state, uidA, uidB, count = 1) {
   const sec = Math.ceil((cycleMs * batch) / 1000);
   pushLog(
     state,
-    `開始交配×${batch}：${job.names[0]} × ${job.names[1]}（孕育約 ${sec}s｜耗 ${stoneCost} 潮晶${matNote ? `／${matNote}` : ""}）。`
+    `開始交配×${batch}：${job.names[0]} × ${job.names[1]}（孕育約 ${sec}s｜耗 ${stoneCost} 泡泡晶${matNote ? `／${matNote}` : ""}）。`
   );
   return {
     ok: true,
@@ -7510,7 +7510,7 @@ function runAbyssFloorCombat(state, { depth, seed, mutationIds, run }) {
         if (advanceOrWin()) {
           won = true;
           ended = true;
-          say(`升潮潮淵第 ${depth} 層！`);
+          say(`攻克潮淵第 ${depth} 層！`);
           break;
         }
       }
@@ -8102,7 +8102,7 @@ export function buyAbyssPowerNode(state, now = Date.now()) {
   };
 }
 
-/** 淵砂兌換潮轉符（入背包道具；永久轉屬） */
+/** 淵砂兌換轉屬符（入背包道具；永久轉屬） */
 export function buyAbyssTideShiftCharm(state, now = Date.now()) {
   if (!abyssUnlocked(state)) {
     return { ok: false, msg: `潮淵未解鎖（需主脊階段${ABYSS_UNLOCK_SPINE_STAGE}）。` };
@@ -8113,10 +8113,10 @@ export function buyAbyssTideShiftCharm(state, now = Date.now()) {
     return { ok: false, msg: `需要淵砂×${ABYSS_TIDE_SHIFT_COST}。` };
   }
   state.items.tide_shift_charm = Math.floor(state.items.tide_shift_charm || 0) + 1;
-  pushLog(state, `淵砂兌換潮轉符×1（持有 ${state.items.tide_shift_charm}）。`);
+  pushLog(state, `淵砂兌換轉屬符×1（持有 ${state.items.tide_shift_charm}）。`);
   return {
     ok: true,
-    msg: `兌換潮轉符×1（持有 ${state.items.tide_shift_charm}）`,
+    msg: `兌換轉屬符×1（持有 ${state.items.tide_shift_charm}）`,
     have: state.items.tide_shift_charm,
   };
 }

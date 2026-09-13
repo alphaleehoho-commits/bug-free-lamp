@@ -333,7 +333,7 @@ export function petIconFromPet(pet, opts = {}) {
 }
 
 /**
- * 潮池／揀寵／詳情用視覺框：元素底色 + 稀有光暈 + 代數角標（保留外層 ★／鎖）
+ * 水母池／揀寵／詳情用視覺框：元素底色 + 稀有光暈 + 代數角標（保留外層 ★／鎖）
  * @param {object} pet
  * @param {{ size?: number, className?: string, showGen?: boolean, title?: string }} [opts]
  */

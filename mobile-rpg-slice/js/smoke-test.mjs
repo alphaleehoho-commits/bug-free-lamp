@@ -412,7 +412,7 @@ const mainSubOverlap = Object.keys(MAIN_PERSONALITIES).filter((id) => SUB_PERSON
 assert(mainSubOverlap.length === 0, "main/sub pools disjoint");
 assert(ranchCapForStage(0) === 6 && ranchCapForStage(5) === 21, "ranch cap 6+stage*3");
 assert(ITEMS.ranch_fence?.name === "欄柵" && ITEMS.hatch_nest_token?.name === "暖巢箋", "bag items defined");
-assert(ITEMS.tide_shift_charm?.name === "潮轉符" && ITEMS.tide_shift_charm?.needsTarget, "tide shift charm defined");
+assert(ITEMS.tide_shift_charm?.name === "轉屬符" && ITEMS.tide_shift_charm?.needsTarget, "tide shift charm defined");
 assert(ITEM_IDS.length === 3, "three bag consumables");
 assert(HATCH_SLOT_BASE === 3 && HATCH_SLOT_BONUS_MAX === 3, "hatch slot base+bonus");
 assert(RANCH_CAP_BONUS_MAX === 12, "ranch fence bonus max");
@@ -446,7 +446,7 @@ assert(ABYSS_TIDE_SHIFT_COST >= 1, "abyss tide shift grit cost");
   });
   assert(view.find((i) => i.id === "ranch_fence")?.canUse, "itemsView canUse fence");
 }
-/* Pack E: 潮轉符 — permanent random element change */
+/* Pack E: 轉屬符 — permanent random element change */
 {
   const pet = {
     uid: "shift1",
@@ -1228,7 +1228,7 @@ const combatSt = {
   pending: [],
   clearedDungeons: {},
   dungeonReadyAt: {},
-  master: { name: "潮行者", atk: 6, hp: 90, spd: 7, equip: {} },
+  master: { name: "育成者", atk: 6, hp: 90, spd: 7, equip: {} },
   tactics: "balanced",
   formation: "balanced",
   stats: {},
@@ -1344,7 +1344,7 @@ const shopSt = {
   pending: [],
   clearedDungeons: {},
   dungeonReadyAt: {},
-  master: { name: "潮行者", atk: 6, hp: 90, spd: 7, equip: {} },
+  master: { name: "育成者", atk: 6, hp: 90, spd: 7, equip: {} },
   tactics: "balanced",
   formation: "balanced",
   stats: { bonds: 0, fusions: 0, breeds: 0, releases: 0, bondAttempts: 0 },
@@ -1663,7 +1663,7 @@ offSt.offlineBank = {
   dust: 0,
   materials: {},
   sec: OFFLINE_BANK_CAP_SEC,
-  siteName: "潮岸",
+  siteName: "育成",
   capped: true,
 };
 offSt.lastTick = Date.now() - (OFFLINE_HINT_SEC + 300) * 1000;
@@ -2642,7 +2642,7 @@ const blockRealm = dungeonAttackBlockReason(
   { realm: 2, pets: [{ uid: "a" }], clearedDungeons: {} },
   "tide_3"
 );
-assert(blockRealm && blockRealm.includes("深潮"), "tide3 needs 深潮");
+assert(blockRealm && blockRealm.includes("成體"), "tide3 needs 成體");
 
 /* Breed queue: start → gestate CD → claim eggs → hatch (egg-first) */
 function mkBreedPet(uid, species, element, generation = 0) {
@@ -2938,7 +2938,7 @@ assert(wipeAdvice.kind === "wipe", "wipe advice kind");
 assert(wipeAdvice.kindLabel === "全滅", "wipe advice kindLabel");
 assert(wipeAdvice.title.includes("全滅"), "wipe advice title");
 assert(wipeAdvice.tips.length >= 2, "wipe advice has next steps");
-assert(wipeAdvice.tips.some((t) => t.includes("潮池") || t.includes("升級")), "wipe advice mentions upgrade/party");
+assert(wipeAdvice.tips.some((t) => t.includes("水母池") || t.includes("升級")), "wipe advice mentions upgrade/party");
 const timeoutAdvice = idleFailAdvice(
   { pets: [{ level: 2, uid: "a" }, { level: 2, uid: "b" }], realm: 0 },
   { failKind: "timeout", floor: 4, resultLine: "挑戰失敗 · 逾時" }
@@ -2978,9 +2978,9 @@ assert(
 );
 const titled = markTitleEntered({ entered: false });
 assert(titled.entered, "markTitleEntered sets flag");
-assert(GAME_TERMS.tide_dew?.name === "潮露" && GAME_TERMS.qi?.name === "潮息", "glossary core terms");
-assert(GAME_TERMS.stones?.name === "潮晶" && GAME_TERMS.feed?.name === "浮游餌" && GAME_TERMS.dust?.name === "潮砂", "glossary economy terms");
-assert(stageAt(0).name === "初潮" && stageAt(1).name === "浮游初期" && stageAt(3).name === "深潮" && stageAt(4).name === "礁主", "tide rank names");
+assert(GAME_TERMS.tide_dew?.name === "潮露" && GAME_TERMS.qi?.name === "共鳴", "glossary core terms");
+assert(GAME_TERMS.stones?.name === "泡泡晶" && GAME_TERMS.feed?.name === "小餌" && GAME_TERMS.dust?.name === "星砂", "glossary economy terms");
+assert(stageAt(0).name === "幼體" && stageAt(1).name === "浮游初期" && stageAt(3).name === "成體" && stageAt(4).name === "礁主", "tide rank names");
 assert(GAME_TERMS.spine && GAME_TERMS.mist_token && GAME_TERMS.soul, "glossary spine/token/soul");
 assert(tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady, "clearReady persisted");
 assert(trainAutoNextFloorEnabled({}), "auto next default on");
@@ -3152,7 +3152,7 @@ assert(uiSrc2.includes("data-use-item"), "ui use bag item");
 assert(uiSrc2.includes("tideShiftModal"), "ui tide shift pet picker");
 assert(uiSrc2.includes("data-tide-shift-pet"), "ui tide shift target");
 assert(uiSrc2.includes("data-abyss-buy-shift"), "ui abyss buy tide shift");
-assert(uiSrc2.includes("潮轉符"), "ui tide shift copy");
+assert(uiSrc2.includes("轉屬符"), "ui tide shift copy");
 assert(uiSrc2.includes("背包"), "ui bag label");
 assert(uiSrc2.includes("hatchSlotCap"), "ui exposes hatch slot cap");
 assert(uiSrc2.includes('id: "hatch"'), "ui hatch party sub-tab");
@@ -3168,7 +3168,7 @@ assert(!uiSrc2.includes('id: "mats"'), "ui materials tab renamed to bag");
 const dataSrcBag = readFileSync(join(__dir, "data.js"), "utf8");
 assert(dataSrcBag.includes("欄柵") && dataSrcBag.includes("暖巢箋"), "data bag item copy");
 assert(dataSrcBag.includes("ranch_fence") && dataSrcBag.includes("hatch_nest_token"), "data bag item ids");
-assert(dataSrcBag.includes("tide_shift_charm") && dataSrcBag.includes("潮轉符"), "data tide shift charm");
+assert(dataSrcBag.includes("tide_shift_charm") && dataSrcBag.includes("轉屬符"), "data tide shift charm");
 assert(dataSrcBag.includes("ABYSS_TIDE_SHIFT_COST"), "data abyss tide shift cost");
 assert(!uiSrc2.includes("br.items.slice(0, 6)"), "ui breakthrough checklist shows all gates");
 assert(!uiSrc2.includes("gateCompact"), "ui no truncated gateCompact list");
@@ -3508,7 +3508,7 @@ assert(uiSrc2.includes("fuseConfirmModalHtml"), "ui fuse confirm modal html");
 assert(!/\[data-fuse-confirm\][\s\S]{0,700}!confirm\(/.test(uiSrc2), "fuse no browser confirm");
 assert(cssSrc.includes("flex-direction: column") && /\.stage-dock\s*\{[^}]*flex-direction:\s*column/s.test(cssSrc), "stage-dock stacks rows with gap");
 
-assert(uiSrc2.includes('商肆 · 潮魂') || uiSrc2.includes("潮魂"), "soul inside shop");
+assert(uiSrc2.includes('商肆 · 光核') || uiSrc2.includes("光核"), "soul inside shop");
 assert(!uiSrc2.includes("<h3>淵砂兌換</h3>") && !uiSrc2.includes("<h3>淵砂兌換</h3>"), "abyss page no grit exchange block");
 assert(uiSrc2.includes('商肆 · 淵砂') || uiSrc2.includes('data-shop-inner="grit"'), "grit shop tab");
 assert(dataSrcBag.includes("merchant_purge"), "merchant purge option in floor event");
@@ -3570,7 +3570,7 @@ assert(uiSrc2.includes("相剋"), "ui element matchup copy");
 
 /* Pack A: star / lock / release→soul / batch release */
 {
-  assert(MATERIALS.soul_essence?.name === "潮魂", "soul_essence material");
+  assert(MATERIALS.soul_essence?.name === "光核", "soul_essence material");
   assert(emptyMaterials().soul_essence === 0, "empty mats has soul");
   const baseSoul = releaseSoulGain({ level: 1, rarity: 0, fusionLevel: 0, generation: 1 });
   assert(baseSoul === 2, `lv1 common soul=2 got ${baseSoul}`);
@@ -3752,7 +3752,7 @@ assert(uiSrc2.includes("ranch-release-confirm"), "ui batch release confirm");
 assert(uiSrc2.includes("data-toggle-star"), "ui star toggle");
 assert(uiSrc2.includes("data-toggle-lock"), "ui lock toggle");
 assert(uiSrc2.includes("data-ranch-star-filter"), "ui star filter");
-assert(uiSrc2.includes("潮魂"), "ui soul copy");
+assert(uiSrc2.includes("光核"), "ui soul copy");
 assert(uiSrc2.includes("確認放生"), "ui confirm release copy");
 assert(uiSrc2.includes("批量放生"), "ui batch release copy");
 assert(uiSrc2.includes("上鎖"), "ui lock copy");
@@ -3765,7 +3765,7 @@ assert(
 assert(uiSrc2.includes("petCornerBadges"), "ui pet corner badges helper");
 assert(uiSrc2.includes('["level", "Lv"]'), "ui Lv sort in ranch chips");
 assert(uiSrc2.includes('sortKey === "level"'), "ui sortRanchEntries level");
-assert(!uiSrc2.includes("確定放歸？將返還部分潮晶"), "ui no browser confirm stone refund copy");
+assert(!uiSrc2.includes("確定放歸？將返還部分泡泡晶"), "ui no browser confirm stone refund copy");
 assert(cssSrc.includes("release-modal"), "css release modal");
 assert(cssSrc.includes("pet-tag-star"), "css star tag");
 assert(cssSrc.includes("pet-tag-lock"), "css lock tag");
@@ -3856,7 +3856,7 @@ assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize
 /* Pack F: soul essence merchant */
 {
   assert(SOUL_SHOP_OFFERS.length >= 3, "soul shop catalog size");
-  assert(soulShopOfferById("feed_pouch")?.name === "浮游餌小包", "feed pouch offer");
+  assert(soulShopOfferById("feed_pouch")?.name === "小餌包", "feed pouch offer");
   assert(soulShopOfferById("tide_dew_pack")?.grant?.materials?.tide_dew > 0, "tide dew offer");
   assert(soulShopOfferById("temper_oil_pack")?.grant?.materials?.temper_oil > 0, "temper oil offer");
   assert(soulShopOfferById("mist_token_pack")?.grant?.materials?.mist_token > 0, "mist token offer");
@@ -3880,7 +3880,7 @@ assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize
     { materials: { ...emptyMaterials(), soul_essence: 1 }, feed: 0, items: emptyItems(), log: [] },
     "feed_pouch"
   );
-  assert(!broke.ok && String(broke.msg).includes("潮魂不足"), "afford check blocks buy");
+  assert(!broke.ok && String(broke.msg).includes("光核不足"), "afford check blocks buy");
   const missing = buySoulShopOffer(soulShopSt, "no_such_offer");
   assert(!missing.ok, "unknown offer rejected");
   const feedBefore = soulShopSt.feed;
@@ -3916,7 +3916,7 @@ assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize
   assert(!buySoulShopOffer(cappedSt, "ranch_fence").ok, "fence buy blocked at ranch cap");
   assert(!buySoulShopOffer(cappedSt, "hatch_nest_token").ok, "nest buy blocked at hatch cap");
 }
-assert(uiSrc2.includes("data-shop-inner") && uiSrc2.includes("潮魂"), "ui shop inner soul tab");
+assert(uiSrc2.includes("data-shop-inner") && uiSrc2.includes("光核"), "ui shop inner soul tab");
 assert(uiSrc2.includes("data-soul-shop-buy"), "ui soul buy buttons");
 assert(engineSrcPackA.includes("buySoulShopOffer"), "engine buySoulShopOffer");
 assert(engineSrcPackA.includes("soulShopView"), "engine soulShopView");
@@ -3972,7 +3972,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v119"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v120"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");
