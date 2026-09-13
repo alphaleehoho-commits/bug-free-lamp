@@ -88,6 +88,7 @@ import {
   rarityInfo,
   RARITY_MAX,
   SPECIES,
+  SPECIES_NAME_LEGACY,
   PERSONALITIES,
   MAIN_PERSONALITIES,
   SUB_PERSONALITIES,
@@ -725,13 +726,34 @@ function normalizePet(p) {
   migratePetPersonalityFields(next);
   {
     const el = ELEMENTS[next.elementId];
-    if (el) {
-      const prevElName = next.elementName;
-      next.elementName = el.name;
-      const spName = SPECIES[next.speciesId]?.name || next.speciesName || "";
-      if (prevElName && spName && next.name === `${prevElName}${spName}`) {
-        next.name = `${el.name}${spName}`;
+    const sp = SPECIES[next.speciesId];
+    const prevElName = next.elementName;
+    if (el) next.elementName = el.name;
+    if (sp) next.speciesName = sp.name;
+    const elName = next.elementName || "";
+    const spName = sp?.name || next.speciesName || "";
+    if (prevElName && spName && next.name === `${prevElName}${spName}`) {
+      next.name = `${elName}${spName}`;
+    }
+    const legacy = SPECIES_NAME_LEGACY[next.speciesId] || [];
+    const prefixes = [...new Set([elName, prevElName, "潮", "幽", "水", "焰", "嵐", "岩", "雷"].filter(Boolean))];
+    for (const oldSp of legacy) {
+      if (next.name === oldSp) {
+        next.name = spName;
+        break;
       }
+      let hit = false;
+      for (const p of prefixes) {
+        if (next.name === `${p}${oldSp}`) {
+          next.name = elName ? `${elName}${spName}` : spName;
+          hit = true;
+          break;
+        }
+      }
+      if (hit) break;
+    }
+    if (next.skillId && SKILLS[next.skillId]?.name) {
+      next.skillName = SKILLS[next.skillId].name;
     }
   }
   next.bloodmarks = normalizeBloodmarks(next.bloodmarks);

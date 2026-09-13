@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import {
   buildPetStats,
   SPECIES,
+  SPECIES_NAME_LEGACY,
   KINDS,
   wildSpeciesIds,
   rollBreedGenes,
@@ -625,7 +626,7 @@ const tidePet = {
   uid: "t1",
   speciesId: "tideling",
   kind: "鱗",
-  name: "潮靈",
+  name: "傘靈",
   breedOnly: true,
   generation: 2,
   elementId: "tide",
@@ -813,7 +814,7 @@ assert(SKILLS.abyss_reign_surge && SKILLS.void_glint_ray && SKILLS.dusk_iron_pla
 assert(SKILLS.coral_storm_lance && SKILLS.deep_fang_toxin && SKILLS.tide_prism_howl, "tertiary skill defs 2");
 assert(SKILLS.night_scale_veil && SKILLS.gale_void_slash, "tertiary skill defs 3");
 assert(HYBRID_SKILLS.abyssreign === "abyss_reign_surge", "淵君 unique skill");
-assert(HYBRID_SKILLS.tideprism === "tide_prism_howl", "潮稜 unique buff skill");
+assert(HYBRID_SKILLS.tideprism === "tide_prism_howl", "霧稜 unique buff skill");
 assert(
   petSkillIds({ skillId: "tide_spray", speciesId: "abyssreign", kind: "鱗", fusionLevel: 1 }).includes(
     "abyss_reign_surge"
@@ -1832,7 +1833,7 @@ const lineSt = {
   pets: [{ uid: "c1", speciesId: "glintfox", name: "耀狐", bornFrom: ["a", "b"], generation: 2 }],
   ranch: [
     { uid: "a", speciesId: "reefox", name: "礁狐", generation: 1, bornFrom: ["gp1", "gp2"] },
-    { uid: "gp1", speciesId: "tideling", name: "潮仔", generation: 0 },
+    { uid: "gp1", speciesId: "tideling", name: "傘仔", generation: 0 },
   ],
 };
 const lin = petLineage(lineSt, "c1");
@@ -3995,7 +3996,19 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v122"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v123"), "sw cache bumped");
+assert(
+  !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
+  "no 潮 in species display names"
+);
+assert(
+  !Object.values(SKILLS).some((s) => String(s.name || "").includes("潮")),
+  "no 潮 in skill display names"
+);
+assert(SPECIES.tidecarp.name === "泡鯉" && SPECIES.tideling.name === "傘獸", "renamed tide species");
+assert(SPECIES.tidehowl.name === "礁嗥" && SPECIES.tideprism.name === "霧稜", "renamed howl/prism");
+assert(SKILLS.tide_spray.name === "泡濺" && SKILLS.tide_crush.name === "深壓", "renamed tide skills");
+assert(SPECIES_NAME_LEGACY.tidecarp.includes("潮鯉"), "legacy map keeps old carp name");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

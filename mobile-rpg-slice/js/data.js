@@ -1,7 +1,7 @@
 /** Data tables — 水母漂漂 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260913.5";
+export const APP_BUILD = "20260913.6";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
@@ -387,7 +387,7 @@ export function elementExplain(elementId) {
 
 /**
  * 種類（kind）＝野生種族 1:1
- * 礁狐獸／潮鯉鱗／灰翼禽／苔背甲／夜蛾蟲／熒鰭光
+ * 礁狐獸／泡鯉鱗／灰翼禽／苔背甲／夜蛾蟲／熒鰭光
  */
 export const KIND_SKILLS = {
   獸: "pounce",
@@ -403,7 +403,7 @@ export const KINDS = ["獸", "鱗", "禽", "甲", "蟲", "光"];
 /** 種類說明（詳情頁；粵語繁中） */
 export const KIND_EXPLAIN = {
   獸: { blurb: "獸類近戰猛，主技偏單體高傷。", focus: "單體爆發" },
-  鱗: { blurb: "鱗類潮勢擴散，主技偏濺射／群傷。", focus: "濺射群攻" },
+  鱗: { blurb: "鱗類泡勢擴散，主技偏濺射／群傷。", focus: "濺射群攻" },
   禽: { blurb: "禽類凌空快打，主技兼顧速度判定。", focus: "高速單體" },
   甲: { blurb: "甲類厚殼守線，主技偏減傷同回血。", focus: "減傷續航" },
   蟲: { blurb: "蟲類蝕咬滲透，主技帶減益。", focus: "傷害＋減益" },
@@ -440,7 +440,7 @@ export function skillTypeLabel(type) {
 
 export const SPECIES = {
   reefox: { id: "reefox", name: "礁狐", kind: "獸", base: { atk: 13, hp: 85, spd: 11 } },
-  tidecarp: { id: "tidecarp", name: "潮鯉", kind: "鱗", base: { atk: 10, hp: 110, spd: 8 } },
+  tidecarp: { id: "tidecarp", name: "泡鯉", kind: "鱗", base: { atk: 10, hp: 110, spd: 8 } },
   ashwing: { id: "ashwing", name: "灰翼", kind: "禽", base: { atk: 12, hp: 78, spd: 14 } },
   mossback: { id: "mossback", name: "苔背", kind: "甲", base: { atk: 9, hp: 140, spd: 5 } },
   nightmoth: { id: "nightmoth", name: "夜蛾", kind: "蟲", base: { atk: 15, hp: 70, spd: 12 } },
@@ -448,7 +448,7 @@ export const SPECIES = {
   // —— 繁殖專屬雜交種（野生秘境唔出；kind 跟主題）——
   tideling: {
     id: "tideling",
-    name: "潮獸",
+    name: "傘獸",
     kind: "獸",
     breedOnly: true,
     base: { atk: 16, hp: 100, spd: 12 },
@@ -535,7 +535,7 @@ export const SPECIES = {
   // —— 雜交擴充 ——
   tidehowl: {
     id: "tidehowl",
-    name: "潮嗥",
+    name: "礁嗥",
     kind: "獸",
     breedOnly: true,
     base: { atk: 18, hp: 105, spd: 11 },
@@ -681,7 +681,7 @@ export const SPECIES = {
   },
   tideprism: {
     id: "tideprism",
-    name: "潮稜",
+    name: "霧稜",
     kind: "獸",
     breedOnly: true,
     tertiary: true,
@@ -703,6 +703,14 @@ export const SPECIES = {
     tertiary: true,
     base: { atk: 20, hp: 96, spd: 17 },
   },
+};
+
+/** 舊種族顯示名（存檔自動名遷移；id 不變） */
+export const SPECIES_NAME_LEGACY = {
+  tidecarp: ["潮鯉"],
+  tideling: ["潮獸"],
+  tidehowl: ["潮嗥"],
+  tideprism: ["潮稜"],
 };
 
 /** 野生／秘境可遇種族（排除繁殖專屬） */
@@ -973,7 +981,7 @@ export const SKILLS = {
   },
   tide_spray: {
     id: "tide_spray",
-    name: "潮濺",
+    name: "泡濺",
     owner: "pet",
     kind: "鱗",
     type: "cleave",
@@ -1034,7 +1042,7 @@ export const SKILLS = {
   },
   tidal_veil: {
     id: "tidal_veil",
-    name: "潮帷",
+    name: "傘帷",
     owner: "pet",
     kind: "鱗",
     type: "heal",
@@ -1121,22 +1129,22 @@ export const SKILLS = {
   },
   tide_crush: {
     id: "tide_crush",
-    name: "潮壓",
+    name: "深壓",
     owner: "foe",
     type: "strike",
     cd: 2,
     power: 1.65,
-    desc: "精英：潮壓重擊",
+    desc: "精英：深壓重擊",
   },
   // —— 雜交專屬 ——
   tide_beast_rush: {
     id: "tide_beast_rush",
-    name: "潮獸奔襲",
+    name: "傘獸奔襲",
     owner: "pet",
     type: "strike",
     cd: 2,
     power: 1.85,
-    desc: "潮獸專屬：高倍率單體",
+    desc: "傘獸專屬：高倍率單體",
   },
   dusk_veil: {
     id: "dusk_veil",
@@ -1231,12 +1239,12 @@ export const SKILLS = {
   // —— 三代種專屬（唔 reuse 雜交二技）——
   abyss_reign_surge: {
     id: "abyss_reign_surge",
-    name: "淵君潮壓",
+    name: "淵君深壓",
     owner: "pet",
     type: "cleave",
     cd: 3,
     power: 0.95,
-    desc: "淵君專屬：深淵潮壓濺射",
+    desc: "淵君專屬：深壓濺射",
   },
   void_glint_ray: {
     id: "void_glint_ray",
@@ -1276,12 +1284,12 @@ export const SKILLS = {
   },
   tide_prism_howl: {
     id: "tide_prism_howl",
-    name: "潮稜嚎",
+    name: "霧稜嚎",
     owner: "pet",
     type: "buff",
     cd: 4,
     power: 0.15,
-    desc: "潮稜專屬：潮稜嚎鼓舞全隊",
+    desc: "霧稜專屬：霧稜嚎鼓舞全隊",
   },
   night_scale_veil: {
     id: "night_scale_veil",
@@ -6543,8 +6551,8 @@ export const BREED_GOALS = [
     type: "hybrid_species",
     species: "tideling",
     need: 1,
-    name: "潮獸覺醒",
-    desc: "雜交出【潮獸】",
+    name: "傘獸覺醒",
+    desc: "雜交出【傘獸】",
     reward: { stones: 80, dust: 10 },
   },
   {
