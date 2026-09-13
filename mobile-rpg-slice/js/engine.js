@@ -1033,9 +1033,9 @@ export function updateNoticeView() {
     build: APP_BUILD,
     title: "更新公告",
     body: [
-      "潮淵改為主脊階段五解鎖（大後期）；突變層 2 選 1；商人花待結算淵砂。",
-      "淵砂商店補回突變保險；週／歷史深度里程碑有小量獎勵。",
-      "見聞錄可匯出／匯入存檔。若畫面異常請硬刷新（清 SW 快取）。",
+      "秘境結算會標明勝利／戰敗（全滅或逾時）與獎勵。",
+      "掛機失敗會留下全滅／逾時說明卡，與「未出戰」分開。",
+      "開始畫面與頂欄可見建置號；可重置存檔返回開始。若畫面異常請硬刷新。",
     ].join(" "),
   };
 }
@@ -1797,7 +1797,7 @@ export function stepTrainIdleSession(session) {
       session.lastText = "戰鬥逾時，重新開始…";
       finishIdleResult(false, Date.now(), "timeout");
       session.phase = "pause";
-      session.pauseLeft = 2;
+      session.pauseLeft = 10;
       return { status: "lost", session };
     }
     session.order = [...allies, ...foes]
@@ -1847,7 +1847,7 @@ export function stepTrainIdleSession(session) {
     session.lastText = `折戟【${session.siteName}】${session.layerLabel}……全滅，重新開始`;
     finishIdleResult(false, Date.now(), "wipe");
     session.phase = "pause";
-    session.pauseLeft = 2;
+    session.pauseLeft = 10;
     return { status: "lost", session, events };
   }
 
@@ -1905,8 +1905,9 @@ export function idleFailAdvice(state, session) {
   }
   return {
     kind,
-    title: kind === "timeout" ? "戰鬥逾時" : "出戰隊全滅",
-    line: session?.resultLine || "挑戰失敗",
+    kindLabel: kind === "timeout" ? "逾時" : "全滅",
+    title: kind === "timeout" ? "挑戰失敗 · 戰鬥逾時" : "挑戰失敗 · 出戰隊全滅",
+    line: session?.resultLine || (kind === "timeout" ? "挑戰失敗 · 逾時" : "挑戰失敗 · 全滅"),
     tips,
   };
 }
@@ -2481,6 +2482,7 @@ export function persistTrainIdleCombatState(state, wrap) {
     canUnlockNext: !!wrap.canUnlockNext,
     resultLine: wrap.resultLine || null,
     logLine: wrap.logLine || null,
+    lastFail: wrap.lastFail || null,
     session: wrap.session,
   };
   return state.trainIdleCombat;
@@ -2503,6 +2505,7 @@ export function restoreTrainIdleCombatState(state) {
     canUnlockNext: !!saved.canUnlockNext,
     resultLine: saved.resultLine || null,
     logLine: saved.logLine || null,
+    lastFail: saved.lastFail || null,
     session: saved.session,
   };
 }
@@ -5538,7 +5541,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
   }
 
   if (!ended) {
-    say("戰鬥逾時，撤退。");
+    say("戰鬥逾時，未能通關。");
   }
 
   // 打完散去：回到待召喚（掃蕩批次內唔清，由 sweep 統一清）
@@ -5602,6 +5605,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
     totalStones,
   };
 
+  const failKind = won ? null : ended ? "wipe" : "timeout";
   let msg;
   if (won) {
     const parts = [`基礎+${baseStones}石`];
@@ -5619,15 +5623,18 @@ export function runDungeon(state, dungeonId, opts = {}) {
       parts.push(rewardBreakdown.trial.ok ? `試煉✓+${rewardBreakdown.trial.stones}石` : "試煉✗");
     }
     msg = `勝利！合計 +${totalStones} 石｜${parts.join(" · ")}`;
-  } else if (ended) {
-    msg = "戰敗。";
+  } else if (failKind === "timeout") {
+    msg = "戰敗 · 戰鬥逾時。本場無通關獎勵。";
   } else {
-    msg = "撤退。";
+    msg = "戰敗 · 出戰隊全滅。本場無通關獎勵。";
   }
 
   return {
     ok: true,
     won,
+    failKind,
+    dungeonName: d.name,
+    dungeonId,
     rounds: round,
     transcript: lines,
     combatEvents: eventsOut,

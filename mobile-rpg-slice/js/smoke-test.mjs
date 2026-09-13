@@ -1255,6 +1255,26 @@ assert(
   firstEv?.type === "wave" || firstEv?.type === "round",
   "combat log starts at wave/round"
 );
+if (combatRes.won) {
+  assert(combatRes.failKind == null, "win has no failKind");
+  assert(combatRes.dungeonName, "dungeon settle has name");
+  assert(String(combatRes.msg || "").includes("勝利"), "win msg names 勝利");
+} else {
+  assert(combatRes.failKind === "wipe" || combatRes.failKind === "timeout", "loss has failKind");
+  assert(/全滅|逾時/.test(combatRes.msg || ""), "loss msg names wipe or timeout");
+}
+const wipeFox = {
+  ...combatFox,
+  uid: "wipe-p1",
+  atk: 1,
+  hp: 1,
+  spd: 1,
+};
+const wipeRes = runDungeon({ ...combatSt, pets: [wipeFox], stones: 200, scrap: 0 }, "tide_1");
+assert(wipeRes.ok && !wipeRes.won, "weak party loses dungeon");
+assert(wipeRes.failKind === "wipe" || wipeRes.failKind === "timeout", "dungeon loss failKind");
+assert(/全滅|逾時/.test(wipeRes.msg || ""), "dungeon loss msg is explicit");
+assert(wipeRes.dungeonName, "dungeon loss keeps name");
 
 /* Train spine: sequential floor push waives realm gate */
 const spineElem = smokeSafeElement("tide_5");
@@ -1670,6 +1690,15 @@ persistTrainIdleCombatState(persistSt, persistWrap);
 const restored = restoreTrainIdleCombatState(persistSt);
 assert(restored?.session?.startedAt === 1_700_000_000_000, "restore idle startedAt wall clock");
 assert(restored.session.waveIndex === 2, "restore idle wave progress");
+const persistFailWrap = {
+  ...persistWrap,
+  lastFail: { kind: "wipe", title: "挑戰失敗 · 出戰隊全滅", tips: ["升級"] },
+};
+const persistFailSt = { trainIdleCombat: null };
+persistTrainIdleCombatState(persistFailSt, persistFailWrap);
+const restoredFail = restoreTrainIdleCombatState(persistFailSt);
+assert(restoredFail?.lastFail?.kind === "wipe", "restore idle lastFail kind");
+assert(restoredFail.lastFail.title.includes("全滅"), "restore idle lastFail title");
 clearTrainIdleCombatState(persistSt);
 assert(!restoreTrainIdleCombatState(persistSt), "clear idle combat state");
 
@@ -2905,6 +2934,8 @@ const wipeAdvice = idleFailAdvice(
   { pets: [{ level: 1, uid: "a" }], realm: 0 },
   { failKind: "wipe", floor: 1, resultLine: "挑戰失敗 · 全滅" }
 );
+assert(wipeAdvice.kind === "wipe", "wipe advice kind");
+assert(wipeAdvice.kindLabel === "全滅", "wipe advice kindLabel");
 assert(wipeAdvice.title.includes("全滅"), "wipe advice title");
 assert(wipeAdvice.tips.length >= 2, "wipe advice has next steps");
 assert(wipeAdvice.tips.some((t) => t.includes("牧場") || t.includes("升級")), "wipe advice mentions upgrade/party");
@@ -2912,8 +2943,11 @@ const timeoutAdvice = idleFailAdvice(
   { pets: [{ level: 2, uid: "a" }, { level: 2, uid: "b" }], realm: 0 },
   { failKind: "timeout", floor: 4, resultLine: "挑戰失敗 · 逾時" }
 );
+assert(timeoutAdvice.kind === "timeout", "timeout advice kind");
+assert(timeoutAdvice.kindLabel === "逾時", "timeout advice kindLabel");
 assert(timeoutAdvice.title.includes("逾時"), "timeout advice title");
 assert(timeoutAdvice.tips.some((t) => t.includes("上一層")), "timeout advice suggests lower floor");
+assert(wipeAdvice.title !== timeoutAdvice.title, "wipe and timeout titles differ");
 assert(
   shouldShowTitleScreen({
     entered: false,
@@ -3074,6 +3108,15 @@ assert(uiSrc2.includes("train-idle-strip"), "ui idle combat strip");
 assert(uiSrc2.includes("title-screen"), "ui title / start screen");
 assert(uiSrc2.includes("enter-title"), "ui title start action");
 assert(uiSrc2.includes("enter-title-skip"), "ui title skip-tutorial action");
+assert(uiSrc2.includes("title-build"), "ui title shows build");
+assert(uiSrc2.includes("reset-title"), "ui title reset save");
+assert(uiSrc2.includes("build-chip"), "ui header shows build");
+assert(uiSrc2.includes("settle-outcome"), "ui dungeon settle outcome card");
+assert(uiSrc2.includes("結算 · 勝利"), "ui settle win title");
+assert(uiSrc2.includes("結算 · 戰敗"), "ui settle loss title");
+assert(uiSrc2.includes("dungeonSettleBodyHtml"), "ui settle body helper");
+assert(uiSrc2.includes("currentIdleFailAdvice"), "ui keeps last idle fail");
+assert(uiSrc2.includes("data-fail-kind"), "ui idle fail kind attr");
 assert(uiSrc2.includes("idleFailAdvice"), "ui shows idle fail advice");
 assert(uiSrc2.includes("train-idle-fail"), "ui idle fail card");
 assert(uiSrc2.includes("shop-cost"), "ui larger shop cost line");
@@ -3927,7 +3970,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v117"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v118"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

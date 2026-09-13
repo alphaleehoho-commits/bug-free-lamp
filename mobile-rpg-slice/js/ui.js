@@ -1828,14 +1828,59 @@ function patchLive() {
   return eggReadyNow;
 }
 
+function dungeonFailKind(result) {
+  if (!result || result.won) return null;
+  if (result.failKind === "timeout" || result.failKind === "wipe") return result.failKind;
+  if (String(result.msg || "").includes("逾時")) return "timeout";
+  return "wipe";
+}
+
+function dungeonSettleTitle(result) {
+  if (isAbyssCombat(result)) {
+    return result?.wiped || !result?.won ? "潮淵結算 · 挑戰失敗" : "潮淵結算 · 層通關";
+  }
+  if (result?.won) return "結算 · 勝利";
+  return dungeonFailKind(result) === "timeout" ? "結算 · 戰敗（逾時）" : "結算 · 戰敗（全滅）";
+}
+
+function dungeonSettleBodyHtml(result) {
+  if (!result) return "";
+  const rounds = result.rounds ?? 0;
+  const name = result.dungeonName ? `【${result.dungeonName}】` : "本場";
+  if (result.won) {
+    return `<div class="settle-outcome settle-outcome--win">
+        <p class="settle-outcome-kicker">秘境通關</p>
+        <strong>勝利</strong>
+        <p class="settle-outcome-line">${escapeHtml(name)} · ${rounds} 回合</p>
+        ${result.msg ? `<p class="settle-outcome-msg">${escapeHtml(result.msg)}</p>` : ""}
+      </div>`;
+  }
+  const kind = dungeonFailKind(result) || "wipe";
+  const headline = kind === "timeout" ? "戰敗 · 戰鬥逾時" : "戰敗 · 出戰隊全滅";
+  const reason =
+    kind === "timeout"
+      ? "未能在回合時限內清完波次——攻擊或速度不足。"
+      : "出戰隊被擊倒——生存或輸出不足。";
+  return `<div class="settle-outcome settle-outcome--loss settle-outcome--${kind}">
+        <p class="settle-outcome-kicker">挑戰失敗</p>
+        <strong>${headline}</strong>
+        <p class="settle-outcome-line">${escapeHtml(name)} · ${rounds} 回合 · 本場無通關獎勵</p>
+        <p class="settle-outcome-msg">${escapeHtml(reason)}</p>
+        <ul class="settle-outcome-tips">
+          <li>到「靈寵」升級出戰隊，或到牧場再派出戰。</li>
+          <li>可改戰術／陣型後再挑戰；戰力不足可先掛機攞潮露。</li>
+        </ul>
+      </div>`;
+}
+
 function combatPlaybackMeta(pb) {
   const total = Math.max(1, pb.events.length);
   const roundNote = pb.currentRound ? `第 ${pb.currentRound} 回合 · ` : "";
   if (pb.done) {
     const rounds = pb.result?.rounds ?? 0;
     if (pb.result?.won) return `勝利（${rounds} 回合）`;
-    if (pb.result?.msg?.includes("撤退")) return `撤退（${rounds} 回合）`;
-    return `戰敗（${rounds} 回合）`;
+    if (dungeonFailKind(pb.result) === "timeout") return `戰敗 · 逾時（${rounds} 回合）`;
+    return `戰敗 · 全滅（${rounds} 回合）`;
   }
   return `${roundNote}戰鬥進行中… ${pb.index}/${total}`;
 }
@@ -2140,6 +2185,7 @@ function titleScreenHtml() {
         <p class="title-kicker">Void Tide</p>
         <h1 class="title-brand">暗潮</h1>
         <p class="title-sub">靈寵修行</p>
+        <p class="title-build">建置 ${escapeHtml(APP_BUILD)}</p>
       </header>
       <section class="title-howto">
         <h2>如何遊玩</h2>
@@ -2157,9 +2203,28 @@ function titleScreenHtml() {
       <div class="title-actions">
         <button type="button" class="primary title-start" data-act="enter-title">開始教學</button>
         <button type="button" class="secondary title-skip" data-act="enter-title-skip">跳過教學，自由探索</button>
+        <button type="button" class="ghost title-reset" data-act="reset-title">重置存檔，返回開始</button>
       </div>
-      <p class="title-note">教學約十餘步，可隨時跳過。存檔留在此裝置。</p>
+      <p class="title-note">教學約十餘步，可隨時跳過。存檔留在此裝置。想重來或清舊檔，撳「重置存檔」即可回到本畫面。</p>
     </div>`;
+}
+
+function applyResetSave() {
+  if (!confirm("確定清除此裝置上的存檔？會返回開始畫面。")) return false;
+  stopPlayback();
+  cancelIdleAnim();
+  idleCombat = null;
+  idleCombatBootstrapped = false;
+  clearUiOverlays({ clearPlayback: true });
+  state = resetSave();
+  petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
+  shellReady = false;
+  tab = "cultivate";
+  panelSub = { cultivate: "train", party: "fight", dungeon: "field", codex: "dex" };
+  titleScreenOpen = true;
+  render();
+  setFlash("存檔已重置，已返回開始畫面。");
+  return true;
 }
 
 function bindTitleScreen() {
@@ -2174,6 +2239,9 @@ function bindTitleScreen() {
       saveState(state);
       render();
     });
+  });
+  app.querySelector("[data-act=reset-title]")?.addEventListener("click", () => {
+    applyResetSave();
   });
 }
 
@@ -2225,6 +2293,8 @@ function render() {
       <div class="brand-row">
         <p class="brand" data-brand="void-tide">暗潮</p>
         <p class="tag">Void Tide · 靈寵修行</p>
+        <span class="build-chip" title="建置號">建置 ${escapeHtml(APP_BUILD)}</span>
+        <button type="button" class="ghost brand-reset" data-act="reset" ${busy ? "disabled" : ""}>重置存檔</button>
         <button type="button" class="brand-help" data-act="toggle-stats-sheet" aria-label="詞語與資源說明">？</button>
       </div>
     </header>
@@ -2832,6 +2902,7 @@ function ensureIdleCombat() {
       logLine: view.logLine,
       // 只顯示本場結果；唔用上一場 lastClear 冒充未通關
       resultLine: null,
+      lastFail: idleCombat?.lastFail || null,
       fx: emptyIdleFx(),
     };
   } else {
@@ -2945,6 +3016,7 @@ function tickIdleCombat({ background = false } = {}) {
 
     if (result.status === "restart") {
       const keepReady = wrap.clearReady;
+      const keepFail = wrap.lastFail;
       const session = createTrainIdleSession(state);
       if (!session) {
         idleCombat = null;
@@ -2955,6 +3027,7 @@ function tickIdleCombat({ background = false } = {}) {
       wrap.session = session;
       wrap.petSig = idlePetSig(state);
       wrap.resultLine = null;
+      wrap.lastFail = keepFail || null;
       wrap.fx = emptyIdleFx();
       needRosterPatch = true;
       continue;
@@ -2964,6 +3037,11 @@ function tickIdleCombat({ background = false } = {}) {
       if (wrap.session.resultLine) {
         wrap.resultLine = wrap.session.resultLine;
         persistTrainIdleClearResult(state, wrap.session);
+      }
+      if (result.status === "lost") {
+        wrap.lastFail = idleFailAdvice(state, wrap.session);
+      } else {
+        wrap.lastFail = null;
       }
     }
 
@@ -3104,7 +3182,7 @@ function trainIdleStripHtml() {
     Math.round(((s.waveIndex + (s.ended && s.won ? 1 : 0)) / Math.max(1, s.waveCount)) * 100)
   );
   const resultLine = idleCombatResultLine(wrap);
-  const failAdvice = isIdleFailLine(resultLine) ? idleFailAdvice(state, s) : null;
+  const failAdvice = currentIdleFailAdvice(wrap);
   const resultCls = resultLine
     ? isIdleFailLine(resultLine)
       ? " is-fail"
@@ -3151,12 +3229,28 @@ function isIdleFailLine(line) {
   return !!line && String(line).includes("挑戰失敗");
 }
 
+function currentIdleFailAdvice(wrap, st = state) {
+  const s = wrap?.session;
+  if (s && !s.won && (s.ended || s.phase === "pause")) {
+    return idleFailAdvice(st, s);
+  }
+  return wrap?.lastFail || null;
+}
+
+function idleFailCardInner(advice) {
+  const kind = advice.kind === "timeout" ? "timeout" : "wipe";
+  const kicker = kind === "timeout" ? "掛機失敗 · 逾時" : "掛機失敗 · 全滅";
+  const tips = (advice.tips || []).map((t) => `<li>${escapeHtml(t)}</li>`).join("");
+  return `<p class="train-idle-fail-kicker">${kicker}</p>
+    <strong>${escapeHtml(advice.title)}</strong>
+    <ul>${tips}</ul>`;
+}
+
 function idleFailCardHtml(advice) {
   if (!advice) return `<div class="train-idle-fail" data-live="train-idle-fail" hidden></div>`;
-  const tips = (advice.tips || []).map((t) => `<li>${escapeHtml(t)}</li>`).join("");
-  return `<div class="train-idle-fail" data-live="train-idle-fail">
-    <strong>${escapeHtml(advice.title)}</strong>
-    <ul>${tips}</ul>
+  const kind = advice.kind === "timeout" ? "timeout" : "wipe";
+  return `<div class="train-idle-fail is-${kind}" data-live="train-idle-fail" data-fail-kind="${kind}">
+    ${idleFailCardInner(advice)}
   </div>`;
 }
 
@@ -5098,6 +5192,8 @@ function combatModalHtml() {
       </div>
       ${rewardDetailsOpen ? combatRewardBreakdownHtml(bd) : ""}`
     : "";
+  const dungeonSettle =
+    playback.done && !isAbyss ? `${dungeonSettleBodyHtml(result)}${settleHead}` : "";
   const abyssSettle = playback.done && isAbyss ? abyssSettlementHtml(result) : "";
   const logBlock = playback.done
     ? ""
@@ -5115,17 +5211,15 @@ function combatModalHtml() {
         : "返回秘境";
   const clearAct = tacticsStep ? "clear-combat-setup" : "clear-combat";
   const title = playback.done
-    ? isAbyss
-      ? result?.wiped || !result?.won
-        ? "潮淵結算 · 挑戰失敗"
-        : "潮淵結算 · 層通關"
-      : "結算"
+    ? dungeonSettleTitle(result)
     : isAbyss
       ? `戰報 · 第 ${result?.depth || "?"} 層`
       : "戰報";
   const cardClass = `combat-modal-card combat-report-card${
     isAbyss ? " combat-report-card--abyss" : ""
-  }${playback.done && isAbyss ? " combat-report-card--abyss-settle" : ""}`;
+  }${playback.done && isAbyss ? " combat-report-card--abyss-settle" : ""}${
+    playback.done && !isAbyss ? " combat-report-card--settle" : ""
+  }`;
   let actions = "";
   if (!playback.done) {
     actions = `
@@ -5159,11 +5253,15 @@ function combatModalHtml() {
           <h2>${escapeHtml(title)}${playback.isFarm && combatPrefs.fastMode ? `<span class="combat-fast-badge">快速</span>` : ""}</h2>
           ${playback.waveLabel && !playback.done ? `<p class="combat-wave-banner" data-live="combat-wave">${escapeHtml(playback.waveLabel)}</p>` : `<p class="combat-wave-banner" data-live="combat-wave" hidden></p>`}
           ${logBlock}
-          <p class="lead combat-round-meta" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
-          <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>
+          ${
+            playback.done && !isAbyss
+              ? ""
+              : `<p class="lead combat-round-meta" data-live="combat-meta">${escapeHtml(combatPlaybackMeta(playback))}</p>
+          <div class="bar combat-bar"><i data-live="combat-bar" style="width:${pct}%"></i></div>`
+          }
           ${renderCombatRoster(playback)}
           ${playback.skipped && playback.skipSummary ? skipSummaryHtml(playback.skipSummary) : ""}
-          ${settleHead}
+          ${dungeonSettle}
           ${abyssSettle}
         </div>
         <div class="combat-modal-actions row">${actions}
@@ -5638,11 +5736,11 @@ function logPanel() {
     `<h2>見聞錄</h2><ul class="log">${lines || "<li class='empty'>尚無見聞。</li>"}</ul>`,
     `<div class="row log-tools">
       <button type="button" class="ghost" data-act="notify-perm">開啟通知</button>
-      <button type="button" class="ghost" data-act="reset" ${busy ? "disabled" : ""}>重置存檔</button>
+      <button type="button" class="ghost" data-act="reset" ${busy ? "disabled" : ""}>重置存檔，返回開始</button>
     </div>
     <div class="save-tools card-block">
       <h3>存檔備份</h3>
-      <p class="meta">本機 localStorage · 換機／清瀏覽器前請匯出。建置 ${escapeHtml(APP_BUILD)}</p>
+      <p class="meta">本機 localStorage · 換機／清瀏覽器前請匯出。建置 ${escapeHtml(APP_BUILD)}。重置會清除進度並返回開始畫面。</p>
       <div class="row log-tools">
         <button type="button" class="secondary" data-act="export-save">匯出存檔</button>
         <button type="button" class="ghost" data-act="import-save">匯入存檔</button>
@@ -6139,15 +6237,8 @@ function bind() {
           }
         }
 
-      } else if (act === "reset") {
-        if (confirm("確定清除存檔？")) {
-          stopPlayback();
-          state = resetSave();
-          petView = { mode: "list", uid: null, fuseBase: null, fuseMats: [], breedParents: [] };
-          shellReady = false;
-          render();
-          setFlash("存檔已重置。");
-        }
+      } else if (act === "reset" || act === "reset-title") {
+        applyResetSave();
       } else if (act === "claim-all-dailies") {
         const r = claimAllDailies(state);
         saveState(state);
@@ -7151,15 +7242,19 @@ setInterval(() => {
           hitEl.classList.toggle("is-clear", !!resultLine && !isIdleFailLine(resultLine));
           const failEl = strip.querySelector("[data-live=train-idle-fail]");
           if (failEl) {
-            const advice = isIdleFailLine(resultLine) ? idleFailAdvice(state, s) : null;
+            const advice = currentIdleFailAdvice(wrap);
             if (!advice) {
               failEl.hidden = true;
+              failEl.removeAttribute("data-fail-kind");
+              failEl.classList.remove("is-wipe", "is-timeout");
               failEl.innerHTML = "";
             } else {
+              const kind = advice.kind === "timeout" ? "timeout" : "wipe";
               failEl.hidden = false;
-              failEl.innerHTML = `<strong>${escapeHtml(advice.title)}</strong><ul>${(advice.tips || [])
-                .map((t) => `<li>${escapeHtml(t)}</li>`)
-                .join("")}</ul>`;
+              failEl.dataset.failKind = kind;
+              failEl.classList.toggle("is-timeout", kind === "timeout");
+              failEl.classList.toggle("is-wipe", kind === "wipe");
+              failEl.innerHTML = idleFailCardInner(advice);
             }
           }
         }
