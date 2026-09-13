@@ -8,7 +8,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "hatch_starter",
     title: "孵化首隻",
-    hint: "潮霧蛋孵化中。可先「育成 → 練功」掛機；完成後打開「水母 → 孵化」領取。",
+    hint: "霧傘蛋孵化中。可先「育成 → 練功」掛機；完成後打開「水母 → 孵化」領取。",
   },
   {
     id: "meet_pet",
@@ -18,7 +18,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "train_pet",
     title: "練功升級",
-    hint: "育成掛機攞潮露（升級主材料）；夠料後到「水母 → 水母池 → 詳情」點升級，升至 Lv.3。",
+    hint: "育成掛機攞露珠（升級主材料）；夠料後到「水母 → 水母池 → 詳情」點升級，升至 Lv.3。",
   },
   {
     id: "deploy",
@@ -28,12 +28,12 @@ export const TUTORIAL_STEPS = [
   {
     id: "dungeon_fight",
     title: "踏入秘境",
-    hint: "進入「秘境」，挑戰【潮汐廢墟 · 一層】（教學豁免今日挑戰限制）。",
+    hint: "進入「秘境」，挑戰【1-1】（教學豁免今日挑戰限制）。",
   },
   {
     id: "dungeon_win",
-    title: "攻克一層",
-    hint: "帶水母戰勝秘境一層；教學中不檢查今日禁屬／試煉條件。",
+    title: "攻克 1-1",
+    hint: "帶水母戰勝秘境 1-1；教學中不檢查今日禁屬／試煉條件。",
   },
   {
     id: "shop_egg",
@@ -159,7 +159,7 @@ export function trainPetCanUpgrade(state) {
   return (state.stones || 0) >= upgradeStoneCost(lv);
 }
 
-/** 教學開局潮露：夠連升兩級至 Lv.3（+1 備用） */
+/** 教學開局露珠：夠連升兩級至 Lv.3（+1 備用） */
 export const TUTORIAL_STARTER_TIDE_DEW = 3;
 
 export function tutorialEggReady(state) {
@@ -603,7 +603,7 @@ export function healTutorialProgress(state) {
   if ((state.daily?.idleSec || 0) >= TUTORIAL_QI_IDLE_SEC) {
     state.tutorial.flags.qiIdleDone = true;
   }
-  // 練功步：確保至少有足夠潮露升一級，避免卡喺「有 highlight 但升唔到」
+  // 練功步：確保至少有足夠露珠升一級，避免卡喺「有 highlight 但升唔到」
   if (state.tutorial.step === "train_pet" && !state.tutorial.flags.trainMatsGranted) {
     if (!state.materials) state.materials = {};
     const pet = tutorialTrainTargetPet(state);
@@ -740,7 +740,7 @@ export function syncTutorialNavigation(state, nav) {
       break;
     case "tactics":
       next = clampTutorialTabs(nav, ["dungeon"]);
-      // 只趕走已鎖嘅 field；潮淵／戰術可停留（唔好每 frame 強制 setup 令潮淵無反應）
+      // 只趕走已鎖嘅 field；深潛／戰術可停留（唔好每 frame 強制 setup 令深潛無反應）
       {
         const dungSub = next.panelSub?.dungeon || "field";
         if (dungSub === "field" || isDungeonSubLocked(state, dungSub)) {
@@ -1049,9 +1049,9 @@ export function tutorialBannerHint(state) {
     const needDew = upgradeMatCost(needLv).tide_dew || 1;
     const haveDew = Math.floor(state.materials?.tide_dew || 0);
     if (!trainPetCanUpgrade(state)) {
-      return `首隻 Lv.${lv}／需 Lv.${TUTORIAL_TRAIN_LEVEL}。潮露 ${haveDew}／升級需 ${needDew} — 育成掛機中，夠料再去水母升級。`;
+      return `首隻 Lv.${lv}／需 Lv.${TUTORIAL_TRAIN_LEVEL}。露珠 ${haveDew}／升級需 ${needDew} — 育成掛機中，夠料再去水母升級。`;
     }
-    return `潮露已夠（${haveDew}）！打開「水母 → 水母池 → 詳情」點「升級」（Lv.${lv}→${lv + 1}）。`;
+    return `露珠已夠（${haveDew}）！打開「水母 → 水母池 → 詳情」點「升級」（Lv.${lv}→${lv + 1}）。`;
   }
   if (info.stepId === "hatch_starter" || info.stepId === "hatch_second") {
     const eggs = state.eggs || [];
@@ -1069,10 +1069,10 @@ export function tutorialBannerHint(state) {
 const TUTORIAL_NEXT_WHERE = {
   hatch_starter: "底部「水母」→「孵化」領取",
   meet_pet: "「水母 → 水母池」點開首隻詳情",
-  train_pet: "先「育成 → 練功」掛機，夠潮露再回「水母」升級",
+  train_pet: "先「育成 → 練功」掛機，夠露珠再回「水母」升級",
   deploy: "「水母 → 水母池」點「出戰」",
-  dungeon_fight: "底部「秘境」→ 進攻一層",
-  dungeon_win: "繼續在「秘境」戰勝一層",
+  dungeon_fight: "底部「秘境」→ 進攻 1-1",
+  dungeon_win: "繼續在「秘境」戰勝 1-1",
   shop_egg: "「育成 → 商肆」購入一枚蛋",
   hatch_second: "「水母 → 孵化」等候並領取",
   cultivate_qi: "留在「育成 → 練功」累積共鳴",

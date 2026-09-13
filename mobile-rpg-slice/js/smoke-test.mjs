@@ -89,6 +89,7 @@ import {
   eggHatchMsFor,
   RARITY,
   spineStageForTier,
+  spineChapterFloorLabel,
   spineStageMatBias,
   FUSION_MAX_STAGE,
   FUSION_NEED_LEVEL,
@@ -871,8 +872,8 @@ assert(BREAKTHROUGH_GATES[5].checks.some((c) => c.dungeonId === "tide_4"), "brea
 assert(TACTICS.sustain && TACTICS.focus_boss, "tactics");
 
 /* P7: infinite stages + daily dungeon variants */
-assert(stageAt(5).name === "潮主", "stage 5 name");
-assert(stageAt(6).name === "潮主·1重", "stage 6 name");
+assert(stageAt(5).name === "漂主", "stage 5 name");
+assert(stageAt(6).name === "漂主·1重", "stage 6 name");
 assert(stageAt(6).need > stageAt(5).need, "stage 6 need");
 assert(stageAt(10).need > stageAt(6).need, "stage scaling");
 const br5 = breakthroughView({ ...fakeState, realm: 5, qi: 99999, stones: 9999, scrap: 99, dust: 99, feed: 99, combatsWon: 99, clearedDungeons: { tide_4: true }, pets: [{ generation: 3 }], ranch: [], stats: { bonds: 5, fusions: 5, breeds: 5 }, bestiary: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`k${i}`, true])), master: { equip: { weapon: "a", armor: "b", accessory: "c" } } });
@@ -1011,7 +1012,7 @@ assert(skillMatCost(1) && Object.keys(skillMatCost(1)).length === 0, "skill lv1 
 assert(skillMatCost(2).echo_resin >= 1, "skill lv2 needs resin");
 assert(fusionMatCost(1).fusion_core === 1, "fusion core cost");
 assert(materialSourceLabel("temper_oil") === "秘境專屬", "temper dungeon-only label");
-assert(materialSourceLabel("echo_resin").includes("主脊"), "resin from spine");
+assert(materialSourceLabel("echo_resin").includes("漂路"), "resin from spine");
 assert(unlockedTrainSiteIds({ clearedDungeons: {} }).includes(SPINE_ZONE_ID), "spine free");
 assert(unlockedTrainSiteIds({ clearedDungeons: {} }).length === 1, "only spine unlocked");
 assert(!isSideBranchUnlocked({ clearedDungeons: {} }, "earth_vein"), "earth always locked");
@@ -1103,14 +1104,14 @@ assert(dualAwake.personality2Id === "latebloomer" && dualAwake.personality2Name,
 
 
 /* P11: material hints + unlock helpers */
-assert(MATERIAL_SOURCE_INDEX.tide_dew?.sites?.includes("主脊潮脈"), "tide_dew spine");
-assert(MATERIAL_SOURCE_INDEX.coral_shard?.sites?.includes("主脊潮脈"), "coral spine");
-assert(MATERIAL_SOURCE_INDEX.earth_grade_stone?.sites?.includes("主脊潮脈"), "earth spine AFK source");
+assert(MATERIAL_SOURCE_INDEX.tide_dew?.sites?.includes("漂路"), "tide_dew spine");
+assert(MATERIAL_SOURCE_INDEX.coral_shard?.sites?.includes("漂路"), "coral spine");
+assert(MATERIAL_SOURCE_INDEX.earth_grade_stone?.sites?.includes("漂路"), "earth spine AFK source");
 assert(!MATERIAL_SOURCE_INDEX.earth_grade_stone?.sites?.includes("地脈"), "no earth branch source");
-assert(MATERIAL_SOURCE_INDEX.seal_ember?.sites?.includes("主脊潮脈"), "ember spine");
-assert(materialSourceLabel("seal_ember").includes("主脊"), "ember source");
+assert(MATERIAL_SOURCE_INDEX.seal_ember?.sites?.includes("漂路"), "ember spine");
+assert(materialSourceLabel("seal_ember").includes("漂路"), "ember source");
 assert(trainSiteUnlockHint(TRAIN_SITES[0]) == null, "spine no unlock hint");
-assert(dungeonNameForClear("tide_1").includes("一層"), "dungeon name");
+assert(dungeonNameForClear("tide_1") === "1-1", "dungeon name");
 const fakeMats = { materials: { tide_dew: 0, mist_silk: 2 } };
 const aff = affordMaterials(fakeMats, { tide_dew: 2, mist_silk: 1 });
 assert(!aff.ok && aff.items.find((i) => i.id === "tide_dew")?.short === 2, "afford short");
@@ -1176,7 +1177,7 @@ const spineForMult = trainSiteById("ruins");
 const dewMult = trainDropMult(spineForMult, { mat: spineForMult.primaryMat, perSec: 0.03 }, "2026-08-30");
 assert(dewMult >= TRAIN_FOCUS_BONUS, "focus mult on primary mat");
 const rates = trainSiteRatesView(spineTrainProfile({ clearedDungeons: {} }), "2026-08-30");
-assert(rates.lines.some((l) => l.name === "潮露"), "rates include dew");
+assert(rates.lines.some((l) => l.name === "露珠"), "rates include dew");
 assert(DUNGEON_DAILY_MODS.length >= 10, "expanded daily mods");
 assert(DUNGEON_CHALLENGE_RULES.some((r) => r.minGeneration === 2), "gen2 challenge");
 const gen1Pet = makeStarterPet();
@@ -1193,10 +1194,10 @@ assert(spineFrontierTier({ clearedDungeons: { tide_5: true } }) === 6, "frontier
 assert(spineStageFromState({ clearedDungeons: { tide_21: true } }) === 2, "stage from state");
 assert(SPINE_THEME_FLOORS === 200, "theme spine 200");
 const trunk0 = spineTrunkView({ clearedDungeons: {} });
-assert(trunk0.frontier === 1 && trunk0.cleared === 0 && trunk0.progressLabel.includes("0／200"), "trunk start floor1");
+assert(trunk0.frontier === 1 && trunk0.cleared === 0 && trunk0.progressLabel.includes("已通 0"), "trunk start floor1");
 const trunk4 = spineTrunkView({ clearedDungeons: { tide_4: true } });
 assert(trunk4.frontier === 5 && trunk4.cleared === 4 && trunk4.nextAfterClear === 6, "trunk after 4");
-assert(trunk4.frontierName && trunk4.progressLabel.includes("4／200"), "trunk progress label");
+assert(trunk4.frontierName === "1-5" && trunk4.progressLabel.includes("已通 1-4"), "trunk progress label");
 const trunk200 = spineTrunkView({ clearedDungeons: { tide_200: true } });
 assert(trunk200.frontier === 201 && trunk200.progressLabel.includes("無限"), "trunk beyond theme");
 
@@ -1553,7 +1554,7 @@ assert(tutorialNeedsRanchSub("fuse_intro"), "fuse_intro needs ranch");
 assert(LATE_TUTORIAL_STEPS.includes("fuse_once"), "late includes fuse_once");
 
 const eggReadySt = {
-  eggs: [{ uid: "e1", startedAt: Date.now() - 30_000, readyAt: Date.now() - 1000, tier: "C", name: "潮霧蛋" }],
+  eggs: [{ uid: "e1", startedAt: Date.now() - 30_000, readyAt: Date.now() - 1000, tier: "C", name: "霧傘蛋" }],
   tutorial: { done: false, step: "hatch_starter", flags: {} },
 };
 assert(tutorialEggReady(eggReadySt), "egg ready detect");
@@ -2978,7 +2979,7 @@ assert(
 );
 const titled = markTitleEntered({ entered: false });
 assert(titled.entered, "markTitleEntered sets flag");
-assert(GAME_TERMS.tide_dew?.name === "潮露" && GAME_TERMS.qi?.name === "共鳴", "glossary core terms");
+assert(GAME_TERMS.tide_dew?.name === "露珠" && GAME_TERMS.qi?.name === "共鳴", "glossary core terms");
 assert(GAME_TERMS.stones?.name === "泡泡晶" && GAME_TERMS.feed?.name === "小餌" && GAME_TERMS.dust?.name === "星砂", "glossary economy terms");
 assert(stageAt(0).name === "幼體" && stageAt(1).name === "浮游初期" && stageAt(3).name === "成體" && stageAt(4).name === "礁主", "tide rank names");
 assert(GAME_TERMS.spine && GAME_TERMS.mist_token && GAME_TERMS.soul, "glossary spine/token/soul");
@@ -3146,6 +3147,10 @@ assert(!uiSrc2.includes("data-challenge-warden"), "ui no warden on train");
 assert(!uiSrc2.includes("掛機層："), "ui no depth row label");
 assert(!uiSrc2.includes("主脊第"), "ui no redundant spine card");
 assert(!uiSrc2.includes("今日強化【主脊掛機】"), "ui no daily spot banner");
+assert(!uiSrc2.includes("潮汐秘境"), "ui no old dungeon title");
+assert(uiSrc2.includes("去漂路"), "ui material goto 漂路");
+assert(uiSrc2.includes("漂路 ${"), "ui train strip chapter-floor title");
+assert(uiSrc2.includes("章末 · 通關進新章"), "ui chapter-end banner");
 assert(uiSrc2.includes('id: "bag"'), "ui bag sub-tab");
 assert(uiSrc2.includes("data-bag-inner"), "ui bag inner mats/items tabs");
 assert(uiSrc2.includes("data-use-item"), "ui use bag item");
@@ -3514,7 +3519,7 @@ assert(uiSrc2.includes('商肆 · 淵砂') || uiSrc2.includes('data-shop-inner="
 assert(dataSrcBag.includes("merchant_purge"), "merchant purge option in floor event");
 assert(uiSrc2.includes('本潛增益'), "settle shows dive buffs");
 
-assert(uiSrc2.includes("潮淵"), "ui abyss tab label");
+assert(uiSrc2.includes("深潛"), "ui abyss tab label");
 assert(uiSrc2.includes("isAbyssCombat"), "ui excludes abyss from farm skip");
 assert(uiSrc2.includes("abyssSettlementHtml"), "ui abyss settlement block");
 assert(uiSrc2.includes("abyss-continue-floor"), "ui continue next floor");
@@ -3927,7 +3932,12 @@ assert(typeof APP_BUILD === "string" && APP_BUILD.length > 0, "APP_BUILD");
 assert(ABYSS_MAX_ACTIVE_MUTATIONS === 3, "abyss mutation cap const");
 assert(String(ABYSS_RULES_TEXT || "").includes("突變"), "abyss rules text");
 const launchTide5 = buildDungeonForTier(5);
-assert(launchTide5 && launchTide5.loreTag === "裂潮" && launchTide5.name.includes("裂潮"), "tide_5 differentiated");
+assert(launchTide5 && launchTide5.loreTag === "裂傘" && launchTide5.name === "1-5", "tide_5 differentiated");
+assert(spineChapterFloorLabel(1) === "1-1", "label 1-1");
+assert(spineChapterFloorLabel(19) === "1-19", "label 1-19");
+assert(spineChapterFloorLabel(20) === "1-20", "label 1-20");
+assert(spineChapterFloorLabel(21) === "2-1", "label 2-1");
+assert(GAME_TERMS.spine?.blurb?.includes("1-1"), "glossary explains chapter-floor");
 assert(launchTide5.matDropOverride?.weights?.tide_dew > 0, "tide_5 spine stage1 mats");
 assert(spineStageForTier(1) === 1 && spineStageForTier(20) === 1 && spineStageForTier(21) === 2, "spine stages 20/band");
 assert(spineStageForTier(40) === 2 && spineStageForTier(41) === 3, "spine mid bands");
@@ -3972,7 +3982,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v120"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v121"), "sw cache bumped");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");

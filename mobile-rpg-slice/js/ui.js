@@ -344,12 +344,12 @@ let nickRenameModal = null;
  */
 let tideShiftModal = null;
 /**
- * 潮淵開潛編隊揀寵；null＝未喺編隊流程
+ * 深潛開潛編隊揀寵；null＝未喺編隊流程
  * @type {null | string[]}
  */
 let abyssSquadPick = null;
 /**
- * 潮淵層間整理出戰；null＝未喺整理流程
+ * 深潛層間整理出戰；null＝未喺整理流程
  * @type {null | string[]}
  */
 let abyssRearrangePick = null;
@@ -1380,10 +1380,10 @@ function switchTab(id) {
       }
     } else if (id === "dungeon") {
       if (step === "dungeon_fight" || step === "dungeon_win") {
-        // 潮淵停留唔被教學強制踢去秘境 field
+        // 深潛停留唔被教學強制踢去秘境 field
         if (panelSub.dungeon !== "abyss") panelSub = { ...panelSub, dungeon: "field" };
       } else if (step === "tactics") {
-        // Pack B mirror：潮淵 sub 唔好被 switchTab 強制 setup
+        // Pack B mirror：深潛 sub 唔好被 switchTab 強制 setup
         if (panelSub.dungeon !== "abyss") panelSub = { ...panelSub, dungeon: "setup" };
       }
     }
@@ -1492,7 +1492,7 @@ function upgradeMatSummaryHtml(level) {
   const html = matAffordHtml(matUp);
   if (html) return html;
   const dew = matUp.tide_dew || 1;
-  return `${MATERIALS.tide_dew?.name || "潮露"}×${fmtMatQty(dew)}`;
+  return `${MATERIALS.tide_dew?.name || "露珠"}×${fmtMatQty(dew)}`;
 }
 
 function upgradeCostLine(stoneCost, feedCost, level) {
@@ -1513,7 +1513,7 @@ function matHintListHtml() {
     .map((m) => {
       const site = primaryTrainSiteForMat(m.id);
       const goto = site
-        ? `<button type="button" class="linkish mat-goto" data-goto-train="${SPINE_ZONE_ID}">去主脊</button>`
+        ? `<button type="button" class="linkish mat-goto" data-goto-train="${SPINE_ZONE_ID}">去漂路</button>`
         : MATERIALS[m.id]?.tier === "dungeon"
           ? `<span class="mat-goto muted">秘境</span>`
           : "";
@@ -1837,7 +1837,7 @@ function dungeonFailKind(result) {
 
 function dungeonSettleTitle(result) {
   if (isAbyssCombat(result)) {
-    return result?.wiped || !result?.won ? "潮淵結算 · 挑戰失敗" : "潮淵結算 · 層通關";
+    return result?.wiped || !result?.won ? "深潛結算 · 挑戰失敗" : "深潛結算 · 層通關";
   }
   if (result?.won) return "結算 · 勝利";
   return dungeonFailKind(result) === "timeout" ? "結算 · 戰敗（逾時）" : "結算 · 戰敗（全滅）";
@@ -1868,7 +1868,7 @@ function dungeonSettleBodyHtml(result) {
         <p class="settle-outcome-msg">${escapeHtml(reason)}</p>
         <ul class="settle-outcome-tips">
           <li>到「水母」升級出戰隊，或到水母池再派出戰。</li>
-          <li>可改戰術／陣型後再挑戰；戰力不足可先掛機攞潮露。</li>
+          <li>可改戰術／陣型後再挑戰；戰力不足可先掛機攞露珠。</li>
         </ul>
       </div>`;
 }
@@ -2191,7 +2191,7 @@ function titleScreenHtml() {
         <h2>如何遊玩</h2>
         <ol>
           <li>戰鬥多為自動——水母會自己出手，毋須連點。</li>
-          <li>「育成」掛機攞<strong>潮露</strong>、<strong>共鳴</strong>與<strong>小餌</strong>；「水母」升級、出戰。</li>
+          <li>「育成」掛機攞<strong>露珠</strong>、<strong>共鳴</strong>與<strong>小餌</strong>；「水母」升級、出戰。</li>
           <li>「商肆」買蛋擴隊；「秘境」挑戰拿掉落與碎片。</li>
           <li><strong>共鳴</strong>滿後到「進階」成長，解鎖更深體階。</li>
         </ol>
@@ -2509,7 +2509,7 @@ function dailyHubHtml() {
       : "";
   return `<div class="daily-hub-overlay" data-live="daily-hub">
     <div class="daily-hub-card" role="dialog" aria-label="每日儀表板">
-      <h2>今日暗潮</h2>
+      <h2>今日行程</h2>
       ${offlineLine}
       <div class="hub-grid">
         <div class="hub-stat"><span>每日任務</span><strong>${hub.dailyDone}/${hub.dailyTotal}</strong></div>
@@ -3055,7 +3055,7 @@ function tickIdleCombat({ background = false } = {}) {
         if (marked.autoClaimed) {
           wrap.clearReady = false;
           wrap.tierIndex = Math.max(0, (marked.floor || trainIdleFloor(state)) - 1);
-          autoAdvanceMsg = marked.msg || `自動前往第 ${marked.floor} 層`;
+          autoAdvanceMsg = marked.msg || `自動前往 ${dungeonDisplayName(marked.floor)}`;
         } else {
           wrap.clearReady = true;
         }
@@ -3137,11 +3137,11 @@ function trainIdleStripHtml() {
   const stageBoss = isSpineStageBossFloor(floor) || !!wrap?.session?.stageBoss;
   const bossCls = stageBoss ? " is-stage-boss" : "";
   const bossBanner = stageBoss
-    ? `<p class="train-boss-banner">階段頭目 · 通關進新階段</p>`
+    ? `<p class="train-boss-banner">章末 · 通關進新章</p>`
     : "";
   const head = `<div class="train-idle-head">
     <div class="train-idle-title">
-      <strong>第${floor}關 · ${escapeHtml(floorName)}</strong>
+      <strong>漂路 ${escapeHtml(floorName)}</strong>
       <span class="muted train-idle-progress">${escapeHtml(trunk.progressLabel)}</span>
     </div>
   </div>`;
@@ -3371,10 +3371,10 @@ function cultivatePanel() {
     } else if (shopInner === "grit") {
       if (!gritV.unlocked) {
         shopBody = `<h2>商肆 · 淵砂</h2>
-      <p class="lead">潮淵封印中</p>
-      <p class="meta">主脊達階段${gritV.unlockSpineStage || ABYSS_UNLOCK_SPINE_STAGE}（已通≥${
+      <p class="lead">深潛封印中</p>
+      <p class="meta">漂路達${gritV.unlockSpineStage || ABYSS_UNLOCK_SPINE_STAGE}章（已通≥${dungeonDisplayName(
           ((gritV.unlockSpineStage || ABYSS_UNLOCK_SPINE_STAGE) - 1) * 20 + 1
-        }）後解鎖深潛與淵砂兌換。現階段 ${gritV.spineStage || 1}。</p>
+        )}）後解鎖深潛與淵砂兌換。現 ${gritV.spineStage || 1}章。</p>
       <p class="meta muted">預告貨物：淵核／突變保險／融合核（每週）／高階蛋／轉屬符／深潛外觀。</p>`;
       } else {
       const cosRows = (gritV.cosmeticList || gritV.cosmeticsList || [])
@@ -3389,7 +3389,7 @@ function cultivatePanel() {
       const nodeMaxed = (gritV.powerNodes || 0) >= (gritV.powerNodeMax || 0);
       const hasInsurance = (gritV.insuranceCharges | 0) >= 1;
       shopBody = `<h2>商肆 · 淵砂</h2>
-      <p class="lead">淵砂 ${gritHave} · 潮淵深潛結算兌換</p>
+      <p class="lead">淵砂 ${gritHave} · 深潛結算兌換</p>
       <ul class="list">
       <li class="card-row">
         <div><strong>突變保險</strong><span class="muted"> · 略過下場新突變一次 · ${
@@ -3410,7 +3410,7 @@ function cultivatePanel() {
         <button type="button" class="secondary" data-abyss-fusion-core ${(gritV.fusionCoresBoughtWeek || 0) >= (gritV.fusionCoreWeeklyLimit || 1) ? "disabled" : ""}>淵砂×${gritV.fusionCoreCost || 180}</button>
       </li>
       <li class="card-row">
-        <div><strong>潮淵高階蛋</strong><span class="muted"> · 本週 ${gritV.eggsBoughtWeek}/${gritV.eggsWeeklyLimit} · 較易出稀有</span></div>
+        <div><strong>深潛高階蛋</strong><span class="muted"> · 本週 ${gritV.eggsBoughtWeek}/${gritV.eggsWeeklyLimit} · 較易出稀有</span></div>
         <button type="button" class="secondary" data-abyss-egg ${gritV.eggsBoughtWeek >= gritV.eggsWeeklyLimit ? "disabled" : ""}>淵砂×${gritV.eggCost}</button>
       </li>
       <li class="card-row">
@@ -3767,7 +3767,7 @@ function attackPreviewModalHtml() {
       ? `<p class="meta">令已於召喚時扣除（本批×${spentTokens}）</p>`
       : previewGate.needsSummon
         ? ""
-        : `<p class="meta">首通／教學：無需潮霧令</p>`;
+        : `<p class="meta">首通／教學：無需霧箋</p>`;
   return `
     <div class="sheet-overlay" role="presentation" data-live="attack-preview">
       <div class="sheet-card" role="dialog" aria-label="出戰預覽" data-sheet-card>
@@ -4023,7 +4023,7 @@ function petsListView() {
       `<h2>水母 · 水母池</h2>
       <p class="lead">水母池 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 光核 ${Math.floor(
         state.materials?.soul_essence || 0
-      )} · 待命微產小餌／星砂／潮霧令</p>
+      )} · 待命微產小餌／星砂／霧箋</p>
       ${capNote}
       ${eggBrief}
       <div class="ranch-sort" role="group" aria-label="水母池排序">${sortOpts}${starFilterChip}</div>
@@ -4958,7 +4958,7 @@ function sweepModalHtml() {
   const r = sweepResult;
   if (!r) return "";
   const encounterLine = r.encounter
-    ? `<p class="hub-mod">潮霧遇見【${escapeHtml(r.encounter.name)}】— 可至待契締結</p>`
+    ? `<p class="hub-mod">海霧遇見【${escapeHtml(r.encounter.name)}】— 可至待契締結</p>`
     : r.encounterBlocked
       ? `<p class="muted">待契欄已滿，未再遇見新水母</p>`
       : "";
@@ -4977,7 +4977,7 @@ function sweepModalHtml() {
           <div class="settle-summary-row">
             <div>
               <strong class="settle-total">+${r.totalStones} 泡泡晶</strong>
-              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 本批召喚已耗潮霧令×${r.tokenCost || 0} · 碎片 +${r.totalScrap || 0}</span>
+              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 本批召喚已耗霧箋×${r.tokenCost || 0} · 碎片 +${r.totalScrap || 0}</span>
             </div>
           </div>
           ${encounterLine}
@@ -5025,7 +5025,7 @@ function abyssEventHtml(pendingEvent) {
     )
     .join("");
   return `<div class="abyss-event-block">
-      <p class="lead">潮淵事件 · 2 選 1</p>
+      <p class="lead">深潛事件 · 2 選 1</p>
       <p class="meta muted">第 ${pendingEvent.depth | 0} 層通關獎勵——揀一項先至可以續潛。</p>
       <div class="abyss-event-opts">${opts}</div>
     </div>`;
@@ -5042,7 +5042,7 @@ function abyssMutationChoiceHtml(pending) {
     )
     .join("");
   return `<div class="abyss-event-block abyss-mutation-pick">
-      <p class="lead">潮淵突變 · 2 選 1</p>
+      <p class="lead">深潛突變 · 2 選 1</p>
       <p class="meta muted">即將挑戰第 ${pending.depth | 0} 層——揀一條突變後再開戰。</p>
       <div class="abyss-event-opts">${opts}</div>
     </div>`;
@@ -5207,7 +5207,7 @@ function combatModalHtml() {
     : isTrain
       ? "返回練功"
       : isAbyss
-        ? "返回潮淵"
+        ? "返回深潛"
         : "返回秘境";
   const clearAct = tacticsStep ? "clear-combat-setup" : "clear-combat";
   const title = playback.done
@@ -5356,13 +5356,13 @@ function abyssPanelHtml() {
   if (!v.unlocked) {
     const need = v.unlockSpineStage || ABYSS_UNLOCK_SPINE_STAGE;
     const needFloor = (need - 1) * 20 + 1;
-    return `<h2>潮淵深潛</h2>
+    return `<h2>深潛</h2>
       <p class="lead">無盡程序層 · 突變規則 · 專屬淵砂</p>
-      <p class="meta">封印中——主脊達<strong>階段${need}</strong>（已通≥${needFloor}）後解鎖大後期深潛。</p>
-      <p class="meta">現主脊階段 ${v.spineStage || 1}。</p>
+      <p class="meta">封印中——漂路達<strong>${need}章</strong>（已通≥${dungeonDisplayName(needFloor)}）後解鎖大後期深潛。</p>
+      <p class="meta">現漂路 ${v.spineStage || 1}章。</p>
       <p class="meta muted">預告：5 寵編隊 · 突變 2 選 1 · 週／歷史深度里程碑 · 淵砂換融合核／高階蛋。</p>
       <details class="abyss-rules">
-        <summary>潮淵規則（預覽）</summary>
+        <summary>深潛規則（預覽）</summary>
         <pre class="abyss-rules-body">${escapeHtml(ABYSS_RULES_TEXT)}</pre>
       </details>`;
   }
@@ -5419,7 +5419,7 @@ function abyssPanelHtml() {
       })
       .join("") || `<li class="empty pet-pick-empty">冇可用水母。</li>`;
     runBlock = `<div class="abyss-run card-block">
-        <p class="lead">編組潮淵隊 · ${pick.size}/${v.squadSize}</p>
+        <p class="lead">編組深潛隊 · ${pick.size}/${v.squadSize}</p>
         <p class="meta">揀 ${v.squadSize} 隻（前 ${v.activeSize} 出戰，其餘替補）。層間唔回滿血。</p>
         <ul class="pet-pick-grid">${rows}</ul>
         <div class="row">
@@ -5430,18 +5430,18 @@ function abyssPanelHtml() {
   } else {
     runBlock = `<div class="abyss-run card-block">
         <p class="lead">未開潛</p>
-        <p class="meta">今日首趟免費 · 其後耗潮霧令 ×${v.entryCost || 1}（現有 ${v.tokenHave}）</p>
+        <p class="meta">今日首趟免費 · 其後耗霧箋 ×${v.entryCost || 1}（現有 ${v.tokenHave}）</p>
         <p class="meta">需獨立編隊 ${v.squadSize} 寵（3 出戰 + 2 替補）· 現有 ${v.ownedCount} 隻</p>
         <button type="button" class="primary" data-act="abyss-open-squad" ${
           v.canFormSquad ? "" : "disabled"
         }>${v.canFormSquad ? "開始深潛（編隊）" : `水母不足（需 ${v.squadSize}）`}</button>
       </div>`;
   }
-  return `<h2>潮淵深潛</h2>
+  return `<h2>深潛</h2>
     <p class="lead">無限層 · 突變規則 · 大後期旁路</p>
     <p class="meta">淵砂 <strong>${v.gritHave}</strong> · 最深 ${v.bestDepth} · 本週 ${v.weekBestDepth}</p>
     <details class="abyss-rules">
-      <summary>潮淵規則（必讀）</summary>
+      <summary>深潛規則（必讀）</summary>
       <pre class="abyss-rules-body">${escapeHtml(ABYSS_RULES_TEXT)}</pre>
     </details>
     ${abyssMilestonesHtml(v)}
@@ -5559,7 +5559,7 @@ function dungeonPanel() {
           if (!dCur) return `<div class="row dungeon-dock-row">${pager}</div>`;
           const tokenHave = Math.floor(state.materials?.mist_token || 0);
           const baseCdMs = dCur.cooldownMs || gate?.baseCdMs || 20_000;
-          const tokenName = "潮霧令";
+          const tokenName = "霧箋";
 
           // 首通／教學：直接進攻（鎖階段仍可撳，彈原因）
           if (!gate?.needsSummon) {
@@ -5590,7 +5590,7 @@ function dungeonPanel() {
             return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">${pager}</div>
           <div class="summon-progress-wrap">
-            <p class="sweep-label">潮霧凝聚中 · ${summonSec}s${batch > 1 ? ` · ×${batch}` : ""} · 已扣${tokenName}×${spent}</p>
+            <p class="sweep-label">海霧凝聚中 · ${summonSec}s${batch > 1 ? ` · ×${batch}` : ""} · 已扣${tokenName}×${spent}</p>
             <div class="bar summon-bar"><i data-live="summon-bar" style="width:${summonPct}%"></i></div>
           </div>
         </div>`;
@@ -5620,7 +5620,7 @@ function dungeonPanel() {
           const summonBlockReason = locked
             ? dungeonAttackBlockReason(state, dCur.id)
             : !affordOk
-              ? `潮霧令不足（需 ${costInfo.total}，現 ${costInfo.have}）`
+              ? `霧箋不足（需 ${costInfo.total}，現 ${costInfo.have}）`
               : "";
           return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">${pager}</div>
@@ -5640,7 +5640,7 @@ function dungeonPanel() {
       : "";
   const nav = panelSubNav("dungeon", [
     { id: "field", label: "秘境" },
-    { id: "abyss", label: "潮淵" },
+    { id: "abyss", label: "深潛" },
     { id: "setup", label: "戰術" },
   ]);
 
@@ -5667,12 +5667,12 @@ function dungeonPanel() {
   }
 
   const leadLine = gate?.needsSummon
-    ? "已通關：召喚凝聚 → 就緒挑戰 → 戰後散去（耗潮霧令）"
+    ? "已通關：召喚凝聚 → 就緒挑戰 → 戰後散去（耗霧箋）"
     : "首通可直接進攻 · 通關後需召喚凝聚再挑戰";
 
   return wrapStage(
     nav,
-    `<h2>潮汐秘境</h2>
+    `<h2>秘境</h2>`
     <p class="lead">${leadLine}</p>
     <label class="combat-pref-toggle"><input type="checkbox" data-act="toggle-combat-fast" ${combatPrefs.fastMode ? "checked" : ""}/> 已通關秘境快速戰鬥</label>
     ${
@@ -5758,12 +5758,12 @@ function playAbyssResult(r) {
     render();
     return;
   }
-  // 潮淵勝負都要進戰報／結算窗，唔好淨係 flash 返秘境
+  // 深潛勝負都要進戰報／結算窗，唔好淨係 flash 返秘境
   if (r.combatEvents?.length || r.combatKind === "abyss") {
     if (!r.combatEvents?.length) {
       r = {
         ...r,
-        combatEvents: [{ type: "text", text: r.msg || "潮淵結算" }],
+        combatEvents: [{ type: "text", text: r.msg || "深潛結算" }],
       };
     }
     startPlayback(r);
@@ -5791,7 +5791,7 @@ function switchPanelSub(group, id) {
     return false;
   }
   if (playback?.done) stopPlayback();
-  // 切去潮淵：先清全屏遮罩，再改 sub（避免隱形層吞掉第一次點擊）
+  // 切去深潛：先清全屏遮罩，再改 sub（避免隱形層吞掉第一次點擊）
   if (group === "dungeon" && id === "abyss") {
     clearUiOverlays({ clearPlayback: false });
   } else if (group === "dungeon") {
@@ -6284,7 +6284,7 @@ function bind() {
       } else if (act === "abyss-continue-floor") {
         if (!playback?.done || !isAbyssCombat(playback.result)) return;
         if (abyssDiveView(state).run?.pendingEvent) {
-          setFlash("請先揀潮淵事件（2 選 1）。");
+          setFlash("請先揀深潛事件（2 選 1）。");
           return;
         }
         if (abyssDiveView(state).run?.pendingMutationChoice) {
@@ -6312,7 +6312,7 @@ function bind() {
         setFlash(r.msg || "已撤退結算");
       } else if (act === "abyss-open-squad") {
         if (!abyssDiveView(state).canFormSquad) {
-          setFlash("水母不足，無法組成潮淵編隊。");
+          setFlash("水母不足，無法組成深潛編隊。");
           return;
         }
         abyssSquadPick = [];
@@ -6964,8 +6964,8 @@ function bind() {
   app.querySelectorAll("[data-start-fuse]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (!isFusionUnlocked(state)) {
-        setFlash("通關秘境三【潮汐廢墟 · 心核】後解鎖融合。");
-        window.alert("通關秘境三【潮汐廢墟 · 心核】後解鎖融合。融砂練功地亦同時開放。");
+        setFlash("通關秘境三【1-3】後解鎖融合。");
+        window.alert("通關秘境三【1-3】後解鎖融合。融砂練功地亦同時開放。");
         return;
       }
       petView = {
@@ -7054,7 +7054,7 @@ function bind() {
   app.querySelectorAll("[data-summon]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) {
-        setFlash(btn.dataset.summonBlock || "潮霧令不足或尚未解鎖。");
+        setFlash(btn.dataset.summonBlock || "霧箋不足或尚未解鎖。");
         return;
       }
       const n = clampDungeonSummonCount(btn.dataset.summonCount || summonCount);
@@ -7177,7 +7177,7 @@ setInterval(() => {
         // 凝聚倒數／就緒：刷新 dock
         saveState(state);
         render();
-        if (summonFlip) setFlash("潮霧已凝成秘境——可以開始挑戰！", "unlock");
+        if (summonFlip) setFlash("海霧已凝成秘境——可以開始挑戰！", "unlock");
         return;
       }
     }
