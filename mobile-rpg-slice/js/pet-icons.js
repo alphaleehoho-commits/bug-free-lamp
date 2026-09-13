@@ -1,4 +1,4 @@
-/** 靈寵剪影 icon — 種類生物形（頭／身／耳翼尾）+ 元素配色 + 稀有框（非手繪肖像） */
+/** 水母剪影 icon — 種類生物形（頭／身／耳翼尾）+ 元素配色 + 稀有框（非手繪肖像） */
 
 import { SPECIES, ELEMENTS, rarityInfo } from "./data.js";
 
@@ -333,7 +333,7 @@ export function petIconFromPet(pet, opts = {}) {
 }
 
 /**
- * 牧場／揀寵／詳情用視覺框：元素底色 + 稀有光暈 + 代數角標（保留外層 ★／鎖）
+ * 潮池／揀寵／詳情用視覺框：元素底色 + 稀有光暈 + 代數角標（保留外層 ★／鎖）
  * @param {object} pet
  * @param {{ size?: number, className?: string, showGen?: boolean, title?: string }} [opts]
  */
