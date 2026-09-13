@@ -2609,7 +2609,7 @@ function offlinePendingView() {
   return h;
 }
 
-/** 修行主頁：有離線累積先顯示；點開睇總結，滿 30 分先可領 */
+/** 潮岸主頁：有離線累積先顯示；點開睇總結，滿 30 分先可領 */
 function offlineHomeSlotHtml() {
   const bank = offlineBankView(state);
   const sec = bank.sec || 0;
@@ -4960,7 +4960,7 @@ function sweepModalHtml() {
   const encounterLine = r.encounter
     ? `<p class="hub-mod">潮霧遇見【${escapeHtml(r.encounter.name)}】— 可至待契締結</p>`
     : r.encounterBlocked
-      ? `<p class="muted">待契欄已滿，未再遇見新靈</p>`
+      ? `<p class="muted">待契欄已滿，未再遇見新水母</p>`
       : "";
   const detailRows = (r.perRun || [])
     .map(
