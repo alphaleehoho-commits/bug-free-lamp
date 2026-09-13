@@ -78,7 +78,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "fuse_intro",
     title: "融合覺醒",
-    hint: "通關秘境三後解鎖融合。打開水母詳情，進入融合頁了解流程（唔使即刻融合）。",
+    hint: "通關【1-3】後解鎖融合。打開水母詳情，進入融合頁了解流程（唔使即刻融合）。",
   },
   {
     id: "fuse_once",

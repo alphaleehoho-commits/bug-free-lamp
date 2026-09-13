@@ -2637,7 +2637,7 @@ assert(feedUpSt.ranch[0].level === 2, "feed upgrade levels pet");
 assert(!isFusionUnlocked({ clearedDungeons: {} }), "fusion locked pre t3");
 assert(isFusionUnlocked({ clearedDungeons: { tide_3: true } }), "fusion unlock t3");
 const fuseLock = fusePets({ clearedDungeons: {}, pets: [], ranch: [], stones: 999, materials: {} }, "x", ["y"]);
-assert(!fuseLock.ok && fuseLock.msg.includes("心核"), "fuse blocked msg");
+assert(!fuseLock.ok && fuseLock.msg.includes("1-3"), "fuse blocked msg");
 
 const blockRealm = dungeonAttackBlockReason(
   { realm: 2, pets: [{ uid: "a" }], clearedDungeons: {} },

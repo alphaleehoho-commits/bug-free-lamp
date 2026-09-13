@@ -4510,7 +4510,7 @@ export function inventoryView(state) {
  */
 export function fusePets(state, baseUid, matUids) {
   if (!isFusionUnlocked(state)) {
-    return { ok: false, msg: "通關秘境三【1-3】後解鎖融合。" };
+    return { ok: false, msg: "通關【1-3】後解鎖融合。" };
   }
   const mats = Array.isArray(matUids) ? [...new Set(matUids)] : [matUids].filter(Boolean);
   if (mats.includes(baseUid)) return { ok: false, msg: "素材不能包含主體。" };
@@ -5432,7 +5432,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
         if (dungeonId === "tide_3") {
           if (!state.materials) state.materials = emptyMaterials();
           state.materials.fuse_sand = (state.materials.fuse_sand || 0) + 2;
-          pushLog(state, "心核已破——融合解鎖；融砂＋2。");
+          pushLog(state, "【1-3】已破——融合解鎖；融砂＋2。");
           const lateFuse = maybeStartLateTutorial(state);
           if (lateFuse.started) pushLog(state, lateFuse.msg);
         }

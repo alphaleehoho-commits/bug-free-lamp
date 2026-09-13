@@ -6964,8 +6964,8 @@ function bind() {
   app.querySelectorAll("[data-start-fuse]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (!isFusionUnlocked(state)) {
-        setFlash("通關秘境三【1-3】後解鎖融合。");
-        window.alert("通關秘境三【1-3】後解鎖融合。融砂練功地亦同時開放。");
+        setFlash("通關【1-3】後解鎖融合。");
+        window.alert("通關【1-3】後解鎖融合。融砂練功地亦同時開放。");
         return;
       }
       petView = {
