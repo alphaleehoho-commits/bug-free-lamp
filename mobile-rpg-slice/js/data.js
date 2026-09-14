@@ -1,7 +1,7 @@
 /** Data tables — 水母漂漂 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260913.7";
+export const APP_BUILD = "20260914.1";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
@@ -11,6 +11,10 @@ export const GAME_TERMS = {
   dust: { name: "星砂", blurb: "技能與進階材料。掛機與水母池可產出。" },
   qi: { name: "共鳴", blurb: "體階進度。掛機累積，滿後到「育成 → 進階」成長。" },
   tide_dew: { name: "露珠", blurb: "升級水母的主材料。在「育成 → 練功」掛機取得。" },
+  earth_grade_stone: {
+    name: "地階石",
+    blurb: "升 Lv10→11 起嘅副材。通關 1-20 入漂路第二章之後先掛機出，第一章搵唔到～",
+  },
   spine: { name: "漂路", blurb: "主線關卡。顯示成 1-1、1-2…每章 20 關後進入 2-1。" },
   mist_token: { name: "霧箋", blurb: "再挑戰已通關秘境的入場憑證。練功、每日與成長可獲。" },
   soul: { name: "光核", blurb: "放生或退蛋所得。可在商肆兌換物資。" },
@@ -4478,7 +4482,7 @@ export const MATERIALS = {
   earth_grade_stone: {
     id: "earth_grade_stone",
     name: "地階石",
-    desc: "升級副材 · 約 Lv10–19 · 漂路2章掛機",
+    desc: "升級副材 · Lv10–19 · 通關 1-20 後漂路第二章掛機",
     tier: "grade",
   },
   cloud_grade_stone: {
@@ -4894,6 +4898,27 @@ export function gradeStoneUnlockClearedFloor(matId) {
   return null;
 }
 
+export function isGradeStoneUnlocked(matId, clearedFloor = 0) {
+  const unlockAt = gradeStoneUnlockClearedFloor(matId);
+  return unlockAt == null || (clearedFloor | 0) >= unlockAt;
+}
+
+/**
+ * 階石解鎖短解：講明「通關章末先掛機出」，唔暗示而家本章就有石。
+ */
+export function gradeStoneUnlockNote(matId, clearedFloor = 0) {
+  const unlockAt = gradeStoneUnlockClearedFloor(matId);
+  if (unlockAt == null) return "";
+  const name = MATERIALS[matId]?.name || matId;
+  const bossLabel = spineChapterFloorLabel(Math.max(1, unlockAt - 1));
+  const nextLabel = spineChapterFloorLabel(unlockAt);
+  const stage = spineStageForTier(unlockAt);
+  if ((clearedFloor | 0) >= unlockAt) {
+    return `已解鎖：通關 ${bossLabel} 之後，漂路第${stage}章掛機產${name}`;
+  }
+  return `${name}要通關 ${bossLabel}、入 ${nextLabel} 之後先喺漂路第${stage}章掛機出。而家未有石，唔使喺本章搵～`;
+}
+
 /** 下一未通主脊層（至少 1） */
 export function spineFrontierTier(state) {
   return Math.max(1, maxClearedTideTier(state) + 1);
@@ -4940,23 +4965,104 @@ export function spineKeyMatForStage(stage) {
 }
 
 /**
+ * 階段內舒適度（預期戰力／威脅）。愈低愈難。
+ * 中段寬鬆；18–20 只略收緊做升階前挑戰。
+ * 舊值 1.35／1.25／1.40 令 3×Lv10 喺 1-18 波5守門 0% 通關（過夜實測軟鎖）。
+ */
+export function spineComfortForInto(into) {
+  const n = Math.max(1, into | 0);
+  if (n <= 5) return 3.05;
+  if (n <= 10) return 2.55;
+  if (n <= 14) return 2.15;
+  if (n <= 17) return 1.85;
+  if (n === 18) return 1.72;
+  if (n === 19) return 1.62;
+  return 1.68;
+}
+
+/** 升階前／章末精英血量微幅；唔再疊 1.04 做成牆 */
+export function spineEliteLateMult(floor) {
+  return isSpinePreBossFloor(floor) || isSpineStageBossFloor(floor) ? 1.02 : 1;
+}
+
+export function spineEliteAtkLateMult(floor) {
+  return isSpinePreBossFloor(floor) || isSpineStageBossFloor(floor) ? 1.03 : 1;
+}
+
+/** 第 4 波精英倍率。唔再跟層序疊加，避免同舒適度雙重放大。 */
+export function spineMidEliteScale(floor) {
+  if (isSpineStageBossFloor(floor)) return 1.05;
+  if (isSpinePreBossFloor(floor)) return 1.16;
+  return 1.08;
+}
+
+/** 第 5 波守門精英倍率 */
+export function spineGateEliteScale(floor) {
+  if (isSpinePreBossFloor(floor)) return 1.22;
+  return 1.16;
+}
+
+/**
  * 主脊威脅錨：跟「該層預期等級」戰力對齊，再按階段內進度調鬆緊。
- * 中段舒適（高 power/threat）；第 18–20 層收緊做升階前挑戰；唔靠下階石。
+ * 中段舒適（高 power/threat）；第 18–20 層略收緊；唔靠下階石。
  */
 export function spineThreatBase(frontierTier) {
   const floor = Math.max(1, frontierTier | 0);
   const lv = expectedSpineLevelForFloor(floor);
   const power = expectedPartyPowerForLevel(lv);
   const into = spineFloorIntoStage(floor);
-  let comfort = 2.35;
-  if (into <= 5) comfort = 3.05;
-  else if (into <= 10) comfort = 2.55;
-  else if (into <= 14) comfort = 2.15;
-  else if (into <= 17) comfort = 1.85;
-  else if (into === 18) comfort = 1.35;
-  else if (into === 19) comfort = 1.25;
-  else comfort = 1.4; // 頭目：本階預期等級可挑戰
-  return Math.max(18, Math.round(power / comfort));
+  return Math.max(18, Math.round(power / spineComfortForInto(into)));
+}
+
+/** 漂路掛機敵數值（與 engine 組波共用，方便驗收） */
+export function spineTrainFoeStats({ threat, scale = 1, role = "normal", floor = 1 } = {}) {
+  const t = Math.max(1, threat | 0);
+  const late = spineEliteLateMult(floor);
+  const atkLate = spineEliteAtkLateMult(floor);
+  if (role === "boss") {
+    return {
+      hp: Math.max(80, Math.round(t * 2.05 * late)),
+      atk: Math.max(8, Math.round(t * 0.2)),
+      spd: Math.max(7, Math.round(7 + t * 0.06)),
+    };
+  }
+  if (role === "elite") {
+    return {
+      hp: Math.max(40, Math.round(t * 1.62 * scale * late)),
+      atk: Math.max(5, Math.round(t * 0.2 * scale * atkLate)),
+      spd: Math.max(6, Math.round(6 + t * 0.065 * scale)),
+    };
+  }
+  return {
+    hp: Math.max(24, Math.round(t * 1.12 * scale)),
+    atk: Math.max(4, Math.round(t * 0.16 * scale)),
+    spd: Math.max(5, Math.round(5 + t * 0.055 * scale)),
+  };
+}
+
+export function spineTrainFoePreview(floor) {
+  const f = Math.max(1, floor | 0);
+  const threat = spineThreatBase(f);
+  return {
+    floor: f,
+    label: spineChapterFloorLabel(f),
+    threat,
+    expectedLevel: expectedSpineLevelForFloor(f),
+    expectedPower: expectedPartyPowerForLevel(expectedSpineLevelForFloor(f)),
+    midElite: spineTrainFoeStats({
+      threat,
+      scale: spineMidEliteScale(f),
+      role: "elite",
+      floor: f,
+    }),
+    gateElite: spineTrainFoeStats({
+      threat,
+      scale: spineGateEliteScale(f),
+      role: "elite",
+      floor: f,
+    }),
+    boss: spineTrainFoeStats({ threat, role: "boss", floor: f }),
+  };
 }
 
 /** AFK 產物表：跟 spineStageMatBias；總 mat 預算約舊七域合計量級 */
@@ -5756,11 +5862,9 @@ export function suggestTrainForShortage(state, cost) {
     const unlockAt = gradeStoneUnlockClearedFloor(it.id);
     const unlocked = unlockAt == null ? true : cleared >= unlockAt;
     const unlockHint =
-      unlockAt != null && !unlocked
-        ? `已通 ${spineChapterFloorLabel(unlockAt - 1)} 章末後，漂路掛機先產${MATERIALS[it.id]?.name || it.id}`
-        : unlockAt != null
-          ? `漂路掛機產（需已通 ≥${spineChapterFloorLabel(unlockAt)}）`
-          : null;
+      unlockAt != null
+        ? gradeStoneUnlockNote(it.id, cleared)
+        : null;
     return {
       matId: it.id,
       matName: MATERIALS[it.id]?.name || it.id,

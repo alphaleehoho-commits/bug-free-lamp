@@ -180,6 +180,15 @@ import {
   isSpinePreBossFloor,
   spineKeyMatForStage,
   spineThreatBase,
+  spineTrainFoeStats,
+  spineTrainFoePreview,
+  spineComfortForInto,
+  spineMidEliteScale,
+  spineGateEliteScale,
+  expectedSpineLevelForFloor,
+  gradeStoneUnlockClearedFloor,
+  gradeStoneUnlockNote,
+  isGradeStoneUnlocked,
   maxClearedTideTier,
   spineTrunkView,
   dungeonIdForTier,
@@ -1156,6 +1165,32 @@ function formatMats(mats) {
     .join("／");
 }
 
+/** 下一級升級材料清單（主材＋副材＋持有／需求＋階石解鎖說明） */
+export function upgradeMatCostView(state, level) {
+  const cost = upgradeMatCost(level);
+  const cleared = maxClearedTideTier(state);
+  return Object.entries(cost || {})
+    .filter(([, n]) => n > 0)
+    .map(([id, need]) => {
+      const have = Math.floor(state?.materials?.[id] || 0);
+      const unlockAt = gradeStoneUnlockClearedFloor(id);
+      const unlocked = unlockAt == null ? true : isGradeStoneUnlocked(id, cleared);
+      return {
+        id,
+        name: MATERIALS[id]?.name || id,
+        need,
+        have,
+        ok: have >= need,
+        short: Math.max(0, need - have),
+        unlocked,
+        locked: unlockAt != null && !unlocked,
+        unlockNote: unlockAt != null ? gradeStoneUnlockNote(id, cleared) : "",
+        source: materialSourceLabel(id),
+        use: MATERIAL_USES[id] || "",
+      };
+    });
+}
+
 /** P11：材料是否足夠（含缺口） */
 export function affordMaterials(state, cost) {
   if (!state.materials) state.materials = emptyMaterials();
@@ -1435,22 +1470,17 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
   const tierScale = 1;
   const preBoss = isSpinePreBossFloor(floor);
   const stageBoss = isSpineStageBossFloor(floor);
-  const lateMult = stageBoss ? 1.04 : preBoss ? 1.04 : 1;
 
   const mkNormal = (name, scale = 1) => ({
     name,
-    hp: Math.max(24, Math.round(threat * 1.12 * scale * tierScale)),
-    atk: Math.max(4, Math.round(threat * 0.16 * scale * tierScale)),
-    spd: Math.max(5, Math.round(5 + threat * 0.055 * scale)),
+    ...spineTrainFoeStats({ threat: threat * tierScale, scale, role: "normal", floor }),
     element: elem,
     role: "normal",
   });
 
   const mkElite = (name, scale = 1.35) => ({
     name,
-    hp: Math.max(40, Math.round(threat * 1.62 * scale * tierScale * lateMult)),
-    atk: Math.max(5, Math.round(threat * 0.2 * scale * tierScale * (preBoss || stageBoss ? 1.06 : 1))),
-    spd: Math.max(6, Math.round(6 + threat * 0.065 * scale)),
+    ...spineTrainFoeStats({ threat: threat * tierScale, scale, role: "elite", floor }),
     element: elem,
     role: "elite",
     skills: ["tide_crush", "coral_spike"].filter((id) => SKILLS[id]),
@@ -1458,9 +1488,7 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
 
   const mkBoss = (name) => ({
     name,
-    hp: Math.max(80, Math.round(threat * 2.05 * lateMult)),
-    atk: Math.max(8, Math.round(threat * 0.2)),
-    spd: Math.max(7, Math.round(7 + threat * 0.06)),
+    ...spineTrainFoeStats({ threat, role: "boss", floor }),
     element: "gloom",
     role: "boss",
     actions: 2,
@@ -1487,7 +1515,7 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
           : preBoss
             ? `${spineChapterFloorLabel(floor)} · 試煉精英`
             : `${spineChapterFloorLabel(floor)} · 精英`,
-        enemies: [mkElite(`${prefix}精英`, stageBoss ? 1.05 : preBoss ? 1.14 + (tier % 20) * 0.008 : 1.08 + (tier % 20) * 0.008)],
+        enemies: [mkElite(`${prefix}精英`, spineMidEliteScale(floor))],
       },
     ];
     if (stageBoss) {
@@ -1501,7 +1529,7 @@ function buildTrainCombatWaves(zoneId, tierIndex, { warden = false, frontierTier
         label: preBoss
           ? `${spineChapterFloorLabel(floor)} · 升階試煉`
           : `${spineChapterFloorLabel(floor)} · 守門`,
-        enemies: [mkElite(`${prefix}守門`, (preBoss ? 1.3 : 1.2) + (tier % 20) * 0.006)],
+        enemies: [mkElite(`${prefix}守門`, spineGateEliteScale(floor))],
       });
     }
     return waves;
@@ -1916,6 +1944,88 @@ export function stepTrainIdleSession(session) {
 }
 
 /**
+ * 卡關教練：對齊真實系統（唔暗示而家就有下階石）。
+ */
+export function spineStuckCoachTips(state, { floor, kind = "wipe", failStreak = 0 } = {}) {
+  const tips = [];
+  const f = Math.max(1, floor | 0);
+  const expected = expectedSpineLevelForFloor(f);
+  const pets = state?.pets || [];
+  const petN = pets.length;
+  const maxN = activePetMaxForState(state);
+  const minLv = petN ? Math.min(...pets.map((p) => p.level || 1)) : 0;
+  const maxLv = petN ? Math.max(...pets.map((p) => p.level || 1)) : 0;
+  const avgSkill =
+    petN > 0
+      ? pets.reduce((s, p) => s + (p.skillLevel || 1), 0) / petN
+      : 1;
+  const cleared = maxClearedTideTier(state);
+  const earthUnlocked = isGradeStoneUnlocked("earth_grade_stone", cleared);
+  const nearChapterGate = isSpinePreBossFloor(f) || isSpineStageBossFloor(f);
+  const chapter1Gate = f >= 18 && f <= 20;
+
+  if (kind === "timeout") {
+    tips.push("未能在時限內清完波次——攻擊或速度唔夠。");
+  } else {
+    tips.push("出戰隊被擊倒——生存或輸出唔夠。");
+  }
+  if (petN < maxN) {
+    tips.push(`隊伍未滿（${petN}/${maxN}）。到「水母 → 水母池」再派出戰。`);
+  }
+
+  if (maxLv >= 10 && !earthUnlocked) {
+    tips.push(
+      "出戰已到 Lv10 軟頂：再升級要地階石。地階石通關 1-20、入漂路第二章之後先掛機出，而家第一章搵唔到石～"
+    );
+  } else if (!petN || minLv < expected) {
+    tips.push(
+      `本關預期大約 Lv${expected}。升級出戰水母（露珠喺「育成 → 練功」掛機攞）可提高效率。`
+    );
+  }
+
+  if (nearChapterGate && (failStreak >= 2 || chapter1Gate)) {
+    if (minLv < 10) {
+      tips.push("章末附近建議三隻出戰都升到 Lv10，技能升一兩級再試。");
+    } else {
+      const skillBit =
+        avgSkill < 2
+          ? "技能升到 Lv2、"
+          : "";
+      tips.push(
+        `${skillBit}可換戰術／陣型，或者去秘境遇強啲同伴、用珊瑚屑繁殖——唔使等而家未有嘅地階石。`
+      );
+    }
+  }
+
+  if (f > 1) {
+    tips.push("可按「上一層」打已通關卡攞材料，再回來挑戰。");
+  } else {
+    tips.push("先喺水母池升級、擴隊，再繼續掛機。");
+  }
+  return tips;
+}
+
+export function dungeonFailCoachTips(state, result) {
+  const kind = result?.failKind || (String(result?.msg || "").includes("逾時") ? "timeout" : "wipe");
+  const floor = parseDungeonTier(result?.dungeonId) || 0;
+  if (floor <= 0) {
+    return [
+      kind === "timeout"
+        ? "未能在回合時限內清完波次——攻擊或速度唔夠。"
+        : "出戰隊被擊倒——生存或輸出唔夠。",
+      "到「水母」升級出戰隊，或到水母池再派出戰。",
+      "可改戰術／陣型後再挑戰；戰力不足可先掛機攞露珠。",
+    ];
+  }
+  const z = state?.trainMap?.zones?.[SPINE_ZONE_ID];
+  return spineStuckCoachTips(state, {
+    floor,
+    kind,
+    failStreak: z?.failFloor === floor ? z?.failStreak || 0 : 0,
+  });
+}
+
+/**
  * 掛機失敗建議（全滅／逾時）：解釋原因 + 下一步。
  */
 export function idleFailAdvice(state, session) {
@@ -1924,32 +2034,17 @@ export function idleFailAdvice(state, session) {
     session?.failKind ||
     (last.includes("逾時") ? "timeout" : "wipe");
   const floor = session?.floor || trainIdleFloor(state);
-  const petN = (state.pets || []).length;
-  const maxN = activePetMaxForState(state);
-  const tips = [];
-  if (kind === "timeout") {
-    tips.push("未能在時限內清完波次——攻擊或速度不足。");
-  } else {
-    tips.push("出戰隊被擊倒——生存或輸出不足。");
-  }
-  if (petN < maxN) {
-    tips.push(`隊伍未滿（${petN}/${maxN}）。到「水母 → 水母池」再派出戰。`);
-  }
-  const underleveled = (state.pets || []).some((p) => (p.level || 1) < Math.max(3, floor));
-  if (underleveled || !petN) {
-    tips.push("升級出戰水母（露珠在「育成 → 練功」掛機取得）可提高效率。");
-  }
-  if (floor > 1) {
-    tips.push("可按「上一層」打已通關卡攞材料，再回來挑戰。");
-  } else {
-    tips.push("先在水母池升級、擴隊，再繼續掛機。");
-  }
+  const z = state?.trainMap?.zones?.[SPINE_ZONE_ID];
+  const failStreak = session?.failStreak ?? z?.failStreak ?? 0;
+  const tips = spineStuckCoachTips(state, { floor, kind, failStreak });
   return {
     kind,
     kindLabel: kind === "timeout" ? "逾時" : "全滅",
     title: kind === "timeout" ? "挑戰失敗 · 戰鬥逾時" : "挑戰失敗 · 出戰隊全滅",
     line: session?.resultLine || (kind === "timeout" ? "挑戰失敗 · 逾時" : "挑戰失敗 · 全滅"),
     tips,
+    failStreak,
+    floor,
   };
 }
 
@@ -1986,6 +2081,19 @@ export function persistTrainIdleClearResult(state, session) {
     tierIndex: session.tierIndex | 0,
     won: !!session.won,
   };
+  const floor = session.floor || trainIdleFloor(state);
+  if (session.won) {
+    z.failStreak = 0;
+    z.failFloor = 0;
+    session.failStreak = 0;
+  } else {
+    if ((z.failFloor | 0) === floor) z.failStreak = (z.failStreak | 0) + 1;
+    else {
+      z.failFloor = floor;
+      z.failStreak = 1;
+    }
+    session.failStreak = z.failStreak;
+  }
   return true;
 }
 
@@ -4690,6 +4798,8 @@ export function petDetail(state, uid) {
     secondSkillLevel: secondLv,
     upgradeCost: upgradeStoneCost(level),
     upgradeFeedCost: upgradeFeedCost(level),
+    upgradeMats: upgradeMatCostView(state, level),
+    upgradeMatCost: upgradeMatCost(level),
     skillDustCost: skillLv < SKILL_MAX_LEVEL ? skillDustCost(skillLv) : null,
     skillMatCost: skillLv < SKILL_MAX_LEVEL ? skillMatCost(skillLv) : null,
     skillMaxed: skillLv >= SKILL_MAX_LEVEL,
@@ -8180,6 +8290,11 @@ export {
   ACTIVE_PET_UNLOCK_STAGE,
   activePetMaxForState,
   isSpineStageBossFloor,
+  expectedSpineLevelForFloor,
+  gradeStoneUnlockNote,
+  isGradeStoneUnlocked,
+  spineTrainFoePreview,
+  spineComfortForInto,
   FUSION_MAX_STAGE,
   FUSION_RULES,
   BREED_STONE_COST,

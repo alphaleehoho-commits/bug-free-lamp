@@ -129,6 +129,8 @@ import {
   dungeonsForRealm,
   stageAt,
   upgradeMatCost,
+  upgradeMatCostView,
+  dungeonFailCoachTips,
   breedMatCost,
   skillMatCost,
   fusionMatCost,
@@ -1499,6 +1501,27 @@ function upgradeCostLine(stoneCost, feedCost, level) {
   return `小餌 ${fmtMatQty(feedCost)} 或 泡泡晶 ${fmtMatQty(stoneCost)} ＋ ${upgradeMatSummaryHtml(level)}`;
 }
 
+function upgradeMatsListHtml(level, { compact = false } = {}) {
+  const rows = upgradeMatCostView(state, level);
+  if (!rows.length) return "";
+  const items = rows
+    .map((m) => {
+      const note =
+        m.locked && m.unlockNote
+          ? `<span class="upgrade-mat-note">${escapeHtml(m.unlockNote)}</span>`
+          : "";
+      return `<li class="upgrade-mat ${m.ok ? "is-ok" : "is-short"}${m.locked ? " is-locked" : ""}">
+        <span class="upgrade-mat-line">${escapeHtml(m.name)} ×${fmtMatQty(m.need)}（持有 ${fmtMatQty(m.have)}／需 ${fmtMatQty(m.need)}）</span>
+        ${note}
+      </li>`;
+    })
+    .join("");
+  return `<div class="upgrade-mats${compact ? " is-compact" : ""}">
+    <p class="upgrade-mats-kicker">下一級材料</p>
+    <ul>${items}</ul>
+  </div>`;
+}
+
 function matChipsHtml() {
   return materialHintsView(state)
     .map((m) => {
@@ -1857,18 +1880,18 @@ function dungeonSettleBodyHtml(result) {
   }
   const kind = dungeonFailKind(result) || "wipe";
   const headline = kind === "timeout" ? "戰敗 · 戰鬥逾時" : "戰敗 · 出戰隊全滅";
-  const reason =
-    kind === "timeout"
-      ? "未能在回合時限內清完波次——攻擊或速度不足。"
-      : "出戰隊被擊倒——生存或輸出不足。";
+  const coach = dungeonFailCoachTips(state, result);
+  const reason = coach[0] || (kind === "timeout"
+        ? "未能在回合時限內清完波次——攻擊或速度唔夠。"
+        : "出戰隊被擊倒——生存或輸出唔夠。");
+  const extra = coach.slice(1);
   return `<div class="settle-outcome settle-outcome--loss settle-outcome--${kind}">
         <p class="settle-outcome-kicker">挑戰失敗</p>
         <strong>${headline}</strong>
         <p class="settle-outcome-line">${escapeHtml(name)} · ${rounds} 回合 · 本場無通關獎勵</p>
         <p class="settle-outcome-msg">${escapeHtml(reason)}</p>
         <ul class="settle-outcome-tips">
-          <li>到「水母」升級出戰隊，或到水母池再派出戰。</li>
-          <li>可改戰術／陣型後再挑戰；戰力不足可先掛機攞露珠。</li>
+          ${extra.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}
         </ul>
       </div>`;
 }
@@ -4522,7 +4545,10 @@ function petDetailStatsHtml(pet, detail, rarity) {
           : ""
       }
     </ul>
-    <p class="meta pet-detail-upgrade muted">升級耗 小餌×${detail.upgradeFeedCost ?? "—"}＋材料</p>`;
+    <div class="pet-detail-upgrade">
+      <p class="meta">升級另耗 小餌×${detail.upgradeFeedCost ?? "—"} 或 泡泡晶×${detail.upgradeCost ?? "—"}</p>
+      ${upgradeMatsListHtml(pet.level ?? 1)}
+    </div>`;
 }
 
 function petDetailTemperHtml(pet) {
@@ -4700,8 +4726,9 @@ function petsDetailView() {
     </div>
     ${petDetailTabNav(detailTab)}
     ${tabBody}`,
-    `<div class="row">
-      <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade-feed="${escapeHtml(pet.uid)}">升級（小餌×${feedCost ?? "—"}）</button>
+    `${upgradeMatsListHtml(lv, { compact: true })}
+    <div class="row">
+      <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade-feed="${escapeHtml(pet.uid)}" title="下一級材料見上方清單">升級（小餌×${feedCost ?? "—"}）</button>
       ${
         fuseUnlocked
           ? `<button type="button" class="primary${tutGlow({ type: "start-fuse" })}" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>`
