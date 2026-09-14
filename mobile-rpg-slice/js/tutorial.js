@@ -47,13 +47,13 @@ export const TUTORIAL_STEPS = [
   },
   {
     id: "cultivate_qi",
-    title: "共鳴漂漂",
-    hint: "在育成掛機累積共鳴（滿後可到「進階」成長；教學需稍作等候）。",
+    title: "掛機劇場",
+    hint: "留在「育成 → 練功」睇戰鬥同收穫跳動；共鳴會累積但唔再靠進階突破。",
   },
   {
     id: "breakthrough",
-    title: "成長初階",
-    hint: "打開「育成 → 進階」，成長至【浮游初期】。",
+    title: "秘境解鎖",
+    hint: "打開「秘境」挑戰一層。通關可解鎖新品種，亦有機會拎稀有以上蛋。",
   },
   {
     id: "breed_intro",
@@ -477,7 +477,7 @@ function meetsAdvance(state, stepId) {
       return state.qi >= next.need && idleOk;
     }
     case "breakthrough":
-      return state.realm >= 1;
+      return Object.keys(state.clearedDungeons || {}).length >= 1 || Object.keys(state.speciesUnlocks || {}).length > 8;
     case "breed_intro":
       return !!flags.breedVisited;
     case "codex":
@@ -727,7 +727,7 @@ export function syncTutorialNavigation(state, nav) {
       break;
     case "cultivate_qi":
     case "breakthrough":
-      next = clampTutorialTabs(nav, ["cultivate"]);
+      next = clampTutorialTabs(nav, ["dungeon"]);
       break;
     case "codex":
       next = clampTutorialTabs(nav, ["codex"]);
@@ -1072,8 +1072,8 @@ const TUTORIAL_NEXT_WHERE = {
   dungeon_win: "繼續在「秘境」戰勝 1-1",
   shop_egg: "「育成 → 商肆」購入一枚蛋",
   hatch_second: "「水母 → 孵化」等候並領取",
-  cultivate_qi: "留在「育成 → 練功」累積共鳴",
-  breakthrough: "「育成 → 進階」成長",
+  cultivate_qi: "留在「育成 → 練功」睇掛機劇場",
+  breakthrough: "「秘境」通關解鎖品種／蛋",
   breed_intro: "「水母 → 繁殖」看一眼即可",
   codex: "底部「圖鑑」查看收藏",
   dispatch: "「水母 → 派遣」",

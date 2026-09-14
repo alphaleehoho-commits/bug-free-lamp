@@ -254,6 +254,17 @@ import {
   ABYSS_RULES_TEXT,
   APP_BUILD,
   ABYSS_UNLOCK_SPINE_STAGE,
+  ABYSS_CONTENT_FROZEN,
+  ABYSS_FROZEN_MSG,
+  ensureSpeciesUnlocks,
+  unlockSpecies,
+  isSpeciesUnlocked,
+  unlockedWildSpeciesIds,
+  unlockedShopSpeciesIds,
+  rollDungeonEggDrop,
+  DUNGEON_MAT_REWARD_MULT,
+  realmFromSpineStage,
+  starterSpeciesIds,
   ABYSS_SQUAD_SIZE,
   ABYSS_ACTIVE_SIZE,
   ABYSS_EVENT_EVERY,
@@ -607,6 +618,16 @@ function emptyPathQuests() {
   return { claimed: {} };
 }
 
+function finalizeNewState(state) {
+  try {
+    ensureSpeciesUnlocks(state);
+    syncRealmFromSpine(state);
+  } catch (e) {
+    console.warn("finalizeNewState", e);
+  }
+  return state;
+}
+
 function defaultState() {
   const now = Date.now();
   const starterEgg = makeStarterEgg(now);
@@ -897,7 +918,7 @@ export function loadState() {
       localStorage.getItem("void-tide-pets-v3") ||
       localStorage.getItem("void-tide-pets-v2") ||
       localStorage.getItem("void-tide-pets-v1");
-    if (!raw) return defaultState();
+    if (!raw) return finalizeNewState(defaultState());
     const parsed = JSON.parse(raw);
     const base = defaultState();
     const master = { ...base.master, ...(parsed.master || {}) };
@@ -1027,9 +1048,16 @@ export function loadState() {
     normalizeTutorial(merged);
     healTutorialProgress(merged);
     ensureDispatchBoardDaily(merged);
+    /* fantasy-realign load */
+    try {
+      ensureSpeciesUnlocks(merged);
+      syncRealmFromSpine(merged);
+    } catch (e) {
+      console.warn("fantasy-realign migrate", e);
+    }
     return merged;
   } catch {
-    return defaultState();
+    return finalizeNewState(defaultState());
   }
 }
 
@@ -2593,13 +2621,39 @@ function applyOnlineIdleTick(state, elapsed) {
   const bondBonus = 1 + state.pets.length * 0.18 + ranchBonus;
   const site = spineTrainProfile(state);
   const siteMult = site.qiMult || 1;
+  syncRealmFromSpine(state);
   const rate = realmInfo(state).rate * bondBonus * siteMult;
+  const qiBefore = state.qi || 0;
+  const feedBefore = state.feed || 0;
+  const dustBefore = state.dust || 0;
+  const matSnap = { ...(state.materials || {}) };
   state.qi += rate * elapsed;
   tickRanchIdle(state, elapsed);
-  return tickTrainSite(state, elapsed);
+  const train = tickTrainSite(state, elapsed);
+  const gains = [];
+  const qiGain = (state.qi || 0) - qiBefore;
+  if (qiGain > 0.05) gains.push({ id: "qi", name: "共鳴", amount: qiGain });
+  const feedGain = (state.feed || 0) - feedBefore;
+  if (feedGain > 0.05) gains.push({ id: "feed", name: "小餌", amount: feedGain });
+  const dustGain = (state.dust || 0) - dustBefore;
+  if (dustGain > 0.05) gains.push({ id: "dust", name: "星砂", amount: dustGain });
+  for (const [mid, after] of Object.entries(state.materials || {})) {
+    const before = matSnap[mid] || 0;
+    const delta = after - before;
+    if (delta > 0.05) {
+      const label = MATERIALS?.[mid]?.name || mid;
+      gains.push({ id: mid, name: label, amount: delta });
+    }
+  }
+  state._lastIdleGains = gains;
+  state._lastIdleGainsAt = Date.now();
+  return train;
 }
 
 export function tickCultivation(state, now = Date.now()) {
+  /* fantasy-realign */
+  ensureSpeciesUnlocks(state);
+  syncRealmFromSpine(state);
   ensureDaily(state);
   ensureLoginStreak(state, now);
   ensureOfflineBank(state);
@@ -3128,50 +3182,40 @@ export function masterGearBonus(state) {
   return { atk, hp, spd, setLabels: setBonus.labels };
 }
 
-export function tryBreakthrough(state) {
-  const view = breakthroughView(state);
-  if (!view.ready) {
-    const miss = view.items.filter((i) => !i.ok).slice(0, 3).map((i) => i.label);
-    return { ok: false, msg: `成長條件未齊：${miss.join("；")}` };
-  }
-  const next = view.next;
-  const costs = view.costs || {};
-  state.qi -= next.need;
-  if (costs.stones) state.stones -= costs.stones;
-  if (costs.scrap) state.scrap -= costs.scrap;
-  if (costs.dust) state.dust = (state.dust || 0) - costs.dust;
-  if (costs.feed) state.feed = (state.feed || 0) - costs.feed;
-  if (costs.seal_ember) {
-    if (!state.materials) state.materials = emptyMaterials();
-    state.materials.seal_ember = (state.materials.seal_ember || 0) - costs.seal_ember;
-  }
 
-  state.realm = next.id;
-  state.master.atk += 1 + Math.floor(next.id / 2);
-  state.master.hp += 4 + next.id * 2;
-  state.master.spd += next.id >= 3 ? 2 : 1;
-  state.master.skillIds = masterSkillsForStage(state.realm);
-  const costNote = view.costLabel ? `（耗 ${view.costLabel}）` : "";
-  pushLog(state, `成長——晉升【${next.name}】${costNote}。共鳴加深。`);
-  pushLog(state, `水母池容量擴展至 ${ranchCap(state)}。`);
-  const tokenGain = 3 + Math.floor(next.id * 1.5);
-  addMaterials(state, { [DUNGEON_ENTRY_MAT_ID]: tokenGain });
-  pushLog(state, `升階賜霧箋×${tokenGain}（秘境入場憑證）。`);
-  bumpDaily(state, "idle", 1);
-  const unlocked = MASTER_UNLOCK_MSG(state.realm);
-  if (unlocked) pushLog(state, unlocked);
-  if (Math.random() < 0.55) {
-    const ev = EVENTS[Math.floor(Math.random() * EVENTS.length)];
-    pushLog(state, `徵兆：${ev}`);
-    state.stones += 15 + state.realm * 8;
+/** 體階進階已廢：用漂路章自動抬 realm（只升唔降），維持舊 rate／欄位公式 */
+export function syncRealmFromSpine(state) {
+  const spine = spineStageFromState(state);
+  const target = realmFromSpineStage(spine);
+  if ((state.realm | 0) < target) {
+    state.realm = target;
+    if (state.master) {
+      try {
+        state.master.skillIds = masterSkillsForStage(state.realm);
+      } catch (_) {
+        /* masterSkillsForStage 名可能不同，忽略 */
+      }
+    }
   }
-  checkAchievements(state);
-  advanceTutorialIfReady(state);
-  const late = maybeStartLateTutorial(state);
+  return state.realm | 0;
+}
+
+/** 秘境通關解鎖 encounter 池品種 */
+export function unlockSpeciesFromDungeon(state, dungeon) {
+  ensureSpeciesUnlocks(state);
+  const unlocked = [];
+  const weights = dungeon?.encounterWeights || {};
+  for (const sid of Object.keys(weights)) {
+    if (unlockSpecies(state, sid, "dungeon")) unlocked.push(sid);
+  }
+  return unlocked;
+}
+
+export function tryBreakthrough(state) {
+  void state;
   return {
-    ok: true,
-    msg: `體階：${next.name}${costNote}${late.started ? ` · ${late.msg}` : ""}`,
-    lateTutorial: late,
+    ok: false,
+    msg: "體階進階已廢止——變強改靠漂路推進、秘境解鎖品種，同繁殖血脈。",
   };
 }
 
@@ -3214,14 +3258,17 @@ function rollShopEggOffer(tier, seedSalt = 0) {
   };
 }
 
-function rollShopOffer(seedSalt = 0) {
+function rollShopOffer(state, seedSalt = 0) {
   // ~40% 蛋、其餘水母；預留 kind:mat / kind:trade 之後再做
   if (Math.random() < 0.4) {
     const roll = Math.random();
     const tier = roll < 0.55 ? "C" : roll < 0.9 ? "B" : "A";
     return rollShopEggOffer(tier, seedSalt);
   }
-  const pool = RECRUIT_POOL;
+  ensureSpeciesUnlocks(state);
+  let pool = RECRUIT_POOL.filter((p) => state.speciesUnlocks[p.species]);
+  if (!pool.length) pool = RECRUIT_POOL.filter((p) => starterSpeciesIds().includes(p.species));
+  if (!pool.length) pool = RECRUIT_POOL;
   if (!pool.length) return rollShopEggOffer("C", seedSalt);
   let total = 0;
   for (const p of pool) total += p.weight || 1;
@@ -3257,7 +3304,7 @@ export function ensureShop(state, now = Date.now()) {
     // 每日至少一顆蛋
     offers.push(rollShopEggOffer(Math.random() < 0.7 ? "C" : "B", 0));
     for (let i = 1; i < SHOP_OFFER_COUNT; i++) {
-      const o = rollShopOffer(i);
+      const o = rollShopOffer(state, i);
       if (o) offers.push(o);
     }
     state.shop = { date: key, offers };
@@ -3873,8 +3920,9 @@ export function dungeonAttackBlockReason(state, dungeonId, now = Date.now()) {
 /** 統一：階段／realm 閘門文案 */
 export function dungeonRealmGateMsg(state, d) {
   if (!d) return "秘境不存在。";
+  syncRealmFromSpine(state);
   if ((state.realm | 0) < (d.needRealm | 0)) {
-    return `需要體階【${stageAt(d.needRealm).name}】（現【${stageAt(state.realm).name}】）`;
+    return `需要漂路推進至體階【${stageAt(d.needRealm).name}】（現【${stageAt(state.realm).name}】·隨通關章自動提升）`;
   }
   return null;
 }
@@ -3922,6 +3970,8 @@ export function findOwnedPet(state, uid) {
 
 /** 打本後嘗試遇見野生水母（用秘境遇寵權重；含 formula 高層） */
 export function maybeEncounterAfterDungeon(state, dungeonId, won) {
+  // species unlock also happens on clear via unlockSpeciesFromDungeon
+
   if (state.pending.length >= PENDING_BOND_MAX) {
     return { blocked: true, encounter: null };
   }
@@ -3930,8 +3980,9 @@ export function maybeEncounterAfterDungeon(state, dungeonId, won) {
   if (Math.random() > rate) return { blocked: false, encounter: null };
 
   const dungeonDef = resolveDungeon(state, dungeonId) || null;
-  const enc = rollWildEncounter(dungeonId, dungeonDef, state.realm || 0);
-  state.pending.push(enc);
+  const enc = rollWildEncounter(dungeonId, dungeonDef, state.realm || 0, state);
+  if (enc?.speciesId) unlockSpecies(state, enc.speciesId, "encounter");
+    state.pending.push(enc);
   return { blocked: false, encounter: enc };
 }
 
@@ -5524,8 +5575,12 @@ export function runDungeon(state, dungeonId, opts = {}) {
     if (won && ended) {
       eliteCleared = roles.elite > 0;
       bossCleared = roles.boss > 0;
-      state.stones += d.reward.stones;
-      state.scrap += d.reward.scrap;
+      const matMult = DUNGEON_MAT_REWARD_MULT;
+      const stoneGain = Math.max(1, Math.floor((d.reward.stones || 0) * matMult));
+      const scrapGain = Math.max(0, Math.floor((d.reward.scrap || 0) * matMult));
+      state.stones += stoneGain;
+      state.scrap += scrapGain;
+      state._lastDungeonMatGain = { stones: stoneGain, scrap: scrapGain };
       state.combatsWon += 1;
       state.winStreak = (state.winStreak || 0) + 1;
       if (!state.stats) state.stats = {};
@@ -5717,6 +5772,29 @@ export function runDungeon(state, dungeonId, opts = {}) {
 
   let encounter = null;
   if (!deferEncounter) {
+    let eggDrop = null;
+    let speciesUnlocked = [];
+    if (won) {
+      syncRealmFromSpine(state);
+      const dDef = d;
+      const tierHint = dDef?.tier || parseInt(String(dungeonId).replace(/\D/g, ""), 10) || 1;
+      const first = !!(state.clearedDungeons && state.clearedDungeons[dungeonId]);
+      // first flag already set above when clearing — use bonusStones as proxy
+      const isFirst = (bonusStones | 0) > 0 || (bonusScrap | 0) > 0;
+      speciesUnlocked = unlockSpeciesFromDungeon(state, dDef);
+      if (speciesUnlocked.length) {
+        const names = speciesUnlocked.map((id) => SPECIES[id]?.name || id).join("、");
+        pushLog(state, `潮霧散開——解鎖品種：${names}`);
+      }
+      const roll = rollDungeonEggDrop(tierHint, { firstClear: isFirst, sweep: !!opts.sweepInternal });
+      if (roll) {
+        eggDrop = makeEgg(roll.tier, `dungeon:${dungeonId}`);
+        if (!state.eggs) state.eggs = [];
+        state.eggs.push(eggDrop);
+        pushLog(state, `秘境蛋線：獲得【${eggDrop.name || roll.tier}蛋】！`);
+        say(`稀有以上蛋線！獲得${roll.tier}階蛋！`);
+      }
+    }
     const encResult = maybeEncounterAfterDungeon(state, dungeonId, won);
     encounter = encResult.encounter;
     if (encounter) {
@@ -7179,7 +7257,7 @@ export function resetSave() {
   localStorage.removeItem("void-tide-pets-v1");
   localStorage.removeItem("void-tide-v1");
   localStorage.removeItem("void-tide-v2");
-  return defaultState();
+  return finalizeNewState(defaultState());
 }
 
 
@@ -7709,6 +7787,7 @@ export function abyssDiveView(state, now = Date.now()) {
   const gritHave = Math.floor(state.materials?.[ABYSS_GRIT_ID] || 0);
   const tokenHave = Math.floor(state.materials?.mist_token || 0);
   const unlocked = abyssUnlocked(state);
+  const frozen = !!ABYSS_CONTENT_FROZEN;
   const ownedCount = abyssOwnedPets(state).length;
   const spineStage = spineStageFromState(state);
   const weekMs = ABYSS_WEEKLY_DEPTH_MILESTONES.map((m) => ({
@@ -7723,6 +7802,8 @@ export function abyssDiveView(state, now = Date.now()) {
   }));
   return {
     unlocked,
+    frozen,
+    frozenMsg: ABYSS_FROZEN_MSG,
     unlockSpineStage: ABYSS_UNLOCK_SPINE_STAGE,
     spineStage,
     gritHave,
@@ -7796,7 +7877,10 @@ export function abyssSquadCandidates(state) {
  * 開潛（戰鬥）
  * @param {string[]} squadUids 開潛時必填 5 個 uid
  */
-export function startAbyssDive(state, squadUids, now = Date.now()) {
+export function startAbyssDive(state, squadUids, now = Date.now(), opts = {}) {
+  if (ABYSS_CONTENT_FROZEN && !opts.allowFrozen) {
+    return { ok: false, msg: ABYSS_FROZEN_MSG };
+  }
   if (!abyssUnlocked(state)) {
     return {
       ok: false,

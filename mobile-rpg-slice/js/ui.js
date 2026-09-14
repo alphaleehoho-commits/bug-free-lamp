@@ -3,6 +3,7 @@ import {
   saveState,
   tickCultivation,
   tryBreakthrough,
+  /* species unlock via data re-export if present */
   tryBondPending,
   dismissPending,
   releasePets,
@@ -190,12 +191,16 @@ import {
   OFFLINE_HINT_SEC,
   ABYSS_RULES_TEXT,
   ABYSS_UNLOCK_SPINE_STAGE,
+  ABYSS_CONTENT_FROZEN,
+  ABYSS_FROZEN_MSG,
   APP_BUILD,
   GAME_TERMS,
   fusionMaterialRarityFactor,
   fusionPowerMultFromParts,
   roundStat,
   ceilStat,
+  isSpeciesUnlocked,
+  SPECIES,
 } from "./data.js";
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
@@ -1650,7 +1655,7 @@ function materialsBlockHtml() {
 function trainRatesBlockHtml(rateLines, summary = "") {
   if (!rateLines && !summary) return "";
   const list = rateLines ? `<ul class="train-rate-list">${rateLines}</ul>` : "";
-  return `<div class="fold-section fold-section-inline train-rates-block">
+  return `<div class="fold-section fold-section-inline train-rates-block is-collapsed">
       <button type="button" class="section-toggle" data-act="toggle-train-rates">
         <span>產出速率</span>
         <span class="muted">${trainRatesOpen ? "收起" : "點開明細"}</span>
@@ -1802,6 +1807,14 @@ function patchTutorialHintLive() {
   document.querySelectorAll("[data-live=tutorial-hint]").forEach((hintEl) => {
     hintEl.textContent = hint;
   });
+}
+
+function consumeLootGainsForUi() {
+  /* loot decay */
+  if (state._lastIdleGains?.length) {
+    state._uiLootGains = state._lastIdleGains;
+    state._lastIdleGains = [];
+  }
 }
 
 function patchLive() {
@@ -3155,6 +3168,18 @@ function idleUnitBarHtml(u, slotIndex = 0, lane = "front") {
   </div>`;
 }
 
+function idleLootLayerHtml() {
+  const gains = state._lastIdleGains || [];
+  if (!gains.length) return '<div class="idle-loot-layer" data-live="idle-loot" hidden></div>';
+  const bits = gains.slice(0, 6).map((g, i) => {
+    const n = Number(g.amount);
+    const shown = n >= 10 ? Math.floor(n) : n >= 1 ? n.toFixed(1) : n.toFixed(2);
+    const name = escapeHtml(g.name || g.id || "");
+    return '<span class="idle-loot-chip" style="--i:' + i + '">+' + escapeHtml(String(shown)) + " " + name + "</span>";
+  }).join("");
+  return '<div class="idle-loot-layer is-hot" data-live="idle-loot">' + bits + "</div>";
+}
+
 function trainIdleStripHtml() {
   const wrap = ensureIdleCombat();
   const gates = trainFloorNavGates(state);
@@ -3196,6 +3221,7 @@ function trainIdleStripHtml() {
   </div>`;
   if (!wrap?.session) {
     return `<div class="train-idle-strip${bossCls}" data-live="train-idle">
+    ${idleLootLayerHtml()}
       ${head}
       ${qiChip}
       ${floorNav}
@@ -3356,8 +3382,8 @@ function cultivatePanel() {
     { id: "train", label: "練功" },
     { id: "bag", label: "背包" },
     { id: "shop", label: "商肆" },
-    { id: "advance", label: "進階" },
   ]);
+  if (panelSub.cultivate === "advance") panelSub.cultivate = "train";
 
   if (sub === "bag") {
     const inner =
@@ -3465,42 +3491,16 @@ function cultivatePanel() {
 
 
   if (sub === "advance") {
-    /* Show every breakthrough gate (incl. bestiary) — do not slice; ready checks all items. */
-    const gateRows = br.items
-      .map(
-        (it) => `
-      <li class="cond-item ${it.ok ? "is-met" : "is-miss"}">
-        <span class="cond-badge">${it.ok ? "達成" : "未達"}</span>
-        <div class="cond-body">
-          <strong>${escapeHtml(it.label)}</strong>
-          <span class="muted">${escapeHtml(it.progress)}</span>
-        </div>
-      </li>`
-      )
-      .join("");
-    const missN = br.items.filter((it) => !it.ok).length;
-    const missNote =
-      !br.ready && missN > 0
-        ? `<p class="meta breakthrough-miss-note">尚欠 ${missN} 項${
-            firstMiss ? ` · 先做：${escapeHtml(firstMiss.label)}（${escapeHtml(firstMiss.progress)}）` : ""
-          }</p>`
-        : "";
-    const compactCls = br.items.length > 6 ? " is-compact" : "";
     return wrapStage(
       nav,
-      `<h2>育成 · 進階</h2>
-      <p class="lead">→【${escapeHtml(br.next.name)}】</p>
-      ${missNote}
-      <ul class="cond-list breakthrough-gates${compactCls}">${gateRows}</ul>`,
-      `<div class="row">
-        <button type="button" class="primary${tutGlow({ type: "act", act: "break" })}" data-act="break" ${br.ready ? "" : "disabled"}>${escapeHtml(breakLabel)}</button>
-      </div>`
+      `<h2>育成 · 進階（已廢）</h2>
+      <p class="lead">體階突破已移除。</p>
+      <p class="meta">變強改靠：漂路掛機劇場、秘境解鎖品種／稀有蛋、同繁殖血脈。</p>`,
+      `<div class="row"><button type="button" class="primary" data-panel-sub="cultivate:train">返回練功</button></div>`
     );
   }
 
-  const tutCta = tutorialQiReady(state)
-    ? `<div class="row tut-cta-row"><button type="button" class="primary${tutGlow({ type: "panel-sub", group: "cultivate", id: "advance" })}" data-panel-sub="cultivate:advance">共鳴已滿 → 前往成長</button></div>`
-    : "";
+  const tutCta = "";
 
   return wrapStage(
     nav,
@@ -4816,16 +4816,17 @@ function petsPanel() {
 function codexPanel() {
   const dex = bestiaryStatus(state);
   const speciesRows = bestiarySpeciesSummary(state)
-    .filter((s) => s.found > 0 || !s.breedOnly)
+    .map((s) => ({ ...s, unlocked: isSpeciesUnlocked(state, s.speciesId) || s.found > 0 }))
+    .filter((s) => s.found > 0 || !s.breedOnly || s.unlocked)
     .slice(0, 48)
     .map((s) => {
       const pct = Math.min(100, Math.round((s.found / Math.max(1, s.total)) * 100));
-      const unlocked = s.found > 0;
-      return `<li class="card-row codex-row${unlocked ? " is-unlocked" : ""}">
-        <div class="codex-icon">${unlocked ? petArtHtml(s.speciesId, { size: 36 }) : `<span class="pet-art pet-art-unknown"><span class="pet-icon pet-icon-unknown">?</span></span>`}</div>
+      const unlocked = !!s.unlocked;
+      return `<li class="card-row codex-row${unlocked ? " is-unlocked" : " is-locked"}">
+        <div class="codex-icon${unlocked ? "" : " species-locked-fog"}">${unlocked || s.found > 0 ? petArtHtml(s.speciesId, { size: 36 }) : `<span class="pet-art pet-art-unknown"><span class="pet-icon pet-icon-unknown">?</span></span>`}</div>
         <div>
-          <strong>${escapeHtml(s.speciesName)}</strong>
-          <span class="muted">${escapeHtml(s.kind)}${s.breedOnly ? "·雜交" : ""} · ${s.found}/${s.total}</span>
+          <strong>${unlocked || s.found > 0 ? escapeHtml(s.speciesName) : "潮霧中的品種"}</strong>
+          <span class="muted">${escapeHtml(s.kind)}${s.breedOnly ? "·雜交" : ""}${s.unlocked ? "" : " · 潮霧中"} · ${s.found}/${s.total}</span>
           <div class="bar thin"><i style="width:${pct}%"></i></div>
         </div>
       </li>`;
@@ -5392,6 +5393,7 @@ function abyssPanelHtml() {
     const need = v.unlockSpineStage || ABYSS_UNLOCK_SPINE_STAGE;
     const needFloor = (need - 1) * 20 + 1;
     return `<h2>深潛</h2>
+      <p class="lead fantasy-frozen-banner">${ABYSS_CONTENT_FROZEN ? escapeHtml(ABYSS_FROZEN_MSG) : "後期暫凍 · 現階段唔推／暫不平衡"}</p>
       <p class="lead">無盡程序層 · 突變規則 · 專屬淵砂</p>
       <p class="meta">封印中——漂路達<strong>${need}章</strong>（已通≥${dungeonDisplayName(needFloor)}）後解鎖大後期深潛。</p>
       <p class="meta">現漂路 ${v.spineStage || 1}章。</p>
@@ -5467,12 +5469,13 @@ function abyssPanelHtml() {
         <p class="lead">未開潛</p>
         <p class="meta">今日首趟免費 · 其後耗霧箋 ×${v.entryCost || 1}（現有 ${v.tokenHave}）</p>
         <p class="meta">需獨立編隊 ${v.squadSize} 寵（3 出戰 + 2 替補）· 現有 ${v.ownedCount} 隻</p>
-        <button type="button" class="primary" data-act="abyss-open-squad" ${
+        <button type="button" class="primary" data-act="abyss-open-squad" ${v.frozen ? "disabled" : ""} ${
           v.canFormSquad ? "" : "disabled"
         }>${v.canFormSquad ? "開始深潛（編隊）" : `水母不足（需 ${v.squadSize}）`}</button>
       </div>`;
   }
   return `<h2>深潛</h2>
+    ${v.frozen ? `<p class="lead fantasy-frozen-banner">${escapeHtml(v.frozenMsg || ABYSS_FROZEN_MSG)}</p>` : ""}
     <p class="lead">無限層 · 突變規則 · 大後期旁路</p>
     <p class="meta">淵砂 <strong>${v.gritHave}</strong> · 最深 ${v.bestDepth} · 本週 ${v.weekBestDepth}</p>
     <details class="abyss-rules">

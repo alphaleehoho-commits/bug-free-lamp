@@ -3860,3 +3860,42 @@ button.pet-badge {
 .train-qi-label {
   font-size: 0.74rem;
 }
+
+
+/* —— 放置幻想重定：劇場掉落／暫凍 —— */
+.fantasy-frozen-banner {
+  color: #c9a46a;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.idle-loot-layer {
+  position: relative;
+  min-height: 1.25rem;
+  margin: 0.25rem 0 0.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  pointer-events: none;
+}
+.idle-loot-layer[hidden] { display: none; }
+.idle-loot-chip {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--jade, #3d9a7a) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--jade, #3d9a7a) 45%, transparent);
+  color: color-mix(in srgb, var(--foam, #e8f6f0) 90%, #9fe3c4);
+  font-size: 0.78rem;
+  animation: idle-loot-float 1.8s ease-out both;
+  animation-delay: calc(var(--i, 0) * 0.08s);
+}
+@keyframes idle-loot-float {
+  0% { opacity: 0; transform: translateY(8px) scale(0.92); }
+  18% { opacity: 1; transform: translateY(0) scale(1); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-14px); }
+}
+.train-rates-block.is-collapsed details[open] summary,
+.fold-section.train-rates-block.is-collapsed .fold-body { display: none; }
+.species-locked-fog { filter: blur(2px) saturate(0.35); opacity: 0.5; }
+.species-locked-tag { color: #8aa; font-size: 0.75rem; }

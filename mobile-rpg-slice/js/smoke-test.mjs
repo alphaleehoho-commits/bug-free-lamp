@@ -206,6 +206,7 @@ import {
   ABYSS_MUTATIONS,
   ABYSS_MERCHANT_BUFFS,
   ABYSS_UNLOCK_SPINE_STAGE,
+  ABYSS_CONTENT_FROZEN,
   ABYSS_WEEKLY_DEPTH_MILESTONES,
   ABYSS_BEST_DEPTH_MILESTONES,
   rollAbyssFloorEvent,
@@ -3303,14 +3304,14 @@ assert(dataSrcBag.includes("ABYSS_TIDE_SHIFT_COST"), "data abyss tide shift cost
 assert(!dataSrcBag.includes("潮屬") && !dataSrcBag.includes("幽屬"), "data no old element labels");
 assert(ELEMENTS.tide.name === "水" && ELEMENTS.gloom.name === "雷", "element display 水/雷");
 assert(!uiSrc2.includes('tide: "潮"') && !uiSrc2.includes('gloom: "幽"'), "ui no hardcoded old element maps");
-assert(!uiSrc2.includes("br.items.slice(0, 6)"), "ui breakthrough checklist shows all gates");
-assert(!uiSrc2.includes("gateCompact"), "ui no truncated gateCompact list");
-assert(uiSrc2.includes("breakthrough-gates"), "ui breakthrough gates list class");
-assert(uiSrc2.includes("未齊·"), "ui break button hints first unmet");
-assert(uiSrc2.includes("breakthrough-miss-note"), "ui shows remaining gate count");
+assert(!uiSrc2.includes('{ id: "advance", label: "進階" }'), "ui advance tab removed");
+assert(uiSrc2.includes("進階（已廢）") || uiSrc2.includes("體階突破已移除"), "ui advance sunset copy");
+assert(uiSrc2.includes("fantasy-frozen-banner"), "ui abyss frozen banner");
+assert(uiSrc2.includes("idleLootLayerHtml") || uiSrc2.includes("idle-loot-layer"), "ui idle loot theater");
 const cssSrc = readFileSync(join(__dir, "../css/style.css"), "utf8");
 assert(cssSrc.includes("#8b3dff") && cssSrc.includes("#ffe14a"), "css gloom bar uses thunder palette");
-assert(cssSrc.includes("cond-list.is-compact"), "css compact breakthrough checklist");
+assert(cssSrc.includes("idle-loot-layer") || cssSrc.includes("idle-loot-chip"), "css idle loot theater");
+assert(cssSrc.includes("fantasy-frozen-banner"), "css frozen banner");
 assert(cssSrc.includes("offline-home-slot"), "css offline home slot");
 assert(cssSrc.includes("offline-home-slot.is-claimable") || cssSrc.includes(".is-claimable"), "css offline claimable state");
 assert(cssSrc.includes("train-qi-chip"), "css train qi chip");
@@ -3395,7 +3396,9 @@ assert(uiSrc2.includes("封印") || uiSrc2.includes("階段"), "ui abyss lock te
   assert(abyssSquadCandidates(abyssSt).length === 5, "squad candidates from pets+ranch");
   assert(abyssSquadCandidates(abyssSt).every((p) => p.speciesId), "abyss candidates expose speciesId for silhouettes");
   assert(!startAbyssDive(abyssSt, squadUids.slice(0, 3)).ok, "reject short squad");
-  const s1 = startAbyssDive(abyssSt, squadUids);
+  assert(ABYSS_CONTENT_FROZEN === true, "abyss content frozen by fantasy realign");
+  assert(!startAbyssDive(abyssSt, squadUids).ok, "frozen abyss rejects live start");
+  const s1 = startAbyssDive(abyssSt, squadUids, Date.now(), { allowFrozen: true });
   assert(s1.ok && s1.won && s1.depth === 1 && s1.combatEvents?.length, "abyss floor 1 clear");
   assert(s1.clearedDepth === 1 && s1.nextFloor?.depth === 2, "abyss settle cleared + next preview");
   assert(String(s1.msg || "").includes("已通關第 1 層"), "abyss win copy means cleared");
@@ -4121,7 +4124,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v128"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v129"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
