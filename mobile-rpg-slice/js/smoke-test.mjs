@@ -126,6 +126,11 @@ import {
   listSideBranches,
   MATERIALS,
   upgradeMatCost,
+  upgradeFeedCost,
+  upgradeStoneCost,
+  petUpgradeCostSnapshot,
+  canAffordPetUpgrade,
+  petUpgradeShortageLines,
   breedMatCost,
   skillMatCost,
   fusionMatCost,
@@ -157,7 +162,6 @@ import {
   FORGE_SCRAP_COST,
   BOND_COST_MAX,
   fusionStoneCost,
-  upgradeStoneCost,
   makeStarterEgg,
   STARTER_EGG_HATCH_MS,
   TUTORIAL_EGG_HATCH_MS,
@@ -297,6 +301,7 @@ import {
   persistTrainIdleClearResult,
   idleFailAdvice,
   upgradeMatCostView,
+  upgradeFullCostView,
   dungeonFailCoachTips,
   shouldShowTitleScreen,
   markTitleEntered,
@@ -1027,8 +1032,16 @@ assert(
   "side branches stay abolished even at stage2"
 );
 assert(upgradeMatCost(1).tide_dew >= 1 && !upgradeMatCost(1).earth_grade_stone, "upgrade early main only");
+assert(upgradeMatCost(2).tide_dew >= 1 && !upgradeMatCost(2).earth_grade_stone, "lv2 dew only no earth");
 assert(upgradeMatCost(12).earth_grade_stone > 0, "upgrade band earth");
 assert(upgradeMatCost(33).fire_grade_stone > 0, "upgrade band fire");
+assert(upgradeFeedCost(1) <= 5 && upgradeFeedCost(2) <= 8, "early feed gentle");
+assert(upgradeFeedCost(2) < 18, "lv2 feed below old 18");
+assert(upgradeFeedCost(9) < upgradeFeedCost(10), "lv10 feed steps up with earth band");
+assert(upgradeFeedCost(19) > upgradeFeedCost(10), "mid feed still rises");
+assert(petUpgradeCostSnapshot(2).mats.tide_dew === upgradeMatCost(2).tide_dew, "snapshot mats match");
+assert(petUpgradeCostSnapshot(2).feed === upgradeFeedCost(2), "snapshot feed match");
+assert(petUpgradeCostSnapshot(2).stones === upgradeStoneCost(2), "snapshot stones match");
 assert(breedMatCost(0, 0).coral_shard >= 1, "breed mats");
 assert(clampBreedBatchCount(0) === 1 && clampBreedBatchCount(99) === 10, "breed batch clamp");
 assert(BREED_BATCH_MIN === 1 && BREED_BATCH_MAX === 10, "breed batch 1-10");
@@ -1486,6 +1499,7 @@ const trainNavSt = {
   tutorial: { done: false, step: "train_pet", flags: {} },
   materials: { tide_dew: 3 },
   stones: 120,
+  feed: 0,
   pets: [],
   ranch: [{ uid: "p1", level: 1, name: "x" }],
 };
@@ -1494,17 +1508,51 @@ const navParty = syncTutorialNavigation(trainNavSt, {
   panelSub: { party: "ranch", cultivate: "train" },
 });
 assert(navParty.tab === "party", "train_pet allows party tab");
-assert(trainPetCanUpgrade(trainNavSt), "train can upgrade with dew");
+assert(trainPetCanUpgrade(trainNavSt), "train can upgrade with dew + stones");
+assert(
+  trainPetCanUpgrade({ ...trainNavSt, stones: 0, feed: 99 }),
+  "train can upgrade with dew + feed"
+);
+assert(
+  !trainPetCanUpgrade({ ...trainNavSt, stones: 0, feed: 0, materials: { tide_dew: 99 } }),
+  "dew alone cannot upgrade"
+);
+assert(
+  !trainPetCanUpgrade({ ...trainNavSt, materials: { tide_dew: 0 }, stones: 999, feed: 99 }),
+  "pay without dew cannot upgrade"
+);
 const trainHi = tutorialHighlights(trainNavSt, {
   tab: "cultivate",
   panelSub: { cultivate: "train" },
 });
 assert(trainHi.some((h) => h.type === "tab" && h.id === "party"), "train highlights party when mats ready");
 const trainHiWait = tutorialHighlights(
-  { ...trainNavSt, materials: { tide_dew: 0 } },
+  { ...trainNavSt, materials: { tide_dew: 0 }, stones: 0, feed: 0 },
   { tab: "cultivate", panelSub: { cultivate: "train" } }
 );
 assert(trainHiWait.length === 0, "train no party push while waiting mats");
+const trainBannerShort = tutorialBannerHint({
+  ...trainNavSt,
+  stones: 0,
+  feed: 0,
+  materials: { tide_dew: 99 },
+  ranch: [{ uid: "p1", level: 2, name: "x" }],
+});
+assert(!trainBannerShort.includes("已夠") && !trainBannerShort.includes("已齊"), "banner not ready when pay short");
+assert(trainBannerShort.includes("小餌"), "banner names missing feed");
+assert(petUpgradeShortageLines({ stones: 0, feed: 0, materials: { tide_dew: 99 } }, 2).some((l) => l.includes("小餌")), "shortage lists feed");
+const trainBannerReady = tutorialBannerHint(trainNavSt);
+assert(trainBannerReady.includes("材料已齊"), "banner ready only when upgrade affordable");
+assert(tutorialNextWhere(trainNavSt).includes("升級"), "next-where points at upgrade when ready");
+const trainBannerWaitSt = {
+  ...trainNavSt,
+  materials: { tide_dew: 0 },
+  stones: 0,
+  feed: 0,
+};
+const trainBannerWait = tutorialBannerHint(trainBannerWaitSt);
+assert(trainBannerWait.includes("仲欠"), "banner lists shortage while waiting");
+assert(tutorialNextWhere(trainBannerWaitSt).includes("練功"), "next-where idle when short");
 
 assertNavKeepsTab({ ranch: [makeStarterPet()] }, "meet_pet", "party", { party: "ranch" });
 assertNavKeepsTab({ ranch: [makeStarterPet()] }, "deploy", "party", { party: "ranch" });
@@ -2597,9 +2645,26 @@ const feedUpSt = {
   log: [],
 };
 const feedBefore = feedUpSt.feed;
+const dewBefore = feedUpSt.materials.tide_dew;
+const upSnap = petUpgradeCostSnapshot(1);
 const upR = upgradePet(feedUpSt, "up-pet", "feed");
 assert(upR.ok && feedUpSt.feed < feedBefore, "feed upgrade deducts feed");
+assert(feedUpSt.feed === feedBefore - upSnap.feed, "feed deduct matches cost helper");
+assert(feedUpSt.materials.tide_dew === dewBefore - upSnap.mats.tide_dew, "dew deduct matches cost helper");
 assert(feedUpSt.ranch[0].level === 2, "feed upgrade levels pet");
+const fullView = upgradeFullCostView(
+  { feed: 3, stones: 120, materials: { tide_dew: 6 }, clearedDungeons: {} },
+  2
+);
+assert(fullView.feed.need === upgradeFeedCost(2) && fullView.feed.have === 3, "full view feed owned/need");
+assert(fullView.stones.need === upgradeStoneCost(2), "full view stones alt");
+assert(
+  fullView.mats.length === 1 && fullView.mats[0].id === "tide_dew",
+  "lv2 full view only dew mat"
+);
+assert(fullView.canPay === true, "stones alt can pay");
+assert(canAffordPetUpgrade({ feed: 0, stones: 0, materials: { tide_dew: 99 } }, 2) === false, "cannot afford without pay");
+assert(canAffordPetUpgrade({ feed: 99, stones: 0, materials: { tide_dew: 99 } }, 2) === true, "feed path enough");
 
 /* Split skill upgrade: primary vs second */
 {
@@ -4001,7 +4066,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v125"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v126"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4104,7 +4169,11 @@ assert(preview18.expectedLevel <= 10, "1-18 expected still ≤Lv10");
   assert(dungTips.some((t) => t.includes("地階石")), "dungeon fail also explains earth gate");
 }
 
-assert(uiSrc2.includes("upgrade-mats") && uiSrc2.includes("下一級材料"), "ui upgrade lists next mats");
+assert(uiSrc2.includes("upgrade-mats") && uiSrc2.includes("下一級消耗"), "ui upgrade lists next costs");
+assert(!uiSrc2.includes("升級另耗"), "ui no 另耗 split");
+assert(!uiSrc2.includes("下一級材料"), "ui no duplicate 下一級材料 kicker");
+assert((uiSrc2.match(/upgradeFullCostPanelHtml\(/g) || []).length === 2, "define + one next-level cost panel");
+assert(!uiSrc2.includes("upgradeMatsListHtml"), "old mats-only list removed");
 assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui shows locked stone note");
 
 console.log("smoke-test ok");

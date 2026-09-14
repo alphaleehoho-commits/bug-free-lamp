@@ -21,6 +21,8 @@ import {
   ranchCapForStage,
   upgradeStoneCost,
   upgradeFeedCost,
+  petUpgradeCostSnapshot,
+  canAffordPetUpgrade,
   fusionStoneCost,
   nextFusionStage,
   fusionMaterialNeed,
@@ -1187,8 +1189,47 @@ export function upgradeMatCostView(state, level) {
         unlockNote: unlockAt != null ? gradeStoneUnlockNote(id, cleared) : "",
         source: materialSourceLabel(id),
         use: MATERIAL_USES[id] || "",
+        kind: "mat",
       };
     });
+}
+
+function upgradePayRow(id, name, need, have) {
+  const n = Math.max(0, need | 0);
+  const h = Math.floor(have || 0);
+  return {
+    id,
+    name,
+    need: n,
+    have: h,
+    ok: h >= n,
+    short: Math.max(0, n - h),
+    unlocked: true,
+    locked: false,
+    unlockNote: "",
+    source: "",
+    use: "",
+  };
+}
+
+/**
+ * 下一級完整消耗（與 upgradePet 扣款對齊）：
+ * 材料必扣 ＋ 小餌／泡泡晶二揀一。
+ */
+export function upgradeFullCostView(state, level) {
+  const snap = petUpgradeCostSnapshot(level);
+  const mats = upgradeMatCostView(state, level);
+  const feed = upgradePayRow("feed", "小餌", snap.feed, state?.feed);
+  const stones = upgradePayRow("stones", "泡泡晶", snap.stones, state?.stones);
+  const matsOk = mats.every((m) => m.ok && !m.locked);
+  return {
+    mats,
+    feed,
+    stones,
+    canPay: feed.ok || stones.ok,
+    canUpgrade: matsOk && (feed.ok || stones.ok),
+    snapshot: snap,
+  };
 }
 
 /** P11：材料是否足夠（含缺口） */
@@ -4800,6 +4841,7 @@ export function petDetail(state, uid) {
     upgradeFeedCost: upgradeFeedCost(level),
     upgradeMats: upgradeMatCostView(state, level),
     upgradeMatCost: upgradeMatCost(level),
+    upgradeFullCost: upgradeFullCostView(state, level),
     skillDustCost: skillLv < SKILL_MAX_LEVEL ? skillDustCost(skillLv) : null,
     skillMatCost: skillLv < SKILL_MAX_LEVEL ? skillMatCost(skillLv) : null,
     skillMaxed: skillLv >= SKILL_MAX_LEVEL,
@@ -8320,6 +8362,8 @@ export {
   ranchCapForStage,
   upgradeStoneCost,
   upgradeFeedCost,
+  petUpgradeCostSnapshot,
+  canAffordPetUpgrade,
   skillDustCost,
   fusionStoneCost,
   nextFusionStage,

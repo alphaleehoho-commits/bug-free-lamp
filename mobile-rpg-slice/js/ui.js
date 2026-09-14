@@ -128,8 +128,7 @@ import {
   resolveDungeon,
   dungeonsForRealm,
   stageAt,
-  upgradeMatCost,
-  upgradeMatCostView,
+  upgradeFullCostView,
   dungeonFailCoachTips,
   breedMatCost,
   skillMatCost,
@@ -1489,35 +1488,36 @@ function matAffordHtml(cost) {
     .join("／");
 }
 
-function upgradeMatSummaryHtml(level) {
-  const matUp = upgradeMatCost(level);
-  const html = matAffordHtml(matUp);
-  if (html) return html;
-  const dew = matUp.tide_dew || 1;
-  return `${MATERIALS.tide_dew?.name || "露珠"}×${fmtMatQty(dew)}`;
-}
-
-function upgradeCostLine(stoneCost, feedCost, level) {
-  return `小餌 ${fmtMatQty(feedCost)} 或 泡泡晶 ${fmtMatQty(stoneCost)} ＋ ${upgradeMatSummaryHtml(level)}`;
-}
-
-function upgradeMatsListHtml(level, { compact = false } = {}) {
-  const rows = upgradeMatCostView(state, level);
-  if (!rows.length) return "";
-  const items = rows
-    .map((m) => {
-      const note =
-        m.locked && m.unlockNote
-          ? `<span class="upgrade-mat-note">${escapeHtml(m.unlockNote)}</span>`
-          : "";
-      return `<li class="upgrade-mat ${m.ok ? "is-ok" : "is-short"}${m.locked ? " is-locked" : ""}">
+function upgradeCostRowHtml(m) {
+  const note =
+    m.locked && m.unlockNote
+      ? `<span class="upgrade-mat-note">${escapeHtml(m.unlockNote)}</span>`
+      : "";
+  const extra = m.altNote
+    ? `<span class="upgrade-mat-alt">${escapeHtml(m.altNote)}</span>`
+    : "";
+  return `<li class="upgrade-mat ${m.ok ? "is-ok" : "is-short"}${m.locked ? " is-locked" : ""}${m.alt ? " is-alt" : ""}">
         <span class="upgrade-mat-line">${escapeHtml(m.name)} ×${fmtMatQty(m.need)}（持有 ${fmtMatQty(m.have)}／需 ${fmtMatQty(m.need)}）</span>
-        ${note}
+        ${note}${extra}
       </li>`;
-    })
-    .join("");
+}
+
+/** 單一下一級消耗面板：材料＋小餌（泡泡晶可代替），與 upgradePet 扣款一致 */
+function upgradeFullCostPanelHtml(level, { compact = false } = {}) {
+  const view = upgradeFullCostView(state, level);
+  const rows = [...(view.mats || [])];
+  if (view.feed) rows.push(view.feed);
+  if (view.stones) {
+    rows.push({
+      ...view.stones,
+      name: "泡泡晶（代替小餌）",
+      alt: true,
+    });
+  }
+  if (!rows.length) return "";
+  const items = rows.map((m) => upgradeCostRowHtml(m)).join("");
   return `<div class="upgrade-mats${compact ? " is-compact" : ""}">
-    <p class="upgrade-mats-kicker">下一級材料</p>
+    <p class="upgrade-mats-kicker">下一級消耗</p>
     <ul>${items}</ul>
   </div>`;
 }
@@ -4544,11 +4544,7 @@ function petDetailStatsHtml(pet, detail, rarity) {
           ? `<li class="muted">相剋：克${escapeHtml(elEx.beats)} · 被${escapeHtml(elEx.beatenBy)}克</li>`
           : ""
       }
-    </ul>
-    <div class="pet-detail-upgrade">
-      <p class="meta">升級另耗 小餌×${detail.upgradeFeedCost ?? "—"} 或 泡泡晶×${detail.upgradeCost ?? "—"}</p>
-      ${upgradeMatsListHtml(pet.level ?? 1)}
-    </div>`;
+    </ul>`;
 }
 
 function petDetailTemperHtml(pet) {
@@ -4688,6 +4684,8 @@ function petsDetailView() {
     pet,
     deployed,
     upgradeFeedCost: feedCost,
+    upgradeCost: stoneCost,
+    upgradeFullCost,
     fuseMaxed,
   } = detail;
   const lv = pet.level ?? 1;
@@ -4726,9 +4724,14 @@ function petsDetailView() {
     </div>
     ${petDetailTabNav(detailTab)}
     ${tabBody}`,
-    `${upgradeMatsListHtml(lv, { compact: true })}
+    `${upgradeFullCostPanelHtml(lv, { compact: true })}
     <div class="row">
-      <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade-feed="${escapeHtml(pet.uid)}" title="下一級材料見上方清單">升級（小餌×${feedCost ?? "—"}）</button>
+      <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade-feed="${escapeHtml(pet.uid)}" ${
+        upgradeFullCost?.feed?.ok ? "" : "disabled"
+      } title="下一級消耗見上方清單">升級（小餌×${feedCost ?? "—"}）</button>
+      <button type="button" class="${tutGlow({ type: "upgrade" }).trim()}" data-upgrade="${escapeHtml(pet.uid)}" ${
+        upgradeFullCost?.stones?.ok ? "" : "disabled"
+      } title="用泡泡晶代替小餌">泡泡晶×${stoneCost ?? "—"}</button>
       ${
         fuseUnlocked
           ? `<button type="button" class="primary${tutGlow({ type: "start-fuse" })}" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>`
@@ -6496,10 +6499,13 @@ function bind() {
   });
   app.querySelectorAll("[data-upgrade-feed]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (btn.disabled) return;
       const r = upgradePet(state, btn.dataset.upgradeFeed, "feed");
+      const tut = advanceTutorialIfReady(state);
       saveState(state);
       render();
-      flashResult(r);
+      if (tut.advanced && tut.unlockMsg) setFlash(tut.unlockMsg, "unlock");
+      else flashResult(r);
     });
   });
   app.querySelectorAll("[data-awaken-sub]").forEach((btn) => {

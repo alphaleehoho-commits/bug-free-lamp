@@ -2,7 +2,7 @@
  * P13：新手引導 — 寵物蛋 → 練功 Lv3 → 秘境 → 商肆蛋
  * 目標節奏約 10–15 分鐘；不在 render 自動連跳
  */
-import { nextStageAt, upgradeMatCost, upgradeStoneCost, FUSION_MAX_STAGE } from "./data.js";
+import { nextStageAt, upgradeMatCost, canAffordPetUpgrade, petUpgradeShortageLines, FUSION_MAX_STAGE } from "./data.js";
 
 export const TUTORIAL_STEPS = [
   {
@@ -18,7 +18,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "train_pet",
     title: "練功升級",
-    hint: "育成掛機攞露珠（升級主材料）；夠料後到「水母 → 水母池 → 詳情」點升級，升至 Lv.3。",
+    hint: "育成掛機攞露珠同小餌；夠料後到「水母 → 水母池 → 詳情」點升級，升至 Lv.3。",
   },
   {
     id: "deploy",
@@ -146,17 +146,13 @@ function tutorialTrainTargetPet(state) {
   );
 }
 
-/** 目前是否有足夠材料＋泡泡晶升一級（朝 Lv.3） */
+/** 目前是否有足夠材料＋小餌或泡泡晶升一級（與 upgradePet 一致） */
 export function trainPetCanUpgrade(state) {
   const pet = tutorialTrainTargetPet(state);
   if (!pet) return false;
   const lv = pet.level ?? 1;
   if (lv >= TUTORIAL_TRAIN_LEVEL) return true;
-  const mats = upgradeMatCost(lv);
-  for (const [id, n] of Object.entries(mats)) {
-    if (n > 0 && Math.floor(state.materials?.[id] || 0) < n) return false;
-  }
-  return (state.stones || 0) >= upgradeStoneCost(lv);
+  return canAffordPetUpgrade(state, lv);
 }
 
 /** 教學開局露珠：夠連升兩級至 Lv.3（+1 備用） */
@@ -1046,12 +1042,12 @@ export function tutorialBannerHint(state) {
     if (lv >= TUTORIAL_TRAIN_LEVEL) return "已達 Lv.3！準備派出戰。";
     const pet = tutorialTrainTargetPet(state);
     const needLv = pet?.level ?? lv;
-    const needDew = upgradeMatCost(needLv).tide_dew || 1;
-    const haveDew = Math.floor(state.materials?.tide_dew || 0);
     if (!trainPetCanUpgrade(state)) {
-      return `首隻 Lv.${lv}／需 Lv.${TUTORIAL_TRAIN_LEVEL}。露珠 ${haveDew}／升級需 ${needDew} — 育成掛機中，夠料再去水母升級。`;
+      const short = petUpgradeShortageLines(state, needLv);
+      const gap = short.length ? short.join(" · ") : "材料未齊";
+      return `首隻 Lv.${lv}／需 Lv.${TUTORIAL_TRAIN_LEVEL}。仲欠：${gap} — 育成掛機中，夠料再去水母升級。`;
     }
-    return `露珠已夠（${haveDew}）！打開「水母 → 水母池 → 詳情」點「升級」（Lv.${lv}→${lv + 1}）。`;
+    return `材料已齊！打開「水母 → 水母池 → 詳情」點「升級」（Lv.${lv}→${lv + 1}）。`;
   }
   if (info.stepId === "hatch_starter" || info.stepId === "hatch_second") {
     const eggs = state.eggs || [];
@@ -1069,7 +1065,7 @@ export function tutorialBannerHint(state) {
 const TUTORIAL_NEXT_WHERE = {
   hatch_starter: "底部「水母」→「孵化」領取",
   meet_pet: "「水母 → 水母池」點開首隻詳情",
-  train_pet: "先「育成 → 練功」掛機，夠露珠再回「水母」升級",
+  train_pet: "先「育成 → 練功」掛機，夠露珠同小餌再回「水母」升級",
   deploy: "「水母 → 水母池」點「出戰」",
   dungeon_fight: "底部「秘境」→ 進攻 1-1",
   dungeon_win: "繼續在「秘境」戰勝 1-1",
@@ -1087,6 +1083,9 @@ const TUTORIAL_NEXT_WHERE = {
 
 export function tutorialNextWhere(state) {
   const info = tutorialStepInfo(state);
+  if (info.stepId === "train_pet" && trainPetCanUpgrade(state)) {
+    return "「水母 → 水母池 → 詳情」點「升級」";
+  }
   return TUTORIAL_NEXT_WHERE[info.stepId] || "";
 }
 

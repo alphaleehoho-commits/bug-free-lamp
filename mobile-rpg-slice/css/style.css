@@ -2239,10 +2239,15 @@ button.ghost {
 .upgrade-mat.is-ok .upgrade-mat-line { color: #9fd4c0; }
 .upgrade-mat.is-short .upgrade-mat-line { color: #e8a090; font-weight: 600; }
 .upgrade-mat.is-locked .upgrade-mat-line { color: #f0c2b0; }
-.upgrade-mat-note {
+.upgrade-mat.is-alt .upgrade-mat-line { font-weight: 500; }
+.upgrade-mat-note,
+.upgrade-mat-alt {
   font-size: 0.7rem;
   line-height: 1.4;
   color: #ead59a;
+}
+.upgrade-mat-alt {
+  color: color-mix(in srgb, var(--fog) 70%, var(--jade-bright));
 }
 .pet-detail-block {
   margin-bottom: 0.2rem;

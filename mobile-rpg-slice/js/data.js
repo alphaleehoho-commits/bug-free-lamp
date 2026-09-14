@@ -1,7 +1,7 @@
 /** Data tables — 水母漂漂 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260914.1";
+export const APP_BUILD = "20260914.2";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
@@ -3594,9 +3594,15 @@ export const IDLE_BY_ELEMENT = {
 export const BOND_FEED_COST = 8;
 export const BOND_FEED_BONUS = 0.18;
 
-/** 用小餌升級（可替代泡泡晶） */
+/**
+ * 用小餌升級（可替代泡泡晶）
+ * Lv1–9 淺線性（教學／前中）；Lv10+ 維持原曲線（地階石帶起）
+ */
 export function upgradeFeedCost(level) {
   const lv = Math.max(1, level | 0);
+  if (lv < 10) {
+    return 2 + lv * 2;
+  }
   return 6 + lv * 5 + Math.floor(lv * lv * 0.5);
 }
 
@@ -4737,6 +4743,58 @@ export function upgradeMatCost(level) {
     out[sub] = Math.max(2, Math.ceil(4 + into * 3 + Math.floor(lv / 8)));
   }
   return out;
+}
+
+/** 升級實際扣款快照：材料＋小餌／泡泡晶（二揀一）。與 upgradePet 一致。 */
+export function petUpgradeCostSnapshot(level) {
+  const lv = Math.max(1, level | 0);
+  return {
+    mats: upgradeMatCost(lv),
+    feed: upgradeFeedCost(lv),
+    stones: upgradeStoneCost(lv),
+  };
+}
+
+/** 材料是否夠扣（upgradePet 會 spend 嘅 mats） */
+export function canAffordUpgradeMats(state, level) {
+  const mats = upgradeMatCost(level);
+  for (const [id, n] of Object.entries(mats)) {
+    if (n > 0 && Math.floor(state?.materials?.[id] || 0) < n) return false;
+  }
+  return true;
+}
+
+/** 小餌或泡泡晶其中一條付費路可過 */
+export function canAffordUpgradePay(state, level) {
+  const lv = Math.max(1, level | 0);
+  const feedOk = Math.floor(state?.feed || 0) >= upgradeFeedCost(lv);
+  const stoneOk = Math.floor(state?.stones || 0) >= upgradeStoneCost(lv);
+  return feedOk || stoneOk;
+}
+
+/** 與 upgradePet 成功條件對齊：材料＋（小餌或泡泡晶） */
+export function canAffordPetUpgrade(state, level) {
+  return canAffordUpgradeMats(state, level) && canAffordUpgradePay(state, level);
+}
+
+/** 未夠嘅消耗短句（教學橫幅用） */
+export function petUpgradeShortageLines(state, level) {
+  const lv = Math.max(1, level | 0);
+  const { mats, feed, stones } = petUpgradeCostSnapshot(lv);
+  const lines = [];
+  for (const [id, need] of Object.entries(mats)) {
+    if (!(need > 0)) continue;
+    const have = Math.floor(state?.materials?.[id] || 0);
+    if (have < need) {
+      lines.push(`${MATERIALS[id]?.name || id} ${have}／需 ${need}`);
+    }
+  }
+  const feedHave = Math.floor(state?.feed || 0);
+  const stoneHave = Math.floor(state?.stones || 0);
+  if (feedHave < feed && stoneHave < stones) {
+    lines.push(`小餌 ${feedHave}／需 ${feed}`);
+  }
+  return lines;
 }
 
 /**
