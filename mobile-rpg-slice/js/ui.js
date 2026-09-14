@@ -1506,19 +1506,18 @@ function upgradePayLineHtml(row) {
   return `<span class="upgrade-pay-opt ${cls}">${escapeHtml(row.name)} ×${fmtMatQty(row.need)}（持有 ${fmtMatQty(row.have)}／需 ${fmtMatQty(row.need)}）</span>`;
 }
 
-/** 單一下一級消耗面板：基本（小餌或泡泡晶）＋副材一種，與 upgradePet 扣款一致 */
+/** 單一下一級消耗面板：基本小餌＋副材一種，與 upgradePet 扣款一致 */
 function upgradeFullCostPanelHtml(level, { compact = false } = {}) {
   const view = upgradeFullCostView(state, level);
   const rows = [];
-  if (view.feed || view.stones) {
-    const payOk = !!(view.canPay);
+  if (view.feed) {
     rows.push({
       id: "pay",
-      cat: "基本（二揀一）",
+      cat: "基本",
       basic: true,
-      ok: payOk,
+      ok: !!view.feed.ok,
       locked: false,
-      lineHtml: `${upgradePayLineHtml(view.feed)}<span class="upgrade-pay-or">或</span>${upgradePayLineHtml(view.stones)}`,
+      lineHtml: upgradePayLineHtml(view.feed),
     });
   }
   for (const m of view.mats || []) {
@@ -4694,7 +4693,6 @@ function petsDetailView() {
     pet,
     deployed,
     upgradeFeedCost: feedCost,
-    upgradeCost: stoneCost,
     upgradeFullCost,
     fuseMaxed,
   } = detail;
@@ -4738,10 +4736,7 @@ function petsDetailView() {
     <div class="row">
       <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade-feed="${escapeHtml(pet.uid)}" ${
         upgradeFullCost?.feed?.ok ? "" : "disabled"
-      } title="基本用小餌，副材見上方">升級（小餌×${feedCost ?? "—"}）</button>
-      <button type="button" class="${tutGlow({ type: "upgrade" }).trim()}" data-upgrade="${escapeHtml(pet.uid)}" ${
-        upgradeFullCost?.stones?.ok ? "" : "disabled"
-      } title="基本改用泡泡晶（同小餌二揀一）">泡泡晶×${stoneCost ?? "—"}</button>
+      } title="升級扣小餌＋上方副材">升級（小餌×${feedCost ?? "—"}）</button>
       ${
         fuseUnlocked
           ? `<button type="button" class="primary${tutGlow({ type: "start-fuse" })}" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>`
@@ -6510,7 +6505,7 @@ function bind() {
   app.querySelectorAll("[data-upgrade-feed]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
-      const r = upgradePet(state, btn.dataset.upgradeFeed, "feed");
+      const r = upgradePet(state, btn.dataset.upgradeFeed);
       const tut = advanceTutorialIfReady(state);
       saveState(state);
       render();
@@ -6882,16 +6877,6 @@ function bind() {
       saveState(state);
       render();
       setFlash(r.msg);
-    });
-  });
-  app.querySelectorAll("[data-upgrade]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const r = upgradePet(state, btn.dataset.upgrade);
-      const tut = advanceTutorialIfReady(state);
-      saveState(state);
-      render();
-      if (tut.advanced && tut.unlockMsg) setFlash(tut.unlockMsg, "unlock");
-      else flashResult(r);
     });
   });
   app.querySelectorAll("[data-start-hatch]").forEach((btn) => {

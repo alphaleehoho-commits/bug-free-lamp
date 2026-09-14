@@ -127,7 +127,6 @@ import {
   MATERIALS,
   upgradeMatCost,
   upgradeFeedCost,
-  upgradeStoneCost,
   petUpgradeCostSnapshot,
   canAffordPetUpgrade,
   petUpgradeShortageLines,
@@ -1044,11 +1043,13 @@ assert(upgradeFeedCost(9) < upgradeFeedCost(10), "lv10 feed steps up with earth 
 assert(upgradeFeedCost(19) > upgradeFeedCost(10), "mid feed still rises");
 assert(petUpgradeCostSnapshot(2).mats.tide_dew === upgradeMatCost(2).tide_dew, "snapshot mats match");
 assert(petUpgradeCostSnapshot(2).feed === upgradeFeedCost(2), "snapshot feed match");
-assert(petUpgradeCostSnapshot(2).stones === upgradeStoneCost(2), "snapshot stones match");
+assert(petUpgradeCostSnapshot(2).stones == null, "snapshot has no stone pay");
 for (const lv of [1, 2, 9, 10, 12, 19, 20, 33, 49, 50, 80]) {
   const mats = Object.entries(upgradeMatCost(lv)).filter(([, n]) => n > 0);
   assert(mats.length === 1, `lv${lv} exactly one secondary mat`);
-  assert(upgradeMandatoryKindCount(lv) === 2, `lv${lv} two categories (pay XOR + sub)`);
+  assert(upgradeMandatoryKindCount(lv) === 2, `lv${lv} two categories (feed + sub)`);
+  const snap = petUpgradeCostSnapshot(lv);
+  assert(snap.feed > 0 && snap.stones == null, `lv${lv} feed only, no stones`);
 }
 assert(breedMatCost(0, 0).coral_shard >= 1, "breed mats");
 assert(clampBreedBatchCount(0) === 1 && clampBreedBatchCount(99) === 10, "breed batch clamp");
@@ -1507,7 +1508,7 @@ const trainNavSt = {
   tutorial: { done: false, step: "train_pet", flags: {} },
   materials: { tide_dew: 3 },
   stones: 120,
-  feed: 0,
+  feed: 20,
   pets: [],
   ranch: [{ uid: "p1", level: 1, name: "x" }],
 };
@@ -1516,14 +1517,18 @@ const navParty = syncTutorialNavigation(trainNavSt, {
   panelSub: { party: "ranch", cultivate: "train" },
 });
 assert(navParty.tab === "party", "train_pet allows party tab");
-assert(trainPetCanUpgrade(trainNavSt), "train can upgrade with dew + stones");
+assert(trainPetCanUpgrade(trainNavSt), "train can upgrade with dew + feed");
 assert(
   trainPetCanUpgrade({ ...trainNavSt, stones: 0, feed: 99 }),
-  "train can upgrade with dew + feed"
+  "train can upgrade with dew + feed even if no stones"
 );
 assert(
   !trainPetCanUpgrade({ ...trainNavSt, stones: 0, feed: 0, materials: { tide_dew: 99 } }),
   "dew alone cannot upgrade"
+);
+assert(
+  !trainPetCanUpgrade({ ...trainNavSt, feed: 0, stones: 999, materials: { tide_dew: 99 } }),
+  "stones cannot pay pet upgrade"
 );
 assert(
   !trainPetCanUpgrade({ ...trainNavSt, materials: { tide_dew: 0 }, stones: 999, feed: 99 }),
@@ -1927,7 +1932,7 @@ assert(BREED_STONE_COST === 45, "breed cost");
 assert(BREED_COOLDOWN_MS === 45_000, "breed cd");
 assert(FORGE_SCRAP_COST === 2, "forge scrap");
 assert(fusionStoneCost(1) === 240, "fuse once stone cost");
-assert(upgradeStoneCost(1) >= 10 && upgradeStoneCost(8) > upgradeStoneCost(1), "upgrade stone curve");
+assert(petUpgradeCostSnapshot(1).feed > 0 && petUpgradeCostSnapshot(1).stones == null, "pet upgrade never costs stones");
 assert(BOND_COST_MAX === 42, "bond cap");
 const t1 = DUNGEONS.find((d) => d.id === "tide_1");
 assert(t1?.reward?.stones === 32, "t1 stones");
@@ -2655,23 +2660,24 @@ const feedUpSt = {
 const feedBefore = feedUpSt.feed;
 const dewBefore = feedUpSt.materials.tide_dew;
 const upSnap = petUpgradeCostSnapshot(1);
-const upR = upgradePet(feedUpSt, "up-pet", "feed");
+const upR = upgradePet(feedUpSt, "up-pet");
 assert(upR.ok && feedUpSt.feed < feedBefore, "feed upgrade deducts feed");
 assert(feedUpSt.feed === feedBefore - upSnap.feed, "feed deduct matches cost helper");
 assert(feedUpSt.materials.tide_dew === dewBefore - upSnap.mats.tide_dew, "dew deduct matches cost helper");
+assert(feedUpSt.stones === 100, "upgrade does not spend stones");
 assert(feedUpSt.ranch[0].level === 2, "feed upgrade levels pet");
 const fullView = upgradeFullCostView(
   { feed: 3, stones: 120, materials: { tide_dew: 6 }, clearedDungeons: {} },
   2
 );
 assert(fullView.feed.need === upgradeFeedCost(2) && fullView.feed.have === 3, "full view feed owned/need");
-assert(fullView.stones.need === upgradeStoneCost(2), "full view stones alt");
+assert(!fullView.stones, "full view has no stone pay");
 assert(
   fullView.mats.length === 1 && fullView.mats[0].id === "tide_dew",
   "lv2 full view only dew sub"
 );
-assert(fullView.canPay === true, "stones alt can pay");
-assert(canAffordPetUpgrade({ feed: 0, stones: 0, materials: { tide_dew: 99 } }, 2) === false, "cannot afford without pay");
+assert(fullView.canPay === false, "short feed cannot pay");
+assert(canAffordPetUpgrade({ feed: 0, stones: 999, materials: { tide_dew: 99 } }, 2) === false, "stones do not afford upgrade");
 assert(canAffordPetUpgrade({ feed: 99, stones: 0, materials: { tide_dew: 99 } }, 2) === true, "feed path enough");
 const earthView = upgradeFullCostView(
   {
@@ -2708,7 +2714,7 @@ assert(!earthView.mats.some((m) => m.id === "tide_dew"), "lv12 view no dew stack
   const dew0 = earthUpSt.materials.tide_dew;
   const earth0 = earthUpSt.materials.earth_grade_stone;
   const snap12 = petUpgradeCostSnapshot(12);
-  const r12 = upgradePet(earthUpSt, "up-earth", "feed");
+  const r12 = upgradePet(earthUpSt, "up-earth");
   assert(r12.ok && earthUpSt.ranch[0].level === 13, "lv12 feed upgrade ok");
   assert(earthUpSt.materials.tide_dew === dew0, "lv12 upgrade does not spend dew");
   assert(earthUpSt.materials.earth_grade_stone === earth0 - snap12.mats.earth_grade_stone, "lv12 spends earth only");
@@ -3691,6 +3697,7 @@ assert(uiSrc2.includes("data-upgrade-skill1") && uiSrc2.includes("data-upgrade-s
 assert(uiSrc2.includes("data-temper-oil"), "ui temper oil on temper tab");
 assert(uiSrc2.includes("data-upgrade-feed"), "ui feed-only upgrade dock");
 assert(!uiSrc2.includes("data-upgrade-stones"), "ui no stone upgrade on detail");
+assert(!/data-upgrade="/.test(uiSrc2), "ui no generic stone-pay upgrade button");
 assert(uiSrc2.includes("personalitySoulTagHtml"), "ui keeps deprecated soul helper");
 assert(uiSrc2.includes("data-awaken-sub") || uiSrc2.includes("覺醒"), "ui awaken sub button");
 assert(uiSrc2.includes("pet-tag-kin"), "ui kinship tag");
@@ -4114,7 +4121,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v127"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v128"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4219,12 +4226,14 @@ assert(preview18.expectedLevel <= 10, "1-18 expected still ≤Lv10");
 }
 
 assert(uiSrc2.includes("upgrade-mats") && uiSrc2.includes("下一級消耗"), "ui upgrade lists next costs");
-assert(uiSrc2.includes("基本（二揀一）"), "ui labels basic XOR pay");
+assert(uiSrc2.includes('cat: "基本"') || uiSrc2.includes("基本"), "ui labels basic feed");
 assert(uiSrc2.includes("副材"), "ui labels single secondary");
-assert(uiSrc2.includes("upgrade-pay-or"), "ui pay options joined with 或");
+assert(!uiSrc2.includes("基本（二揀一）"), "ui no XOR pay label");
+assert(!uiSrc2.includes("upgrade-pay-or"), "ui no 或 泡泡晶 pay join");
 assert(!uiSrc2.includes("升級另耗"), "ui no 另耗 split");
 assert(!uiSrc2.includes("下一級材料"), "ui no duplicate 下一級材料 kicker");
-assert(!uiSrc2.includes("泡泡晶（代替小餌）"), "ui does not list stones as extra mandatory");
+assert(!uiSrc2.includes("泡泡晶（代替小餌）"), "ui does not list stones as upgrade pay");
+assert(!uiSrc2.includes("基本改用泡泡晶"), "ui no stone upgrade button copy");
 assert((uiSrc2.match(/upgradeFullCostPanelHtml\(/g) || []).length === 2, "define + one next-level cost panel");
 assert(!uiSrc2.includes("upgradeMatsListHtml"), "old mats-only list removed");
 assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui shows locked stone note");

@@ -1214,21 +1214,19 @@ function upgradePayRow(id, name, need, have) {
 
 /**
  * 下一級完整消耗（與 upgradePet 扣款對齊）：
- * 基本＝小餌或泡泡晶（二揀一）＋ 副材恰好一種。
+ * 基本＝小餌 ＋ 副材恰好一種。
  */
 export function upgradeFullCostView(state, level) {
   const snap = petUpgradeCostSnapshot(level);
   const mats = upgradeMatCostView(state, level);
   const feed = upgradePayRow("feed", "小餌", snap.feed, state?.feed);
-  const stones = upgradePayRow("stones", "泡泡晶", snap.stones, state?.stones);
   const matsOk = mats.every((m) => m.ok && !m.locked);
   return {
     mats,
     sub: mats[0] || null,
     feed,
-    stones,
-    canPay: feed.ok || stones.ok,
-    canUpgrade: matsOk && (feed.ok || stones.ok),
+    canPay: feed.ok,
+    canUpgrade: matsOk && feed.ok,
     snapshot: snap,
   };
 }
@@ -4534,10 +4532,9 @@ export function displayPetName(pet) {
 }
 
 /**
- * 升級水母（出戰或牧場）
- * @param {'stones' | 'feed'} payWith
+ * 升級水母（出戰或牧場）：只扣小餌＋一種副材。
  */
-export function upgradePet(state, uid, payWith = "stones") {
+export function upgradePet(state, uid) {
   const found = findOwnedPet(state, uid);
   if (!found) return { ok: false, msg: "找不到水母。" };
   const pet = found.pet;
@@ -4551,32 +4548,12 @@ export function upgradePet(state, uid, payWith = "stones") {
       suggest: sh.suggest,
     };
   }
-  if (payWith === "feed") {
-    const cost = upgradeFeedCost(level);
-    if ((state.feed || 0) < cost) {
-      addMaterials(state, matCost); // refund mats
-      return { ok: false, msg: `小餌不足（需 ${cost}）。` };
-    }
-    state.feed = Math.max(0, (state.feed || 0) - cost);
-    const gains = applySubGrowthToLevelGains(levelStatGains(petGeneration(pet)), pet);
-    pet.atk = ceilStat(pet.atk + gains.atk);
-    pet.hp = ceilStat(pet.hp + gains.hp);
-    pet.spd = ceilStat(pet.spd + gains.spd);
-    pet.level = level + 1;
-    const matNote = formatMats(matCost);
-    pushLog(
-      state,
-      `${pet.name} 以小餌×${cost} 升級至 Lv.${pet.level}（攻+${ceilStat(gains.atk)} 血+${ceilStat(gains.hp)} 速+${ceilStat(gains.spd)}）${matNote ? `｜耗 ${matNote}` : ""}。`
-    );
-    maybeAnnounceSecondSkill(state, pet, level);
-    return { ok: true, msg: `${pet.name} → Lv.${pet.level}（耗小餌×${cost}）` };
-  }
-  const cost = upgradeStoneCost(level);
-  if (state.stones < cost) {
+  const cost = upgradeFeedCost(level);
+  if ((state.feed || 0) < cost) {
     addMaterials(state, matCost);
-    return { ok: false, msg: `泡泡晶不足（需 ${cost}）。` };
+    return { ok: false, msg: `小餌不足（需 ${cost}）。` };
   }
-  state.stones -= cost;
+  state.feed = Math.max(0, (state.feed || 0) - cost);
   const gains = applySubGrowthToLevelGains(levelStatGains(petGeneration(pet)), pet);
   pet.atk = ceilStat(pet.atk + gains.atk);
   pet.hp = ceilStat(pet.hp + gains.hp);
@@ -4585,10 +4562,10 @@ export function upgradePet(state, uid, payWith = "stones") {
   const matNote = formatMats(matCost);
   pushLog(
     state,
-    `${pet.name} 升級至 Lv.${pet.level}（攻+${ceilStat(gains.atk)} 血+${ceilStat(gains.hp)} 速+${ceilStat(gains.spd)}）${matNote ? `｜耗 ${matNote}` : ""}。`
+    `${pet.name} 以小餌×${cost} 升級至 Lv.${pet.level}（攻+${ceilStat(gains.atk)} 血+${ceilStat(gains.hp)} 速+${ceilStat(gains.spd)}）${matNote ? `｜耗 ${matNote}` : ""}。`
   );
   maybeAnnounceSecondSkill(state, pet, level);
-  return { ok: true, msg: `${pet.name} → Lv.${pet.level}` };
+  return { ok: true, msg: `${pet.name} → Lv.${pet.level}（耗小餌×${cost}）` };
 }
 
 function maybeAnnounceSecondSkill(state, pet, prevLevel) {
@@ -4838,7 +4815,6 @@ export function petDetail(state, uid) {
     fusionLevel: fusion,
     skillLevel: skillLv,
     secondSkillLevel: secondLv,
-    upgradeCost: upgradeStoneCost(level),
     upgradeFeedCost: upgradeFeedCost(level),
     upgradeMats: upgradeMatCostView(state, level),
     upgradeMatCost: upgradeMatCost(level),

@@ -18,7 +18,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "train_pet",
     title: "練功升級",
-    hint: "育成掛機攞露珠（副材）；基本用小餌或泡泡晶。夠料後到「水母 → 水母池 → 詳情」點升級，升至 Lv.3。",
+    hint: "育成掛機攞露珠（副材）同小餌。夠料後到「水母 → 水母池 → 詳情」點升級，升至 Lv.3。",
   },
   {
     id: "deploy",
@@ -146,7 +146,7 @@ function tutorialTrainTargetPet(state) {
   );
 }
 
-/** 目前是否有足夠材料＋小餌或泡泡晶升一級（與 upgradePet 一致） */
+/** 目前是否有足夠副材＋小餌升一級（與 upgradePet 一致） */
 export function trainPetCanUpgrade(state) {
   const pet = tutorialTrainTargetPet(state);
   if (!pet) return false;
@@ -930,7 +930,7 @@ export function tutorialTargetSelector(spec) {
         ? `button.info[data-pet-detail="${spec.uid}"]`
         : "button.info[data-pet-detail]";
     case "upgrade":
-      return "[data-upgrade-feed]:not([disabled]), [data-upgrade]:not([disabled])";
+      return "[data-upgrade-feed]:not([disabled])";
     case "start-fuse":
       return "[data-start-fuse]:not([disabled])";
     case "start-hatch":
@@ -1066,7 +1066,7 @@ export function tutorialBannerHint(state) {
 const TUTORIAL_NEXT_WHERE = {
   hatch_starter: "底部「水母」→「孵化」領取",
   meet_pet: "「水母 → 水母池」點開首隻詳情",
-  train_pet: "先「育成 → 練功」掛機，夠副材同小餌（或泡泡晶）再回「水母」升級",
+  train_pet: "先「育成 → 練功」掛機，夠露珠同小餌再回「水母」升級",
   deploy: "「水母 → 水母池」點「出戰」",
   dungeon_fight: "底部「秘境」→ 進攻 1-1",
   dungeon_win: "繼續在「秘境」戰勝 1-1",
