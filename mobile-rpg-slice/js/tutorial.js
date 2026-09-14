@@ -18,7 +18,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "train_pet",
     title: "練功升級",
-    hint: "育成掛機攞露珠同小餌；夠料後到「水母 → 水母池 → 詳情」點升級，升至 Lv.3。",
+    hint: "育成掛機攞露珠（副材）；基本用小餌或泡泡晶。夠料後到「水母 → 水母池 → 詳情」點升級，升至 Lv.3。",
   },
   {
     id: "deploy",
@@ -599,13 +599,14 @@ export function healTutorialProgress(state) {
   if ((state.daily?.idleSec || 0) >= TUTORIAL_QI_IDLE_SEC) {
     state.tutorial.flags.qiIdleDone = true;
   }
-  // 練功步：確保至少有足夠露珠升一級，避免卡喺「有 highlight 但升唔到」
+  // 練功步：確保至少有足夠副材升一級，避免卡喺「有 highlight 但升唔到」
   if (state.tutorial.step === "train_pet" && !state.tutorial.flags.trainMatsGranted) {
     if (!state.materials) state.materials = {};
     const pet = tutorialTrainTargetPet(state);
-    const need = pet ? upgradeMatCost(pet.level ?? 1).tide_dew || 1 : 1;
-    const have = Math.floor(state.materials.tide_dew || 0);
-    if (have < need) state.materials.tide_dew = need;
+    const mats = pet ? upgradeMatCost(pet.level ?? 1) : { tide_dew: 1 };
+    const [id, need] = Object.entries(mats).find(([, n]) => n > 0) || ["tide_dew", 1];
+    const have = Math.floor(state.materials[id] || 0);
+    if (have < need) state.materials[id] = need;
     state.tutorial.flags.trainMatsGranted = true;
   }
   // 單步推進一次即可，避免一次跳多步
@@ -1065,7 +1066,7 @@ export function tutorialBannerHint(state) {
 const TUTORIAL_NEXT_WHERE = {
   hatch_starter: "底部「水母」→「孵化」領取",
   meet_pet: "「水母 → 水母池」點開首隻詳情",
-  train_pet: "先「育成 → 練功」掛機，夠露珠同小餌再回「水母」升級",
+  train_pet: "先「育成 → 練功」掛機，夠副材同小餌（或泡泡晶）再回「水母」升級",
   deploy: "「水母 → 水母池」點「出戰」",
   dungeon_fight: "底部「秘境」→ 進攻 1-1",
   dungeon_win: "繼續在「秘境」戰勝 1-1",

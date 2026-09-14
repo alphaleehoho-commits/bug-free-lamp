@@ -1493,26 +1493,36 @@ function upgradeCostRowHtml(m) {
     m.locked && m.unlockNote
       ? `<span class="upgrade-mat-note">${escapeHtml(m.unlockNote)}</span>`
       : "";
-  const extra = m.altNote
-    ? `<span class="upgrade-mat-alt">${escapeHtml(m.altNote)}</span>`
-    : "";
-  return `<li class="upgrade-mat ${m.ok ? "is-ok" : "is-short"}${m.locked ? " is-locked" : ""}${m.alt ? " is-alt" : ""}">
-        <span class="upgrade-mat-line">${escapeHtml(m.name)} ×${fmtMatQty(m.need)}（持有 ${fmtMatQty(m.have)}／需 ${fmtMatQty(m.need)}）</span>
-        ${note}${extra}
+  const cat = m.cat ? `<span class="upgrade-mat-cat">${escapeHtml(m.cat)}</span>` : "";
+  return `<li class="upgrade-mat ${m.ok ? "is-ok" : "is-short"}${m.locked ? " is-locked" : ""}${m.basic ? " is-basic" : ""}">
+        ${cat}
+        <span class="upgrade-mat-line">${m.lineHtml || `${escapeHtml(m.name)} ×${fmtMatQty(m.need)}（持有 ${fmtMatQty(m.have)}／需 ${fmtMatQty(m.need)}）`}</span>
+        ${note}
       </li>`;
 }
 
-/** 單一下一級消耗面板：材料＋小餌（泡泡晶可代替），與 upgradePet 扣款一致 */
+function upgradePayLineHtml(row) {
+  const cls = row.ok ? "is-ok" : "is-short";
+  return `<span class="upgrade-pay-opt ${cls}">${escapeHtml(row.name)} ×${fmtMatQty(row.need)}（持有 ${fmtMatQty(row.have)}／需 ${fmtMatQty(row.need)}）</span>`;
+}
+
+/** 單一下一級消耗面板：基本（小餌或泡泡晶）＋副材一種，與 upgradePet 扣款一致 */
 function upgradeFullCostPanelHtml(level, { compact = false } = {}) {
   const view = upgradeFullCostView(state, level);
-  const rows = [...(view.mats || [])];
-  if (view.feed) rows.push(view.feed);
-  if (view.stones) {
+  const rows = [];
+  if (view.feed || view.stones) {
+    const payOk = !!(view.canPay);
     rows.push({
-      ...view.stones,
-      name: "泡泡晶（代替小餌）",
-      alt: true,
+      id: "pay",
+      cat: "基本（二揀一）",
+      basic: true,
+      ok: payOk,
+      locked: false,
+      lineHtml: `${upgradePayLineHtml(view.feed)}<span class="upgrade-pay-or">或</span>${upgradePayLineHtml(view.stones)}`,
     });
+  }
+  for (const m of view.mats || []) {
+    rows.push({ ...m, cat: "副材" });
   }
   if (!rows.length) return "";
   const items = rows.map((m) => upgradeCostRowHtml(m)).join("");
@@ -4728,10 +4738,10 @@ function petsDetailView() {
     <div class="row">
       <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade-feed="${escapeHtml(pet.uid)}" ${
         upgradeFullCost?.feed?.ok ? "" : "disabled"
-      } title="下一級消耗見上方清單">升級（小餌×${feedCost ?? "—"}）</button>
+      } title="基本用小餌，副材見上方">升級（小餌×${feedCost ?? "—"}）</button>
       <button type="button" class="${tutGlow({ type: "upgrade" }).trim()}" data-upgrade="${escapeHtml(pet.uid)}" ${
         upgradeFullCost?.stones?.ok ? "" : "disabled"
-      } title="用泡泡晶代替小餌">泡泡晶×${stoneCost ?? "—"}</button>
+      } title="基本改用泡泡晶（同小餌二揀一）">泡泡晶×${stoneCost ?? "—"}</button>
       ${
         fuseUnlocked
           ? `<button type="button" class="primary${tutGlow({ type: "start-fuse" })}" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>`

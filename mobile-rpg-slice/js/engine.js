@@ -1167,7 +1167,7 @@ function formatMats(mats) {
     .join("／");
 }
 
-/** 下一級升級材料清單（主材＋副材＋持有／需求＋階石解鎖說明） */
+/** 下一級升級副材清單（每級一種＋持有／需求＋階石解鎖說明） */
 export function upgradeMatCostView(state, level) {
   const cost = upgradeMatCost(level);
   const cleared = maxClearedTideTier(state);
@@ -1189,7 +1189,7 @@ export function upgradeMatCostView(state, level) {
         unlockNote: unlockAt != null ? gradeStoneUnlockNote(id, cleared) : "",
         source: materialSourceLabel(id),
         use: MATERIAL_USES[id] || "",
-        kind: "mat",
+        kind: "sub",
       };
     });
 }
@@ -1214,7 +1214,7 @@ function upgradePayRow(id, name, need, have) {
 
 /**
  * 下一級完整消耗（與 upgradePet 扣款對齊）：
- * 材料必扣 ＋ 小餌／泡泡晶二揀一。
+ * 基本＝小餌或泡泡晶（二揀一）＋ 副材恰好一種。
  */
 export function upgradeFullCostView(state, level) {
   const snap = petUpgradeCostSnapshot(level);
@@ -1224,6 +1224,7 @@ export function upgradeFullCostView(state, level) {
   const matsOk = mats.every((m) => m.ok && !m.locked);
   return {
     mats,
+    sub: mats[0] || null,
     feed,
     stones,
     canPay: feed.ok || stones.ok,

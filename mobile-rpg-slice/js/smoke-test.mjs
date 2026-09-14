@@ -131,6 +131,8 @@ import {
   petUpgradeCostSnapshot,
   canAffordPetUpgrade,
   petUpgradeShortageLines,
+  upgradeMandatoryKindCount,
+  upgradeBandMatId,
   breedMatCost,
   skillMatCost,
   fusionMatCost,
@@ -1031,10 +1033,11 @@ assert(
   !isSideBranchUnlocked({ clearedDungeons: { tide_21: true } }, "earth_vein"),
   "side branches stay abolished even at stage2"
 );
-assert(upgradeMatCost(1).tide_dew >= 1 && !upgradeMatCost(1).earth_grade_stone, "upgrade early main only");
+assert(upgradeMatCost(1).tide_dew >= 1 && !upgradeMatCost(1).earth_grade_stone, "upgrade early dew only");
 assert(upgradeMatCost(2).tide_dew >= 1 && !upgradeMatCost(2).earth_grade_stone, "lv2 dew only no earth");
-assert(upgradeMatCost(12).earth_grade_stone > 0, "upgrade band earth");
-assert(upgradeMatCost(33).fire_grade_stone > 0, "upgrade band fire");
+assert(upgradeMatCost(12).earth_grade_stone > 0 && !upgradeMatCost(12).tide_dew, "lv12 earth not stacked with dew");
+assert(upgradeMatCost(33).fire_grade_stone > 0 && !upgradeMatCost(33).tide_dew, "lv33 fire not stacked with dew");
+assert(upgradeBandMatId(2) === "tide_dew" && upgradeBandMatId(10) === "earth_grade_stone", "band mat ids");
 assert(upgradeFeedCost(1) <= 5 && upgradeFeedCost(2) <= 8, "early feed gentle");
 assert(upgradeFeedCost(2) < 18, "lv2 feed below old 18");
 assert(upgradeFeedCost(9) < upgradeFeedCost(10), "lv10 feed steps up with earth band");
@@ -1042,6 +1045,11 @@ assert(upgradeFeedCost(19) > upgradeFeedCost(10), "mid feed still rises");
 assert(petUpgradeCostSnapshot(2).mats.tide_dew === upgradeMatCost(2).tide_dew, "snapshot mats match");
 assert(petUpgradeCostSnapshot(2).feed === upgradeFeedCost(2), "snapshot feed match");
 assert(petUpgradeCostSnapshot(2).stones === upgradeStoneCost(2), "snapshot stones match");
+for (const lv of [1, 2, 9, 10, 12, 19, 20, 33, 49, 50, 80]) {
+  const mats = Object.entries(upgradeMatCost(lv)).filter(([, n]) => n > 0);
+  assert(mats.length === 1, `lv${lv} exactly one secondary mat`);
+  assert(upgradeMandatoryKindCount(lv) === 2, `lv${lv} two categories (pay XOR + sub)`);
+}
 assert(breedMatCost(0, 0).coral_shard >= 1, "breed mats");
 assert(clampBreedBatchCount(0) === 1 && clampBreedBatchCount(99) === 10, "breed batch clamp");
 assert(BREED_BATCH_MIN === 1 && BREED_BATCH_MAX === 10, "breed batch 1-10");
@@ -2660,11 +2668,51 @@ assert(fullView.feed.need === upgradeFeedCost(2) && fullView.feed.have === 3, "f
 assert(fullView.stones.need === upgradeStoneCost(2), "full view stones alt");
 assert(
   fullView.mats.length === 1 && fullView.mats[0].id === "tide_dew",
-  "lv2 full view only dew mat"
+  "lv2 full view only dew sub"
 );
 assert(fullView.canPay === true, "stones alt can pay");
 assert(canAffordPetUpgrade({ feed: 0, stones: 0, materials: { tide_dew: 99 } }, 2) === false, "cannot afford without pay");
 assert(canAffordPetUpgrade({ feed: 99, stones: 0, materials: { tide_dew: 99 } }, 2) === true, "feed path enough");
+const earthView = upgradeFullCostView(
+  {
+    feed: 200,
+    stones: 0,
+    materials: { tide_dew: 99, earth_grade_stone: 8 },
+    clearedDungeons: { tide_21: true },
+  },
+  12
+);
+assert(earthView.mats.length === 1 && earthView.mats[0].id === "earth_grade_stone", "lv12 view earth only");
+assert(!earthView.mats.some((m) => m.id === "tide_dew"), "lv12 view no dew stacked");
+{
+  const earthUpSt = {
+    feed: 500,
+    stones: 0,
+    materials: { ...emptyMaterials(), tide_dew: 40, earth_grade_stone: 30 },
+    ranch: [
+      {
+        ...buildPetStats({
+          id: "up12",
+          species: "reefox",
+          element: "tide",
+          personality: "gentle",
+          cost: 0,
+        }),
+        uid: "up-earth",
+        level: 12,
+      },
+    ],
+    pets: [],
+    log: [],
+  };
+  const dew0 = earthUpSt.materials.tide_dew;
+  const earth0 = earthUpSt.materials.earth_grade_stone;
+  const snap12 = petUpgradeCostSnapshot(12);
+  const r12 = upgradePet(earthUpSt, "up-earth", "feed");
+  assert(r12.ok && earthUpSt.ranch[0].level === 13, "lv12 feed upgrade ok");
+  assert(earthUpSt.materials.tide_dew === dew0, "lv12 upgrade does not spend dew");
+  assert(earthUpSt.materials.earth_grade_stone === earth0 - snap12.mats.earth_grade_stone, "lv12 spends earth only");
+}
 
 /* Split skill upgrade: primary vs second */
 {
@@ -4066,7 +4114,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v126"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v127"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4163,15 +4211,20 @@ assert(preview18.expectedLevel <= 10, "1-18 expected still ≤Lv10");
   assert(earthRow && earthRow.locked && earthRow.need > 0, "Lv10 upgrade lists locked earth stone");
   assert(earthRow.unlockNote.includes("1-20"), "upgrade mat note after 1-20");
   const dewRow = matView.find((m) => m.id === "tide_dew");
-  assert(dewRow && dewRow.need > 0, "Lv10 upgrade lists dew");
+  assert(!dewRow, "Lv10 upgrade secondary is earth not dew");
+  assert(matView.filter((m) => m.need > 0).length === 1, "Lv10 one secondary row");
 
   const dungTips = dungeonFailCoachTips(gateSt, { dungeonId: "tide_18", failKind: "wipe" });
   assert(dungTips.some((t) => t.includes("地階石")), "dungeon fail also explains earth gate");
 }
 
 assert(uiSrc2.includes("upgrade-mats") && uiSrc2.includes("下一級消耗"), "ui upgrade lists next costs");
+assert(uiSrc2.includes("基本（二揀一）"), "ui labels basic XOR pay");
+assert(uiSrc2.includes("副材"), "ui labels single secondary");
+assert(uiSrc2.includes("upgrade-pay-or"), "ui pay options joined with 或");
 assert(!uiSrc2.includes("升級另耗"), "ui no 另耗 split");
 assert(!uiSrc2.includes("下一級材料"), "ui no duplicate 下一級材料 kicker");
+assert(!uiSrc2.includes("泡泡晶（代替小餌）"), "ui does not list stones as extra mandatory");
 assert((uiSrc2.match(/upgradeFullCostPanelHtml\(/g) || []).length === 2, "define + one next-level cost panel");
 assert(!uiSrc2.includes("upgradeMatsListHtml"), "old mats-only list removed");
 assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui shows locked stone note");

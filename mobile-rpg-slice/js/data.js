@@ -1,7 +1,7 @@
 /** Data tables — 水母漂漂 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260914.2";
+export const APP_BUILD = "20260914.3";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
@@ -10,7 +10,7 @@ export const GAME_TERMS = {
   feed: { name: "小餌", blurb: "餵水母／契約用。掛機與水母池待命可產出。" },
   dust: { name: "星砂", blurb: "技能與進階材料。掛機與水母池可產出。" },
   qi: { name: "共鳴", blurb: "體階進度。掛機累積，滿後到「育成 → 進階」成長。" },
-  tide_dew: { name: "露珠", blurb: "升級水母的主材料。在「育成 → 練功」掛機取得。" },
+  tide_dew: { name: "露珠", blurb: "早期升級副材。在「育成 → 練功」掛機取得。" },
   earth_grade_stone: {
     name: "地階石",
     blurb: "升 Lv10→11 起嘅副材。通關 1-20 入漂路第二章之後先掛機出，第一章搵唔到～",
@@ -4477,7 +4477,7 @@ export function migratePetPersonalityFields(pet) {
 /* ─── P10：材料／練功地點／主線解鎖 ─── */
 
 export const MATERIALS = {
-  tide_dew: { id: "tide_dew", name: "露珠", desc: "升級主材（全程）", tier: "bulk" },
+  tide_dew: { id: "tide_dew", name: "露珠", desc: "升級副材（Lv1–9）", tier: "bulk" },
   coral_shard: { id: "coral_shard", name: "珊瑚屑", desc: "原生繁殖", tier: "bulk" },
   mist_silk: { id: "mist_silk", name: "霧絲", desc: "中階養成", tier: "bulk" },
   abyss_ink: { id: "abyss_ink", name: "深淵墨", desc: "高代繁殖", tier: "bulk" },
@@ -4729,27 +4729,45 @@ export function upgradeSubMatId(level) {
   return null;
 }
 
-/** 升級耗材料：主材露珠（全程遞增）+ 每10級副材 */
-export function upgradeMatCost(level) {
+/** 該級唯一副材：Lv1–9 露珠；Lv10+ 只換該帶階石（唔再疊露珠） */
+export function upgradeBandMatId(level) {
   const lv = Math.max(1, level | 0);
-  const out = {
-    tide_dew: Math.max(1, Math.ceil(1 + lv * 0.55 + Math.floor(lv / 5))),
-  };
-  const sub = upgradeSubMatId(lv);
-  if (sub) {
-    // 帶內愈高愈貴；跨帶重置起點
-    const bandBase = sub === "void_grade_stone" ? 50 : UPGRADE_SUB_BANDS.find((b) => b.id === sub)?.minLv || 10;
-    const into = Math.max(0, lv - bandBase);
-    out[sub] = Math.max(2, Math.ceil(4 + into * 3 + Math.floor(lv / 8)));
-  }
-  return out;
+  return upgradeSubMatId(lv) || "tide_dew";
 }
 
-/** 升級實際扣款快照：材料＋小餌／泡泡晶（二揀一）。與 upgradePet 一致。 */
+export function upgradeBandMatNeed(level) {
+  const lv = Math.max(1, level | 0);
+  const id = upgradeBandMatId(lv);
+  if (id === "tide_dew") {
+    return Math.max(1, Math.ceil(1 + lv * 0.55 + Math.floor(lv / 5)));
+  }
+  const bandBase = id === "void_grade_stone" ? 50 : UPGRADE_SUB_BANDS.find((b) => b.id === id)?.minLv || 10;
+  const into = Math.max(0, lv - bandBase);
+  return Math.max(2, Math.ceil(4 + into * 3 + Math.floor(lv / 8)));
+}
+
+/** 升級耗材料：每級只扣一種副材（基本貨幣另計，小餌／泡泡晶二揀一） */
+export function upgradeMatCost(level) {
+  const id = upgradeBandMatId(level);
+  const need = upgradeBandMatNeed(level);
+  return need > 0 ? { [id]: need } : {};
+}
+
+/** 強制消耗種類數：基本（1 類，二揀一）＋副材（1 種）＝ 2；永不 3 */
+export function upgradeMandatoryKindCount(level) {
+  const mats = Object.values(upgradeMatCost(level)).filter((n) => n > 0).length;
+  return mats + 1;
+}
+
+/** 升級實際扣款快照：副材一種＋小餌／泡泡晶（二揀一）。與 upgradePet 一致。 */
 export function petUpgradeCostSnapshot(level) {
   const lv = Math.max(1, level | 0);
+  const mats = upgradeMatCost(lv);
+  const subId = upgradeBandMatId(lv);
   return {
-    mats: upgradeMatCost(lv),
+    mats,
+    subId,
+    subNeed: mats[subId] || 0,
     feed: upgradeFeedCost(lv),
     stones: upgradeStoneCost(lv),
   };
@@ -4772,7 +4790,7 @@ export function canAffordUpgradePay(state, level) {
   return feedOk || stoneOk;
 }
 
-/** 與 upgradePet 成功條件對齊：材料＋（小餌或泡泡晶） */
+/** 與 upgradePet 成功條件對齊：一種副材＋（小餌或泡泡晶） */
 export function canAffordPetUpgrade(state, level) {
   return canAffordUpgradeMats(state, level) && canAffordUpgradePay(state, level);
 }
@@ -5492,7 +5510,7 @@ export function dispatchNeedStageMet(state, mission) {
 /* ─── P11：材料提示／解鎖回饋 ─── */
 
 export const MATERIAL_USES = {
-  tide_dew: "升級主材",
+  tide_dew: "早期升級",
   coral_shard: "原生繁殖",
   mist_silk: "中階養成",
   abyss_ink: "高代繁殖",
