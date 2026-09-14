@@ -189,6 +189,9 @@ import {
   isSpinePreBossFloor,
   expectedSpineLevelForFloor,
   gradeStoneUnlockClearedFloor,
+  gradeStoneUnlockNote,
+  spineTrainFoePreview,
+  spineComfortForInto,
   ABYSS_MUTATION_IDS,
   ABYSS_COSMETIC_IDS,
   ABYSS_WIPE_KEEP_RATE,
@@ -293,6 +296,8 @@ import {
   setTrainAutoNextFloor,
   persistTrainIdleClearResult,
   idleFailAdvice,
+  upgradeMatCostView,
+  dungeonFailCoachTips,
   shouldShowTitleScreen,
   markTitleEntered,
   persistTrainIdleCombatState,
@@ -1154,7 +1159,7 @@ const earthLockedSug = suggestTrainForShortage(
 assert(
   earthLockedSug?.siteId === SPINE_ZONE_ID &&
     earthLockedSug.unlocked === false &&
-    /頭目|已通/.test(earthLockedSug.unlockHint || ""),
+    /1-20|第二章|而家未有石/.test(earthLockedSug.unlockHint || ""),
   "earth locked until floor21 clear"
 );
 const earthSug = suggestTrainForShortage(
@@ -3996,7 +4001,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v124"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v125"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4014,6 +4019,93 @@ assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");
 assert(BREAKTHROUGH_GATES[4].checks.find((c) => c.type === "bestiary")?.need === 18, "bt4 bestiary staged");
 assert(BREAKTHROUGH_GATES[5].checks.find((c) => c.type === "bestiary")?.need === 36, "bt5 bestiary staged");
+
+assert(GAME_TERMS.earth_grade_stone?.blurb?.includes("1-20"), "glossary earth stone after 1-20");
+assert(spineComfortForInto(18) >= 1.65 && spineComfortForInto(19) >= 1.55, "ch1 gate comfort not a wall");
+assert(spineComfortForInto(18) < spineComfortForInto(17), "18 slightly tighter than 17");
+const earthNote = gradeStoneUnlockNote("earth_grade_stone", 17);
+assert(earthNote.includes("1-20") && earthNote.includes("而家未有石"), "earth unlock note honest");
+assert(!earthNote.includes("而家就"), "earth note does not imply stone now");
+const preview18 = spineTrainFoePreview(18);
+const preview17 = spineTrainFoePreview(17);
+assert(preview18.threat < 110 && preview18.gateElite.hp < 230, "1-18 gate elite in Lv10 band");
+assert(preview18.gateElite.hp < preview17.gateElite.hp * 1.25, "1-18 gate not a 50%+ HP spike");
+assert(preview18.expectedLevel <= 10, "1-18 expected still ≤Lv10");
+
+{
+  const mkLv = (id, species, element, personality) => {
+    const p = {
+      ...buildPetStats({ id, species, element, personality, cost: 0, rarity: 0 }),
+      uid: id,
+      skillLevel: 2,
+    };
+    for (let i = p.level; i < 10; i++) {
+      const g = applySubGrowthToLevelGains(levelStatGains(petGeneration(p)), p);
+      p.atk = ceilStat(p.atk + g.atk);
+      p.hp = ceilStat(p.hp + g.hp);
+      p.spd = ceilStat(p.spd + g.spd);
+      p.level = i + 1;
+    }
+    return p;
+  };
+  const lv10Party = [
+    mkLv("carp", "tidecarp", "flame", "gentle"),
+    mkLv("fox", "reefox", "tide", "sly"),
+    mkLv("wing", "ashwing", "flame", "fierce"),
+  ];
+  const mkFloorState = (floor) => {
+    const cleared = {};
+    for (let i = 1; i < floor; i++) cleared[`tide_${i}`] = true;
+    return {
+      stones: 0,
+      materials: emptyMaterials(),
+      trainSite: SPINE_ZONE_ID,
+      trainMap: { zones: { [SPINE_ZONE_ID]: { tiersCleared: floor - 1, idleFloor: floor } }, wardenCleared: {} },
+      pets: lv10Party,
+      ranch: [],
+      realm: 0,
+      tactics: "balanced",
+      formation: "balanced",
+      clearedDungeons: cleared,
+      log: [],
+      daily: { date: todayKey(), progress: {}, claimed: {} },
+      stats: {},
+      achievements: {},
+    };
+  };
+  for (const floor of [18, 19, 20]) {
+    let wins = 0;
+    const n = 10;
+    for (let i = 0; i < n; i++) {
+      const r = runTrainLayerCombat(mkFloorState(floor), {
+        zoneId: SPINE_ZONE_ID,
+        tierIndex: floor - 1,
+        mode: "tier",
+      });
+      if (r.won) wins += 1;
+    }
+    assert(wins >= 7, `3xLv10 clears ${spineChapterFloorLabel(floor)} (${wins}/${n})`);
+  }
+
+  const gateSt = mkFloorState(18);
+  const gateAdvice = idleFailAdvice(gateSt, { failKind: "wipe", floor: 18, failStreak: 2 });
+  assert(gateAdvice.tips.some((t) => t.includes("地階石") && t.includes("1-20")), "fail card explains earth after 1-20");
+  assert(gateAdvice.tips.some((t) => t.includes("秘境") || t.includes("繁殖") || t.includes("技能")), "fail card honest power tips");
+  assert(!gateAdvice.tips.some((t) => t.includes("而家就有石")), "fail card does not imply stone now");
+
+  const matView = upgradeMatCostView({ materials: emptyMaterials(), clearedDungeons: { tide_17: true } }, 10);
+  const earthRow = matView.find((m) => m.id === "earth_grade_stone");
+  assert(earthRow && earthRow.locked && earthRow.need > 0, "Lv10 upgrade lists locked earth stone");
+  assert(earthRow.unlockNote.includes("1-20"), "upgrade mat note after 1-20");
+  const dewRow = matView.find((m) => m.id === "tide_dew");
+  assert(dewRow && dewRow.need > 0, "Lv10 upgrade lists dew");
+
+  const dungTips = dungeonFailCoachTips(gateSt, { dungeonId: "tide_18", failKind: "wipe" });
+  assert(dungTips.some((t) => t.includes("地階石")), "dungeon fail also explains earth gate");
+}
+
+assert(uiSrc2.includes("upgrade-mats") && uiSrc2.includes("下一級材料"), "ui upgrade lists next mats");
+assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui shows locked stone note");
 
 console.log("smoke-test ok");
 

@@ -2207,6 +2207,43 @@ button.ghost {
 .pet-detail-upgrade {
   margin-top: 0.45rem;
 }
+.upgrade-mats {
+  margin: 0.35rem 0 0.2rem;
+  padding: 0.45rem 0.5rem 0.5rem;
+  border-radius: 10px;
+  border: 1px solid rgba(126, 196, 176, 0.28);
+  background: rgba(18, 32, 30, 0.45);
+}
+.upgrade-mats.is-compact {
+  margin: 0.15rem 0 0.35rem;
+}
+.upgrade-mats-kicker {
+  margin: 0 0 0.2rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--jade-bright) 80%, var(--fog));
+}
+.upgrade-mats ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.upgrade-mat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  margin: 0.18rem 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+.upgrade-mat.is-ok .upgrade-mat-line { color: #9fd4c0; }
+.upgrade-mat.is-short .upgrade-mat-line { color: #e8a090; font-weight: 600; }
+.upgrade-mat.is-locked .upgrade-mat-line { color: #f0c2b0; }
+.upgrade-mat-note {
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: #ead59a;
+}
 .pet-detail-block {
   margin-bottom: 0.2rem;
 }
