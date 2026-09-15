@@ -1,15 +1,15 @@
 /** Data tables — 水母漂漂 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260914.4";
+export const APP_BUILD = "20260914.5";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
   stones: { name: "泡泡晶", blurb: "亮晶晶的貨幣。商肆買蛋、繁殖、契約、成長與融合會消耗。" },
   scrap: { name: "碎片", blurb: "秘境掉落。部分養成與兌換會用到。" },
   feed: { name: "小餌", blurb: "餵水母／契約用。掛機與水母池待命可產出。" },
-  dust: { name: "星砂", blurb: "技能與進階材料。掛機與水母池可產出。" },
-  qi: { name: "共鳴", blurb: "體階進度。掛機累積，滿後到「育成 → 進階」成長。" },
+  dust: { name: "星砂", blurb: "技能材料。掛機與水母池可產出（進階體階已廢）。" },
+  qi: { name: "共鳴", blurb: "舊體階進度殘留。掛機仍會累積，但不再用於進階突破。" },
   tide_dew: { name: "露珠", blurb: "早期升級副材。在「育成 → 練功」掛機取得。" },
   earth_grade_stone: {
     name: "地階石",
@@ -18,7 +18,7 @@ export const GAME_TERMS = {
   spine: { name: "漂路", blurb: "主線關卡。顯示成 1-1、1-2…每章 20 關後進入 2-1。" },
   mist_token: { name: "霧箋", blurb: "再挑戰已通關秘境的入場憑證。練功、每日與成長可獲。" },
   soul: { name: "光核", blurb: "放生或退蛋所得。可在商肆兌換物資。" },
-  realm: { name: "體階", blurb: "水母的成長等階。成長後掛機效率與可挑戰內容會提升。" },
+  realm: { name: "體階", blurb: "舊成長等階（已廢進階）。內容閘改跟漂路章與品種解鎖；此值由漂路自動對齊。" },
 };
 
 export const STAGES = [
@@ -729,6 +729,86 @@ export function wildSpeciesIds(realm = 99) {
 export function shopSpeciesIds(realm = 0) {
   return wildSpeciesIds(Math.max(0, realm | 0));
 }
+
+/** 開局即解鎖嘅野生種（minRealm≤0 同基礎六種） */
+export function starterSpeciesIds() {
+  return Object.values(SPECIES)
+    .filter((s) => !s.breedOnly && (s.minRealm == null || (s.minRealm | 0) <= 0))
+    .map((s) => s.id);
+}
+
+/** 確保 state.speciesUnlocks；並把已擁有／圖鑑種補解鎖（存檔遷移） */
+export function ensureSpeciesUnlocks(state) {
+  if (!state.speciesUnlocks || typeof state.speciesUnlocks !== "object") {
+    state.speciesUnlocks = {};
+  }
+  for (const id of starterSpeciesIds()) state.speciesUnlocks[id] = true;
+  const owned = [...(state.pets || []), ...(state.ranch || [])];
+  for (const p of owned) {
+    if (p?.speciesId) state.speciesUnlocks[p.speciesId] = true;
+  }
+  for (const key of Object.keys(state.bestiary || {})) {
+    const sid = String(key).split(":")[0];
+    if (sid && SPECIES[sid]) state.speciesUnlocks[sid] = true;
+  }
+  return state.speciesUnlocks;
+}
+
+export function isSpeciesUnlocked(state, speciesId) {
+  if (!speciesId || !SPECIES[speciesId]) return false;
+  ensureSpeciesUnlocks(state);
+  if (state.speciesUnlocks[speciesId]) return true;
+  // 雜交種：雙親都解鎖先當可見（配方預覽／圖鑑）
+  if (SPECIES[speciesId].breedOnly) {
+    // 擁有過就解；否則要配方雙親都已解鎖先顯示名
+    return false;
+  }
+  return false;
+}
+
+export function unlockSpecies(state, speciesId, reason = "") {
+  if (!speciesId || !SPECIES[speciesId]) return false;
+  ensureSpeciesUnlocks(state);
+  if (state.speciesUnlocks[speciesId]) return false;
+  state.speciesUnlocks[speciesId] = true;
+  return true;
+}
+
+/** 已解鎖野生種（仍受 realm／minRealm 分池） */
+export function unlockedWildSpeciesIds(state, realm = 99) {
+  ensureSpeciesUnlocks(state);
+  return wildSpeciesIds(realm).filter((id) => state.speciesUnlocks[id]);
+}
+
+export function unlockedShopSpeciesIds(state, realm = 0) {
+  return unlockedWildSpeciesIds(state, Math.max(0, realm | 0));
+}
+
+/**
+ * 秘境蛋線：稀有以上（B/A）。掛機 AFK 唔出蛋。
+ * tierHint：秘境層級（1…）
+ */
+export function rollDungeonEggDrop(tierHint = 1, opts = {}) {
+  const tier = Math.max(1, tierHint | 0);
+  const sweep = !!opts.sweep;
+  const firstClear = !!opts.firstClear;
+  // 基礎機率：B 較常、A 稀有；掃蕩略低；首通微加
+  let pB = Math.min(0.22, 0.07 + tier * 0.008) * (sweep ? 0.65 : 1) * (firstClear ? 1.25 : 1);
+  let pA = Math.min(0.1, 0.018 + tier * 0.004) * (sweep ? 0.55 : 1) * (firstClear ? 1.35 : 1);
+  const r = Math.random();
+  if (r < pA) return { tier: "A", chance: pA };
+  if (r < pA + pB) return { tier: "B", chance: pB };
+  return null;
+}
+
+/** 秘境石／碎獎勵係數（避免同掛機搶日常素材） */
+export const DUNGEON_MAT_REWARD_MULT = 0.72;
+
+/** 漂路章 → 舊 realm 對齊（章1→realm0） */
+export function realmFromSpineStage(spineStage) {
+  return Math.max(0, (spineStage | 0) - 1);
+}
+
 
 /**
  * 主性格池（戰鬥加成 only）：三項 (m-1) 總計 ≈ +9%，單項最多 ±15%。
@@ -1864,8 +1944,13 @@ export function rollBreedGenes(parentA, parentB) {
 }
 
 /** 秘境隨機生成一隻野生水母；可帶分層權重（僅野生種，受 realm 分池） */
-export function rollWildEncounter(dungeonId = "wild", dungeonDef = null, realm = 0) {
-  const wildIds = wildSpeciesIds(realm);
+export function rollWildEncounter(dungeonId = "wild", dungeonDef = null, realm = 0, state = null) {
+  let wildIds = wildSpeciesIds(realm);
+  if (state) {
+    ensureSpeciesUnlocks(state);
+    wildIds = wildIds.filter((id) => state.speciesUnlocks[id]);
+    if (!wildIds.length) wildIds = starterSpeciesIds();
+  }
   const weights = dungeonDef?.encounterWeights;
   let speciesId;
   if (weights) {
@@ -3519,7 +3604,9 @@ export function hatchPetFromEgg(egg, opts = {}) {
     child.fromBreedEgg = true;
     return child;
   }
-  const wildIds = wildSpeciesIds(opts.realm || 0);
+  const wildIds = opts.state
+    ? unlockedWildSpeciesIds(opts.state, opts.realm || 0)
+    : wildSpeciesIds(opts.realm || 0);
   const species = opts.species || wildIds[Math.floor(Math.random() * wildIds.length)] || "reefox";
   const elements = Object.keys(ELEMENTS);
   const element = opts.element || elements[Math.floor(Math.random() * elements.length)] || "tide";
@@ -5537,6 +5624,9 @@ export const MATERIAL_USES = {
 export const ABYSS_GRIT_ID = "abyss_grit";
 /** 主脊階段 ≥ 此值（已通 ≥81）先解鎖深潛——大後期旁路 */
 export const ABYSS_UNLOCK_SPINE_STAGE = 5;
+/** 深潛內容暫凍：入口可留，但不可開潛（後期再平衡） */
+export const ABYSS_CONTENT_FROZEN = true;
+export const ABYSS_FROZEN_MSG = "深潛暫凍中——後期旁路，現階段唔推／暫不平衡。請先玩漂路劇場、秘境解鎖與繁殖。";
 /** 每日首趟免費，其後每趟 */
 export const ABYSS_ENTRY_TOKEN_COST = 1;
 export const ABYSS_WIPE_KEEP_RATE = 0.4;
