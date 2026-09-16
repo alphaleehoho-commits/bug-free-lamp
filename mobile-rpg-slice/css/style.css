@@ -5022,3 +5022,357 @@ html.theme-light .train-idle-title strong,
 #app.theme-light .train-idle-title strong {
   color: var(--text);
 }
+
+/* =============================================================================
+   pet-display-v2.css — Pet art display tweaks for 「暗潮 · 水母漂漂」
+   Drop-in APPEND at end of mobile-rpg-slice/css/style.css
+   (after pet-motion-v1 / chrome-polish if present).
+
+   Goals (user feedback):
+   1) Scale roster / combat / codex / detail art ~2.2× current display sizes
+   2) Reduce empty padding around pets
+   3) Remove square outer frame / bordered plate on .pet-art
+   4) Lower visual center ~8–12% (jelly sits lower in the box)
+   5) Preserve .pet-art--flip + pet-motion--* (no transform fights)
+   6) theme-light: no pale square plate
+
+   Inline --art-size from petArtFromPet wins without !important — so context
+   rules re-declare --art-size / --icon-size with !important AND set concrete
+   width/height on frame + img/icon.
+   ============================================================================= */
+
+
+/* -----------------------------------------------------------------------------
+   §A — Tokens (optional; contexts below set concrete sizes)
+   ----------------------------------------------------------------------------- */
+:root {
+  --pet-display-scale: 2.2;
+  /* Current JS baselines → ~2.2× targets */
+  --pet-art-combat: 48px;   /* was ~22 → ~48 */
+  --pet-art-pick: 53px;     /* was 24 → ~53 */
+  --pet-art-card: 62px;     /* was 28 → ~62 */
+  --pet-art-row: 75px;      /* was 34 → ~75 */
+  --pet-art-mid: 79px;      /* was 36 (codex / breed-slot) → ~79 */
+  --pet-art-detail: 114px;  /* was 52 → ~114 */
+  /* Visual anchor: lower jelly in box (~8–12% below geometric center) */
+  --pet-art-anchor-y: 62%;
+  --pet-art-sink: 10%;
+}
+
+
+/* -----------------------------------------------------------------------------
+   §B — Strip square plate; keep soft elem wash / rarity glow only
+   ----------------------------------------------------------------------------- */
+.pet-art {
+  /* Kill hard bordered square plate */
+  border: none !important;
+  border-color: transparent !important;
+  border-style: none !important;
+  background:
+    radial-gradient(
+      circle at 50% 42%,
+      var(--elem-wash, rgba(126, 168, 160, 0.2)) 0%,
+      transparent 68%
+    ) !important;
+  /* No dark linear plate / inset “tile” */
+  box-shadow: none;
+  /* Tighter frame: art fills the box (was +0.45rem empty pad) */
+  width: var(--art-size, 32px);
+  height: var(--art-size, 32px);
+  padding: 0;
+  border-radius: 50%; /* soft orb glow, not square plate */
+  overflow: visible;
+  /* Lower visual center: push content toward bottom of box */
+  align-items: flex-end;
+  justify-content: center;
+}
+
+/* Soft rarity glow — outer bloom only, no inset hard edge */
+.pet-art--rarity-rare {
+  box-shadow: 0 0 10px var(--rarity-soft, rgba(109, 179, 217, 0.32));
+}
+.pet-art--rarity-epic {
+  box-shadow: 0 0 12px var(--rarity-soft, rgba(201, 160, 232, 0.36));
+}
+.pet-art--rarity-legendary {
+  box-shadow: 0 0 14px var(--rarity-soft, rgba(232, 184, 109, 0.4));
+  /* Keep legend pulse if keyframes exist; soft outer only */
+  animation: pet-art-legend-pulse 2.8s ease-in-out infinite;
+}
+
+/* Hybrid: was dashed square border — drop plate, keep subtle glow hint */
+.pet-art.is-hybrid {
+  border: none !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--elem-glow, #7ec8d8) 45%, transparent);
+}
+
+.pet-art-unknown {
+  background: rgba(126, 168, 160, 0.1) !important;
+  border: none !important;
+  border-radius: 50%;
+}
+
+/* Gen badge / elem dot still readable on frameless art */
+.pet-art-gen {
+  left: -0.05rem;
+  bottom: -0.08rem;
+  background: rgba(8, 14, 20, 0.72);
+}
+.pet-art-elem-dot {
+  right: -0.02rem;
+  bottom: -0.04rem;
+}
+
+
+/* -----------------------------------------------------------------------------
+   §C — Anchor: jelly sits lower (~8–12%)
+   Prefer object-position / flex alignment — do NOT set transform on
+   .pet-art img / .pet-icon (conflicts with pet-motion--* + pet-art--flip).
+   ----------------------------------------------------------------------------- */
+.pet-art img {
+  width: var(--art-size, 32px);
+  height: var(--art-size, 32px);
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center var(--pet-art-anchor-y, 62%);
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* SVG / icon path: layout sink (margin) avoids transform clash with motion/flip */
+.pet-art .pet-icon {
+  width: var(--icon-size, var(--art-size, 32px));
+  height: var(--icon-size, var(--art-size, 32px));
+  margin-bottom: 0;
+  /* Nudge icon mass downward ~10% of box without transform */
+  position: relative;
+  top: var(--pet-art-sink, 10%);
+  z-index: 1;
+}
+
+/* Preserve flip — do not override transform here.
+   Expected (CODE): .pet-art--flip img / .pet-icon { transform: scaleX(-1); }
+   Motion classes compose on the same nodes; leave them alone. */
+
+
+/* -----------------------------------------------------------------------------
+   §D — Context size overrides (~2.2× current JS baselines)
+   !important on --art-size / --icon-size beats inline style from petArtFromPet.
+   ----------------------------------------------------------------------------- */
+
+/* Combat unit art (className: "pet-art--combat" when CODE wires PNG into units)
+   Baseline ~22px → ~48px */
+.pet-art.pet-art--combat,
+.combat-unit .pet-art,
+.combat-roster .pet-art,
+.train-idle-roster .pet-art {
+  --art-size: var(--pet-art-combat) !important;
+  --icon-size: var(--pet-art-combat) !important;
+  width: var(--pet-art-combat) !important;
+  height: var(--pet-art-combat) !important;
+}
+.pet-art.pet-art--combat img,
+.pet-art.pet-art--combat .pet-icon,
+.combat-unit .pet-art img,
+.combat-unit .pet-art .pet-icon,
+.combat-roster .pet-art img,
+.combat-roster .pet-art .pet-icon,
+.train-idle-roster .pet-art img,
+.train-idle-roster .pet-art .pet-icon {
+  width: var(--pet-art-combat) !important;
+  height: var(--pet-art-combat) !important;
+}
+
+/* Roster cards — petCard size 28 → ~62 */
+.pet-card .pet-art {
+  --art-size: var(--pet-art-card) !important;
+  --icon-size: var(--pet-art-card) !important;
+  width: var(--pet-art-card) !important;
+  height: var(--pet-art-card) !important;
+}
+.pet-card .pet-art img,
+.pet-card .pet-art .pet-icon {
+  width: var(--pet-art-card) !important;
+  height: var(--pet-art-card) !important;
+}
+
+/* List rows — petRow size 34 → ~75 */
+.pet-row .pet-art,
+.card-row.pet-row .pet-art {
+  --art-size: var(--pet-art-row) !important;
+  --icon-size: var(--pet-art-row) !important;
+  width: var(--pet-art-row) !important;
+  height: var(--pet-art-row) !important;
+}
+.pet-row .pet-art img,
+.pet-row .pet-art .pet-icon,
+.card-row.pet-row .pet-art img,
+.card-row.pet-row .pet-art .pet-icon {
+  width: var(--pet-art-row) !important;
+  height: var(--pet-art-row) !important;
+}
+
+/* Pick cards (breed / dispatch / fuse) — size 24 → ~53 */
+.pet-pick-card .pet-art {
+  --art-size: var(--pet-art-pick) !important;
+  --icon-size: var(--pet-art-pick) !important;
+  width: var(--pet-art-pick) !important;
+  height: var(--pet-art-pick) !important;
+}
+.pet-pick-card .pet-art img,
+.pet-pick-card .pet-art .pet-icon {
+  width: var(--pet-art-pick) !important;
+  height: var(--pet-art-pick) !important;
+}
+
+/* Codex + mid contexts (breed-slot etc.) — size 36 → ~79 */
+.codex-icon .pet-art,
+.codex-row .pet-art,
+.breed-slot .pet-art {
+  --art-size: var(--pet-art-mid) !important;
+  --icon-size: var(--pet-art-mid) !important;
+  width: var(--pet-art-mid) !important;
+  height: var(--pet-art-mid) !important;
+}
+.codex-icon .pet-art img,
+.codex-icon .pet-art .pet-icon,
+.codex-row .pet-art img,
+.codex-row .pet-art .pet-icon,
+.breed-slot .pet-art img,
+.breed-slot .pet-art .pet-icon {
+  width: var(--pet-art-mid) !important;
+  height: var(--pet-art-mid) !important;
+}
+
+/* Detail hero — size 52 + pet-art--detail → ~114 */
+.pet-art.pet-art--detail,
+.pet-detail-hero .pet-art {
+  --art-size: var(--pet-art-detail) !important;
+  --icon-size: var(--pet-art-detail) !important;
+  width: var(--pet-art-detail) !important;
+  height: var(--pet-art-detail) !important;
+  border-radius: 50%;
+}
+.pet-art.pet-art--detail img,
+.pet-art.pet-art--detail .pet-icon,
+.pet-detail-hero .pet-art img,
+.pet-detail-hero .pet-art .pet-icon {
+  width: var(--pet-art-detail) !important;
+  height: var(--pet-art-detail) !important;
+}
+.pet-art--detail .pet-art-gen {
+  font-size: 0.58rem;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  line-height: 1.05rem;
+}
+
+
+/* -----------------------------------------------------------------------------
+   §E — Tighter padding on cards around art
+   ----------------------------------------------------------------------------- */
+.pet-card {
+  padding: 0.2rem 0.28rem;
+  padding-right: 1.45rem; /* keep badge cluster clearance */
+  gap: 0.04rem;
+}
+.pet-card-top {
+  gap: 0.16rem;
+  align-items: center;
+}
+.pet-card .pet-art,
+.pet-pick-card .pet-art {
+  margin-top: 0;
+}
+
+.pet-pick-card {
+  padding: 0.18rem 0.26rem;
+  padding-right: 1.4rem;
+  gap: 0.08rem;
+}
+.pet-pick-top {
+  gap: 0.14rem;
+  align-items: center;
+}
+
+.pet-row,
+.card-row.pet-row {
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.codex-row {
+  gap: 0.4rem;
+  align-items: center;
+}
+.codex-icon {
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.pet-detail-hero {
+  gap: 0.45rem;
+  align-items: center;
+}
+
+/* Combat unit: room for larger art without huge empty chrome */
+.combat-unit .pet-art,
+.combat-roster .pet-art {
+  margin: 0.02rem 0;
+}
+.combat-unit:has(.pet-art) {
+  padding: 0.1rem 0.16rem;
+  min-height: 0;
+}
+
+
+/* -----------------------------------------------------------------------------
+   §F — theme-light: frameless stay frameless (no pale square plate)
+   ----------------------------------------------------------------------------- */
+html.theme-light .pet-art,
+#app.theme-light .pet-art {
+  border: none !important;
+  border-color: transparent !important;
+  /* Soft wash only — never paper/white tile behind jelly */
+  background:
+    radial-gradient(
+      circle at 50% 42%,
+      var(--elem-wash, rgba(61, 111, 104, 0.16)) 0%,
+      transparent 68%
+    ) !important;
+  box-shadow: none;
+}
+html.theme-light .pet-art--rarity-rare,
+#app.theme-light .pet-art--rarity-rare {
+  box-shadow: 0 0 10px var(--rarity-soft, rgba(70, 140, 180, 0.28));
+}
+html.theme-light .pet-art--rarity-epic,
+#app.theme-light .pet-art--rarity-epic {
+  box-shadow: 0 0 12px var(--rarity-soft, rgba(140, 100, 180, 0.3));
+}
+html.theme-light .pet-art--rarity-legendary,
+#app.theme-light .pet-art--rarity-legendary {
+  box-shadow: 0 0 14px var(--rarity-soft, rgba(180, 140, 60, 0.34));
+}
+html.theme-light .pet-art-gen,
+#app.theme-light .pet-art-gen {
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--text, #1a2830);
+  border-color: rgba(70, 100, 110, 0.28);
+}
+html.theme-light .pet-art-unknown,
+#app.theme-light .pet-art-unknown {
+  background: rgba(61, 111, 104, 0.08) !important;
+}
+
+
+/* -----------------------------------------------------------------------------
+   §G — Reduced motion: sizes / frame still apply; motion CSS owns anim off
+   ----------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .pet-art--rarity-legendary {
+    animation: none;
+  }
+}
