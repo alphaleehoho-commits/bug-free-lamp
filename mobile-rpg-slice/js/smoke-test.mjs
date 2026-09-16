@@ -4131,7 +4131,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v131"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v132"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4280,6 +4280,7 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   const swSrcSprites = readFileSync(join(dirname(__dir), "sw.js"), "utf8");
   assert(swSrcSprites.includes("./js/pet-sprites.js"), "sw caches pet-sprites.js");
   assert(cssSrc.includes("pet-icon-sprite"), "css pet-icon-sprite");
+  assert(cssSrc.includes("pet-icon--sprite"), "css sprite icon crop");
 }
 
 console.log("smoke-test ok");
