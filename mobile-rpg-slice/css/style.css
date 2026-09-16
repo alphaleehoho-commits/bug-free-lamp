@@ -3335,6 +3335,7 @@ button.pet-badge {
   width: var(--icon-size, 32px);
   height: var(--icon-size, 32px);
   flex-shrink: 0;
+  background: transparent;
 }
 .pet-icon svg,
 .pet-icon-svg,
@@ -3342,7 +3343,7 @@ button.pet-badge {
 .pet-icon--sprite {
   overflow: hidden;
   border-radius: 6px;
-  /* Idle PNGs are RGBA; a pale white plate read as a card on dark UI. */
+  /* Dark default: transparent so RGBA Idle jellies sit on the deep .pet-art plate. */
   background: transparent;
 }
 .pet-icon-sprite {
@@ -3441,10 +3442,10 @@ button.pet-badge {
   height: calc(var(--art-size, 32px) + 0.45rem);
   flex-shrink: 0;
   border-radius: 9px;
-  border: 1px solid var(--rarity-stroke, rgba(126, 168, 160, 0.28));
+  border: 1px solid var(--rarity-stroke, var(--line, var(--elem-glow, rgba(126, 168, 160, 0.28))));
   background:
     radial-gradient(circle at 35% 30%, var(--elem-wash, rgba(126, 168, 160, 0.18)) 0%, transparent 62%),
-    linear-gradient(165deg, rgba(18, 32, 44, 0.95) 0%, rgba(8, 14, 20, 0.92) 100%);
+    rgba(8, 14, 20, 0.78);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.03),
     0 0 0 1px var(--rarity-soft, transparent);
@@ -4895,20 +4896,17 @@ html.theme-light .skill-list li,
   border-color: rgba(70, 100, 110, 0.16);
 }
 
-/* Pet portraits: mist wash on paper, not a hard white plate.
-   Inside .pet-art the frame gradient shows through (rarity glow / motion unchanged). */
+/* Pet portraits — theme-light only: soft paper plate (never on dark default).
+   Icon layer stays transparent so rarity glow / motion sit on the frame. */
+html.theme-light .pet-icon,
+#app.theme-light .pet-icon,
 html.theme-light .pet-icon--sprite,
 #app.theme-light .pet-icon--sprite {
-  background:
-    radial-gradient(circle at 40% 32%, rgba(126, 168, 160, 0.16) 0%, rgba(214, 228, 234, 0.32) 72%);
-}
-html.theme-light .pet-art .pet-icon--sprite,
-#app.theme-light .pet-art .pet-icon--sprite {
   background: transparent;
 }
 html.theme-light .pet-art,
 #app.theme-light .pet-art {
   background:
     radial-gradient(circle at 35% 30%, var(--elem-wash, rgba(126, 168, 160, 0.22)) 0%, transparent 62%),
-    linear-gradient(165deg, rgba(232, 242, 246, 0.78) 0%, rgba(208, 224, 230, 0.62) 100%);
+    linear-gradient(165deg, rgba(244, 248, 250, 0.72) 0%, rgba(226, 236, 240, 0.58) 100%);
 }
