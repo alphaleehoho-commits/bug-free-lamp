@@ -1,7 +1,7 @@
 /**
  * Smoke: kind sync + generation breeding + P3 goals / trials / recipes.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
@@ -243,6 +243,13 @@ import {
   ABYSS_MAX_ACTIVE_MUTATIONS,
   ABYSS_RULES_TEXT,
 } from "./data.js";
+import {
+  RACE_SPECIES_IDS,
+  raceIdForSpecies,
+  resolvePetIdleSprite,
+  waterIdleFileName,
+  WATER_IDLE_RACE_MAX,
+} from "./pet-sprites.js";
 import {
   affordMaterials,
   runDungeon,
@@ -4124,7 +4131,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v130"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v131"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4240,6 +4247,40 @@ assert(!uiSrc2.includes("基本改用泡泡晶"), "ui no stone upgrade button co
 assert((uiSrc2.match(/upgradeFullCostPanelHtml\(/g) || []).length === 2, "define + one next-level cost panel");
 assert(!uiSrc2.includes("upgradeMatsListHtml"), "old mats-only list removed");
 assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui shows locked stone note");
+
+/* Water Idle pet sprites — 48 PNGs keyed by race id (Idle + 水 only) */
+{
+  const petDir = join(dirname(__dir), "assets/pets");
+  const pngs = readdirSync(petDir).filter((f) => f.endsWith(".png"));
+  assert(pngs.length === WATER_IDLE_RACE_MAX, `48 water Idle PNGs (got ${pngs.length})`);
+  for (let i = 1; i <= WATER_IDLE_RACE_MAX; i++) {
+    const name = `${String(i).padStart(2, "0")}_水_Idle.png`;
+    assert(existsSync(join(petDir, name)), `sprite file ${name}`);
+    assert(waterIdleFileName(i) === name, `file name for race ${i}`);
+  }
+  assert(RACE_SPECIES_IDS.length === WATER_IDLE_RACE_MAX, "48 race species ids");
+  const wild = Object.values(SPECIES).filter((s) => !s.breedOnly).map((s) => s.id);
+  const breed = Object.values(SPECIES).filter((s) => s.breedOnly && !s.tertiary).map((s) => s.id);
+  const tert = Object.values(SPECIES).filter((s) => s.tertiary).map((s) => s.id);
+  assert(JSON.stringify(RACE_SPECIES_IDS.slice(0, 14)) === JSON.stringify(wild), "races 1–14 wild/base");
+  assert(JSON.stringify(RACE_SPECIES_IDS.slice(14, 40)) === JSON.stringify(breed), "races 15–40 breed");
+  assert(JSON.stringify(RACE_SPECIES_IDS.slice(40)) === JSON.stringify(tert), "races 41–48 tertiary");
+  assert(new Set(RACE_SPECIES_IDS).size === Object.keys(SPECIES).length, "race map covers SPECIES");
+  assert(raceIdForSpecies("reefox") === 1, "reefox is race 1");
+  assert(raceIdForSpecies("galevoid") === 48, "galevoid is race 48");
+  const url = resolvePetIdleSprite({ speciesId: "reefox", elementId: "tide", action: "Idle" });
+  assert(url && decodeURIComponent(url).includes("01_水_Idle.png"), "resolve water Idle by species");
+  assert(resolvePetIdleSprite({ raceId: 15, action: "Attack" }) == null, "no invented Attack sprites");
+  const map = JSON.parse(readFileSync(join(petDir, "water-idle-map.json"), "utf8"));
+  assert(map.races.length === 48, "manifest 48 races");
+  assert(map.races[0].speciesId === "reefox" && map.races[0].assetFile === "01_水_Idle.png", "manifest first row");
+  const iconSrcSprites = readFileSync(join(__dir, "pet-icons.js"), "utf8");
+  assert(iconSrcSprites.includes("resolvePetIdleSprite"), "pet-icons uses sprite resolver");
+  assert(iconSrcSprites.includes("pet-icon-sprite"), "pet-icons sprite img class");
+  const swSrcSprites = readFileSync(join(dirname(__dir), "sw.js"), "utf8");
+  assert(swSrcSprites.includes("./js/pet-sprites.js"), "sw caches pet-sprites.js");
+  assert(cssSrc.includes("pet-icon-sprite"), "css pet-icon-sprite");
+}
 
 console.log("smoke-test ok");
 
