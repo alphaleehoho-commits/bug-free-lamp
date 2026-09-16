@@ -4205,7 +4205,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v136"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v137"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4377,7 +4377,7 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(uiSrcMotion.includes('playPetMotion(actorEl, "cast")'), "ui cast motion hook");
 }
 
-/* Chrome polish v1 — buttons + optional theme-light (after type-scale / pet-motion) */
+/* Chrome polish v1 — buttons + theme-light (after type-scale / pet-motion) */
 {
   assert(cssSrc.includes("--btn-radius"), "css button tokens");
   assert(cssSrc.includes("button.primary"), "css primary button polish");
@@ -4389,6 +4389,28 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   const btnAt = cssSrc.indexOf("buttons-v1.css");
   const lightAt = cssSrc.indexOf("theme-light-v1.css");
   assert(typeAt >= 0 && motionAt > typeAt && btnAt > motionAt && lightAt > btnAt, "css splice order type-scale → motion → buttons → theme-light");
+}
+
+/* UI lock: default paper theme + combat ally facing flip */
+{
+  const htmlSrc = readFileSync(join(__dir, "../index.html"), "utf8");
+  assert(/<html[^>]*class="[^"]*theme-light/.test(htmlSrc), "index html default theme-light");
+  assert(htmlSrc.includes('id="app" class="theme-light"'), "index #app default theme-light");
+  assert(htmlSrc.includes("void-tide-theme"), "index boot reads theme localStorage");
+  assert(htmlSrc.includes('content="#eef3f5"'), "index light theme-color");
+  assert(uiSrc2.includes('THEME_PREFS_KEY = "void-tide-theme"'), "ui theme pref key");
+  assert(uiSrc2.includes("data-act=toggle-theme") || uiSrc2.includes('data-act="toggle-theme"'), "ui theme toggle control");
+  assert(uiSrc2.includes("applyThemeClass"), "ui applies theme class on render");
+  assert(uiSrc2.includes("pet-art--flip"), "ui ally combat flip class");
+  assert(!/className:\s*"pet-art--detail[^"]*pet-art--flip"/.test(uiSrc2), "detail portrait not flipped");
+  const detailLine = uiSrc2.split("\n").find((l) => l.includes("pet-art--detail"));
+  assert(detailLine && !detailLine.includes("pet-art--flip"), "detail hero not flipped");
+  const flipFn = uiSrc2.slice(uiSrc2.indexOf("function combatUnitArtHtml"), uiSrc2.indexOf("function findCombatUnitEl"));
+  assert(flipFn.includes('unitSide === "ally" ? " pet-art--flip"'), "combat ally gets pet-art--flip");
+  assert(flipFn.includes('? "foe" : "ally"'), "combat art uses unit side");
+  assert(cssSrc.includes(".pet-art.pet-art--flip"), "css pet-art--flip");
+  assert(cssSrc.includes("scaleX(-1)"), "css scaleX flip");
+  assert(cssSrc.includes("Default: html and #app carry class `theme-light`"), "css light is default");
 }
 
 console.log("smoke-test ok");

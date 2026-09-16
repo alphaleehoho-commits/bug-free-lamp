@@ -3327,6 +3327,12 @@ button.pet-badge {
   font-size: 0.68rem;
   color: var(--muted);
 }
+.theme-chip {
+  padding: 0.12rem 0.4rem;
+  min-height: 1.55rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+}
 
 .pet-icon {
   display: inline-flex;
@@ -4435,6 +4441,13 @@ button.pet-badge {
   display: none;
 }
 
+/* Source Idle art faces LEFT. Player/left (ally) mirrors to face the foe.
+   Codex / pet detail / big portraits do not use pet-art--flip. */
+.pet-art.pet-art--flip,
+.combat-unit[data-side="ally"] .pet-art--combat {
+  transform: scaleX(-1);
+}
+
 /* Keep Idle PNG crop after motion v1 `.pet-art img { object-fit: contain }` */
 .pet-art img.pet-icon-sprite {
   object-fit: cover;
@@ -4759,17 +4772,15 @@ button.ghost:active:not(:disabled) {
 }
 
 /* =============================================================================
-   theme-light-v1.css — OPTIONAL light theme preview for 「暗潮 · 水母漂漂」
-   Scope: override :root design tokens under a theme class ONLY.
-   Default remains dark-tide. Do NOT make light the default.
+   theme-light-v1.css — paper / mist theme for 「暗潮 · 水母漂漂」
+   Default: html and #app carry class `theme-light` on load (紙色白晝).
+   Dark-tide is optional: remove the class via the settings toggle
+   (persisted as localStorage void-tide-theme = "dark" | "light").
 
    HOW TO SPLICE (CODE agent):
    1) APPEND this entire file at the END of style.css (after buttons-v1 if both).
-   2) Toggle by adding class `theme-light` on `#app` OR `html` (both selectors covered).
-   3) Optional one-liner in DevTools / title-screen debug:
-        document.getElementById('app')?.classList.toggle('theme-light')
-        // or: document.documentElement.classList.toggle('theme-light')
-   4) Do NOT flip body/html background permanently in the default path.
+   2) Toggle by adding/removing class `theme-light` on `#app` AND `html`.
+   3) Do NOT leave body/html on the dark wash when light is the default path.
    ============================================================================= */
 
 
@@ -4909,4 +4920,70 @@ html.theme-light .pet-art,
   background:
     radial-gradient(circle at 35% 30%, var(--elem-wash, rgba(126, 168, 160, 0.22)) 0%, transparent 62%),
     linear-gradient(165deg, rgba(244, 248, 250, 0.72) 0%, rgba(226, 236, 240, 0.58) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 1px 4px rgba(40, 60, 70, 0.08),
+    0 0 0 1px var(--rarity-soft, transparent);
+}
+html.theme-light .pet-art-gen,
+#app.theme-light .pet-art-gen {
+  background: rgba(255, 252, 248, 0.9);
+  border-color: rgba(70, 100, 110, 0.22);
+}
+
+html.theme-light .tabs button,
+#app.theme-light .tabs button {
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--muted);
+}
+html.theme-light .combat-unit,
+#app.theme-light .combat-unit {
+  background: rgba(40, 60, 70, 0.05);
+  border-color: rgba(70, 100, 110, 0.16);
+}
+html.theme-light .combat-modal-actions,
+#app.theme-light .combat-modal-actions,
+html.theme-light .combat-settlement-actions,
+#app.theme-light .combat-settlement-actions {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(244, 248, 250, 0.98) 35%);
+}
+html.theme-light .combat-modal-overlay,
+#app.theme-light .combat-modal-overlay {
+  background: rgba(40, 55, 65, 0.32);
+}
+html.theme-light .pet-card,
+#app.theme-light .pet-card {
+  background: rgba(255, 255, 255, 0.55);
+}
+html.theme-light .pet-card.is-starred,
+#app.theme-light .pet-card.is-starred {
+  background: linear-gradient(160deg, rgba(255, 236, 224, 0.7), rgba(244, 248, 250, 0.7));
+}
+html.theme-light .bar,
+#app.theme-light .bar,
+html.theme-light .cu-bar,
+#app.theme-light .cu-bar {
+  background: rgba(40, 60, 70, 0.12);
+}
+html.theme-light .save-io,
+#app.theme-light .save-io {
+  background: rgba(255, 255, 255, 0.85);
+}
+html.theme-light .abyss-run.card-block,
+#app.theme-light .abyss-run.card-block,
+html.theme-light .abyss-rules,
+#app.theme-light .abyss-rules {
+  background: rgba(255, 255, 255, 0.55);
+}
+html.theme-light .pet-detail-tabs button,
+#app.theme-light .pet-detail-tabs button,
+html.theme-light .pet-rename-pen,
+#app.theme-light .pet-rename-pen {
+  background: rgba(40, 60, 70, 0.05);
+  color: var(--muted);
+}
+html.theme-light .pet-detail-tabs button.on,
+#app.theme-light .pet-detail-tabs button.on {
+  background: rgba(61, 111, 104, 0.14);
+  color: var(--jade-bright);
 }
