@@ -13,7 +13,7 @@ export const GAME_TERMS = {
   tide_dew: { name: "露珠", blurb: "早期升級副材。在「育成 → 練功」掛機取得。" },
   earth_grade_stone: {
     name: "地階石",
-    blurb: "升 Lv10→11 起嘅副材。通關 1-20 入漂路第二章之後先掛機出，第一章搵唔到～",
+    blurb: "升 Lv10→11 起嘅副材。通關 1-20 入 2-1 開始掛機出，產量跟層數爬到 2-19 滿產；之後章節照掉、唔會被新石取代。第一章搵唔到～",
   },
   spine: { name: "漂路", blurb: "主線關卡。顯示成 1-1、1-2…每章 20 關後進入 2-1。" },
   mist_token: { name: "霧箋", blurb: "再挑戰已通關秘境的入場憑證。練功、每日與成長可獲。" },
@@ -4575,31 +4575,31 @@ export const MATERIALS = {
   earth_grade_stone: {
     id: "earth_grade_stone",
     name: "地階石",
-    desc: "升級副材 · Lv10–19 · 通關 1-20 後漂路第二章掛機",
+    desc: "升級副材 · Lv10–19 · 2-1 起掛機，2-19 滿產，後章不停",
     tier: "grade",
   },
   cloud_grade_stone: {
     id: "cloud_grade_stone",
     name: "雲階石",
-    desc: "升級副材 · 約 Lv20–29 · 漂路3章",
+    desc: "升級副材 · 約 Lv20–29 · 3-1 起掛機，3-19 滿產，後章不停",
     tier: "grade",
   },
   fire_grade_stone: {
     id: "fire_grade_stone",
     name: "火階石",
-    desc: "升級副材 · 約 Lv30–39 · 漂路4章掛機",
+    desc: "升級副材 · 約 Lv30–39 · 4-1 起掛機，4-19 滿產，後章不停",
     tier: "grade",
   },
   sky_grade_stone: {
     id: "sky_grade_stone",
     name: "天階石",
-    desc: "升級副材 · 約 Lv40–49 · 漂路5章掛機",
+    desc: "升級副材 · 約 Lv40–49 · 5-1 起掛機，5-19 滿產，後章不停",
     tier: "grade",
   },
   void_grade_stone: {
     id: "void_grade_stone",
     name: "虛階石",
-    desc: "升級副材 · Lv50+ 無限帶",
+    desc: "升級副材 · Lv50+ · 6-1 起掛機，6-19 滿產，後章不停",
     tier: "grade",
   },
   /** 極罕：終身融合一次消耗 */
@@ -4966,7 +4966,7 @@ export function spineStageMatBias(stage) {
 }
 
 /**
- * 練功／掛機＝主脊（階石跟階段掛機產；已無地／火／天脈戰鬥側枝）
+ * 練功／掛機＝主脊（階石跟掛機層：該章 1 層起、19 層滿產、後章不停；已無地／火／天脈戰鬥側枝）
  * 秘境戰鬥仍獨立；主脊進度共用 clearedDungeons[tide_*]
  * 秘境專屬料永不進 AFK；霧箋只走練功／每日／升階
  */
@@ -5047,7 +5047,21 @@ export function expectedPartyPowerForLevel(level) {
   return Math.round(87 + (lv - 1) * 9.5);
 }
 
-/** 階石開始 AFK 所需「已通層」（過頭目後）；階段一無任何階石 */
+/** 階石開始 AFK 所需「已通層」（過頭目後＝該章 1 層，例如地階石＝2-1）；階段一無任何階石 */
+export const GRADE_STONE_IDS = [
+  "earth_grade_stone",
+  "cloud_grade_stone",
+  "fire_grade_stone",
+  "sky_grade_stone",
+  "void_grade_stone",
+];
+
+/** 該章 19 層滿產；20 層／後章維持峰值 */
+export const GRADE_STONE_RAMP_PEAK_INTO = 19;
+
+/** 滿產速率 ≈ 舊第二章地階石佔 AFK 材料預算嘅份額（7/10 × 0.042） */
+export const GRADE_STONE_AFK_PEAK_PER_SEC = 0.0294;
+
 export function gradeStoneUnlockClearedFloor(matId) {
   if (matId === "earth_grade_stone") return 21;
   if (matId === "cloud_grade_stone") return 41;
@@ -5063,7 +5077,26 @@ export function isGradeStoneUnlocked(matId, clearedFloor = 0) {
 }
 
 /**
- * 階石解鎖短解：講明「通關章末先掛機出」，唔暗示而家本章就有石。
+ * 階石喺「所屬章」內嘅產量係數：1 層起爬、19 層＝1、之後永遠 1。
+ * 未到該章 1 層＝0（唔出）。
+ */
+export function gradeStoneRampAtFloor(matId, floor) {
+  const start = gradeStoneUnlockClearedFloor(matId);
+  if (start == null) return 0;
+  const f = floor | 0;
+  if (f < start) return 0;
+  const into = f - start + 1;
+  if (into >= GRADE_STONE_RAMP_PEAK_INTO) return 1;
+  return into / GRADE_STONE_RAMP_PEAK_INTO;
+}
+
+export function gradeStoneAfkPerSec(matId, floor) {
+  return GRADE_STONE_AFK_PEAK_PER_SEC * gradeStoneRampAtFloor(matId, floor);
+}
+
+/**
+ * 階石解鎖短解：由該章 1 層起掛機、19 層滿產、後章不停。
+ * 未解鎖時講明「通關章末先有」，唔暗示而家本章就有石。
  */
 export function gradeStoneUnlockNote(matId, clearedFloor = 0) {
   const unlockAt = gradeStoneUnlockClearedFloor(matId);
@@ -5071,11 +5104,11 @@ export function gradeStoneUnlockNote(matId, clearedFloor = 0) {
   const name = MATERIALS[matId]?.name || matId;
   const bossLabel = spineChapterFloorLabel(Math.max(1, unlockAt - 1));
   const nextLabel = spineChapterFloorLabel(unlockAt);
-  const stage = spineStageForTier(unlockAt);
+  const home = spineStageForTier(unlockAt);
   if ((clearedFloor | 0) >= unlockAt) {
-    return `已解鎖：通關 ${bossLabel} 之後，漂路第${stage}章掛機產${name}`;
+    return `已解鎖：${name}由 ${nextLabel} 開始掛機出，產量爬到 ${home}-19 滿產；之後章節繼續掉、唔會被新石取代`;
   }
-  return `${name}要通關 ${bossLabel}、入 ${nextLabel} 之後先喺漂路第${stage}章掛機出。而家未有石，唔使喺本章搵～`;
+  return `${name}要通關 ${bossLabel}、入 ${nextLabel} 之後先開始掛機出（該章 1→19 層爬產，之後章節不停）。而家未有石，唔使喺本章搵～`;
 }
 
 /** 下一未通主脊層（至少 1） */
@@ -5224,17 +5257,38 @@ export function spineTrainFoePreview(floor) {
   };
 }
 
-/** AFK 產物表：跟 spineStageMatBias；總 mat 預算約舊七域合計量級 */
-export function spineAfkDropsForStage(stage) {
+function spineAfkNonStoneBias(stage) {
   const bias = spineStageMatBias(stage);
-  const drops = [];
-  let totalW = 0;
-  for (const w of Object.values(bias)) totalW += Math.max(0, w | 0);
-  if (totalW <= 0) totalW = 1;
-  const MAT_BUDGET = 0.042;
+  const out = {};
   for (const [mat, w] of Object.entries(bias)) {
-    if ((w | 0) <= 0) continue;
-    drops.push({ mat, perSec: MAT_BUDGET * (w / totalW) });
+    if (GRADE_STONE_IDS.includes(mat)) continue;
+    if ((w | 0) > 0) out[mat] = w | 0;
+  }
+  return out;
+}
+
+/** AFK 產物表：非階石跟章節表；階石跟掛機層獨立爬產、後章疊加滿產 */
+export function spineAfkDropsForFloor(floor) {
+  const f = Math.max(1, floor | 0);
+  const stage = spineStageForTier(f);
+  const fullBias = spineStageMatBias(stage);
+  const nonStone = spineAfkNonStoneBias(stage);
+  const drops = [];
+  let fullW = 0;
+  let nonW = 0;
+  for (const w of Object.values(fullBias)) fullW += Math.max(0, w | 0);
+  for (const w of Object.values(nonStone)) nonW += w;
+  if (fullW <= 0) fullW = 1;
+  const MAT_BUDGET = 0.042;
+  const nonStoneBudget = nonW > 0 ? MAT_BUDGET * (nonW / fullW) : 0;
+  if (nonW > 0 && nonStoneBudget > 0) {
+    for (const [mat, w] of Object.entries(nonStone)) {
+      drops.push({ mat, perSec: nonStoneBudget * (w / nonW) });
+    }
+  }
+  for (const id of GRADE_STONE_IDS) {
+    const perSec = gradeStoneAfkPerSec(id, f);
+    if (perSec > 0) drops.push({ mat: id, perSec });
   }
   // 技能／舊融合料：中後段慢滴，避免完全斷線
   if (stage >= 3) drops.push({ mat: "echo_resin", perSec: 0.006 });
@@ -5245,8 +5299,30 @@ export function spineAfkDropsForStage(stage) {
   return drops;
 }
 
+/** 章代表層＝該章最後一層（階石已滿產；下一章新石未開始） */
+export function spineAfkDropsForStage(stage) {
+  const s = Math.max(1, stage | 0);
+  return spineAfkDropsForFloor(s * SPINE_STAGE_FLOORS);
+}
+
 export function spinePrimaryMatForStage(stage) {
-  const bias = spineStageMatBias(stage);
+  return spinePrimaryMatForFloor(Math.max(1, stage | 0) * SPINE_STAGE_FLOORS);
+}
+
+/** 掛機主產：已解鎖嘅最新階石，否則非階石權重最高者 */
+export function spinePrimaryMatForFloor(floor) {
+  const f = Math.max(1, floor | 0);
+  let newest = null;
+  let newestStart = -1;
+  for (const id of GRADE_STONE_IDS) {
+    const start = gradeStoneUnlockClearedFloor(id);
+    if (start != null && f >= start && start > newestStart) {
+      newest = id;
+      newestStart = start;
+    }
+  }
+  if (newest) return newest;
+  const bias = spineAfkNonStoneBias(spineStageForTier(f));
   let best = null;
   let bestW = -1;
   for (const [mat, w] of Object.entries(bias)) {
@@ -5258,20 +5334,30 @@ export function spinePrimaryMatForStage(stage) {
   return best || "tide_dew";
 }
 
+/** 掛機層：有選層就用，否則跟前沿（已通+1） */
+export function spineAfkFloorFromState(state) {
+  const frontier = spineFrontierTier(state);
+  const raw = state?.trainMap?.zones?.[SPINE_ZONE_ID]?.idleFloor | 0;
+  if (raw >= 1 && raw <= frontier) return raw;
+  return frontier;
+}
+
 const SPINE_STAGE_FOCUS = {
   1: "露珠／原生",
-  2: "地階",
-  3: "雲階／霧絲 · 第4出戰",
-  4: "火階",
-  5: "天階／終局",
+  2: "地階（2-1 起 · 2-19 滿產）",
+  3: "雲階疊加 · 第4出戰",
+  4: "火階疊加",
+  5: "天階／終局疊加",
 };
 
 /** 動態主脊掛機 profile（當 TRAIN_SITES[0] 用） */
 export function spineTrainProfile(state) {
   const stage = spineStageFromState(state);
   const frontier = spineFrontierTier(state);
-  const primaryMat = spinePrimaryMatForStage(stage);
-  const focus = SPINE_STAGE_FOCUS[Math.min(5, stage)] || SPINE_STAGE_FOCUS[5];
+  const idleFloor = spineAfkFloorFromState(state);
+  const idleStage = spineStageForTier(idleFloor);
+  const primaryMat = spinePrimaryMatForFloor(idleFloor);
+  const focus = SPINE_STAGE_FOCUS[Math.min(5, idleStage)] || SPINE_STAGE_FOCUS[5];
   return {
     id: SPINE_ZONE_ID,
     name: "漂路",
@@ -5279,9 +5365,10 @@ export function spineTrainProfile(state) {
     qiMult: 1 + Math.min(0.08, (stage - 1) * 0.015),
     focus,
     primaryMat,
-    desc: `${stage}章 · 前沿 ${spineChapterFloorLabel(frontier)} · 掛機跟漂路進度`,
-    drops: spineAfkDropsForStage(stage),
+    desc: `${idleStage}章 ${spineChapterFloorLabel(idleFloor)} · 階石跟層疊加（19層滿產、後章不停）`,
+    drops: spineAfkDropsForFloor(idleFloor),
     spineStage: stage,
+    idleFloor,
     frontierTier: frontier,
   };
 }
@@ -5988,7 +6075,7 @@ export function trainSiteUnlockHint(site) {
   return null;
 }
 
-/** 某 bulk 材料的主要練功來源（主脊掛機；階石跟階段解鎖） */
+/** 某 bulk 材料的主要練功來源（主脊掛機；階石跟層解鎖後一直掉） */
 export function primaryTrainSiteForMat(matId) {
   if (!matId || !MATERIALS[matId] || MATERIALS[matId].tier === "dungeon") return null;
   for (let stage = 1; stage <= 6; stage++) {
