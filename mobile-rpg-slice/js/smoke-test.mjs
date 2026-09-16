@@ -4205,7 +4205,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v138"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v139"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4411,6 +4411,30 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes(".pet-art.pet-art--flip"), "css pet-art--flip");
   assert(cssSrc.includes("scaleX(-1)"), "css scaleX flip");
   assert(cssSrc.includes("Default: html and #app carry class `theme-light`"), "css light is default");
+}
+
+/* Pet display v2 — larger frameless art after theme-light; no transform fights */
+{
+  assert(cssSrc.includes("pet-display-v2.css"), "css pet-display-v2 splice");
+  assert(cssSrc.includes("--pet-display-scale"), "css pet display scale token");
+  assert(cssSrc.includes("--pet-art-combat"), "css combat art size token");
+  assert(cssSrc.includes("--pet-art-detail"), "css detail art size token");
+  assert(cssSrc.includes("--pet-art-anchor-y"), "css pet art vertical anchor");
+  assert(cssSrc.includes("--pet-art-sink"), "css pet art layout sink");
+  const lightAt = cssSrc.indexOf("theme-light-v1.css");
+  const displayAt = cssSrc.indexOf("pet-display-v2.css");
+  assert(lightAt >= 0 && displayAt > lightAt, "css splice order theme-light → pet-display-v2");
+  const flipBlock = cssSrc.slice(cssSrc.indexOf(".pet-art.pet-art--flip"), cssSrc.indexOf(".pet-art.pet-art--flip") + 180);
+  assert(flipBlock.includes("scaleX(-1)"), "css ally flip scaleX kept");
+  const v2 = cssSrc.slice(displayAt);
+  const v2Code = v2.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert(!/\.pet-art(?:\.pet-art)?--flip[^{]*\{[^}]*\btransform\s*:/.test(v2Code), "v2 does not restyle pet-art--flip transform");
+  assert(!/\.pet-art img[^{]*\{[^}]*\btransform\s*:/.test(v2Code), "v2 does not set transform on .pet-art img");
+  assert(!/\.pet-art \.pet-icon[^{]*\{[^}]*\btransform\s*:/.test(v2Code), "v2 does not set transform on .pet-icon");
+  assert(v2.includes("html.theme-light .pet-art"), "v2 theme-light frameless pet-art");
+  assert(uiSrc2.includes("{ size: 22, showGen: false, className: `pet-art--combat"), "combat still uses JS size 22 (css 2.2×)");
+  assert(uiSrc2.includes("size: 28"), "roster card still uses JS size 28 (css 2.2×)");
+  assert(uiSrc2.includes("size: 52"), "detail still uses JS size 52 (css 2.2×)");
 }
 
 console.log("smoke-test ok");
