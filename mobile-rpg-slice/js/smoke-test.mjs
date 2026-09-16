@@ -4131,7 +4131,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v132"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v133"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4281,6 +4281,25 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(swSrcSprites.includes("./js/pet-sprites.js"), "sw caches pet-sprites.js");
   assert(cssSrc.includes("pet-icon-sprite"), "css pet-icon-sprite");
   assert(cssSrc.includes("pet-icon--sprite"), "css sprite icon crop");
+}
+
+/* Pet motion tokens v1 — idle class + combat one-shots */
+{
+  const iconSrcMotion = readFileSync(join(__dir, "pet-icons.js"), "utf8");
+  const uiSrcMotion = readFileSync(join(__dir, "ui.js"), "utf8");
+  assert(cssSrc.includes("--pet-motion-idle-dur"), "css pet motion idle duration token");
+  assert(cssSrc.includes("pet-motion--idle"), "css pet-motion--idle");
+  assert(cssSrc.includes("pet-motion--attack"), "css pet-motion--attack");
+  assert(cssSrc.includes("pet-motion--hit"), "css pet-motion--hit");
+  assert(cssSrc.includes("pet-motion--defeat"), "css pet-motion--defeat");
+  assert(cssSrc.includes("pet-motion--cast"), "css pet-motion--cast");
+  assert(cssSrc.includes("prefers-reduced-motion"), "css reduced motion");
+  assert(iconSrcMotion.includes("pet-motion--idle"), "pet-art defaults idle motion");
+  assert(uiSrcMotion.includes("playPetMotion"), "ui playPetMotion helper");
+  assert(uiSrcMotion.includes('playPetMotion(actorEl, "attack")'), "ui attack motion hook");
+  assert(uiSrcMotion.includes('playPetMotion(targetEl, "hit")'), "ui hit motion hook");
+  assert(uiSrcMotion.includes('playPetMotion(targetEl, "defeat")'), "ui defeat motion hook");
+  assert(uiSrcMotion.includes('playPetMotion(actorEl, "cast")'), "ui cast motion hook");
 }
 
 console.log("smoke-test ok");

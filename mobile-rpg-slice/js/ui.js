@@ -660,6 +660,49 @@ function waitAnimMs(ms, token) {
   });
 }
 
+const PET_MOTION_SHOTS = ["pet-motion--attack", "pet-motion--hit", "pet-motion--cast"];
+const PET_MOTION_DUR_MS = { attack: 200, hit: 300, defeat: 750, cast: 500 };
+
+function petMotionTarget(unitEl) {
+  if (!unitEl) return null;
+  return unitEl.querySelector?.(".pet-art") || unitEl;
+}
+
+/** Combat one-shot: add modifier, restart, remove after token duration (defeat holds). */
+function playPetMotion(unitEl, kind) {
+  const el = petMotionTarget(unitEl);
+  if (!el || !kind) return;
+  const cls = `pet-motion--${kind}`;
+  el.classList.remove(...PET_MOTION_SHOTS);
+  if (kind !== "defeat") el.classList.remove("pet-motion--defeat");
+  void el.offsetWidth;
+  el.classList.add(cls);
+  if (kind === "defeat") return;
+  const dur = PET_MOTION_DUR_MS[kind] ?? 200;
+  window.setTimeout(() => el.classList.remove(cls), dur + 40);
+}
+
+function combatUnitArtHtml(u, dead = false) {
+  const elementId = u?.elementId || "tide";
+  const speciesId = u?.speciesId || u?.species;
+  const defeatCls = dead ? " pet-motion--defeat" : "";
+  if (speciesId && SPECIES[speciesId]) {
+    return petArtFromPet(
+      {
+        speciesId,
+        elementId,
+        rarity: u.rarity ?? 0,
+        generation: u.generation ?? 0,
+        name: u.rawName || u.name,
+      },
+      { size: 22, showGen: false, className: `pet-art--combat${defeatCls}` }
+    );
+  }
+  return `<span class="pet-art pet-motion--idle pet-art--elem-${escapeHtml(elementId)} pet-art--combat${defeatCls}" data-elem="${escapeHtml(elementId)}" data-element="${escapeHtml(elementId)}" style="--art-size:22px">
+    <span class="pet-icon pet-icon-unknown" aria-hidden="true">◌</span>
+  </span>`;
+}
+
 function findCombatUnitEl(root, uid) {
   if (!root || !uid) return null;
   const esc = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(uid) : uid.replace(/"/g, '\\"');
@@ -682,6 +725,10 @@ function clearAttackFx(el) {
   );
   el.style.transform = "";
   el.querySelectorAll(".cu-temp-buff, .cu-dmg, .cu-heal").forEach((n) => n.remove());
+  const art = petMotionTarget(el);
+  if (art && !el.classList.contains("is-down")) {
+    art.classList.remove(...PET_MOTION_SHOTS);
+  }
 }
 
 /** 攻方框推向守方框中心（向量輕撞） */
@@ -735,8 +782,10 @@ async function playAttackSequence(opts) {
   clearAttackFx(actorEl);
   clearAttackFx(targetEl);
 
-  // 1. 攻方高亮 + 臨時 buff
+  // 1. 攻方高亮 + 臨時 buff；技能／治療用 cast telegraph
   actorEl.classList.add("is-attacker");
+  if (heal != null || buffText) playPetMotion(actorEl, "cast");
+  else playPetMotion(actorEl, "attack");
   const nameEl = actorEl.querySelector(".cu-name");
   if (buffText && nameEl) {
     const badge = document.createElement("span");
@@ -749,6 +798,7 @@ async function playAttackSequence(opts) {
 
   // 2. 向守方實際位置輕撞
   lungeTowardTarget(actorEl, targetEl, 12);
+  if (heal == null) playPetMotion(actorEl, "attack");
   await waitAnimMs(ms(ATTACK_PHASE_MS.lunge), token);
   if (cancelled()) return;
 
@@ -783,6 +833,11 @@ async function playAttackSequence(opts) {
     }
   }
   onImpact?.();
+  if (heal != null) {
+    playPetMotion(targetEl, "cast");
+  } else {
+    playPetMotion(targetEl, "hit");
+  }
   await waitAnimMs(ms(ATTACK_PHASE_MS.impact), token);
   if (cancelled()) return;
 
@@ -800,6 +855,7 @@ async function playAttackSequence(opts) {
   const dead = ko || (targetHp != null && targetHp <= 0);
   if (dead) {
     targetEl.classList.add("is-dying", "is-down");
+    playPetMotion(targetEl, "defeat");
   }
   await waitAnimMs(ms(dead ? ATTACK_PHASE_MS.resolveKo : ATTACK_PHASE_MS.resolve), token);
   if (cancelled()) return;
@@ -995,6 +1051,7 @@ function combatUnitBar(u, pb, slotIndex = 0, lane = "front") {
   return `<div class="combat-unit${dead ? " is-down" : ""}${
     doubleAct ? " is-boss-act" : ""
   }" data-combat-uid="${escapeHtml(u.uid)}" data-side="${side}" data-slot="${slot}" data-lane="${laneAttr}" data-element="${escapeHtml(u.elementId || "")}">
+    ${combatUnitArtHtml(u, dead)}
     <span class="cu-name">${actBadge}${escapeHtml(u.name)}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
@@ -3163,6 +3220,7 @@ function idleUnitBarHtml(u, slotIndex = 0, lane = "front") {
   return `<div class="combat-unit${dead ? " is-down" : ""}${
     doubleAct && !dead ? " is-boss-act" : ""
   }" data-uid="${escapeHtml(u.uid || "")}" data-side="${side}" data-slot="${slot}" data-lane="${laneAttr}" data-element="${escapeHtml(u.elementId || "")}">
+    ${combatUnitArtHtml(u, dead)}
     <span class="cu-name">${actBadge}${role}${escapeHtml(u.name)}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;

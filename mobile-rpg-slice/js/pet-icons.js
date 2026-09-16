@@ -369,6 +369,7 @@ export function petArtFromPet(pet, opts = {}) {
     `pet-art--rarity-${rKey}`,
     `pet-art--kind-${kindSlug}`,
     `pet-art--gen-${gen}`,
+    opts.motion === false ? "" : "pet-motion--idle",
     hybrid ? "is-hybrid" : "",
     BASE_SPECIES.has(pet.speciesId) ? "is-base" : "",
     opts.className || "",
