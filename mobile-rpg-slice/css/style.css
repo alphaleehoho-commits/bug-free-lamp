@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap");
 
 :root {
   --ink: #0c1218;
@@ -14,7 +14,13 @@
   --muted: #8fa3b0;
   --radius: 12px;
   --font-display: "Noto Serif TC", "Songti TC", serif;
-  --font-body: "IBM Plex Sans", "PingFang TC", sans-serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Noto Sans CJK TC", sans-serif;
+  --fs-xxs: 0.68rem; /* ~11px — absolute floor for badges / densest chrome */
+  --fs-xs: 0.72rem;  /* ~11.5px — preferred min for body meta / labels */
+  --fs-sm: 0.78rem;  /* ~12.5px — tabs, lead, secondary UI text */
+  --fs-md: 0.88rem;  /* ~14px — stats values, mid emphasis */
+  --fs-lg: 1.05rem;  /* ~17px — panel h2 / section titles */
+  --fs-xl: 1.2rem;   /* ~19px — reserved large display */
   --chrome-h: 11.5rem;
   --app-h: 100dvh;
 }
@@ -3899,3 +3905,128 @@ button.pet-badge {
 .fold-section.train-rates-block.is-collapsed .fold-body { display: none; }
 .species-locked-fog { filter: blur(2px) saturate(0.35); opacity: 0.5; }
 .species-locked-tag { color: #8aa; font-size: 0.75rem; }
+
+/* =============================================================================
+   type-scale-v1 — typography + readability ONLY (fonts, sizes).
+   Source: UI design type-scale v1 for「暗潮 · 水母漂漂」
+   ============================================================================= */
+
+/* --- Top chrome: tag / build chip --- */
+.tag {
+  font-size: var(--fs-xs);
+}
+.top-compact .tag {
+  font-size: var(--fs-xxs);
+}
+.build-chip {
+  font-size: var(--fs-xxs);
+}
+
+/* --- Resource stats strip --- */
+.stats span {
+  font-size: var(--fs-xs);
+}
+.stats-compact span {
+  font-size: var(--fs-xs);
+}
+.stats strong {
+  font-size: var(--fs-md);
+}
+.stats-compact strong {
+  font-size: var(--fs-sm);
+}
+
+/* --- Team bond (育成 home adjacent) --- */
+.team-bond-meta,
+.team-bond-sub {
+  font-size: var(--fs-xxs);
+}
+
+/* --- Bottom tabs --- */
+.tabs-bottom button {
+  font-size: var(--fs-sm);
+}
+
+/* --- Panel titles / body copy --- */
+.panel h2 {
+  font-size: var(--fs-lg);
+}
+.panel h3 {
+  font-size: var(--fs-xs);
+}
+.lead {
+  font-size: var(--fs-sm);
+}
+.meta {
+  font-size: var(--fs-xs);
+}
+.meta-inline {
+  font-size: var(--fs-xxs);
+}
+
+/* --- Chips --- */
+.chip {
+  font-size: var(--fs-xs);
+}
+.chip-use {
+  font-size: var(--fs-xxs);
+}
+
+/* --- Combat unit names (育成 idle roster + combat) --- */
+.cu-name {
+  font-size: var(--fs-xs);
+}
+.train-idle-roster .cu-name {
+  font-size: var(--fs-xs);
+}
+
+/* --- Train idle strip (育成 home dense microcopy) --- */
+.train-idle-progress {
+  font-size: var(--fs-xs);
+}
+.train-qi-label {
+  font-size: var(--fs-xs);
+}
+.train-idle-fail-kicker {
+  font-size: var(--fs-xs);
+}
+.train-idle-hit {
+  font-size: var(--fs-xs);
+}
+.train-idle-meta {
+  font-size: var(--fs-sm);
+}
+.train-daily-spot {
+  font-size: var(--fs-xs);
+}
+.train-rate-summary {
+  font-size: var(--fs-xs);
+}
+.train-rate {
+  font-size: var(--fs-xxs);
+}
+
+/* --- Offline home slot --- */
+.offline-home-slot .offline-home-label {
+  font-size: var(--fs-xs);
+}
+.offline-home-slot button {
+  font-size: var(--fs-xs);
+}
+
+/* --- Next-goal chip --- */
+.next-goal-kicker {
+  font-size: var(--fs-xxs);
+}
+.next-goal-chip strong {
+  font-size: var(--fs-sm);
+}
+.next-goal-compact strong {
+  font-size: var(--fs-xs);
+}
+.next-goal-chip .muted {
+  font-size: var(--fs-xs);
+}
+.next-goal-compact .muted {
+  font-size: var(--fs-xxs);
+}
