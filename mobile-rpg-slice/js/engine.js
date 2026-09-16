@@ -1310,7 +1310,7 @@ export function materialHintsView(state) {
   }));
 }
 
-/** 主脊掛機產材料（跟通關階段；產量 × 深度 × 出戰效率） */
+/** 主脊掛機產材料（跟掛機層階石疊加；產量 × 深度 × 出戰效率） */
 export function tickTrainSite(state, elapsedSec) {
   if (elapsedSec <= 0) return { mats: {}, feed: 0, dust: 0 };
   ensureTrainMap(state);
@@ -2046,7 +2046,7 @@ export function spineStuckCoachTips(state, { floor, kind = "wipe", failStreak = 
 
   if (maxLv >= 10 && !earthUnlocked) {
     tips.push(
-      "出戰已到 Lv10 軟頂：再升級要地階石。地階石通關 1-20、入漂路第二章之後先掛機出，而家第一章搵唔到石～"
+      "出戰已到 Lv10 軟頂：再升級要地階石。地階石通關 1-20、入 2-1 開始掛機出，產量爬到 2-19 滿產，之後章節照掉。而家第一章搵唔到石～"
     );
   } else if (!petN || minLv < expected) {
     tips.push(
@@ -5637,10 +5637,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
         state.stones += bonusStones;
         state.scrap += bonusScrap;
         state.clearedDungeons[dungeonId] = true;
-        // 主脊掛機跟 cleared tide；側枝唔提示解鎖漂路
+        // 主脊掛機跟掛機層階石疊加；側枝唔提示解鎖漂路
         if (!d.isSideBranch && !isBranchDungeonId(dungeonId)) {
-          const stage = spineStageFromState(state);
-          pushLog(state, `漂路回響：掛機產出已對齊 ${stage}章。`);
+          pushLog(state, `漂路回響：掛機階石已跟 ${spineChapterFloorLabel(spineFrontierTier(state))} 疊加（舊石滿產不停）。`);
         }
         note(
           `攻克【${d.name}】，獲泡泡晶 ${d.reward.stones}、碎片 ${d.reward.scrap}。首通額外 +${bonusStones} 泡泡晶／+${bonusScrap} 碎片！`

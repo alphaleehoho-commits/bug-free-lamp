@@ -115,6 +115,11 @@ import {
   SPINE_THEME_FLOORS,
   SIDE_BRANCHES,
   spineAfkDropsForStage,
+  spineAfkDropsForFloor,
+  spineAfkFloorFromState,
+  gradeStoneRampAtFloor,
+  GRADE_STONE_AFK_PEAK_PER_SEC,
+  GRADE_STONE_RAMP_PEAK_INTO,
   spineTrainProfile,
   spineStageFromState,
   spineFrontierTier,
@@ -281,6 +286,7 @@ import {
   activeHatchCount,
   eggsView,
   tickCultivation,
+  tickTrainSite,
   tickRanchIdle,
   claimDispatch,
   startDispatch,
@@ -4106,6 +4112,74 @@ assert(spineStageMatBias(2).earth_grade_stone > 0, "spine2 earth in bias");
 assert(spineAfkDropsForStage(2).some((d) => d.mat === "earth_grade_stone"), "spine2 earth AFK");
 assert(!spineAfkDropsForStage(2).some((d) => d.mat === "cloud_grade_stone"), "spine2 no early cloud");
 assert(spineStageMatBias(3).cloud_grade_stone > 0, "spine3 cloud chapter");
+{
+  const rate = (floor, mat) => spineAfkDropsForFloor(floor).find((d) => d.mat === mat)?.perSec || 0;
+  const earth21 = rate(21, "earth_grade_stone");
+  const earth39 = rate(39, "earth_grade_stone");
+  const earth40 = rate(40, "earth_grade_stone");
+  const earth41 = rate(41, "earth_grade_stone");
+  const earth80 = rate(80, "earth_grade_stone");
+  const cloud21 = rate(21, "cloud_grade_stone");
+  const cloud41 = rate(41, "cloud_grade_stone");
+  const cloud59 = rate(59, "cloud_grade_stone");
+  const fire80 = rate(80, "fire_grade_stone");
+  const sky80 = rate(80, "sky_grade_stone");
+  assert(rate(20, "earth_grade_stone") === 0, "1-20 no earth AFK");
+  assert(earth21 > 0, "2-1 earth starts");
+  assert(earth21 < earth39, "earth ramps 2-1 → 2-19");
+  assert(Math.abs(earth39 - GRADE_STONE_AFK_PEAK_PER_SEC) < 1e-9, "2-19 earth at peak");
+  assert(Math.abs(earth40 - earth39) < 1e-9, "2-20 earth stays peak");
+  assert(Math.abs(earth41 - earth39) < 1e-9, "3-1 keeps earth peak");
+  assert(Math.abs(earth80 - earth39) < 1e-9, "later chapter keeps earth peak");
+  assert(cloud21 === 0, "ch2 no cloud AFK");
+  assert(cloud41 > 0 && cloud41 < cloud59, "cloud ramps in ch3");
+  assert(Math.abs(cloud59 - GRADE_STONE_AFK_PEAK_PER_SEC) < 1e-9, "3-19 cloud peak");
+  assert(Math.abs(rate(80, "cloud_grade_stone") - cloud59) < 1e-9, "later chapter keeps cloud");
+  assert(Math.abs(fire80 - GRADE_STONE_AFK_PEAK_PER_SEC) < 1e-9, "4-20 fire at peak");
+  assert(sky80 === 0, "ch4 no sky AFK");
+  assert(gradeStoneRampAtFloor("earth_grade_stone", 21) === 1 / GRADE_STONE_RAMP_PEAK_INTO, "earth ramp at 2-1");
+  assert(gradeStoneRampAtFloor("earth_grade_stone", 39) === 1, "earth ramp at 2-19");
+  const parkedState = {
+    clearedDungeons: { tide_60: true },
+    trainMap: { zones: { [SPINE_ZONE_ID]: { idleFloor: 21 } } },
+  };
+  assert(spineAfkFloorFromState(parkedState) === 21, "idle floor helper respects parked layer");
+  const parked = spineTrainProfile(parkedState);
+  assert(parked.idleFloor === 21, "AFK table follows parked floor not max cleared chapter");
+  assert(parked.drops.some((d) => d.mat === "earth_grade_stone"), "parked 2-1 still earth");
+  assert(!parked.drops.some((d) => d.mat === "cloud_grade_stone"), "parked 2-1 no cloud even if later cleared");
+  const later = spineTrainProfile({
+    clearedDungeons: { tide_80: true },
+    trainMap: { zones: { [SPINE_ZONE_ID]: { idleFloor: 80 } } },
+  });
+  const laterEarth = later.drops.find((d) => d.mat === "earth_grade_stone")?.perSec || 0;
+  const laterCloud = later.drops.find((d) => d.mat === "cloud_grade_stone")?.perSec || 0;
+  const laterFire = later.drops.find((d) => d.mat === "fire_grade_stone")?.perSec || 0;
+  assert(laterEarth === earth39 && laterCloud === cloud59 && laterFire === fire80, "ch4 idle keeps earlier stones at peak");
+  const mkAfk = (idleFloor, clearedMax) => {
+    const cleared = {};
+    for (let i = 1; i <= clearedMax; i++) cleared[`tide_${i}`] = true;
+    return {
+      materials: emptyMaterials(),
+      feed: 0,
+      dust: 0,
+      pets: [],
+      trainSite: SPINE_ZONE_ID,
+      trainMap: { zones: { [SPINE_ZONE_ID]: { idleFloor, tiersCleared: 0 } }, wardenCleared: {} },
+      clearedDungeons: cleared,
+    };
+  };
+  const dripEarly = mkAfk(21, 21);
+  const dripLate = mkAfk(81, 81);
+  tickTrainSite(dripEarly, 10_000);
+  tickTrainSite(dripLate, 10_000);
+  assert((dripEarly.materials.earth_grade_stone || 0) > 0, "tick 2-1 drips earth");
+  assert(
+    (dripLate.materials.earth_grade_stone || 0) > (dripEarly.materials.earth_grade_stone || 0),
+    "later chapter idle still drips more earth (peak vs ramp start)"
+  );
+  assert((dripLate.materials.sky_grade_stone || 0) > 0, "ch5 idle adds sky alongside earth");
+}
 assert(ACTIVE_PET_UNLOCK_STAGE === 3, "4th slot at stage3");
 assert(
   trainTierThreat(SPINE_ZONE_ID, 19, { frontierTier: 20 }) < 200,
@@ -4131,7 +4205,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v133"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v134"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4300,6 +4374,20 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(uiSrcMotion.includes('playPetMotion(targetEl, "hit")'), "ui hit motion hook");
   assert(uiSrcMotion.includes('playPetMotion(targetEl, "defeat")'), "ui defeat motion hook");
   assert(uiSrcMotion.includes('playPetMotion(actorEl, "cast")'), "ui cast motion hook");
+}
+
+/* Chrome polish v1 — buttons + optional theme-light (after type-scale / pet-motion) */
+{
+  assert(cssSrc.includes("--btn-radius"), "css button tokens");
+  assert(cssSrc.includes("button.primary"), "css primary button polish");
+  assert(cssSrc.includes("button.ghost"), "css ghost button polish");
+  assert(cssSrc.includes("html.theme-light"), "css html.theme-light");
+  assert(cssSrc.includes("#app.theme-light"), "css #app.theme-light");
+  const typeAt = cssSrc.indexOf("type-scale-v1");
+  const motionAt = cssSrc.indexOf("pet-motion-v1.css");
+  const btnAt = cssSrc.indexOf("buttons-v1.css");
+  const lightAt = cssSrc.indexOf("theme-light-v1.css");
+  assert(typeAt >= 0 && motionAt > typeAt && btnAt > motionAt && lightAt > btnAt, "css splice order type-scale → motion → buttons → theme-light");
 }
 
 console.log("smoke-test ok");

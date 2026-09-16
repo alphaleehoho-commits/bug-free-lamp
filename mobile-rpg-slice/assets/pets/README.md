@@ -11,7 +11,7 @@ mobile-rpg-slice/assets/pets/{NN}_{元素}_{動作}.png
 - `{NN}` — zero-padded race id `01`–`48`
 - Keep the given filenames (including `水` and `Idle`)
 
-Current pack: **Idle + 水 only** (48 files). Do not invent other elements or actions until those PNGs land.
+Current pack: **Idle + 水 only** (48 RGBA files, transparent backgrounds). Do not invent other elements or actions until those PNGs land.
 
 ## Race ids
 

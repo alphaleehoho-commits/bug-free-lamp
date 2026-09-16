@@ -4438,3 +4438,458 @@ button.pet-badge {
   object-fit: cover;
   object-position: 42% 48%;
 }
+
+/* =============================================================================
+   buttons-v1.css — DROP-IN chrome polish for mobile-rpg-slice/css/style.css
+   Game: 「暗潮 · 水母漂漂」
+   Scope: button hierarchy / radius / soft shadows / padding / active+disabled.
+         Keep existing class names. Do NOT change type-scale (already shipped).
+         Do NOT change JS / game logic.
+
+   HOW TO SPLICE (CODE agent):
+   1) Optionally APPEND §A button tokens into :root (next to color vars).
+   2) APPEND §B (all rules below) at the END of style.css so equal-specificity
+      overrides win. Or merge into the existing button / tabs / panel-subnav blocks.
+   3) Load AFTER type-scale-v1 overrides if both are appended.
+   ============================================================================= */
+
+
+/* -----------------------------------------------------------------------------
+   §A — Optional :root button tokens (APPEND; safe if unused elsewhere)
+   ----------------------------------------------------------------------------- */
+:root {
+  --btn-radius: 10px;
+  --btn-radius-pill: 999px;
+  --btn-pad-y: 0.48rem;
+  --btn-pad-x: 0.72rem;
+  --btn-shadow-soft: 0 1px 0 rgba(255, 255, 255, 0.06) inset,
+                     0 4px 12px rgba(0, 0, 0, 0.28);
+  --btn-shadow-primary: 0 1px 0 rgba(255, 255, 255, 0.18) inset,
+                        0 6px 16px rgba(196, 92, 62, 0.35);
+  --btn-shadow-jade: 0 1px 0 rgba(255, 255, 255, 0.1) inset,
+                     0 4px 14px rgba(126, 168, 160, 0.22);
+  --btn-press: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
+               0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+
+/* -----------------------------------------------------------------------------
+   §B — Base button + semantic variants
+   APPEND to end of style.css
+   ----------------------------------------------------------------------------- */
+
+/* --- Base chrome button --- */
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--btn-radius, 10px);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text);
+  padding: var(--btn-pad-y, 0.48rem) var(--btn-pad-x, 0.72rem);
+  font-size: 0.72rem; /* leave type-scale tokens alone if already patched */
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  min-height: 2.2rem;
+  box-shadow: var(--btn-shadow-soft);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease,
+    opacity 0.12s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+button:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: color-mix(in srgb, var(--jade) 55%, var(--line));
+}
+button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: var(--btn-press);
+}
+button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--jade-bright) 70%, transparent);
+  outline-offset: 2px;
+}
+button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+  filter: grayscale(0.15);
+}
+
+/* --- Primary: ember CTA (highest hierarchy) --- */
+button.primary {
+  background: linear-gradient(165deg, var(--ember-soft) 0%, var(--ember) 72%, #a44a32 100%);
+  border-color: transparent;
+  color: #1a0c08;
+  font-weight: 700;
+  box-shadow: var(--btn-shadow-primary);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+button.primary:hover {
+  background: linear-gradient(165deg, #e89878 0%, var(--ember-soft) 55%, var(--ember) 100%);
+  border-color: transparent;
+}
+button.primary:active:not(:disabled) {
+  box-shadow: var(--btn-press);
+}
+
+/* --- Secondary: jade outline / wash (default alternate) --- */
+button.secondary {
+  background: linear-gradient(
+    180deg,
+    rgba(126, 168, 160, 0.18) 0%,
+    rgba(126, 168, 160, 0.08) 100%
+  );
+  border-color: rgba(126, 168, 160, 0.5);
+  color: var(--jade-bright);
+  font-weight: 600;
+  box-shadow: var(--btn-shadow-jade);
+}
+button.secondary:hover {
+  background: rgba(126, 168, 160, 0.22);
+  border-color: rgba(183, 212, 204, 0.65);
+}
+
+/* --- Success --- */
+button.success {
+  background: linear-gradient(165deg, #7aba90 0%, #3d7a55 100%);
+  border-color: transparent;
+  color: #081a0e;
+  font-weight: 700;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.14) inset,
+    0 5px 14px rgba(61, 122, 85, 0.32);
+}
+button.success:hover {
+  background: linear-gradient(165deg, #8ec9a2 0%, #4a8a64 100%);
+  border-color: transparent;
+}
+
+/* --- Info --- */
+button.info {
+  background: linear-gradient(
+    180deg,
+    rgba(91, 143, 185, 0.22) 0%,
+    rgba(91, 143, 185, 0.1) 100%
+  );
+  border-color: rgba(120, 170, 210, 0.5);
+  color: #b8d8f0;
+  font-weight: 600;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 4px 12px rgba(70, 120, 170, 0.2);
+}
+button.info:hover {
+  background: rgba(91, 143, 185, 0.28);
+  border-color: rgba(150, 190, 230, 0.65);
+}
+
+/* --- Warn --- */
+button.warn {
+  background: linear-gradient(
+    180deg,
+    rgba(196, 140, 60, 0.26) 0%,
+    rgba(196, 140, 60, 0.12) 100%
+  );
+  border-color: rgba(224, 170, 80, 0.55);
+  color: #f0d4a0;
+  font-weight: 600;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 4px 12px rgba(180, 120, 40, 0.18);
+}
+button.warn:hover {
+  background: rgba(196, 140, 60, 0.32);
+  border-color: rgba(240, 190, 100, 0.7);
+}
+
+/* --- Danger --- */
+button.danger {
+  background: linear-gradient(
+    180deg,
+    rgba(160, 52, 52, 0.32) 0%,
+    rgba(120, 36, 40, 0.18) 100%
+  );
+  border-color: rgba(196, 92, 62, 0.6);
+  color: #f0b0a0;
+  font-weight: 600;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 4px 12px rgba(140, 40, 40, 0.22);
+}
+button.danger:hover {
+  background: rgba(160, 52, 52, 0.4);
+  border-color: rgba(220, 110, 80, 0.75);
+}
+
+/* --- Ghost: lowest chrome weight --- */
+button.ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  padding: 0.28rem 0.4rem;
+  min-height: 1.7rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  box-shadow: none;
+}
+button.ghost:hover {
+  color: var(--jade-bright);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(126, 168, 160, 0.25);
+}
+button.ghost:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+}
+
+
+/* -----------------------------------------------------------------------------
+   §B cont. — Tabs + panel subnav (chrome navigation)
+   ----------------------------------------------------------------------------- */
+
+.tabs button {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  border-radius: var(--btn-radius-pill, 999px);
+  padding: 0.42rem 0.12rem;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 500;
+  min-height: 2.15rem;
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.tabs-bottom button {
+  border-radius: 10px;
+  padding: 0.46rem 0.08rem;
+  font-size: 0.7rem;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 2px 8px rgba(0, 0, 0, 0.18);
+}
+.tabs button:hover:not(.on):not(:disabled) {
+  color: var(--jade-bright);
+  background: rgba(126, 168, 160, 0.1);
+  border-color: rgba(126, 168, 160, 0.4);
+}
+.tabs button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+}
+.tabs button.on {
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--jade-bright) 0%, var(--jade) 100%);
+  border-color: transparent;
+  font-weight: 700;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.28) inset,
+    0 4px 12px rgba(126, 168, 160, 0.35);
+}
+.tabs button.locked,
+.tabs button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.panel-subnav button {
+  flex: 1 0 auto;
+  min-width: 3.4rem;
+  min-height: 2.2rem;
+  padding: 0.42rem 0.42rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border-radius: var(--btn-radius-pill, 999px);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  touch-action: manipulation;
+  pointer-events: auto;
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.panel-subnav button:hover:not(.on):not(:disabled) {
+  color: var(--jade-bright);
+  background: rgba(126, 168, 160, 0.1);
+}
+.panel-subnav button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+}
+.panel-subnav button.on {
+  color: var(--ink);
+  background: linear-gradient(180deg, rgba(183, 212, 204, 0.95) 0%, rgba(126, 168, 160, 0.9) 100%);
+  border-color: transparent;
+  font-weight: 700;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.22) inset,
+    0 3px 10px rgba(126, 168, 160, 0.28);
+}
+.panel-subnav button.is-locked,
+.panel-subnav button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Dense row actions stay compact but inherit soft elevation */
+.row-actions button {
+  min-height: 1.85rem;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.62rem;
+  border-radius: 8px;
+}
+
+/* =============================================================================
+   theme-light-v1.css — OPTIONAL light theme preview for 「暗潮 · 水母漂漂」
+   Scope: override :root design tokens under a theme class ONLY.
+   Default remains dark-tide. Do NOT make light the default.
+
+   HOW TO SPLICE (CODE agent):
+   1) APPEND this entire file at the END of style.css (after buttons-v1 if both).
+   2) Toggle by adding class `theme-light` on `#app` OR `html` (both selectors covered).
+   3) Optional one-liner in DevTools / title-screen debug:
+        document.getElementById('app')?.classList.toggle('theme-light')
+        // or: document.documentElement.classList.toggle('theme-light')
+   4) Do NOT flip body/html background permanently in the default path.
+   ============================================================================= */
+
+
+/* -----------------------------------------------------------------------------
+   Soft paper / mist tokens — only when .theme-light is present
+   ----------------------------------------------------------------------------- */
+html.theme-light,
+#app.theme-light {
+  /* Surfaces: soft paper white → cool mist (still “tide”, just daylight) */
+  --ink: #f4f7f8;
+  --deep: #e8eef1;
+  --panel: rgba(255, 255, 255, 0.88);
+  --line: rgba(70, 100, 110, 0.22);
+
+  /* Accents: deepen jade / ember so they read on light grounds */
+  --jade: #3d6f68;
+  --jade-bright: #2a5a54;
+  --ember: #b84a30;
+  --ember-soft: #d46a4a;
+
+  /* Text */
+  --fog: #5a7080;
+  --text: #1a2830;
+  --muted: #5c7382;
+
+  /* Button shadows retuned for light chrome (if buttons-v1 tokens present) */
+  --btn-shadow-soft: 0 1px 0 rgba(255, 255, 255, 0.9) inset,
+                     0 3px 10px rgba(40, 60, 70, 0.1);
+  --btn-shadow-primary: 0 1px 0 rgba(255, 255, 255, 0.35) inset,
+                        0 5px 14px rgba(184, 74, 48, 0.28);
+  --btn-shadow-jade: 0 1px 0 rgba(255, 255, 255, 0.7) inset,
+                     0 3px 10px rgba(61, 111, 104, 0.14);
+  --btn-press: 0 1px 2px rgba(40, 60, 70, 0.16);
+}
+
+/* Page wash when html carries the class (full viewport) */
+html.theme-light,
+html.theme-light body {
+  background:
+    radial-gradient(ellipse 120% 80% at 50% -10%, #dce8ec 0%, transparent 55%),
+    radial-gradient(ellipse 90% 60% at 100% 100%, #f0e4dc 0%, transparent 45%),
+    linear-gradient(180deg, #f7fafb 0%, #eef3f5 100%);
+  color: var(--text);
+}
+
+/* When only #app is tagged, keep outer page dark OR soft-match — soft-match for preview */
+#app.theme-light {
+  color: var(--text);
+}
+
+/* Bottom tabs bar: frosted paper instead of near-black */
+html.theme-light .tabs-bottom,
+#app.theme-light .tabs-bottom {
+  background: rgba(250, 252, 253, 0.92);
+  border-top-color: var(--line);
+  backdrop-filter: blur(12px);
+}
+
+/* Panel: clearer paper card */
+html.theme-light .panel,
+#app.theme-light .panel {
+  background: var(--panel);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 8px 24px rgba(40, 60, 70, 0.08);
+}
+
+/* Brand: jade-dark on paper (still display serif from existing type) */
+html.theme-light .brand,
+#app.theme-light .brand {
+  color: var(--jade-bright);
+  text-shadow: 0 0 18px rgba(61, 111, 104, 0.18);
+}
+
+/* Selected tabs / subnav: ink text on jade still works; ensure contrast */
+html.theme-light .tabs button.on,
+#app.theme-light .tabs button.on,
+html.theme-light .panel-subnav button.on,
+#app.theme-light .panel-subnav button.on {
+  color: #f4faf8;
+  background: linear-gradient(180deg, #4a8a80 0%, #3d6f68 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.2) inset,
+    0 3px 10px rgba(61, 111, 104, 0.25);
+}
+
+/* Primary CTA stays ember; dark label already set by buttons-v1 */
+html.theme-light button.primary,
+#app.theme-light button.primary {
+  color: #1a0c08;
+}
+
+/* Ghost / muted links on paper */
+html.theme-light button.ghost,
+#app.theme-light button.ghost {
+  color: var(--muted);
+}
+html.theme-light button.ghost:hover,
+#app.theme-light button.ghost:hover {
+  color: var(--jade-bright);
+  background: rgba(61, 111, 104, 0.06);
+}
+
+/* Bond bar / chips: lighten fills that hardcode dark rgba */
+html.theme-light .team-bond-bar,
+#app.theme-light .team-bond-bar {
+  background: linear-gradient(180deg, rgba(220, 236, 232, 0.95) 0%, rgba(236, 244, 246, 0.95) 100%);
+  border-color: rgba(61, 111, 104, 0.28);
+}
+html.theme-light .team-bond-track,
+#app.theme-light .team-bond-track {
+  background: rgba(40, 60, 70, 0.12);
+}
+html.theme-light .build-chip,
+#app.theme-light .build-chip {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(70, 100, 110, 0.22);
+}
+
+/* Generic list / skill cards with dark fills */
+html.theme-light .skill-list li,
+#app.theme-light .skill-list li {
+  background: rgba(40, 60, 70, 0.04);
+  border-color: rgba(70, 100, 110, 0.16);
+}
