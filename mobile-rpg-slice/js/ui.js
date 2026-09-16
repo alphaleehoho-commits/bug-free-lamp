@@ -413,6 +413,70 @@ function saveCombatPrefs(prefs) {
 
 let combatPrefs = loadCombatPrefs();
 
+const THEME_PREFS_KEY = "void-tide-theme";
+const THEME_COLOR_LIGHT = "#eef3f5";
+const THEME_COLOR_DARK = "#0c1218";
+
+function loadThemePref() {
+  try {
+    const raw = localStorage.getItem(THEME_PREFS_KEY);
+    if (raw === "dark" || raw === "light") return raw;
+  } catch {
+    /* ignore */
+  }
+  return "light";
+}
+
+let themePref = loadThemePref();
+
+function isLightTheme() {
+  return themePref !== "dark";
+}
+
+function applyThemeClass(baseClass = "") {
+  const tokens = String(baseClass || "")
+    .split(/\s+/)
+    .filter((c) => c && c !== "theme-light");
+  if (isLightTheme()) tokens.push("theme-light");
+  if (app) app.className = tokens.join(" ");
+  document.documentElement.classList.toggle("theme-light", isLightTheme());
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", isLightTheme() ? THEME_COLOR_LIGHT : THEME_COLOR_DARK);
+}
+
+function setThemePref(theme) {
+  themePref = theme === "dark" ? "dark" : "light";
+  try {
+    localStorage.setItem(THEME_PREFS_KEY, themePref);
+  } catch {
+    /* ignore */
+  }
+  render();
+}
+
+function themePrefToggleHtml({ compact = false } = {}) {
+  const light = isLightTheme();
+  if (compact) {
+    return `<button type="button" class="ghost theme-chip" data-act="toggle-theme" aria-pressed="${light ? "false" : "true"}" title="${light ? "切換暗潮夜色" : "切換紙色白晝"}">${light ? "紙色" : "夜色"}</button>`;
+  }
+  return `<label class="combat-pref-toggle theme-pref-toggle">
+    <input type="checkbox" data-act="toggle-theme" ${light ? "" : "checked"}/>
+    暗潮夜色（預設紙色白晝）
+  </label>`;
+}
+
+function bindThemeControls(root = app) {
+  root?.querySelectorAll("[data-act=toggle-theme]").forEach((el) => {
+    const onChange = () => {
+      const next = el.type === "checkbox" ? (el.checked ? "dark" : "light") : isLightTheme() ? "dark" : "light";
+      setThemePref(next);
+    };
+    el.addEventListener(el.type === "checkbox" ? "change" : "click", onChange);
+  });
+}
+
+applyThemeClass(app?.className || "");
+
 function isAbyssCombat(result) {
   return result?.combatKind === "abyss";
 }
@@ -682,10 +746,13 @@ function playPetMotion(unitEl, kind) {
   window.setTimeout(() => el.classList.remove(cls), dur + 40);
 }
 
-function combatUnitArtHtml(u, dead = false) {
+function combatUnitArtHtml(u, dead = false, side = null) {
   const elementId = u?.elementId || "tide";
   const speciesId = u?.speciesId || u?.species;
   const defeatCls = dead ? " pet-motion--defeat" : "";
+  const unitSide =
+    side === "foe" || side === "enemy" || u?.side === "foe" || u?.side === "enemy" ? "foe" : "ally";
+  const flipCls = unitSide === "ally" ? " pet-art--flip" : "";
   if (speciesId && SPECIES[speciesId]) {
     return petArtFromPet(
       {
@@ -695,10 +762,10 @@ function combatUnitArtHtml(u, dead = false) {
         generation: u.generation ?? 0,
         name: u.rawName || u.name,
       },
-      { size: 22, showGen: false, className: `pet-art--combat${defeatCls}` }
+      { size: 22, showGen: false, className: `pet-art--combat${defeatCls}${flipCls}` }
     );
   }
-  return `<span class="pet-art pet-motion--idle pet-art--elem-${escapeHtml(elementId)} pet-art--combat${defeatCls}" data-elem="${escapeHtml(elementId)}" data-element="${escapeHtml(elementId)}" style="--art-size:22px">
+  return `<span class="pet-art pet-motion--idle pet-art--elem-${escapeHtml(elementId)} pet-art--combat${defeatCls}${flipCls}" data-elem="${escapeHtml(elementId)}" data-element="${escapeHtml(elementId)}" style="--art-size:22px">
     <span class="pet-icon pet-icon-unknown" aria-hidden="true">◌</span>
   </span>`;
 }
@@ -1051,7 +1118,7 @@ function combatUnitBar(u, pb, slotIndex = 0, lane = "front") {
   return `<div class="combat-unit${dead ? " is-down" : ""}${
     doubleAct ? " is-boss-act" : ""
   }" data-combat-uid="${escapeHtml(u.uid)}" data-side="${side}" data-slot="${slot}" data-lane="${laneAttr}" data-element="${escapeHtml(u.elementId || "")}">
-    ${combatUnitArtHtml(u, dead)}
+    ${combatUnitArtHtml(u, dead, side)}
     <span class="cu-name">${actBadge}${escapeHtml(u.name)}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
@@ -2303,6 +2370,7 @@ function titleScreenHtml() {
         <ul>${terms}</ul>
       </section>
       <div class="title-actions">
+        ${themePrefToggleHtml()}
         <button type="button" class="primary title-start" data-act="enter-title">開始教學</button>
         <button type="button" class="secondary title-skip" data-act="enter-title-skip">跳過教學，自由探索</button>
         <button type="button" class="ghost title-reset" data-act="reset-title">重置存檔，返回開始</button>
@@ -2345,11 +2413,12 @@ function bindTitleScreen() {
   app.querySelector("[data-act=reset-title]")?.addEventListener("click", () => {
     applyResetSave();
   });
+  bindThemeControls(app);
 }
 
 function render() {
   if (titleScreenOpen) {
-    app.className = "is-title";
+    applyThemeClass("is-title");
     app.innerHTML = titleScreenHtml();
     bindTitleScreen();
     return;
@@ -2389,13 +2458,14 @@ function render() {
   const busy = playback && !playback.done;
   const inTutorial = tutorialActive(state);
 
-  app.className = `${enterClass}${inTutorial ? " is-tutorial" : ""}`;
+  applyThemeClass(`${enterClass}${inTutorial ? " is-tutorial" : ""}`);
   app.innerHTML = `
     <header class="top top-compact">
       <div class="brand-row">
         <p class="brand" data-brand="void-tide">暗潮</p>
         <p class="tag">Void Tide · 水母漂漂</p>
         <span class="build-chip" title="建置號">建置 ${escapeHtml(APP_BUILD)}</span>
+        ${themePrefToggleHtml({ compact: true })}
         <button type="button" class="ghost brand-reset" data-act="reset" ${busy ? "disabled" : ""}>重置存檔</button>
         <button type="button" class="brand-help" data-act="toggle-stats-sheet" aria-label="詞語與資源說明">？</button>
       </div>
@@ -3220,7 +3290,7 @@ function idleUnitBarHtml(u, slotIndex = 0, lane = "front") {
   return `<div class="combat-unit${dead ? " is-down" : ""}${
     doubleAct && !dead ? " is-boss-act" : ""
   }" data-uid="${escapeHtml(u.uid || "")}" data-side="${side}" data-slot="${slot}" data-lane="${laneAttr}" data-element="${escapeHtml(u.elementId || "")}">
-    ${combatUnitArtHtml(u, dead)}
+    ${combatUnitArtHtml(u, dead, side)}
     <span class="cu-name">${actBadge}${role}${escapeHtml(u.name)}</span>
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
@@ -5835,6 +5905,8 @@ function logPanel() {
       <button type="button" class="ghost" data-act="reset" ${busy ? "disabled" : ""}>重置存檔，返回開始</button>
     </div>
     <div class="save-tools card-block">
+      <h3>顯示</h3>
+      ${themePrefToggleHtml()}
       <h3>存檔備份</h3>
       <p class="meta">本機 localStorage · 換機／清瀏覽器前請匯出。建置 ${escapeHtml(APP_BUILD)}。重置會清除進度並返回開始畫面。</p>
       <div class="row log-tools">
@@ -6497,6 +6569,7 @@ function bind() {
       saveCombatPrefs(combatPrefs);
     });
   });
+  bindThemeControls(app);
   app.querySelectorAll("[data-breed-toggle]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const uid = btn.dataset.breedToggle;
