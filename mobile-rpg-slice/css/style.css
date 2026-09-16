@@ -3337,12 +3337,32 @@ button.pet-badge {
   flex-shrink: 0;
 }
 .pet-icon svg,
-.pet-icon-svg { display: block; }
-.pet-icon.is-hybrid svg { filter: drop-shadow(0 0 4px rgba(183, 212, 204, 0.35)); }
-.pet-icon--rarity-rare svg { filter: drop-shadow(0 0 3px rgba(109, 179, 217, 0.45)); }
-.pet-icon--rarity-epic svg { filter: drop-shadow(0 0 4px rgba(201, 160, 232, 0.5)); }
-.pet-icon--rarity-legendary svg { filter: drop-shadow(0 0 5px rgba(232, 184, 109, 0.55)); }
-.pet-icon.is-hybrid.pet-icon--rarity-legendary svg {
+.pet-icon-svg,
+.pet-icon-sprite { display: block; }
+.pet-icon--sprite {
+  overflow: hidden;
+  border-radius: 6px;
+  background: #f4fbff;
+}
+.pet-icon-sprite {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 42% 48%;
+  transform: scale(1.32);
+  transform-origin: 42% 48%;
+  pointer-events: none;
+}
+.pet-icon.is-hybrid svg,
+.pet-icon.is-hybrid .pet-icon-sprite { filter: drop-shadow(0 0 4px rgba(183, 212, 204, 0.35)); }
+.pet-icon--rarity-rare svg,
+.pet-icon--rarity-rare .pet-icon-sprite { filter: drop-shadow(0 0 3px rgba(109, 179, 217, 0.45)); }
+.pet-icon--rarity-epic svg,
+.pet-icon--rarity-epic .pet-icon-sprite { filter: drop-shadow(0 0 4px rgba(201, 160, 232, 0.5)); }
+.pet-icon--rarity-legendary svg,
+.pet-icon--rarity-legendary .pet-icon-sprite { filter: drop-shadow(0 0 5px rgba(232, 184, 109, 0.55)); }
+.pet-icon.is-hybrid.pet-icon--rarity-legendary svg,
+.pet-icon.is-hybrid.pet-icon--rarity-legendary .pet-icon-sprite {
   filter: drop-shadow(0 0 5px rgba(232, 184, 109, 0.55)) drop-shadow(0 0 3px rgba(183, 212, 204, 0.3));
 }
 .pet-icon-unknown {
@@ -4029,4 +4049,392 @@ button.pet-badge {
 }
 .next-goal-compact .muted {
   font-size: var(--fs-xxs);
+}
+
+/* =============================================================================
+   pet-motion-v1.css — DROP-IN motion tokens for pet art
+   Game: 「暗潮 · 水母漂漂」
+   Scope: CSS motion ONLY. Append to mobile-rpg-slice/css/style.css.
+   Do NOT edit remote repo from this deliverable path — CODE splices in a PR.
+
+   HOW TO SPLICE (CODE agent):
+   1) APPEND this entire file to the END of mobile-rpg-slice/css/style.css
+      (or @import it after style.css). Equal-specificity later rules win.
+   2) Keep existing .pet-art / .pet-icon / --elem-glow / --elem-wash unchanged.
+   3) JS: add class pet-motion--idle on roster/codex/detail art (default breath).
+      On combat events, briefly add pet-motion--attack | --hit | --defeat | --cast
+      then remove after animationend (or timeout ≈ token duration). Do not leave
+      combat state classes stuck on Idle loops.
+   4) Element color: reuse inline --elem-glow / --elem-wash already set by
+      petArtHtml / petArtFromPet. Optional fallbacks via [data-elem] /
+      [data-element] / .pet-art--elem-* below.
+   ============================================================================= */
+
+
+/* -----------------------------------------------------------------------------
+   §A — :root motion tokens
+   APPEND inside existing :root { ... } OR leave as a second :root block
+   (both are valid; second :root only adds these custom properties).
+   ----------------------------------------------------------------------------- */
+:root {
+  /* Durations */
+  --pet-motion-idle-dur: 2.8s;
+  --pet-motion-glow-dur: 3.2s;
+  --pet-motion-attack-dur: 160ms;   /* shake window 120–200ms */
+  --pet-motion-hit-dur: 280ms;
+  --pet-motion-defeat-dur: 720ms;
+  --pet-motion-cast-dur: 480ms;
+
+  /* Easing */
+  --pet-motion-ease-breath: ease-in-out;
+  --pet-motion-ease-snap: cubic-bezier(0.22, 0.9, 0.28, 1);
+  --pet-motion-ease-sink: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Amplitudes (Idle breath) */
+  --pet-motion-scale-min: 1;
+  --pet-motion-scale-max: 1.04;
+  --pet-motion-float-y: 3px;        /* 2–4px band; tweak per size if needed */
+
+  /* Combat amplitudes */
+  --pet-motion-shake-x: 3px;
+  --pet-motion-tilt-deg: 4deg;
+  --pet-motion-knock-x: -6px;
+  --pet-motion-knock-y: 2px;
+  --pet-motion-sink-y: 10px;
+
+  /* Glow (soft wash — light, not flashy). Defaults = 水 / tide cyan.
+     Per-element overrides below; runtime --elem-glow / --elem-wash win when set. */
+  --pet-glow-tide: #7ec8d8;         /* 水 */
+  --pet-glow-flame: #e08a6a;        /* 焰 */
+  --pet-glow-gale: #9ec4b4;         /* 嵐 */
+  --pet-glow-gloom: #ffe14a;        /* 雷 — matches existing ELEMENT_COLORS.gloom.glow */
+  --pet-glow-stone: #b8a992;        /* 岩 */
+
+  --pet-wash-tide: rgba(74, 158, 173, 0.22);
+  --pet-wash-flame: rgba(196, 92, 62, 0.22);
+  --pet-wash-gale: rgba(106, 154, 138, 0.22);
+  --pet-wash-gloom: rgba(200, 255, 61, 0.28);
+  --pet-wash-stone: rgba(138, 125, 106, 0.22);
+
+  /* Active glow used by motion (fallback tide; overridden by element hooks) */
+  --pet-motion-glow: var(--elem-glow, var(--pet-glow-tide));
+  --pet-motion-wash: var(--elem-wash, var(--pet-wash-tide));
+}
+
+
+/* -----------------------------------------------------------------------------
+   §B — Element hooks (data-attr + existing class names)
+   Maps: tide=水 · flame=焰 · gale=嵐 · gloom=雷 · stone=岩
+   Prefer runtime inline --elem-glow/--elem-wash from pet-icons.js when present.
+   ----------------------------------------------------------------------------- */
+.pet-art[data-elem="tide"],
+.pet-art[data-element="tide"],
+.pet-art.pet-art--elem-tide,
+.pet-icon.pet-icon--elem-tide {
+  --pet-motion-glow: var(--elem-glow, var(--pet-glow-tide));
+  --pet-motion-wash: var(--elem-wash, var(--pet-wash-tide));
+}
+.pet-art[data-elem="flame"],
+.pet-art[data-element="flame"],
+.pet-art.pet-art--elem-flame,
+.pet-icon.pet-icon--elem-flame {
+  --pet-motion-glow: var(--elem-glow, var(--pet-glow-flame));
+  --pet-motion-wash: var(--elem-wash, var(--pet-wash-flame));
+}
+.pet-art[data-elem="gale"],
+.pet-art[data-element="gale"],
+.pet-art.pet-art--elem-gale,
+.pet-icon.pet-icon--elem-gale {
+  --pet-motion-glow: var(--elem-glow, var(--pet-glow-gale));
+  --pet-motion-wash: var(--elem-wash, var(--pet-wash-gale));
+}
+.pet-art[data-elem="gloom"],
+.pet-art[data-element="gloom"],
+.pet-art.pet-art--elem-gloom,
+.pet-icon.pet-icon--elem-gloom {
+  --pet-motion-glow: var(--elem-glow, var(--pet-glow-gloom));
+  --pet-motion-wash: var(--elem-wash, var(--pet-wash-gloom));
+}
+.pet-art[data-elem="stone"],
+.pet-art[data-element="stone"],
+.pet-art.pet-art--elem-stone,
+.pet-icon.pet-icon--elem-stone {
+  --pet-motion-glow: var(--elem-glow, var(--pet-glow-stone));
+  --pet-motion-wash: var(--elem-wash, var(--pet-wash-stone));
+}
+
+
+/* -----------------------------------------------------------------------------
+   §C — Friendly base for .pet-art / img / .pet-icon
+   Isolate transforms on the artwork layer so the frame chrome stays steady.
+   ----------------------------------------------------------------------------- */
+.pet-art.pet-motion--idle,
+.pet-art.pet-motion--attack,
+.pet-art.pet-motion--hit,
+.pet-art.pet-motion--defeat,
+.pet-art.pet-motion--cast {
+  /* Soft element wash pulse sits on the frame; transform lives on children */
+  will-change: box-shadow, filter;
+}
+
+.pet-art.pet-motion--idle .pet-icon,
+.pet-art.pet-motion--idle img,
+.pet-art.pet-motion--attack .pet-icon,
+.pet-art.pet-motion--attack img,
+.pet-art.pet-motion--hit .pet-icon,
+.pet-art.pet-motion--hit img,
+.pet-art.pet-motion--defeat .pet-icon,
+.pet-art.pet-motion--defeat img,
+.pet-art.pet-motion--cast .pet-icon,
+.pet-art.pet-motion--cast img,
+.pet-icon.pet-motion--idle,
+.pet-icon.pet-motion--attack,
+.pet-icon.pet-motion--hit,
+.pet-icon.pet-motion--defeat,
+.pet-icon.pet-motion--cast {
+  display: block;
+  transform-origin: 50% 65%;
+  backface-visibility: hidden;
+  will-change: transform, opacity, filter;
+}
+
+/* PNG Idle art (PR #75): keep crisp, fill art box without layout shift */
+.pet-art img {
+  max-width: 100%;
+  max-height: 100%;
+  width: var(--art-size, 32px);
+  height: var(--art-size, 32px);
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+
+/* -----------------------------------------------------------------------------
+   §D — Modifier: Idle (default breath + soft glow)
+   Apply pet-motion--idle on roster / codex / detail / combat idle poses.
+   ----------------------------------------------------------------------------- */
+.pet-art.pet-motion--idle {
+  animation: pet-motion-glow-pulse var(--pet-motion-glow-dur) var(--pet-motion-ease-breath) infinite;
+}
+
+.pet-art.pet-motion--idle .pet-icon,
+.pet-art.pet-motion--idle img,
+.pet-icon.pet-motion--idle {
+  animation: pet-motion-breath var(--pet-motion-idle-dur) var(--pet-motion-ease-breath) infinite;
+}
+
+/* Legendary rarity already pulses box-shadow; keep both — glow is additive soft */
+.pet-art.pet-motion--idle.pet-art--rarity-legendary {
+  /* legend pulse (existing) + our glow share box-shadow; prefer soft mix via filter */
+  animation:
+    pet-art-legend-pulse 2.8s ease-in-out infinite,
+    pet-motion-glow-pulse var(--pet-motion-glow-dur) var(--pet-motion-ease-breath) infinite;
+}
+
+
+/* -----------------------------------------------------------------------------
+   §E — Modifier: Attack (short shake + slight tilt) — one-shot
+   JS: el.classList.add('pet-motion--attack'); remove on animationend.
+   Duration token: --pet-motion-attack-dur (120–200ms).
+   ----------------------------------------------------------------------------- */
+.pet-art.pet-motion--attack .pet-icon,
+.pet-art.pet-motion--attack img,
+.pet-icon.pet-motion--attack {
+  animation: pet-motion-attack var(--pet-motion-attack-dur) var(--pet-motion-ease-snap) 1;
+}
+
+
+/* -----------------------------------------------------------------------------
+   §F — Modifier: Get Hit (knockback) — one-shot
+   ----------------------------------------------------------------------------- */
+.pet-art.pet-motion--hit .pet-icon,
+.pet-art.pet-motion--hit img,
+.pet-icon.pet-motion--hit {
+  animation: pet-motion-hit var(--pet-motion-hit-dur) var(--pet-motion-ease-snap) 1;
+}
+
+
+/* -----------------------------------------------------------------------------
+   §G — Modifier: Defeat (fade + sink) — one-shot; leave class until exit UI
+   ----------------------------------------------------------------------------- */
+.pet-art.pet-motion--defeat .pet-icon,
+.pet-art.pet-motion--defeat img,
+.pet-icon.pet-motion--defeat {
+  animation: pet-motion-defeat var(--pet-motion-defeat-dur) var(--pet-motion-ease-sink) 1 forwards;
+}
+
+.pet-art.pet-motion--defeat {
+  animation: pet-motion-defeat-frame var(--pet-motion-defeat-dur) var(--pet-motion-ease-sink) 1 forwards;
+}
+
+
+/* -----------------------------------------------------------------------------
+   §H — Optional: Cast (soft lift + glow bloom) — one-shot skill telegraph
+   ----------------------------------------------------------------------------- */
+.pet-art.pet-motion--cast {
+  animation: pet-motion-cast-glow var(--pet-motion-cast-dur) var(--pet-motion-ease-breath) 1;
+}
+
+.pet-art.pet-motion--cast .pet-icon,
+.pet-art.pet-motion--cast img,
+.pet-icon.pet-motion--cast {
+  animation: pet-motion-cast var(--pet-motion-cast-dur) var(--pet-motion-ease-snap) 1;
+}
+
+
+/* Combat state classes pause Idle loop while active (avoid fighting transforms) */
+.pet-art.pet-motion--idle.pet-motion--attack .pet-icon,
+.pet-art.pet-motion--idle.pet-motion--attack img,
+.pet-art.pet-motion--idle.pet-motion--hit .pet-icon,
+.pet-art.pet-motion--idle.pet-motion--hit img,
+.pet-art.pet-motion--idle.pet-motion--defeat .pet-icon,
+.pet-art.pet-motion--idle.pet-motion--defeat img,
+.pet-art.pet-motion--idle.pet-motion--cast .pet-icon,
+.pet-art.pet-motion--idle.pet-motion--cast img {
+  /* Specificity: combat keyframes below still apply via their own rules;
+     cancel breath by not stacking — remove --idle OR rely on later animation
+     property override from §E–H (same specificity, source order wins). */
+}
+
+
+/* -----------------------------------------------------------------------------
+   §I — Keyframes
+   ----------------------------------------------------------------------------- */
+@keyframes pet-motion-breath {
+  0%, 100% {
+    transform: translateY(0) scale(var(--pet-motion-scale-min));
+  }
+  50% {
+    transform: translateY(calc(var(--pet-motion-float-y) * -1)) scale(var(--pet-motion-scale-max));
+  }
+}
+
+@keyframes pet-motion-glow-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+      0 0 0 1px var(--rarity-soft, transparent),
+      0 0 6px color-mix(in srgb, var(--pet-motion-glow) 28%, transparent);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+      0 0 0 1px var(--rarity-soft, transparent),
+      0 0 12px color-mix(in srgb, var(--pet-motion-glow) 42%, transparent);
+    filter: brightness(1.04);
+  }
+}
+
+@keyframes pet-motion-attack {
+  0%   { transform: translateX(0) rotate(0deg) scale(1); }
+  25%  { transform: translateX(calc(var(--pet-motion-shake-x) * -1)) rotate(calc(var(--pet-motion-tilt-deg) * -1)) scale(1.02); }
+  50%  { transform: translateX(var(--pet-motion-shake-x)) rotate(var(--pet-motion-tilt-deg)) scale(1.03); }
+  75%  { transform: translateX(calc(var(--pet-motion-shake-x) * -0.5)) rotate(calc(var(--pet-motion-tilt-deg) * 0.4)) scale(1.01); }
+  100% { transform: translateX(0) rotate(0deg) scale(1); }
+}
+
+@keyframes pet-motion-hit {
+  0%   { transform: translate(0, 0) scale(1); filter: brightness(1); }
+  35%  { transform: translate(var(--pet-motion-knock-x), var(--pet-motion-knock-y)) scale(0.96); filter: brightness(1.15); }
+  100% { transform: translate(0, 0) scale(1); filter: brightness(1); }
+}
+
+@keyframes pet-motion-defeat {
+  0%   { transform: translateY(0) scale(1); opacity: 1; filter: grayscale(0); }
+  100% { transform: translateY(var(--pet-motion-sink-y)) scale(0.92); opacity: 0.15; filter: grayscale(0.55); }
+}
+
+@keyframes pet-motion-defeat-frame {
+  0%   { opacity: 1; filter: brightness(1); }
+  100% { opacity: 0.45; filter: brightness(0.75); }
+}
+
+@keyframes pet-motion-cast {
+  0%   { transform: translateY(0) scale(1); filter: brightness(1); }
+  40%  { transform: translateY(-4px) scale(1.05); filter: brightness(1.08); }
+  100% { transform: translateY(0) scale(1); filter: brightness(1); }
+}
+
+@keyframes pet-motion-cast-glow {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+      0 0 0 1px var(--rarity-soft, transparent),
+      0 0 6px color-mix(in srgb, var(--pet-motion-glow) 30%, transparent);
+  }
+  45% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+      0 0 0 1px var(--rarity-soft, transparent),
+      0 0 16px color-mix(in srgb, var(--pet-motion-glow) 55%, transparent);
+  }
+}
+
+
+/* -----------------------------------------------------------------------------
+   §J — prefers-reduced-motion
+   Disables looping Idle / glow. One-shot combat cues become instant snaps
+   (no shake / no long sink) so feedback remains without motion sickness.
+   ----------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .pet-art.pet-motion--idle,
+  .pet-art.pet-motion--idle.pet-art--rarity-legendary,
+  .pet-art.pet-motion--idle .pet-icon,
+  .pet-art.pet-motion--idle img,
+  .pet-icon.pet-motion--idle {
+    animation: none !important;
+  }
+
+  .pet-art.pet-motion--attack .pet-icon,
+  .pet-art.pet-motion--attack img,
+  .pet-icon.pet-motion--attack,
+  .pet-art.pet-motion--hit .pet-icon,
+  .pet-art.pet-motion--hit img,
+  .pet-icon.pet-motion--hit,
+  .pet-art.pet-motion--cast .pet-icon,
+  .pet-art.pet-motion--cast img,
+  .pet-icon.pet-motion--cast,
+  .pet-art.pet-motion--cast {
+    animation: none !important;
+  }
+
+  /* Defeat: still communicate KO with a static fade (no sink travel) */
+  .pet-art.pet-motion--defeat .pet-icon,
+  .pet-art.pet-motion--defeat img,
+  .pet-icon.pet-motion--defeat {
+    animation: none !important;
+    opacity: 0.25;
+    filter: grayscale(0.55);
+    transform: none;
+  }
+  .pet-art.pet-motion--defeat {
+    animation: none !important;
+    opacity: 0.55;
+  }
+}
+
+/* Combat roster: pet-art motion target without changing unit stats */
+.combat-unit:not(.is-empty-slot) {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.22rem;
+  align-items: center;
+}
+.combat-unit .pet-art--combat {
+  grid-row: 1 / span 2;
+}
+.combat-unit .cu-bar {
+  grid-column: 2;
+}
+.combat-unit .pet-art--combat .pet-art-elem-dot,
+.combat-unit .pet-art--combat .pet-art-gen {
+  display: none;
+}
+
+/* Keep Idle PNG crop after motion v1 `.pet-art img { object-fit: contain }` */
+.pet-art img.pet-icon-sprite {
+  object-fit: cover;
+  object-position: 42% 48%;
 }

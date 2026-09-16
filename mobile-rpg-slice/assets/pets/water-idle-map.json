@@ -1,0 +1,489 @@
+{
+  "convention": "{NN}_水_Idle.png in this folder; NN is zero-padded race id 01–48",
+  "element": "水",
+  "action": "Idle",
+  "path": "assets/pets/",
+  "note": "Race ids 1–14 wild/base, 15–40 breed, 41–48 tertiary. speciesId matches live SPECIES table; nameZh is the sprite sheet label (not a rename of in-game species names). Other elements/actions are not invented here.",
+  "races": [
+    {
+      "id": 1,
+      "speciesId": "reefox",
+      "category": "Base",
+      "nameZh": "圓圓水母",
+      "nameEn": "Puff Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "01_水_Idle.png"
+    },
+    {
+      "id": 2,
+      "speciesId": "tidecarp",
+      "category": "Base",
+      "nameZh": "水滴水母",
+      "nameEn": "Drop Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "02_水_Idle.png"
+    },
+    {
+      "id": 3,
+      "speciesId": "ashwing",
+      "category": "Base",
+      "nameZh": "花瓣水母",
+      "nameEn": "Bloom Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "03_水_Idle.png"
+    },
+    {
+      "id": 4,
+      "speciesId": "mossback",
+      "category": "Base",
+      "nameZh": "雲朵水母",
+      "nameEn": "Cloud Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "04_水_Idle.png"
+    },
+    {
+      "id": 5,
+      "speciesId": "nightmoth",
+      "category": "Base",
+      "nameZh": "小草水母",
+      "nameEn": "Sprout Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "05_水_Idle.png"
+    },
+    {
+      "id": 6,
+      "speciesId": "glowfin",
+      "category": "Base",
+      "nameZh": "星粒水母",
+      "nameEn": "Star Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "06_水_Idle.png"
+    },
+    {
+      "id": 7,
+      "speciesId": "saltpup",
+      "category": "Base",
+      "nameZh": "水晶水母",
+      "nameEn": "Gem Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "07_水_Idle.png"
+    },
+    {
+      "id": 8,
+      "speciesId": "brineeel",
+      "category": "Base",
+      "nameZh": "氣泡水母",
+      "nameEn": "Bubble Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "08_水_Idle.png"
+    },
+    {
+      "id": 9,
+      "speciesId": "cliffkite",
+      "category": "Base",
+      "nameZh": "蘑菇水母",
+      "nameEn": "Shroom Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "09_水_Idle.png"
+    },
+    {
+      "id": 10,
+      "speciesId": "barnshell",
+      "category": "Base",
+      "nameZh": "貝殼水母",
+      "nameEn": "Shell Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "10_水_Idle.png"
+    },
+    {
+      "id": 11,
+      "speciesId": "siltmite",
+      "category": "Base",
+      "nameZh": "飛碟水母",
+      "nameEn": "UFO Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "11_水_Idle.png"
+    },
+    {
+      "id": 12,
+      "speciesId": "lanternray",
+      "category": "Base",
+      "nameZh": "幽靈水母",
+      "nameEn": "Ghost Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "12_水_Idle.png"
+    },
+    {
+      "id": 13,
+      "speciesId": "duskox",
+      "category": "Base",
+      "nameZh": "果凍水母",
+      "nameEn": "Jello Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "13_水_Idle.png"
+    },
+    {
+      "id": 14,
+      "speciesId": "foamdrake",
+      "category": "Base",
+      "nameZh": "小刺水母",
+      "nameEn": "Urchin Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "14_水_Idle.png"
+    },
+    {
+      "id": 15,
+      "speciesId": "tideling",
+      "category": "Breed",
+      "nameZh": "櫻花水母",
+      "nameEn": "Sakura Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "15_水_Idle.png"
+    },
+    {
+      "id": 16,
+      "speciesId": "duskfly",
+      "category": "Breed",
+      "nameZh": "仙人掌水母",
+      "nameEn": "Cactus Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "16_水_Idle.png"
+    },
+    {
+      "id": 17,
+      "speciesId": "ironback",
+      "category": "Breed",
+      "nameZh": "蘋果水母",
+      "nameEn": "Apple Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "17_水_Idle.png"
+    },
+    {
+      "id": 18,
+      "speciesId": "mistcarp",
+      "category": "Breed",
+      "nameZh": "蓮花水母",
+      "nameEn": "Lotus Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "18_水_Idle.png"
+    },
+    {
+      "id": 19,
+      "speciesId": "stormmoth",
+      "category": "Breed",
+      "nameZh": "貓耳水母",
+      "nameEn": "Cat Ear Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "19_水_Idle.png"
+    },
+    {
+      "id": 20,
+      "speciesId": "reefwing",
+      "category": "Breed",
+      "nameZh": "小魔王水母",
+      "nameEn": "Devil Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "20_水_Idle.png"
+    },
+    {
+      "id": 21,
+      "speciesId": "fangmite",
+      "category": "Breed",
+      "nameZh": "羽翼水母",
+      "nameEn": "Winged Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "21_水_Idle.png"
+    },
+    {
+      "id": 22,
+      "speciesId": "scalequill",
+      "category": "Breed",
+      "nameZh": "小龍水母",
+      "nameEn": "Dragon Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "22_水_Idle.png"
+    },
+    {
+      "id": 23,
+      "speciesId": "shellmite",
+      "category": "Breed",
+      "nameZh": "茶杯水母",
+      "nameEn": "Teacup Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "23_水_Idle.png"
+    },
+    {
+      "id": 24,
+      "speciesId": "glintfox",
+      "category": "Breed",
+      "nameZh": "手風琴折頁水母",
+      "nameEn": "Accordion Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "24_水_Idle.png"
+    },
+    {
+      "id": 25,
+      "speciesId": "prismback",
+      "category": "Breed",
+      "nameZh": "糖果水母",
+      "nameEn": "Candy Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "25_水_Idle.png"
+    },
+    {
+      "id": 26,
+      "speciesId": "tidehowl",
+      "category": "Breed",
+      "nameZh": "甜甜圈水母",
+      "nameEn": "Donut Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "26_水_Idle.png"
+    },
+    {
+      "id": 27,
+      "speciesId": "coralmane",
+      "category": "Breed",
+      "nameZh": "月芽水母",
+      "nameEn": "Crescent Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "27_水_Idle.png"
+    },
+    {
+      "id": 28,
+      "speciesId": "mistwing",
+      "category": "Breed",
+      "nameZh": "彗星水母",
+      "nameEn": "Comet Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "28_水_Idle.png"
+    },
+    {
+      "id": 29,
+      "speciesId": "stormshell",
+      "category": "Breed",
+      "nameZh": "火山水母",
+      "nameEn": "Volcano Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "29_水_Idle.png"
+    },
+    {
+      "id": 30,
+      "speciesId": "gloomfang",
+      "category": "Breed",
+      "nameZh": "雪花水母",
+      "nameEn": "Snowflake Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "30_水_Idle.png"
+    },
+    {
+      "id": 31,
+      "speciesId": "lightscale",
+      "category": "Breed",
+      "nameZh": "皇冠水母",
+      "nameEn": "Crown Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "31_水_Idle.png"
+    },
+    {
+      "id": 32,
+      "speciesId": "ashspine",
+      "category": "Breed",
+      "nameZh": "沙漏水母",
+      "nameEn": "Hourglass Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "32_水_Idle.png"
+    },
+    {
+      "id": 33,
+      "speciesId": "deepquill",
+      "category": "Breed",
+      "nameZh": "燈籠水母",
+      "nameEn": "Lantern Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "33_水_Idle.png"
+    },
+    {
+      "id": 34,
+      "speciesId": "reefmite",
+      "category": "Breed",
+      "nameZh": "羅盤水母",
+      "nameEn": "Compass Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "34_水_Idle.png"
+    },
+    {
+      "id": 35,
+      "speciesId": "voidcarp",
+      "category": "Breed",
+      "nameZh": "彩虹水母",
+      "nameEn": "Rainbow Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "35_水_Idle.png"
+    },
+    {
+      "id": 36,
+      "speciesId": "brightback",
+      "category": "Breed",
+      "nameZh": "音符水母",
+      "nameEn": "Music Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "36_水_Idle.png"
+    },
+    {
+      "id": 37,
+      "speciesId": "galebeast",
+      "category": "Breed",
+      "nameZh": "螺旋槳風車水母",
+      "nameEn": "Propeller Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "37_水_Idle.png"
+    },
+    {
+      "id": 38,
+      "speciesId": "stonefinch",
+      "category": "Breed",
+      "nameZh": "金魚水母",
+      "nameEn": "Goldfish Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "38_水_Idle.png"
+    },
+    {
+      "id": 39,
+      "speciesId": "inkfox",
+      "category": "Breed",
+      "nameZh": "洋傘水母",
+      "nameEn": "Parasol Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "39_水_Idle.png"
+    },
+    {
+      "id": 40,
+      "speciesId": "prismoth",
+      "category": "Breed",
+      "nameZh": "馬卡龍水母",
+      "nameEn": "Macaron Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "40_水_Idle.png"
+    },
+    {
+      "id": 41,
+      "speciesId": "abyssreign",
+      "category": "Tertiary",
+      "nameZh": "宇宙星空水母",
+      "nameEn": "Cosmic Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "41_水_Idle.png"
+    },
+    {
+      "id": 42,
+      "speciesId": "voidglint",
+      "category": "Tertiary",
+      "nameZh": "大天使水母",
+      "nameEn": "Seraph Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "42_水_Idle.png"
+    },
+    {
+      "id": 43,
+      "speciesId": "duskiron",
+      "category": "Tertiary",
+      "nameZh": "渾天星環水母",
+      "nameEn": "Armillary Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "43_水_Idle.png"
+    },
+    {
+      "id": 44,
+      "speciesId": "coralstorm",
+      "category": "Tertiary",
+      "nameZh": "九尾狐仙水母",
+      "nameEn": "Kitsune Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "44_水_Idle.png"
+    },
+    {
+      "id": 45,
+      "speciesId": "deepfang",
+      "category": "Tertiary",
+      "nameZh": "深海女皇水母",
+      "nameEn": "Empress Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "45_水_Idle.png"
+    },
+    {
+      "id": 46,
+      "speciesId": "tideprism",
+      "category": "Tertiary",
+      "nameZh": "夢境捕夢水母",
+      "nameEn": "Dreamcatcher Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "46_水_Idle.png"
+    },
+    {
+      "id": 47,
+      "speciesId": "nightscale",
+      "category": "Tertiary",
+      "nameZh": "世界樹水母",
+      "nameEn": "Bonsai Orbital Yggdrasil Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "47_水_Idle.png"
+    },
+    {
+      "id": 48,
+      "speciesId": "galevoid",
+      "category": "Tertiary",
+      "nameZh": "創世方塊水母",
+      "nameEn": "Genesis Jelly",
+      "element": "水",
+      "action": "Idle",
+      "assetFile": "48_水_Idle.png"
+    }
+  ]
+}

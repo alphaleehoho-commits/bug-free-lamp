@@ -1677,6 +1677,9 @@ function buildTrainCombatAllies(state) {
       atkBuffTurns: 0,
       atkBuffPct: 0,
       generation: gen,
+      speciesId: p.speciesId,
+      rarity: p.rarity ?? 0,
+      petUid: p.uid,
       sustainBias: !!pe?.sustainBias,
     });
   }
@@ -5143,6 +5146,7 @@ function spawnCombatFoe(e, dailyMod = null, challenge = null) {
     atk,
     spd,
     elementId: e.element,
+    speciesId: e.species || e.speciesId || null,
     role,
     actions: Math.max(1, actions),
     skillLevel: role === "boss" ? 2 : 1,
@@ -5207,6 +5211,10 @@ function buildDungeonAllyUnits(state, d, { dailyMod = null, challenge = null } =
       elementId: p.elementId,
       elementName: p.elementName,
       skillName: p.skillName || SKILLS[p.skillId]?.name || "—",
+      speciesId: p.speciesId,
+      rarity: p.rarity ?? 0,
+      generation: petGeneration(p),
+      petUid: p.uid,
     });
   }
   return {
@@ -5383,6 +5391,9 @@ export function runDungeon(state, dungeonId, opts = {}) {
       atkBuffTurns: 0,
       atkBuffPct: 0,
       generation: gen,
+      speciesId: p.speciesId,
+      rarity: p.rarity ?? 0,
+      petUid: p.uid,
       sustainBias: !!pe?.sustainBias,
     });
   }
@@ -7574,6 +7585,8 @@ function buildAbyssCombatAllies(state, run) {
       atkBuffTurns: 0,
       atkBuffPct: 0,
       generation: st.gen,
+      speciesId: p.speciesId,
+      rarity: p.rarity ?? 0,
       sustainBias: !!st.pe?.sustainBias,
       dmgTakenMult: st.dmgTakenMult || 1,
     });

@@ -1,6 +1,7 @@
-/** 水母剪影 icon — 種類生物形（頭／身／耳翼尾）+ 元素配色 + 稀有框（非手繪肖像） */
+/** 水母 icon — 有 Idle 圖則用 PNG；否則種類生物形剪影 + 元素配色 + 稀有框 */
 
-import { SPECIES, ELEMENTS, rarityInfo } from "./data.js";
+import { APP_BUILD, SPECIES, ELEMENTS, rarityInfo } from "./data.js";
+import { resolvePetIdleSprite } from "./pet-sprites.js";
 
 const ELEMENT_COLORS = {
   tide: { fill: "#4a9ead", glow: "#7ec8d8", wash: "rgba(74, 158, 173, 0.22)" },
@@ -275,9 +276,15 @@ export function petIconHtml(speciesId, opts = {}) {
   const rKey = rarityKey(opts.rarity);
   const rGlow = RARITY_GLOW[rKey] || RARITY_GLOW.common;
   const kindSlug = KIND_SLUG[sp.kind] || "beast";
+  const spriteUrl = resolvePetIdleSprite({
+    speciesId,
+    elementId,
+    action: "Idle",
+    cacheBust: APP_BUILD,
+  });
   const cls = [
     "pet-icon",
-    "pet-icon--creature",
+    spriteUrl ? "pet-icon--sprite" : "pet-icon--creature",
     `pet-icon--kind-${kindSlug}`,
     `pet-icon--elem-${elementId}`,
     `pet-icon--rarity-${rKey}`,
@@ -288,6 +295,11 @@ export function petIconHtml(speciesId, opts = {}) {
     .filter(Boolean)
     .join(" ");
   const title = opts.title || sp.name;
+  if (spriteUrl) {
+    return `<span class="${cls}" title="${escapeAttr(title)}" aria-hidden="true" style="--icon-size:${size}px;--elem-fill:${colors.fill};--elem-glow:${colors.glow}">
+    <img class="pet-icon-sprite" src="${escapeAttr(spriteUrl)}" alt="${escapeAttr(title)}" width="${size}" height="${size}" draggable="false" />
+  </span>`;
+  }
   const parts = kindPartsForSpecies(speciesId, sp.kind);
   const hybridRing = hybrid
     ? `<circle cx="16" cy="16" r="14" fill="none" stroke="${colors.glow}" stroke-width="1.2" opacity="0.55"/>`
@@ -357,6 +369,7 @@ export function petArtFromPet(pet, opts = {}) {
     `pet-art--rarity-${rKey}`,
     `pet-art--kind-${kindSlug}`,
     `pet-art--gen-${gen}`,
+    opts.motion === false ? "" : "pet-motion--idle",
     hybrid ? "is-hybrid" : "",
     BASE_SPECIES.has(pet.speciesId) ? "is-base" : "",
     opts.className || "",

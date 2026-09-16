@@ -1,4 +1,4 @@
-const CACHE = "void-tide-pets-v130";
+const CACHE = "void-tide-pets-v133";
 const ASSETS = [
   "./",
   "./index.html",
@@ -6,10 +6,12 @@ const ASSETS = [
   "./js/data.js",
   "./js/tutorial.js",
   "./js/engine.js",
+  "./js/pet-sprites.js",
   "./js/pet-icons.js",
   "./js/ui.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
+  "./assets/pets/water-idle-map.json",
 ];
 
 self.addEventListener("notificationclick", (e) => {
