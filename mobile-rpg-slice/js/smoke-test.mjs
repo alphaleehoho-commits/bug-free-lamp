@@ -25,6 +25,10 @@ import {
   BREED_GOALS,
   hybridRecipeSummary,
   hybridRecipeMatrix,
+  discoveredBreedRecipes,
+  isBreedRecipeDiscovered,
+  canonicalSpeciesIdForKind,
+  speciesDisplayName,
   DUNGEON_TRIALS,
   partyMeetsTrial,
   countHybridBestiary,
@@ -660,6 +664,85 @@ const summary = hybridRecipeSummary();
 assert(summary.filter((r) => r.tier === "main").length === HYBRID_RECIPES.filter((r) => r.tier === "main").length, "main recipe summary");
 assert(summary.some((r) => r.tier === "tertiary" && r.species === "abyssreign"), "tertiary in summary");
 assert(summary.every((r) => r.name && r.kindsLabel), "summary labels");
+assert(summary.every((r) => r.parentsLabel && r.parentsLabel.includes(" × ")), "summary species parentsLabel");
+assert(
+  summary
+    .filter((r) => r.tier === "main" || r.tier === "sub")
+    .every((r) => !/^(獸|鱗|禽|甲|蟲|光)\s*×/.test(r.parentsLabel) && !r.parentsLabel.includes("種類")),
+  "hybrid summary parents are species names not kinds"
+);
+assert(canonicalSpeciesIdForKind("獸") === "reefox", "canonical 獸 → reefox");
+assert(canonicalSpeciesIdForKind("鱗") === "tidecarp", "canonical 鱗 → tidecarp");
+assert(canonicalSpeciesIdForKind("光") === "glowfin", "canonical 光 → glowfin");
+assert(speciesDisplayName("tideling") === SPECIES.tideling.name, "species display name");
+
+const emptyRecipeSt = { pets: [], ranch: [], eggs: [], bestiary: {}, speciesUnlocks: {}, stats: {} };
+const emptyDiscovered = discoveredBreedRecipes(emptyRecipeSt);
+assert(emptyDiscovered.hybrid.length === 0 && emptyDiscovered.tertiary.length === 0, "no recipes until discovered");
+assert(!isBreedRecipeDiscovered(emptyRecipeSt, "tideling"), "starter unlocks do not reveal hybrids");
+
+const ownedHybridSt = {
+  pets: [],
+  ranch: [{ speciesId: "tideling" }],
+  eggs: [],
+  bestiary: {},
+  speciesUnlocks: {},
+  stats: {},
+};
+const ownedDiscovered = discoveredBreedRecipes(ownedHybridSt);
+assert(ownedDiscovered.hybrid.some((r) => r.species === "tideling"), "owned hybrid recipe appears");
+assert(!ownedDiscovered.hybrid.some((r) => r.species === "duskfly"), "undiscovered hybrid hidden");
+const tidelingRow = ownedDiscovered.hybrid.find((r) => r.species === "tideling");
+assert(
+  tidelingRow.parentsLabel === `${SPECIES.reefox.name} × ${SPECIES.tidecarp.name}`,
+  "hybrid row uses canonical species names"
+);
+assert(tidelingRow.parentIds[0] === "reefox" && tidelingRow.parentIds[1] === "tidecarp", "hybrid parent ids are species");
+assert(!/^(獸|鱗|禽|甲|蟲|光)\s*×/.test(tidelingRow.parentsLabel), "discovered hybrid parents are not kind labels");
+
+const codexHybridSt = {
+  pets: [],
+  ranch: [],
+  eggs: [],
+  bestiary: { "tideling:tide:none": true },
+  speciesUnlocks: {},
+  stats: {},
+};
+assert(
+  discoveredBreedRecipes(codexHybridSt).hybrid.some((r) => r.species === "tideling"),
+  "codex registration discovers recipe"
+);
+
+const eggHybridSt = {
+  pets: [],
+  ranch: [],
+  eggs: [{ source: "breed", genes: { species: "tidehowl" } }],
+  bestiary: {},
+  speciesUnlocks: {},
+  stats: {},
+};
+const eggDiscovered = discoveredBreedRecipes(eggHybridSt);
+assert(eggDiscovered.hybrid.some((r) => r.species === "tidehowl" && r.tier === "sub"), "breed egg discovers sub recipe");
+assert(!eggDiscovered.hybrid.some((r) => r.species === "tideling"), "other kind-pair outcomes stay hidden");
+
+const tertSt = {
+  pets: [],
+  ranch: [{ speciesId: "abyssreign" }, { speciesId: "tideling" }, { speciesId: "mistcarp" }],
+  eggs: [],
+  bestiary: {},
+  speciesUnlocks: {},
+  stats: {},
+};
+const tertDiscovered = discoveredBreedRecipes(tertSt);
+const abyssRow = tertDiscovered.tertiary.find((r) => r.species === "abyssreign");
+assert(abyssRow, "discovered tertiary appears");
+assert(
+  abyssRow.parentsLabel === `${SPECIES.tideling.name} × ${SPECIES.mistcarp.name}`,
+  "tertiary parents are species display names"
+);
+assert(abyssRow.parentIds[0] === "tideling" && abyssRow.parentIds[1] === "mistcarp", "tertiary parent ids are species");
+assert(!/^(獸|鱗|禽|甲|蟲|光)\s*×/.test(abyssRow.parentsLabel), "tertiary parents are not kind labels");
+assert(!tertDiscovered.tertiary.some((r) => r.species === "voidglint"), "undiscovered tertiary hidden");
 assert(Object.keys(SPECIES).filter((id) => SPECIES[id].tertiary).length >= 8, "8+ tertiary species");
 assert(TERTIARY_RECIPES.length >= 32, "tertiary recipes expanded");
 assert(tertiaryRecipesForParents("tideling", "mistcarp").length >= 1, "tideling×mistcarp tertiary");
@@ -2316,6 +2399,12 @@ assert(allRes.ok && allRes.claimed === DAILY_QUESTS.length, "claim all dailies")
 const __dir = dirname(fileURLToPath(import.meta.url));
 const uiSrc = readFileSync(join(__dir, "ui.js"), "utf8");
 assert(uiSrc.includes("data-summon"), "ui summon bind");
+assert(uiSrc.includes("已發現配方"), "recipe board title 已發現配方");
+assert(uiSrc.includes("discoveredBreedRecipes"), "ui lists discovered recipes only");
+assert(uiSrc.includes("尚未發現配方"), "recipe empty until discoveries");
+assert(!uiSrc.includes("雜交（種類對）"), "no 種類對 heading");
+assert(!uiSrc.includes("種類雜交矩陣"), "no kind hybrid matrix");
+assert(!uiSrc.includes("主／次配方一覽"), "no full recipe dump heading");
 assert(uiSrc.includes("data-attack-preview"), "ui attack preview");
 assert(uiSrc.includes("data-open-dispatch"), "ui dispatch picker modal");
 assert(uiSrc.includes('party: "dispatch"'), "ui stay on dispatch after start");
@@ -4245,7 +4334,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v141"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v142"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
