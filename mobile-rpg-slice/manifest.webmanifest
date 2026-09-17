@@ -1,7 +1,7 @@
 {
-  "name": "暗潮 · 水母漂漂",
-  "short_name": "暗潮",
-  "description": "育成漂漂、契約水母、秘境掉落",
+  "name": "水母深域",
+  "short_name": "深域",
+  "description": "育成水母、契約水母、秘境掉落",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait",

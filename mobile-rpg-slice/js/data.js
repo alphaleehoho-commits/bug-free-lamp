@@ -1,24 +1,24 @@
-/** Data tables — 水母漂漂 */
+/** Data tables — 水母深域 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260917.3";
+export const APP_BUILD = "20260917.6";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
-  stones: { name: "泡泡晶", blurb: "亮晶晶的貨幣。商肆買蛋、繁殖、契約、成長與融合會消耗。" },
-  scrap: { name: "碎片", blurb: "秘境掉落。部分養成與兌換會用到。" },
-  feed: { name: "小餌", blurb: "餵水母／契約用。掛機與水母池待命可產出。" },
-  dust: { name: "星砂", blurb: "技能材料。掛機與水母池可產出（進階體階已廢）。" },
-  qi: { name: "共鳴", blurb: "舊體階進度殘留。掛機仍會累積，但不再用於進階突破。" },
-  tide_dew: { name: "露珠", blurb: "早期升級副材。在「育成 → 練功」掛機取得。" },
+  stones: { name: "潮晶", blurb: "亮晶晶的貨幣。商肆買蛋、繁殖、契約、成長與融合會消耗。" },
+  scrap: { name: "貝屑", blurb: "秘境掉落。部分養成與兌換會用到。" },
+  feed: { name: "浮游餌", blurb: "餵水母／契約用。掛機與水母池待命可產出。" },
+  dust: { name: "螢砂", blurb: "技能材料。掛機與水母池可產出。" },
+  qi: { name: "潮息", blurb: "掛機會累積。變強改靠漂路、秘境解鎖品種同繁殖血脈。" },
+  tide_dew: { name: "潮露", blurb: "早期升級副材。在「育成 → 練功」掛機取得。" },
   earth_grade_stone: {
-    name: "地階石",
+    name: "礁階石",
     blurb: "升 Lv10→11 起嘅副材。通關 1-20 入 2-1 開始掛機出，產量跟層數爬到 2-19 滿產；之後章節照掉、唔會被新石取代。第一章搵唔到～",
   },
   spine: { name: "漂路", blurb: "主線關卡。顯示成 1-1、1-2…每章 20 關後進入 2-1。" },
-  mist_token: { name: "霧箋", blurb: "再挑戰已通關秘境的入場憑證。練功、每日與成長可獲。" },
-  soul: { name: "光核", blurb: "放生或退蛋所得。可在商肆兌換物資。" },
-  realm: { name: "體階", blurb: "舊成長等階（已廢進階）。內容閘改跟漂路章與品種解鎖；此值由漂路自動對齊。" },
+  mist_token: { name: "潮霧箋", blurb: "再挑戰已通關秘境的入場憑證。練功、每日與成長可獲。" },
+  soul: { name: "心螢核", blurb: "放生或退蛋所得。可在商肆兌換物資。" },
+  realm: { name: "體階", blurb: "舊成長等階。內容閘改跟漂路章與品種解鎖；此值由漂路自動對齊。" },
 };
 
 export const STAGES = [
@@ -55,7 +55,7 @@ export function nextStageAt(realmId) {
 }
 
 /**
- * 晉升至目標階段的額外門檻（共鳴仍用 STAGES[target].need）
+ * 晉升至目標階段的額外門檻（潮息仍用 STAGES[target].need）
  * costs: 成長時扣除；checks: 硬性條件
  */
 export const BREAKTHROUGH_GATES = {
@@ -211,11 +211,11 @@ export function evalBreakthroughCheck(state, check) {
 function formatCostBits(costs) {
   if (!costs) return "";
   const bits = [];
-  if (costs.stones) bits.push(`${costs.stones}泡泡晶`);
-  if (costs.scrap) bits.push(`${costs.scrap}碎片`);
-  if (costs.dust) bits.push(`${costs.dust}星砂`);
-  if (costs.feed) bits.push(`${costs.feed}小餌`);
-  if (costs.seal_ember) bits.push(`${costs.seal_ember}焰珠`);
+  if (costs.stones) bits.push(`${costs.stones}潮晶`);
+  if (costs.scrap) bits.push(`${costs.scrap}貝屑`);
+  if (costs.dust) bits.push(`${costs.dust}螢砂`);
+  if (costs.feed) bits.push(`${costs.feed}浮游餌`);
+  if (costs.seal_ember) bits.push(`${costs.seal_ember}焰泡珠`);
   return bits.join("／");
 }
 
@@ -232,7 +232,7 @@ export function breakthroughView(state) {
   const qiOk = state.qi >= next.need;
   items.push({
     id: "qi",
-    label: `共鳴 ≥ ${next.need}`,
+    label: `潮息 ≥ ${next.need}`,
     ok: qiOk,
     progress: `${Math.floor(state.qi)}/${next.need}`,
     kind: "qi",
@@ -241,7 +241,7 @@ export function breakthroughView(state) {
   if (costs.stones) {
     items.push({
       id: "cost_stones",
-      label: `泡泡晶 ≥ ${costs.stones}`,
+      label: `潮晶 ≥ ${costs.stones}`,
       ok: state.stones >= costs.stones,
       progress: `${Math.floor(state.stones)}/${costs.stones}`,
       kind: "cost",
@@ -250,7 +250,7 @@ export function breakthroughView(state) {
   if (costs.scrap) {
     items.push({
       id: "cost_scrap",
-      label: `碎片 ≥ ${costs.scrap}`,
+      label: `貝屑 ≥ ${costs.scrap}`,
       ok: (state.scrap || 0) >= costs.scrap,
       progress: `${state.scrap || 0}/${costs.scrap}`,
       kind: "cost",
@@ -259,7 +259,7 @@ export function breakthroughView(state) {
   if (costs.dust) {
     items.push({
       id: "cost_dust",
-      label: `星砂 ≥ ${costs.dust}`,
+      label: `螢砂 ≥ ${costs.dust}`,
       ok: (state.dust || 0) >= costs.dust,
       progress: `${Math.floor(state.dust || 0)}/${costs.dust}`,
       kind: "cost",
@@ -268,7 +268,7 @@ export function breakthroughView(state) {
   if (costs.feed) {
     items.push({
       id: "cost_feed",
-      label: `小餌 ≥ ${costs.feed}`,
+      label: `浮游餌 ≥ ${costs.feed}`,
       ok: (state.feed || 0) >= costs.feed,
       progress: `${Math.floor(state.feed || 0)}/${costs.feed}`,
       kind: "cost",
@@ -278,7 +278,7 @@ export function breakthroughView(state) {
     const have = state.materials?.seal_ember || 0;
     items.push({
       id: "cost_seal_ember",
-      label: `焰珠 ≥ ${costs.seal_ember}`,
+      label: `焰泡珠 ≥ ${costs.seal_ember}`,
       ok: have >= costs.seal_ember,
       progress: `${have}/${costs.seal_ember}`,
       kind: "cost",
@@ -308,11 +308,12 @@ export function breakthroughView(state) {
 }
 
 export const ELEMENTS = {
-  tide: { id: "tide", name: "水", atk: 1.05, hp: 1.0, spd: 1.05 },
-  stone: { id: "stone", name: "岩", atk: 1.0, hp: 1.12, spd: 0.92 },
-  flame: { id: "flame", name: "焰", atk: 1.12, hp: 0.94, spd: 1.0 },
-  gale: { id: "gale", name: "嵐", atk: 1.0, hp: 0.95, spd: 1.15 },
-  gloom: { id: "gloom", name: "雷", atk: 1.08, hp: 1.0, spd: 1.0 },
+  tide: { id: "tide", name: "水", nameEn: "Water", atk: 1.05, hp: 1.0, spd: 1.05 },
+  stone: { id: "stone", name: "岩", nameEn: "Stone", atk: 1.0, hp: 1.12, spd: 0.92 },
+  flame: { id: "flame", name: "焰", nameEn: "Flame", atk: 1.12, hp: 0.94, spd: 1.0 },
+  gale: { id: "gale", name: "嵐", nameEn: "Gale", atk: 1.0, hp: 0.95, spd: 1.15 },
+  /** gloom = Thunder display alias（存檔 code 不變） */
+  gloom: { id: "gloom", name: "雷", nameEn: "Thunder", atk: 1.08, hp: 1.0, spd: 1.0 },
 };
 
 /**
@@ -376,6 +377,7 @@ export function elementExplain(elementId) {
   return {
     id: el.id,
     name: el.name,
+    nameEn: el.nameEn || "",
     blurb: ex?.blurb || "",
     focus: ex?.focus || "",
     atk: el.atk,
@@ -717,6 +719,72 @@ export const SPECIES_NAME_LEGACY = {
   tideprism: ["潮稜"],
 };
 
+/**
+ * 玩家面物種名 ← CSV naming-glossary-v1-species-48（RACE 1–48）。
+ * Code id（reefox 等）不變；顯示層唔再出礁狐／淵君。
+ */
+export const SPECIES_DISPLAY = {
+  reefox: { name: "圓圓水母", nameEn: "Puff Jelly" },
+  tidecarp: { name: "水滴水母", nameEn: "Drop Jelly" },
+  ashwing: { name: "花瓣水母", nameEn: "Bloom Jelly" },
+  mossback: { name: "雲朵水母", nameEn: "Cloud Jelly" },
+  nightmoth: { name: "小草水母", nameEn: "Sprout Jelly" },
+  glowfin: { name: "星粒水母", nameEn: "Star Jelly" },
+  saltpup: { name: "水晶水母", nameEn: "Gem Jelly" },
+  brineeel: { name: "氣泡水母", nameEn: "Bubble Jelly" },
+  cliffkite: { name: "蘑菇水母", nameEn: "Shroom Jelly" },
+  barnshell: { name: "貝殼水母", nameEn: "Shell Jelly" },
+  siltmite: { name: "飛碟水母", nameEn: "UFO Jelly" },
+  lanternray: { name: "幽靈水母", nameEn: "Ghost Jelly" },
+  duskox: { name: "果凍水母", nameEn: "Jello Jelly" },
+  foamdrake: { name: "小刺水母", nameEn: "Urchin Jelly" },
+  tideling: { name: "櫻花水母", nameEn: "Sakura Jelly" },
+  duskfly: { name: "仙人掌水母", nameEn: "Cactus Jelly" },
+  ironback: { name: "蘋果水母", nameEn: "Apple Jelly" },
+  mistcarp: { name: "蓮花水母", nameEn: "Lotus Jelly" },
+  stormmoth: { name: "貓耳水母", nameEn: "Cat Ear Jelly" },
+  reefwing: { name: "小魔王水母", nameEn: "Devil Jelly" },
+  fangmite: { name: "羽翼水母", nameEn: "Winged Jelly" },
+  scalequill: { name: "小龍水母", nameEn: "Dragon Jelly" },
+  shellmite: { name: "茶杯水母", nameEn: "Teacup Jelly" },
+  glintfox: { name: "手風琴折頁水母", nameEn: "Accordion Jelly" },
+  prismback: { name: "糖果水母", nameEn: "Candy Jelly" },
+  tidehowl: { name: "甜甜圈水母", nameEn: "Donut Jelly" },
+  coralmane: { name: "月芽水母", nameEn: "Crescent Jelly" },
+  mistwing: { name: "彗星水母", nameEn: "Comet Jelly" },
+  stormshell: { name: "火山水母", nameEn: "Volcano Jelly" },
+  gloomfang: { name: "雪花水母", nameEn: "Snowflake Jelly" },
+  lightscale: { name: "皇冠水母", nameEn: "Crown Jelly" },
+  ashspine: { name: "沙漏水母", nameEn: "Hourglass Jelly" },
+  deepquill: { name: "燈籠水母", nameEn: "Lantern Jelly" },
+  reefmite: { name: "羅盤水母", nameEn: "Compass Jelly" },
+  voidcarp: { name: "彩虹水母", nameEn: "Rainbow Jelly" },
+  brightback: { name: "音符水母", nameEn: "Music Jelly" },
+  galebeast: { name: "螺旋槳風車水母", nameEn: "Propeller Jelly" },
+  stonefinch: { name: "金魚水母", nameEn: "Goldfish Jelly" },
+  inkfox: { name: "洋傘水母", nameEn: "Parasol Jelly" },
+  prismoth: { name: "馬卡龍水母", nameEn: "Macaron Jelly" },
+  abyssreign: { name: "宇宙星空水母", nameEn: "Cosmic Jelly" },
+  voidglint: { name: "大天使水母", nameEn: "Seraph Jelly" },
+  duskiron: { name: "渾天星環水母", nameEn: "Armillary Jelly" },
+  coralstorm: { name: "九尾狐仙水母", nameEn: "Kitsune Jelly" },
+  deepfang: { name: "深海女皇水母", nameEn: "Empress Jelly" },
+  tideprism: { name: "夢境捕夢水母", nameEn: "Dreamcatcher Jelly" },
+  nightscale: { name: "世界樹水母", nameEn: "Bonsai Orbital Yggdrasil Jelly" },
+  galevoid: { name: "創世方塊水母", nameEn: "Genesis Jelly" },
+};
+
+for (const [id, disp] of Object.entries(SPECIES_DISPLAY)) {
+  const sp = SPECIES[id];
+  if (!sp) continue;
+  if (sp.name && sp.name !== disp.name) {
+    const prev = SPECIES_NAME_LEGACY[id] || [];
+    if (!prev.includes(sp.name)) SPECIES_NAME_LEGACY[id] = [...prev, sp.name];
+  }
+  sp.name = disp.name;
+  sp.nameEn = disp.nameEn;
+}
+
 /** 野生／秘境可遇種族（排除繁殖專屬） */
 export function wildSpeciesIds(realm = 99) {
   const r = realm == null ? 99 : realm | 0;
@@ -1045,7 +1113,7 @@ export const SKILLS = {
   },
   tide_banner: {
     id: "tide_banner",
-    name: "漂漂旗",
+    name: "深域旗",
     owner: "master",
     type: "cleave",
     cd: 4,
@@ -1323,12 +1391,12 @@ export const SKILLS = {
   // —— 三代種專屬（唔 reuse 雜交二技）——
   abyss_reign_surge: {
     id: "abyss_reign_surge",
-    name: "淵君深壓",
+    name: "星空深壓",
     owner: "pet",
     type: "cleave",
     cd: 3,
     power: 0.95,
-    desc: "淵君專屬：深壓濺射",
+    desc: "宇宙星空水母專屬：深壓濺射",
   },
   void_glint_ray: {
     id: "void_glint_ray",
@@ -1429,7 +1497,7 @@ export function ranchCapForStage(stageId) {
   return 6 + Math.max(0, stageId) * 3;
 }
 
-/** 舊升級泡泡晶曲線（寵物升級已改只扣小餌；保留對照，唔再接入 upgradePet） */
+/** 舊升級潮晶曲線（寵物升級已改只扣浮游餌；保留對照，唔再接入 upgradePet） */
 export function upgradeStoneCost(level) {
   const lv = Math.max(1, level | 0);
   // 早期平：~10（Lv1）、~120（Lv8）；中後期加速，50+ 繼續二次增長
@@ -1461,7 +1529,7 @@ export function fusionMaterialNeed(targetStage) {
 }
 
 /**
- * 融合耗泡泡晶
+ * 融合耗潮晶
  */
 export function fusionStoneCost(targetStage) {
   const n = Math.max(1, Math.min(FUSION_MAX_STAGE, targetStage | 0));
@@ -1475,13 +1543,13 @@ export const BOND_RATE_BY_PERSONALITY = Object.fromEntries(
   MAIN_PERSONALITY_IDS.map((id) => [id, BOND_RATE_DEFAULT])
 );
 
-/** 契約泡泡晶上限（秘境遇寵） */
+/** 契約潮晶上限（秘境遇寵） */
 export const BOND_COST_MAX = 42;
 /** 每次同隻失敗契約累加成功率 */
 export const BOND_FAIL_RATE_BONUS = 0.1;
 export const BOND_FAIL_RATE_CAP = 0.3;
 
-/** 靈紋鍛造耗碎片 */
+/** 靈紋鍛造耗貝屑 */
 export const FORGE_SCRAP_COST = 2;
 
 function pick(arr) {
@@ -1500,7 +1568,7 @@ function pickWeighted(weightMap) {
   return entries[entries.length - 1][0];
 }
 
-/** 繁殖：泡泡晶消耗、冷卻 */
+/** 繁殖：潮晶消耗、冷卻 */
 export const BREED_STONE_COST = 45;
 /** 單次交配孕育時長（似秘境召喚凝聚） */
 export const BREED_COOLDOWN_MS = 45_000;
@@ -2227,7 +2295,7 @@ export const DUNGEON_DAILY_MODS = [
   },
   {
     id: "scrap_bonus",
-    label: "今日：通關額外 +1 碎片",
+    label: "今日：通關額外 +1 貝屑",
     clearScrapBonus: 1,
   },
   {
@@ -2242,7 +2310,7 @@ export const DUNGEON_DAILY_MODS = [
   },
   {
     id: "stone_bonus",
-    label: "今日：通關額外 +15 泡泡晶",
+    label: "今日：通關額外 +15 潮晶",
     clearStoneBonus: 15,
   },
   {
@@ -2257,12 +2325,12 @@ export const DUNGEON_DAILY_MODS = [
   },
   {
     id: "dust_bonus",
-    label: "今日：通關額外 +6 星砂",
+    label: "今日：通關額外 +6 螢砂",
     clearDustBonus: 6,
   },
   {
     id: "feed_bonus",
-    label: "今日：通關額外 +8 小餌",
+    label: "今日：通關額外 +8 浮游餌",
     clearFeedBonus: 8,
   },
 ];
@@ -3712,13 +3780,13 @@ export const IDLE_BY_ELEMENT = {
   gloom: { feed: 0.95, dust: 1.12 },
 };
 
-/** 小餌契約：消耗小餌換取成功率加成 */
+/** 浮游餌契約：消耗浮游餌換取成功率加成 */
 export const BOND_FEED_COST = 8;
 export const BOND_FEED_BONUS = 0.18;
 
 /**
- * 升級基本消耗：只扣小餌（唔再用泡泡晶）
- * Lv1–9 淺線性（教學／前中）；Lv10+ 維持原曲線（地階石帶起）
+ * 升級基本消耗：只扣浮游餌（唔再用潮晶）
+ * Lv1–9 淺線性（教學／前中）；Lv10+ 維持原曲線（礁階石帶起）
  */
 export function upgradeFeedCost(level) {
   const lv = Math.max(1, level | 0);
@@ -3732,7 +3800,7 @@ export function upgradeFeedCost(level) {
 
 export const SKILL_MAX_LEVEL = 5;
 
-/** 星砂升級技能消耗 */
+/** 螢砂升級技能消耗 */
 export function skillDustCost(skillLevel) {
   const lv = Math.max(1, skillLevel | 0);
   return 4 + lv * 6;
@@ -3958,7 +4026,7 @@ export const DISPATCH_MISSIONS = [
     needElement: "tide",
     reward: { feed: 10, stones: 12, materials: { tide_dew: 2 } },
     eggChance: { tier: "C", rate: 0.12 },
-    desc: "1 隻 · 需水屬 · 約 1.5 分 → 小餌／露珠 · 低機率霧傘蛋",
+    desc: "1 隻 · 需水屬 · 約 1.5 分 → 浮游餌／潮露 · 低機率霧傘蛋",
   },
   {
     id: "egg_shore",
@@ -3974,7 +4042,7 @@ export const DISPATCH_MISSIONS = [
   },
   {
     id: "dust_hunt",
-    name: "星砂拾遺",
+    name: "螢砂拾遺",
     durationMs: 150_000,
     needPets: 1,
     needSite: null,
@@ -3982,7 +4050,7 @@ export const DISPATCH_MISSIONS = [
     needElement: "gloom",
     reward: { dust: 12, stones: 10, materials: { coral_shard: 3 } },
     eggChance: { tier: "C", rate: 0.18 },
-    desc: "1 隻 · 需雷屬 · 漂路2章 · 星砂／珊瑚屑 · 偶得蛋",
+    desc: "1 隻 · 需雷屬 · 漂路2章 · 螢砂／珊瑚屑 · 偶得蛋",
   },
   {
     id: "egg_ruins",
@@ -4006,7 +4074,7 @@ export const DISPATCH_MISSIONS = [
     needKind: "甲",
     reward: { scrap: 2, stones: 25, feed: 4, materials: { mist_silk: 2 } },
     eggChance: { tier: "B", rate: 0.15 },
-    desc: "2 隻 · 需甲類 · 漂路3章 · 霧絲",
+    desc: "2 隻 · 需甲類 · 漂路3章 · 海霧絲",
   },
   {
     id: "egg_deep",
@@ -4030,7 +4098,7 @@ export const DISPATCH_MISSIONS = [
     needKind: "禽",
     reward: { dust: 6, stones: 18, materials: { echo_resin: 3 } },
     eggChance: { tier: "B", rate: 0.12 },
-    desc: "1 隻 · 需禽類 · 漂路3章 · 回響脂",
+    desc: "1 隻 · 需禽類 · 漂路3章 · 螺迴脂",
   },
   {
     id: "ink_scout",
@@ -4043,11 +4111,11 @@ export const DISPATCH_MISSIONS = [
     needKind: "光",
     reward: { dust: 8, stones: 30, materials: { abyss_ink: 3 } },
     eggChance: { tier: "B", rate: 0.2 },
-    desc: "2 隻 · 需雷屬光類 · 漂路4章 · 深淵墨",
+    desc: "2 隻 · 需雷屬光類 · 漂路4章 · 墨潮",
   },
   {
     id: "sand_haul",
-    name: "融砂搬運",
+    name: "熔潮砂搬運",
     durationMs: 270_000,
     needPets: 2,
     needSite: null,
@@ -4055,11 +4123,11 @@ export const DISPATCH_MISSIONS = [
     needElement: "stone",
     reward: { stones: 28, feed: 3, materials: { fuse_sand: 3 } },
     eggChance: { tier: "B", rate: 0.14 },
-    desc: "2 隻 · 需岩屬 · 漂路4章 · 融砂",
+    desc: "2 隻 · 需岩屬 · 漂路4章 · 熔潮砂",
   },
   {
     id: "ember_rite",
-    name: "焰珠祭巡",
+    name: "焰泡珠祭巡",
     durationMs: 360_000,
     needPets: 2,
     needSite: null,
@@ -4067,7 +4135,7 @@ export const DISPATCH_MISSIONS = [
     needElement: "flame",
     reward: { stones: 40, materials: { seal_ember: 3 } },
     eggChance: { tier: "A", rate: 0.1 },
-    desc: "2 隻 · 需焰屬 · 漂路5章 · 焰珠 · 低機率心核蛋",
+    desc: "2 隻 · 需焰屬 · 漂路5章 · 焰泡珠 · 低機率心核蛋",
   },
   {
     id: "egg_abyss",
@@ -4599,29 +4667,29 @@ export function migratePetPersonalityFields(pet) {
 /* ─── P10：材料／練功地點／主線解鎖 ─── */
 
 export const MATERIALS = {
-  tide_dew: { id: "tide_dew", name: "露珠", desc: "升級副材（Lv1–9）", tier: "bulk" },
+  tide_dew: { id: "tide_dew", name: "潮露", desc: "升級副材（Lv1–9）", tier: "bulk" },
   coral_shard: { id: "coral_shard", name: "珊瑚屑", desc: "原生繁殖", tier: "bulk" },
-  mist_silk: { id: "mist_silk", name: "霧絲", desc: "中階養成", tier: "bulk" },
-  abyss_ink: { id: "abyss_ink", name: "深淵墨", desc: "高代繁殖", tier: "bulk" },
-  seal_ember: { id: "seal_ember", name: "焰珠", desc: "成長與進化", tier: "bulk" },
-  echo_resin: { id: "echo_resin", name: "回響脂", desc: "技能升級", tier: "bulk" },
-  fuse_sand: { id: "fuse_sand", name: "融砂", desc: "舊融合催化（兼容）", tier: "bulk" },
+  mist_silk: { id: "mist_silk", name: "海霧絲", desc: "中階養成", tier: "bulk" },
+  abyss_ink: { id: "abyss_ink", name: "墨潮", desc: "高代繁殖", tier: "bulk" },
+  seal_ember: { id: "seal_ember", name: "焰泡珠", desc: "成長與進化", tier: "bulk" },
+  echo_resin: { id: "echo_resin", name: "螺迴脂", desc: "技能升級", tier: "bulk" },
+  fuse_sand: { id: "fuse_sand", name: "熔潮砂", desc: "舊融合催化（兼容）", tier: "bulk" },
   /** 升級副材：每 10 級一帶 */
   earth_grade_stone: {
     id: "earth_grade_stone",
-    name: "地階石",
+    name: "礁階石",
     desc: "升級副材 · Lv10–19 · 2-1 起掛機，2-19 滿產，後章不停",
     tier: "grade",
   },
   cloud_grade_stone: {
     id: "cloud_grade_stone",
-    name: "雲階石",
+    name: "沫階石",
     desc: "升級副材 · 約 Lv20–29 · 3-1 起掛機，3-19 滿產，後章不停",
     tier: "grade",
   },
   fire_grade_stone: {
     id: "fire_grade_stone",
-    name: "火階石",
+    name: "焰珊瑚石",
     desc: "升級副材 · 約 Lv30–39 · 4-1 起掛機，4-19 滿產，後章不停",
     tier: "grade",
   },
@@ -4633,7 +4701,7 @@ export const MATERIALS = {
   },
   void_grade_stone: {
     id: "void_grade_stone",
-    name: "虛階石",
+    name: "深層石",
     desc: "升級副材 · Lv50+ · 6-1 起掛機，6-19 滿產，後章不停",
     tier: "grade",
   },
@@ -4652,7 +4720,7 @@ export const MATERIALS = {
   },
   blood_catalyst: {
     id: "blood_catalyst",
-    name: "血統催化",
+    name: "譜催珠",
     desc: "將最早孕育中的交配剩餘時間減半",
     tier: "dungeon",
   },
@@ -4665,7 +4733,7 @@ export const MATERIALS = {
   /** 入場憑證：練功／每日／升階產出；秘境永不掉落 */
   mist_token: {
     id: "mist_token",
-    name: "霧箋",
+    name: "潮霧箋",
     desc: "已通關秘境入場／掃蕩消耗 · 練功、每日、升階產出",
     tier: "gate",
   },
@@ -4685,7 +4753,7 @@ export const MATERIALS = {
   tide_key_3: {
     id: "tide_key_3",
     name: "3章層鑰",
-    desc: "開啟／挑戰心核·融砂域主 · 秘境 1-3高機率掉落",
+    desc: "開啟／挑戰心核·熔潮砂域主 · 秘境 1-3高機率掉落",
     tier: "key",
   },
   tide_key_4: {
@@ -4697,41 +4765,41 @@ export const MATERIALS = {
   warden_echo: {
     id: "warden_echo",
     name: "域主殘響",
-    desc: "複打域主所得 · 可當進階催化碎片",
+    desc: "複打域主所得 · 可當融合催化碎片",
     tier: "key",
   },
   /** 深潛專屬：突變保險／外觀小加成／高階蛋 */
   abyss_grit: {
     id: "abyss_grit",
-    name: "淵砂",
+    name: "潛砂",
     desc: "深潛結算所得 · 換突變保險、深潛外觀、高階水母蛋",
     tier: "abyss",
   },
-  /** 放生所得：光核商人兌換 */
+  /** 放生所得：心螢核商人兌換 */
   soul_essence: {
     id: "soul_essence",
-    name: "光核",
-    desc: "放生／退蛋所得 · 養成／稀有／融合越高越賺 · 光核商人兌換",
+    name: "心螢核",
+    desc: "放生／退蛋所得 · 養成／稀有／融合越高越賺 · 心螢核商人兌換",
     tier: "soul",
   },
 };
 
 /**
- * 光核商人固定目錄（實用兌換；耗光核，唔轉泡泡晶）
+ * 心螢核商人固定目錄（實用兌換；耗心螢核，唔轉潮晶）
  * grant: feed／materials／items 可並存
  */
 export const SOUL_SHOP_OFFERS = [
   {
     id: "feed_pouch",
-    name: "小餌包",
-    desc: "水母池救急 · 放生光核回補小餌",
+    name: "浮游餌包",
+    desc: "水母池救急 · 放生心螢核回補浮游餌",
     cost: 8,
     grant: { feed: 30 },
   },
   {
     id: "tide_dew_pack",
-    name: "露珠小瓶",
-    desc: "水母升級催化（唔影響泡泡晶經濟）",
+    name: "潮露小瓶",
+    desc: "水母升級催化（唔影響潮晶經濟）",
     cost: 10,
     grant: { materials: { tide_dew: 6 } },
   },
@@ -4744,8 +4812,8 @@ export const SOUL_SHOP_OFFERS = [
   },
   {
     id: "mist_token_pack",
-    name: "霧箋×2",
-    desc: "已通關秘境掃蕩入場（小量，防刷崩泡泡晶）",
+    name: "潮霧箋×2",
+    desc: "已通關秘境掃蕩入場（小量，防刷崩潮晶）",
     cost: 18,
     grant: { materials: { mist_token: 2 } },
   },
@@ -4834,7 +4902,7 @@ export function emptyItemBonus() {
   return { ranchCap: 0, hatchSlots: 0 };
 }
 
-/** 升級副材帶（每 10 級；50+ 用虛階石撐無限） */
+/** 升級副材帶（每 10 級；50+ 用深層石撐無限） */
 export const UPGRADE_SUB_BANDS = [
   { minLv: 10, maxLv: 19, id: "earth_grade_stone" },
   { minLv: 20, maxLv: 29, id: "cloud_grade_stone" },
@@ -4851,7 +4919,7 @@ export function upgradeSubMatId(level) {
   return null;
 }
 
-/** 該級唯一副材：Lv1–9 露珠；Lv10+ 只換該帶階石（唔再疊露珠） */
+/** 該級唯一副材：Lv1–9 潮露；Lv10+ 只換該帶階石（唔再疊潮露） */
 export function upgradeBandMatId(level) {
   const lv = Math.max(1, level | 0);
   return upgradeSubMatId(lv) || "tide_dew";
@@ -4868,20 +4936,20 @@ export function upgradeBandMatNeed(level) {
   return Math.max(2, Math.ceil(4 + into * 3 + Math.floor(lv / 8)));
 }
 
-/** 升級耗材料：每級只扣一種副材（基本另計，只扣小餌） */
+/** 升級耗材料：每級只扣一種副材（基本另計，只扣浮游餌） */
 export function upgradeMatCost(level) {
   const id = upgradeBandMatId(level);
   const need = upgradeBandMatNeed(level);
   return need > 0 ? { [id]: need } : {};
 }
 
-/** 強制消耗種類數：小餌＋副材一種＝ 2 */
+/** 強制消耗種類數：浮游餌＋副材一種＝ 2 */
 export function upgradeMandatoryKindCount(level) {
   const mats = Object.values(upgradeMatCost(level)).filter((n) => n > 0).length;
   return mats + 1;
 }
 
-/** 升級實際扣款快照：副材一種＋小餌。與 upgradePet 一致。 */
+/** 升級實際扣款快照：副材一種＋浮游餌。與 upgradePet 一致。 */
 export function petUpgradeCostSnapshot(level) {
   const lv = Math.max(1, level | 0);
   const mats = upgradeMatCost(lv);
@@ -4903,13 +4971,13 @@ export function canAffordUpgradeMats(state, level) {
   return true;
 }
 
-/** 小餌是否夠（升級基本路，唔再用泡泡晶） */
+/** 浮游餌是否夠（升級基本路，唔再用潮晶） */
 export function canAffordUpgradePay(state, level) {
   const lv = Math.max(1, level | 0);
   return Math.floor(state?.feed || 0) >= upgradeFeedCost(lv);
 }
 
-/** 與 upgradePet 成功條件對齊：一種副材＋小餌 */
+/** 與 upgradePet 成功條件對齊：一種副材＋浮游餌 */
 export function canAffordPetUpgrade(state, level) {
   return canAffordUpgradeMats(state, level) && canAffordUpgradePay(state, level);
 }
@@ -4928,7 +4996,7 @@ export function petUpgradeShortageLines(state, level) {
   }
   const feedHave = Math.floor(state?.feed || 0);
   if (feedHave < feed) {
-    lines.push(`小餌 ${feedHave}／需 ${feed}`);
+    lines.push(`浮游餌 ${feedHave}／需 ${feed}`);
   }
   return lines;
 }
@@ -4984,13 +5052,13 @@ export function spineStageMatBias(stage) {
     return { tide_dew: 2, coral_shard: 1, earth_grade_stone: 7 };
   }
   if (s === 3) {
-    // 雲霧章：雲階＋霧絲；階段三解鎖第 4 出戰位
+    // 雲霧章：雲階＋海霧絲；階段三解鎖第 4 出戰位
     return { tide_dew: 2, earth_grade_stone: 1, cloud_grade_stone: 6, mist_silk: 3 };
   }
   if (s === 4) {
     return { cloud_grade_stone: 1, fire_grade_stone: 7, abyss_ink: 2, temper_oil: 1 };
   }
-  // 5+：天階／焰珠／極低權重融合核
+  // 5+：天階／焰泡珠／極低權重融合核
   return {
     fire_grade_stone: 1,
     sky_grade_stone: 6,
@@ -5003,7 +5071,7 @@ export function spineStageMatBias(stage) {
 /**
  * 練功／掛機＝主脊（階石跟掛機層：該章 1 層起、19 層滿產、後章不停；已無地／火／天脈戰鬥側枝）
  * 秘境戰鬥仍獨立；主脊進度共用 clearedDungeons[tide_*]
- * 秘境專屬料永不進 AFK；霧箋只走練功／每日／升階
+ * 秘境專屬料永不進 AFK；潮霧箋只走練功／每日／升階
  */
 export const TRAIN_FOCUS_BONUS = 1.35;
 export const TRAIN_DAILY_SPOT_BONUS = 1.25;
@@ -5082,7 +5150,7 @@ export function expectedPartyPowerForLevel(level) {
   return Math.round(87 + (lv - 1) * 9.5);
 }
 
-/** 階石開始 AFK 所需「已通層」（過頭目後＝該章 1 層，例如地階石＝2-1）；階段一無任何階石 */
+/** 階石開始 AFK 所需「已通層」（過頭目後＝該章 1 層，例如礁階石＝2-1）；階段一無任何階石 */
 export const GRADE_STONE_IDS = [
   "earth_grade_stone",
   "cloud_grade_stone",
@@ -5094,7 +5162,7 @@ export const GRADE_STONE_IDS = [
 /** 該章 19 層滿產；20 層／後章維持峰值 */
 export const GRADE_STONE_RAMP_PEAK_INTO = 19;
 
-/** 滿產速率 ≈ 舊第二章地階石佔 AFK 材料預算嘅份額（7/10 × 0.042） */
+/** 滿產速率 ≈ 舊第二章礁階石佔 AFK 材料預算嘅份額（7/10 × 0.042） */
 export const GRADE_STONE_AFK_PEAK_PER_SEC = 0.0294;
 
 export function gradeStoneUnlockClearedFloor(matId) {
@@ -5378,7 +5446,7 @@ export function spineAfkFloorFromState(state) {
 }
 
 const SPINE_STAGE_FOCUS = {
-  1: "露珠／原生",
+  1: "潮露／原生",
   2: "地階（2-1 起 · 2-19 滿產）",
   3: "雲階疊加 · 第4出戰",
   4: "火階疊加",
@@ -5658,7 +5726,7 @@ export function trainSiteRatesView(site, dateKey = todayKey()) {
       const perHr = ((drop.feed || 0) * mult * 3600).toFixed(0);
       lines.push({
         kind: "feed",
-        name: "小餌",
+        name: "浮游餌",
         perHr,
         tag: isSpot ? `今日+${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%` : "",
       });
@@ -5666,7 +5734,7 @@ export function trainSiteRatesView(site, dateKey = todayKey()) {
       const perHr = ((drop.dust || 0) * mult * 3600).toFixed(0);
       lines.push({
         kind: "dust",
-        name: "星砂",
+        name: "螢砂",
         perHr,
         tag: isSpot ? `今日+${Math.round((TRAIN_DAILY_SPOT_BONUS - 1) * 100)}%` : "",
       });
@@ -5738,7 +5806,7 @@ export const MATERIAL_USES = {
   tide_key_4: "漂路章主（4章）",
   warden_echo: "段主複打殘響",
   abyss_grit: "深潛兌換",
-  soul_essence: "放生／光核商店",
+  soul_essence: "放生／心螢核商店",
 };
 
 /* ─── 深潛（秘境旁路；唔改漂路產物表）─── */
@@ -5760,9 +5828,9 @@ export const ABYSS_MAX_ACTIVE_MUTATIONS = 3;
 export const ABYSS_RULES_TEXT = [
   "獨立編隊 5 寵（3 出戰 + 2 替補）；層間唔回滿血。",
   `每 ${ABYSS_MUTATION_EVERY} 層進入前 2 選 1 突變；同時最多 ${ABYSS_MAX_ACTIVE_MUTATIONS} 條，新突變會頂掉最舊。`,
-  "突變保險（淵砂商店）可略過當層新突變一次。",
-  "失敗保底帶走部分待結算淵砂；撤退可提早結算。",
-  "商人事件係 2 揀 1：花待結算淵砂買潛航增益，或隨機移除 1 條現有突變。",
+  "突變保險（潛砂商店）可略過當層新突變一次。",
+  "失敗保底帶走部分待結算潛砂；撤退可提早結算。",
+  "商人事件係 2 揀 1：花待結算潛砂買潛航增益，或隨機移除 1 條現有突變。",
   "本週最深／歷史最深有里程碑獎勵（唔含融合核）。",
 ].join("\n");
 /** 深潛獨立編隊：5 寵（3 出戰 + 2 替補） */
@@ -5776,7 +5844,7 @@ export const ABYSS_CAMPFIRE_HEAL = 0.3;
 export const ABYSS_ALTAR_REVIVE_HP = 0.4;
 
 /**
- * 本週最深里程碑（每週重置；小量淵砂／材料，唔放大融合核）
+ * 本週最深里程碑（每週重置；小量潛砂／材料，唔放大融合核）
  * @type {{ depth: number, grit: number, materials?: Record<string, number>, label: string }[]}
  */
 export const ABYSS_WEEKLY_DEPTH_MILESTONES = [
@@ -5831,7 +5899,7 @@ export const ABYSS_MUTATIONS = {
 
 export const ABYSS_MUTATION_IDS = Object.keys(ABYSS_MUTATIONS);
 
-/** 行商本潛增益（花淵砂；只喺今趟深潛生效） */
+/** 行商本潛增益（花潛砂；只喺今趟深潛生效） */
 export const ABYSS_MERCHANT_BUFFS = {
   tide_blade: {
     id: "tide_blade",
@@ -5868,7 +5936,7 @@ export const ABYSS_EVENT_TYPES = {
   merchant: {
     id: "merchant",
     name: "行商",
-    desc: "花待結算淵砂買本潛增益，或隨機移除突變",
+    desc: "花待結算潛砂買本潛增益，或隨機移除突變",
   },
   altar: {
     id: "altar",
@@ -5891,7 +5959,7 @@ export const ABYSS_COSMETICS = {
   },
   abyss_crown: {
     id: "abyss_crown",
-    name: "淵冠影",
+    name: "潛冠紋",
     desc: "深潛外觀 · 全隊血量 +1.5%",
     cost: 40,
     atkMult: 1,
@@ -5914,11 +5982,11 @@ export const ABYSS_COSMETIC_BONUS_CAP = 0.05;
 export const ABYSS_INSURANCE_COST = 25;
 export const ABYSS_EGG_COST = 110;
 export const ABYSS_EGG_WEEKLY_LIMIT = 2;
-/** 淵核：永久小幅攻加成（有 cap；淵砂長期 sink） */
+/** 潛核：永久小幅攻加成（有 cap；潛砂長期 sink） */
 export const ABYSS_POWER_NODE_COST = 55;
 export const ABYSS_POWER_NODE_MAX = 8;
 export const ABYSS_POWER_NODE_ATK = 0.01;
-/** 淵砂兌換轉屬符（永久轉屬道具） */
+/** 潛砂兌換轉屬符（永久轉屬道具） */
 export const ABYSS_TIDE_SHIFT_COST = 35;
 /** 深潛每週兌換融合核（極罕） */
 export const ABYSS_FUSION_CORE_COST = 180;
@@ -5999,7 +6067,7 @@ export function rollAbyssFloorEvent(seed, depth) {
   const i1 = (h >>> 8) % pool.length;
   const second = pool[i1];
   const buffId = ABYSS_MERCHANT_BUFF_IDS[(h >>> 16) % ABYSS_MERCHANT_BUFF_IDS.length];
-  // 抽中行商 → 專屬 2 揀 1：買增益 或 移除現有突變（花待結算淵砂）
+  // 抽中行商 → 專屬 2 揀 1：買增益 或 移除現有突變（花待結算潛砂）
   if (first === "merchant" || second === "merchant") {
     const buff = ABYSS_MERCHANT_BUFFS[buffId];
     return {
@@ -6008,14 +6076,14 @@ export function rollAbyssFloorEvent(seed, depth) {
         {
           type: "merchant",
           name: "行商·增益",
-          desc: `【${buff.name}】${buff.desc}（待結算淵砂×${buff.cost}）`,
+          desc: `【${buff.name}】${buff.desc}（待結算潛砂×${buff.cost}）`,
           buffId: buff.id,
           cost: buff.cost,
         },
         {
           type: "merchant_purge",
           name: "行商·淨化",
-          desc: `隨機移除 1 條現有突變（待結算淵砂×${ABYSS_INSURANCE_COST}）`,
+          desc: `隨機移除 1 條現有突變（待結算潛砂×${ABYSS_INSURANCE_COST}）`,
           cost: ABYSS_INSURANCE_COST,
         },
       ],
@@ -6309,6 +6377,7 @@ export function bestiarySpeciesSummary(state) {
     return {
       speciesId: sp.id,
       speciesName: sp.name,
+      speciesNameEn: sp.nameEn || "",
       kind: sp.kind,
       breedOnly: !!sp.breedOnly,
       found,
@@ -6351,7 +6420,7 @@ export function bestiaryCombatBonus(discoveredCount) {
 }
 
 /**
- * 放生光核：壓低出殼即賣，抬高養成／稀有／融合（星標只係 UI 標記，唔加光核）。
+ * 放生心螢核：壓低出殼即賣，抬高養成／稀有／融合（星標只係 UI 標記，唔加心螢核）。
  * 基礎 2 ＋ 等級×2 ＋ 稀有×8 ＋ 融階×5 ＋（代數−1）×2
  * 未養成普通幼寵（Lv≤1、無融、普通）：封頂 2＋（代數−1）
  * 例：普 Lv1 → 2；稀有 Lv10 融1 二代 → 2+20+8+5+2 = 37
@@ -6370,7 +6439,7 @@ export function releaseSoulGain(pet) {
 }
 
 /**
- * 未孵蛋化精（退蛋）：光核低於孵出後放生，鼓勵早篩唔好雙重等待。
+ * 未孵蛋化精（退蛋）：心螢核低於孵出後放生，鼓勵早篩唔好雙重等待。
  * 繁殖蛋跟 genes 代數／稀有；商店蛋跟品階。
  */
 export function eggDissolveSoul(egg) {
@@ -6387,7 +6456,7 @@ export function eggDissolveSoul(egg) {
   return 1;
 }
 
-/** @deprecated 舊放生石／小餌／塵；保留別名以便舊測試／註解對照 */
+/** @deprecated 舊放生石／浮游餌／塵；保留別名以便舊測試／註解對照 */
 export function releaseRefund(pet) {
   return { soul: releaseSoulGain(pet), stones: 0, feed: 0, dust: 0 };
 }
@@ -6398,7 +6467,7 @@ export const NICK_MAX_LEN = 8;
 export const DAILY_QUESTS = [
   {
     id: "idle",
-    name: "靜靜漂漂",
+    name: "靜靜育成",
     desc: "完成 1 次成長，或累積掛機滿 3 分鐘",
     need: 1,
     reward: { stones: 20, feed: 6 },
@@ -6483,7 +6552,7 @@ export function clampDungeonSummonCount(count) {
 export const DUNGEON_ENTRY_MAT_ID = "mist_token";
 
 /**
- * 已通關秘境入場／掃蕩耗霧箋（每場）；首通／教學免費。
+ * 已通關秘境入場／掃蕩耗潮霧箋（每場）；首通／教學免費。
  * 高階層略貴。
  */
 export function dungeonEntryTokenPerRun(dungeonId) {
@@ -6836,7 +6905,7 @@ export const ACHIEVEMENTS = [
 /** 7 日登入連續獎勵（cycle） */
 export const LOGIN_STREAK_REWARDS = [
   { day: 1, name: "見面禮", reward: { stones: 30, feed: 5, materials: { mist_token: 2 } } },
-  { day: 2, name: "雙倍小餌", reward: { stones: 35, feed: 8, materials: { mist_token: 2 } } },
+  { day: 2, name: "雙倍浮游餌", reward: { stones: 35, feed: 8, materials: { mist_token: 2 } } },
   { day: 3, name: "三日禮", reward: { stones: 40, dust: 6, materials: { tide_dew: 2, mist_token: 3 } } },
   { day: 4, name: "深海蛋", reward: { stones: 45, eggTier: "B", materials: { mist_token: 3 } } },
   { day: 5, name: "五日禮", reward: { stones: 50, scrap: 1, materials: { coral_shard: 2, mist_token: 3 } } },
@@ -7256,4 +7325,30 @@ export function countHybridBestiary(bestiary) {
     }
   }
   return n;
+}
+
+function rewriteLegacySpeciesCopy(text) {
+  let s = String(text || "");
+  const pairs = [];
+  for (const [id, disp] of Object.entries(SPECIES_DISPLAY)) {
+    for (const old of SPECIES_NAME_LEGACY[id] || []) {
+      if (old && old !== disp.name) pairs.push([old, disp.name]);
+    }
+  }
+  pairs.sort((a, b) => b[0].length - a[0].length);
+  for (const [old, next] of pairs) {
+    if (s.includes(old)) s = s.split(old).join(next);
+  }
+  return s;
+}
+
+for (const sk of Object.values(SKILLS)) {
+  if (sk.name) sk.name = rewriteLegacySpeciesCopy(sk.name);
+  if (sk.desc) sk.desc = rewriteLegacySpeciesCopy(sk.desc);
+}
+for (const list of [PATH_QUESTS, ACHIEVEMENTS, BREED_GOALS]) {
+  for (const q of list) {
+    if (q.name) q.name = rewriteLegacySpeciesCopy(q.name);
+    if (q.desc) q.desc = rewriteLegacySpeciesCopy(q.desc);
+  }
 }
