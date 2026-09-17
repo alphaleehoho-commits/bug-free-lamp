@@ -209,6 +209,7 @@ import {
   roamBgShift,
   roamLayoutFromUnits,
   roamFoeEnterDx,
+  roamFoeEnterDy,
   ROAM_IDLE_SCENE_SRC,
   ROAM_ALLY_PLACEHOLDER_SRC,
   roamFoePlaceholderSrc,
@@ -3186,12 +3187,13 @@ function idleRoamPinHtml(item, faceRight, enter = false, pinIndex = 0) {
   if (side === "foe") artOpts.placeholderSrc = roamFoePlaceholderSrc(u, pinIndex);
   else if (!(u?.speciesId && SPECIES[u.speciesId])) artOpts.placeholderSrc = ROAM_ALLY_PLACEHOLDER_SRC;
   const enterDx = side === "foe" ? roamFoeEnterDx(pinIndex) : 0;
+  const enterDy = side === "foe" ? roamFoeEnterDy(pinIndex) : 0;
   const enterDelay = side === "foe" ? Math.max(0, pinIndex | 0) * ROAM_ENTER_STAGGER_MS : 0;
   return `<div class="train-roam-pin${enterCls}" data-side="${side}" data-roam-uid="${escapeHtml(
     u.uid || ""
   )}" data-slot="${item.slot ?? 0}" data-lane="${item.lane || "front"}" style="--roam-x:${Number(item.x || 0).toFixed(
     1
-  )}px;--roam-y:${Number(item.y || 0).toFixed(1)}px;--roam-enter-dx:${enterDx}px;--roam-enter-delay:${enterDelay}ms">${idleUnitBarHtml(
+  )}px;--roam-y:${Number(item.y || 0).toFixed(1)}px;--roam-enter-dx:${enterDx}px;--roam-enter-dy:${enterDy}px;--roam-enter-delay:${enterDelay}ms">${idleUnitBarHtml(
     u,
     item.slot ?? 0,
     item.lane || "front",
@@ -3231,7 +3233,9 @@ function syncIdleRoamStage(wrap, opts = {}) {
   const walkT = opts.walkT == null ? wrap.roamWalkT ?? 1 : opts.walkT;
   const bg = roamBgShift(wrap.session.waveIndex || 0, walkT);
   stage.dataset.face = "right";
-  stage.style.setProperty("--ground-y", `${bg.y.toFixed(1)}px`);
+  stage.style.setProperty("--far-y", `${Number(bg.farY ?? bg.y).toFixed(1)}px`);
+  stage.style.setProperty("--near-y", `${Number(bg.nearY || 0).toFixed(1)}px`);
+  stage.style.setProperty("--ground-y", `${Number(bg.nearY || 0).toFixed(1)}px`);
   const field = stage.querySelector("[data-live=train-idle-roster]");
   if (!field) return;
   field.querySelectorAll('.train-roam-pin[data-side="ally"] .pet-art--combat').forEach((art) => {
@@ -3326,6 +3330,8 @@ async function playRoamWalk(wrap) {
   }
   wrap.roamWalkT = 1;
   stage.classList.remove("is-walking");
+  stage.style.setProperty("--far-y", "0px");
+  stage.style.setProperty("--near-y", "0px");
   stage.style.setProperty("--ground-y", "0px");
   if (idleAnimToken === token) idleAnimToken = null;
 }
@@ -3642,17 +3648,18 @@ function trainIdleStripHtml(rateSummary = "") {
     ...layout.allies.map((a) => idleRoamPinHtml(a, faceRight, false)),
     ...layout.foes.map((f, i) => idleRoamPinHtml(f, faceRight, enterFoes, i)),
   ].join("");
-  const groundY = layout.bg.y.toFixed(1);
+  const farY = Number(layout.bg.farY ?? layout.bg.y).toFixed(1);
+  const nearY = Number(layout.bg.nearY || 0).toFixed(1);
   const waveLabel = `${floorName} · ${meta}`;
   const prod = rateSummary
     ? `<p class="train-roam-prod">${rateSummary}</p>`
     : "";
   return `<div class="train-idle-strip is-roam${bossCls}" data-live="train-idle">
     ${idleLootLayerHtml()}
-    <div class="train-roam-stage scene-bg panel-stage--cultivate-idle" data-live="train-roam-stage" data-face="right" style="--ground-y:${groundY}px">
+    <div class="train-roam-stage scene-bg panel-stage--cultivate-idle" data-live="train-roam-stage" data-face="right" style="--far-y:${farY}px;--near-y:${nearY}px;--ground-y:${nearY}px">
       <div class="train-roam-bg" aria-hidden="true">
-        <img class="train-roam-bg-art" src="${escapeHtml(ROAM_IDLE_SCENE_SRC)}" alt="" width="1080" height="1920" />
-        <div class="train-roam-ground"></div>
+        <img class="train-roam-bg-art train-roam-bg-far" src="${escapeHtml(ROAM_IDLE_SCENE_SRC)}" alt="" width="1080" height="1920" />
+        <div class="train-roam-ground train-roam-bg-near"></div>
       </div>
       <div class="train-roam-vignette" aria-hidden="true"></div>
       <div class="combat-roster train-idle-roster is-roam" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}" data-roam-wave="${s.waveIndex || 0}">

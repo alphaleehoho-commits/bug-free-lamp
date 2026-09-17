@@ -4,15 +4,21 @@
  */
 
 export const ROAM_WALK_MS = 720;
-/** 波間短行：地面微移（px）。場景圖固定，唔累積鏡頭。 */
-export const ROAM_GROUND_PY = 12;
-/** @deprecated 舊全圖捲；波間改用 ROAM_GROUND_PY */
-export const ROAM_STEP_PY = ROAM_GROUND_PY;
+/** 遠景層：波間極慢微移（px）。唔累積、唔全圖狂捲。 */
+export const ROAM_FAR_PY = 6;
+/** 近景／地面：幾乎固定 */
+export const ROAM_NEAR_PY = 2;
+/** @deprecated 舊地面捲；而家遠景用 ROAM_FAR_PY */
+export const ROAM_GROUND_PY = ROAM_FAR_PY;
+/** @deprecated 舊全圖捲 */
+export const ROAM_STEP_PY = ROAM_FAR_PY;
 /** 敵從右緣／霧外跑入（ms） */
 export const ROAM_ENTER_MS = 680;
 export const ROAM_ENTER_STAGGER_MS = 90;
-/** 入場起點：相對休息位再偏右，出畫面 */
+/** 入場起點：相對休息位再偏右，出畫面（唔喺中央 pop） */
 export const ROAM_FOE_ENTER_DX = 176;
+/** 上／下霧入場擺幅 */
+export const ROAM_FOE_ENTER_DY = 38;
 /** 角色帶相對錨點的 Y 擺幅（38–58% 中段） */
 export const ROAM_Y_MIN = -40;
 export const ROAM_Y_MAX = 40;
@@ -52,18 +58,28 @@ export function roamHeading(waveIndex = 0) {
 }
 
 /**
- * 場景圖固定。walkT 喺 (0,1) 時先微移地面再回 0；休息位永遠 {0,0}。
+ * 雙層視差：遠景極慢、近景幾乎固定。walk 中段微移，休息位永遠 0（唔累積）。
  */
 export function roamBgShift(_waveIndex = 0, walkT = 1) {
   const t = Math.max(0, Math.min(1, Number(walkT)));
-  if (t <= 0 || t >= 1) return { x: 0, y: 0 };
+  if (t <= 0 || t >= 1) return { x: 0, y: 0, farY: 0, nearY: 0 };
   const pulse = Math.sin(t * Math.PI);
-  return { x: 0, y: -pulse * ROAM_GROUND_PY };
+  const farY = -pulse * ROAM_FAR_PY;
+  const nearY = -pulse * ROAM_NEAR_PY;
+  return { x: 0, y: farY, farY, nearY };
 }
 
-/** 敵入場由休息位再偏右（出畫面／霧），跑向隊伍正面。 */
+/** 敵入場由休息位再偏右（出畫面／側霧），跑向隊伍正面。永不由中央出現。 */
 export function roamFoeEnterDx(_index = 0) {
   return ROAM_FOE_ENTER_DX;
+}
+
+/** 0＝右側霧，1＝上霧，2＝下霧（循環）。 */
+export function roamFoeEnterDy(index = 0) {
+  const lane = ((index | 0) % 3 + 3) % 3;
+  if (lane === 1) return -ROAM_FOE_ENTER_DY;
+  if (lane === 2) return ROAM_FOE_ENTER_DY;
+  return 8;
 }
 
 /**

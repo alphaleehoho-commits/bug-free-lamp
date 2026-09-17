@@ -423,10 +423,14 @@ import {
 import {
   ROAM_PATH,
   ROAM_WALK_MS,
+  ROAM_FAR_PY,
+  ROAM_NEAR_PY,
   ROAM_GROUND_PY,
   ROAM_ENTER_MS,
   ROAM_FOE_ENTER_DX,
+  ROAM_FOE_ENTER_DY,
   ROAM_CENTER_CLEAR_X,
+  ROAM_FOE_ANCHOR_X,
   roamHeading,
   roamBgShift,
   roamAllyOffset,
@@ -434,6 +438,7 @@ import {
   roamLayoutFromUnits,
   roamFoePlaceholderSrc,
   roamFoeEnterDx,
+  roamFoeEnterDy,
   ROAM_IDLE_SCENE_SRC,
   ROAM_ALLY_PLACEHOLDER_SRC,
   ROAM_FOE_FOAM_SRC,
@@ -4388,7 +4393,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v149"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v150"), "sw cache bumped");
 assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
 assert(swSrc.includes("bg_idle_home_reef_1080x1920.webp"), "sw caches idle reef scene");
 assert(swSrc.includes("enemy_foamblob_idle.png"), "sw caches foam foe placeholder");
@@ -4668,14 +4673,21 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   const bg1 = roamBgShift(1, 1);
   const bgMid = roamBgShift(1, 0.5);
   assert(bg0.x === bg1start.x && bg0.y === bg1start.y, "walk starts from previous camera");
-  assert(bg0.y === 0 && bg1.y === 0, "scene rest pose is fixed");
-  assert(bgMid.y !== 0, "walk beat has slight ground scroll");
-  assert(Math.abs(bgMid.y) <= ROAM_GROUND_PY + 0.01, "ground scroll stays subtle");
+  assert(bg0.y === 0 && bg1.y === 0 && bg0.farY === 0 && bg1.nearY === 0, "parallax rest pose is fixed");
+  assert(bgMid.farY !== 0, "walk beat has far-layer parallax");
+  assert(Math.abs(bgMid.farY) <= ROAM_FAR_PY + 0.01, "far layer stays very slow");
+  assert(Math.abs(bgMid.nearY) <= ROAM_NEAR_PY + 0.01, "near layer almost fixed");
+  assert(Math.abs(bgMid.farY) > Math.abs(bgMid.nearY), "far drifts more than near");
   assert(roamBgShift(4, 1).y === bg1.y, "waves do not accumulate camera");
-  assert(ROAM_GROUND_PY > 0 && ROAM_GROUND_PY <= 18, "ground nudge is a short step");
+  assert(ROAM_FAR_PY > 0 && ROAM_FAR_PY <= 10, "far parallax is a short drift");
+  assert(ROAM_NEAR_PY >= 0 && ROAM_NEAR_PY < ROAM_FAR_PY, "near parallax weaker than far");
+  assert(ROAM_GROUND_PY === ROAM_FAR_PY, "legacy ground token aliases far layer");
   assert(ROAM_ENTER_MS >= 400 && ROAM_ENTER_MS <= 1200, "foe enter is a short run-in");
   assert(roamFoeEnterDx(0) >= 120, "foes start from off-stage right");
   assert(ROAM_FOE_ENTER_DX === roamFoeEnterDx(1), "enter dx is stable");
+  assert(roamFoeEnterDy(1) < 0 && roamFoeEnterDy(2) > 0, "foes also enter from top/bottom fog");
+  assert(ROAM_FOE_ANCHOR_X + roamFoeEnterDx(0) > 200, "enter start is past the right fog, not center");
+  assert(Math.abs(roamFoeEnterDy(0)) < 80, "fog-edge dy stays in the stage");
   const laid = roamLayoutFromUnits({
     allies: [{ slot: 0, lane: "rear" }, { slot: 1, lane: "front" }],
     foes: [{ role: "normal" }, { role: "elite" }],
@@ -4694,6 +4706,8 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(uiSrc2.includes("enterFoes"), "ui spawns next wave after walk");
   assert(uiSrc2.includes("is-roam-enter"), "ui marks foe enter pins");
   assert(uiSrc2.includes("train-roam-ground"), "ui ground layer for walk scroll");
+  assert(uiSrc2.includes("train-roam-bg-far") && uiSrc2.includes("--far-y"), "ui wires far parallax layer");
+  assert(uiSrc2.includes("roamFoeEnterDy") && uiSrc2.includes("--roam-enter-dy"), "ui foes enter from fog edges");
   assert(uiSrc2.includes("from \"./train-roam.js\""), "ui imports roam staging");
   assert(uiSrc2.includes("ROAM_IDLE_SCENE_SRC") || uiSrc2.includes("bg_idle_home_reef"), "ui wires idle scene art");
   assert(uiSrc2.includes("train-roam-hud-top"), "ui top HUD on stage");
@@ -4709,6 +4723,8 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("roamPartyWalk"), "css party short walk");
   assert(cssSrc.includes("train-roam-ground"), "css ground scroll layer");
   assert(cssSrc.includes("--roam-enter-dx"), "css enter from right fog");
+  assert(cssSrc.includes("--roam-enter-dy"), "css enter from top/bottom fog");
+  assert(cssSrc.includes("--far-y"), "css far parallax token");
   assert(existsSync(join(dirname(__dir), "assets/bg/scenes/bg_idle_home_reef_1080x1920.webp")), "idle reef scene asset");
   assert(existsSync(join(dirname(__dir), "assets/bg/scenes/bg_dungeon_tide_path_1080x1920.webp")), "dungeon path scene asset");
   assert(existsSync(join(dirname(__dir), "assets/allies/ally_jelly_idle.png")), "ally jelly placeholder");
