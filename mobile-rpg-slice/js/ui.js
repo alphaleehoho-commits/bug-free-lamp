@@ -457,11 +457,11 @@ function setThemePref(theme) {
 function themePrefToggleHtml({ compact = false } = {}) {
   const light = isLightTheme();
   if (compact) {
-    return `<button type="button" class="ghost theme-chip" data-act="toggle-theme" aria-pressed="${light ? "false" : "true"}" title="${light ? "切換暗潮夜色" : "切換紙色白晝"}">${light ? "紙色" : "夜色"}</button>`;
+    return `<button type="button" class="ghost theme-chip" data-act="toggle-theme" aria-pressed="${light ? "false" : "true"}" title="${light ? "切換夜色" : "切換紙色白晝"}">${light ? "紙色" : "夜色"}</button>`;
   }
   return `<label class="combat-pref-toggle theme-pref-toggle">
     <input type="checkbox" data-act="toggle-theme" ${light ? "" : "checked"}/>
-    暗潮夜色（預設紙色白晝）
+    深域夜色（預設紙色白晝）
   </label>`;
 }
 
@@ -1504,7 +1504,6 @@ function switchTab(id) {
       panelSub = { ...panelSub, party: "ranch" };
     } else if (id === "cultivate") {
       if (step === "shop_egg") panelSub = { ...panelSub, cultivate: "shop" };
-      else if (step === "breakthrough") panelSub = { ...panelSub, cultivate: "advance" };
       else if (step === "cultivate_qi" || step === "train_pet" || step === "hatch_starter" || step === "hatch_second") {
         panelSub = { ...panelSub, cultivate: "train" };
       }
@@ -1758,7 +1757,7 @@ function shopInnerNavHtml() {
   return `<nav class="bag-inner-nav" aria-label="商肆分類">
     <button type="button" class="${shopInner === "stones" ? "on" : ""}" data-shop-inner="stones">泡泡晶</button>
     <button type="button" class="${shopInner === "soul" ? "on" : ""}" data-shop-inner="soul">光核</button>
-    <button type="button" class="${shopInner === "grit" ? "on" : ""}" data-shop-inner="grit">淵砂</button>
+    <button type="button" class="${shopInner === "grit" ? "on" : ""}" data-shop-inner="grit">潛砂</button>
   </nav>`;
 }
 
@@ -2351,9 +2350,9 @@ function titleScreenHtml() {
   return `
     <div class="title-screen" data-live="title-screen">
       <header class="title-hero">
-        <p class="title-kicker">Void Tide</p>
-        <h1 class="title-brand">暗潮</h1>
-        <p class="title-sub">水母漂漂</p>
+        <p class="title-kicker">Jelly Depths</p>
+        <h1 class="title-brand">水母深域</h1>
+        <p class="title-sub">無限深海 · 收集你的漂漂</p>
         <p class="title-build">建置 ${escapeHtml(APP_BUILD)}</p>
       </header>
       <section class="title-howto">
@@ -2362,7 +2361,7 @@ function titleScreenHtml() {
           <li>戰鬥多為自動——水母會自己出手，毋須連點。</li>
           <li>「育成」掛機攞<strong>露珠</strong>、<strong>共鳴</strong>與<strong>小餌</strong>；「水母」升級、出戰。</li>
           <li>「商肆」買蛋擴隊；「秘境」挑戰拿掉落與碎片。</li>
-          <li><strong>共鳴</strong>滿後到「進階」成長，解鎖更深體階。</li>
+          <li>「秘境」通關解鎖新品種；變強靠漂路、繁殖同融合。</li>
         </ol>
       </section>
       <section class="title-glossary">
@@ -2462,8 +2461,8 @@ function render() {
   app.innerHTML = `
     <header class="top top-compact">
       <div class="brand-row">
-        <p class="brand" data-brand="void-tide">暗潮</p>
-        <p class="tag">Void Tide · 水母漂漂</p>
+        <p class="brand" data-brand="jelly-depths">漂漂</p>
+        <p class="tag">Jelly Depths</p>
         <span class="build-chip" title="建置號">建置 ${escapeHtml(APP_BUILD)}</span>
         ${themePrefToggleHtml({ compact: true })}
         <button type="button" class="ghost brand-reset" data-act="reset" ${busy ? "disabled" : ""}>重置存檔</button>
@@ -2710,7 +2709,7 @@ function installBanner() {
   if (pwaDismissed || !pwaInstallEvt) return "";
   return `
     <div class="chrome-toast install-toast" data-live="install-banner">
-      <p>可將暗潮加入主畫面，離線也能掛機漂漂。</p>
+      <p>可將漂漂加入主畫面，離線也能掛機收穫。</p>
       <div class="row">
         <button type="button" class="primary" data-act="pwa-install">安裝</button>
         <button type="button" class="ghost" data-act="pwa-dismiss">稍後</button>
@@ -3501,6 +3500,7 @@ function cultivatePanel() {
 
   if (panelSub.cultivate === "gear") panelSub.cultivate = "train";
   if (panelSub.cultivate === "mats") panelSub.cultivate = "bag";
+  if (panelSub.cultivate === "advance") panelSub.cultivate = "train";
   if (panelSub.cultivate === "soul") {
     panelSub.cultivate = "shop";
     shopInner = "soul";
@@ -3511,7 +3511,6 @@ function cultivatePanel() {
     { id: "bag", label: "背包" },
     { id: "shop", label: "商肆" },
   ]);
-  if (panelSub.cultivate === "advance") panelSub.cultivate = "train";
 
   if (sub === "bag") {
     const inner =
@@ -3556,16 +3555,16 @@ function cultivatePanel() {
       <ul class="list">${soulRows}</ul>`;
     } else if (shopInner === "grit") {
       if (!gritV.unlocked) {
-        shopBody = `<h2>商肆 · 淵砂</h2>
+        shopBody = `<h2>商肆 · 潛砂</h2>
       <p class="lead">深潛封印中</p>
       <p class="meta">漂路達${gritV.unlockSpineStage || ABYSS_UNLOCK_SPINE_STAGE}章（已通≥${dungeonDisplayName(
           ((gritV.unlockSpineStage || ABYSS_UNLOCK_SPINE_STAGE) - 1) * 20 + 1
-        )}）後解鎖深潛與淵砂兌換。現 ${gritV.spineStage || 1}章。</p>
+        )}）後解鎖深潛與潛砂兌換。現 ${gritV.spineStage || 1}章。</p>
       <p class="meta muted">預告貨物：淵核／突變保險／融合核（每週）／高階蛋／轉屬符／深潛外觀。</p>`;
       } else {
       const cosRows = (gritV.cosmeticList || gritV.cosmeticsList || [])
         .map((c) => {
-          const owned = c.owned ? "已擁有" : `淵砂×${c.cost}`;
+          const owned = c.owned ? "已擁有" : `潛砂×${c.cost}`;
           return `<li class="card-row">
         <div><strong>${escapeHtml(c.name)}</strong><span class="muted"> · ${escapeHtml(c.desc)}</span></div>
         <button type="button" class="secondary" data-abyss-cosmetic="${c.id}" ${c.owned ? "disabled" : ""}>${owned}</button>
@@ -3574,35 +3573,35 @@ function cultivatePanel() {
         .join("");
       const nodeMaxed = (gritV.powerNodes || 0) >= (gritV.powerNodeMax || 0);
       const hasInsurance = (gritV.insuranceCharges | 0) >= 1;
-      shopBody = `<h2>商肆 · 淵砂</h2>
-      <p class="lead">淵砂 ${gritHave} · 深潛結算兌換</p>
+      shopBody = `<h2>商肆 · 潛砂</h2>
+      <p class="lead">潛砂 ${gritHave} · 深潛結算兌換</p>
       <ul class="list">
       <li class="card-row">
         <div><strong>突變保險</strong><span class="muted"> · 略過下場新突變一次 · ${
           hasInsurance ? "已備 1" : "未備"
         }</span></div>
         <button type="button" class="secondary" data-abyss-insurance ${hasInsurance ? "disabled" : ""}>${
-          hasInsurance ? "已持有" : `淵砂×${gritV.insuranceCost || 25}`
+          hasInsurance ? "已持有" : `潛砂×${gritV.insuranceCost || 25}`
         }</button>
       </li>
       <li class="card-row">
         <div><strong>淵核</strong><span class="muted"> · 永久全隊攻擊 +${gritV.powerNodeAtkPct || 1}%／級 · ${gritV.powerNodes || 0}/${gritV.powerNodeMax || 0}</span></div>
         <button type="button" class="secondary" data-abyss-power-node ${nodeMaxed ? "disabled" : ""}>${
-          nodeMaxed ? "已滿" : `淵砂×${gritV.powerNodeCost}`
+          nodeMaxed ? "已滿" : `潛砂×${gritV.powerNodeCost}`
         }</button>
       </li>
       <li class="card-row">
         <div><strong>融合核</strong><span class="muted"> · 終身融合一次必需 · 本週 ${gritV.fusionCoresBoughtWeek || 0}/${gritV.fusionCoreWeeklyLimit || 1}</span></div>
-        <button type="button" class="secondary" data-abyss-fusion-core ${(gritV.fusionCoresBoughtWeek || 0) >= (gritV.fusionCoreWeeklyLimit || 1) ? "disabled" : ""}>淵砂×${gritV.fusionCoreCost || 180}</button>
+        <button type="button" class="secondary" data-abyss-fusion-core ${(gritV.fusionCoresBoughtWeek || 0) >= (gritV.fusionCoreWeeklyLimit || 1) ? "disabled" : ""}>潛砂×${gritV.fusionCoreCost || 180}</button>
       </li>
       <li class="card-row">
         <div><strong>深潛高階蛋</strong><span class="muted"> · 本週 ${gritV.eggsBoughtWeek}/${gritV.eggsWeeklyLimit} · 較易出稀有</span></div>
-        <button type="button" class="secondary" data-abyss-egg ${gritV.eggsBoughtWeek >= gritV.eggsWeeklyLimit ? "disabled" : ""}>淵砂×${gritV.eggCost}</button>
+        <button type="button" class="secondary" data-abyss-egg ${gritV.eggsBoughtWeek >= gritV.eggsWeeklyLimit ? "disabled" : ""}>潛砂×${gritV.eggCost}</button>
       </li>
       <li class="card-row">
         <div><strong>轉屬符</strong><span class="muted"> · 永久隨機轉屬 · 持有 ${gritV.tideShiftHave || 0}</span></div>
         <div class="row-actions">
-          <button type="button" class="secondary" data-abyss-buy-shift>淵砂×${gritV.tideShiftCost}</button>
+          <button type="button" class="secondary" data-abyss-buy-shift>潛砂×${gritV.tideShiftCost}</button>
           <button type="button" class="primary" data-act="open-tide-shift" ${(gritV.tideShiftHave || 0) < 1 ? "disabled" : ""}>使用</button>
         </div>
       </li>
@@ -3615,17 +3614,6 @@ function cultivatePanel() {
       <ul class="list">${shopRows}</ul>`;
     }
     return wrapStage(nav, `${shopInnerNavHtml()}${shopBody}`);
-  }
-
-
-  if (sub === "advance") {
-    return wrapStage(
-      nav,
-      `<h2>育成 · 進階（已廢）</h2>
-      <p class="lead">體階突破已移除。</p>
-      <p class="meta">變強改靠：漂路掛機劇場、秘境解鎖品種／稀有蛋、同繁殖血脈。</p>`,
-      `<div class="row"><button type="button" class="primary" data-panel-sub="cultivate:train">返回練功</button></div>`
-    );
   }
 
   const tutCta = "";
@@ -4670,7 +4658,9 @@ function petDetailStatsHtml(pet, detail, rarity) {
           ? `<li class="muted">種族基準 攻${base.atk} 血${base.hp} 速${base.spd}</li>`
           : ""
       }
-      <li><strong>稀有</strong> — <span class="rarity rarity-${rarity.color}">${escapeHtml(rarity.name)}</span> · ${escapeHtml(pet.kind)}·${escapeHtml(pet.elementName || "")}</li>
+      <li><strong>稀有</strong> — <span class="rarity rarity-${rarity.color}">${escapeHtml(rarity.name)}</span> · ${escapeHtml(pet.kind)}·${escapeHtml(pet.elementName || "")}${
+        elEx?.nameEn ? ` ${escapeHtml(elEx.nameEn)}` : ""
+      }</li>
       ${
         showFuse
           ? `<li><strong>融合</strong> — 階${detail.fusionLevel || 0} · 出戰×${fmtMult(detail.fusionPowerMult || 1)}</li>`
@@ -4855,7 +4845,9 @@ function petsDetailView() {
           <span class="pet-detail-name">${escapeHtml(displayPetName(pet))}</span>${petFlagTags(pet)}
           <button type="button" class="pet-rename-pen" data-rename-pen="${escapeHtml(pet.uid)}" aria-label="改名" title="改名">✎</button>
         </h2>
-        <p class="lead">${escapeHtml(loc)} · Lv.${lv}${fusBit}</p>
+        <p class="lead">${escapeHtml(loc)} · Lv.${lv}${fusBit}${
+          SPECIES[pet.speciesId]?.nameEn ? ` · ${escapeHtml(SPECIES[pet.speciesId].nameEn)}` : ""
+        }</p>
       </div>
     </div>
     ${petDetailTabNav(detailTab)}
@@ -4954,7 +4946,7 @@ function codexPanel() {
         <div class="codex-icon${unlocked ? "" : " species-locked-fog"}">${unlocked || s.found > 0 ? petArtHtml(s.speciesId, { size: 36 }) : `<span class="pet-art pet-art-unknown"><span class="pet-icon pet-icon-unknown">?</span></span>`}</div>
         <div>
           <strong>${unlocked || s.found > 0 ? escapeHtml(s.speciesName) : "潮霧中的品種"}</strong>
-          <span class="muted">${escapeHtml(s.kind)}${s.breedOnly ? "·雜交" : ""}${s.unlocked ? "" : " · 潮霧中"} · ${s.found}/${s.total}</span>
+          <span class="muted">${unlocked || s.found > 0 ? `${escapeHtml(s.speciesNameEn || "")}${s.speciesNameEn ? " · " : ""}` : ""}${escapeHtml(s.kind)}${s.breedOnly ? "·雜交" : ""}${s.unlocked ? "" : " · 潮霧中"} · ${s.found}/${s.total}</span>
           <div class="bar thin"><i style="width:${pct}%"></i></div>
         </div>
       </li>`;
@@ -5282,7 +5274,7 @@ function abyssSettlementHtml(result) {
     return `
       <div class="abyss-settle abyss-settle--wipe">
         <p class="lead">第 <strong>${failed}</strong> 層挑戰失敗</p>
-        <p class="meta">此前已通第 ${cleared} 層 · 保底帶回淵砂 <strong>${kept}</strong>${
+        <p class="meta">此前已通第 ${cleared} 層 · 保底帶回潛砂 <strong>${kept}</strong>${
           pendingBefore ? `（原待結算 ${pendingBefore}）` : ""
         }</p>
         <p class="meta">本趟突變：</p>
@@ -5310,7 +5302,7 @@ function abyssSettlementHtml(result) {
       <p class="lead">已通關第 <strong>${result.clearedDepth || result.depth}</strong> 層</p>
       <div class="settle-summary-row abyss-grit-row">
         <div>
-          <strong class="settle-total">淵砂 +${result.gritGained || 0}</strong>
+          <strong class="settle-total">潛砂 +${result.gritGained || 0}</strong>
           <span class="muted">待結算累計 ${(liveRun?.pendingGrit ?? result.pendingGrit) || 0} · 層間唔回滿血</span>
         </div>
       </div>
@@ -5522,10 +5514,10 @@ function abyssPanelHtml() {
     const needFloor = (need - 1) * 20 + 1;
     return `<h2>深潛</h2>
       <p class="lead fantasy-frozen-banner">${ABYSS_CONTENT_FROZEN ? escapeHtml(ABYSS_FROZEN_MSG) : "後期暫凍 · 現階段唔推／暫不平衡"}</p>
-      <p class="lead">無盡程序層 · 突變規則 · 專屬淵砂</p>
+      <p class="lead">無盡程序層 · 突變規則 · 專屬潛砂</p>
       <p class="meta">封印中——漂路達<strong>${need}章</strong>（已通≥${dungeonDisplayName(needFloor)}）後解鎖大後期深潛。</p>
       <p class="meta">現漂路 ${v.spineStage || 1}章。</p>
-      <p class="meta muted">預告：5 寵編隊 · 突變 2 選 1 · 週／歷史深度里程碑 · 淵砂換融合核／高階蛋。</p>
+      <p class="meta muted">預告：5 寵編隊 · 突變 2 選 1 · 週／歷史深度里程碑 · 潛砂換融合核／高階蛋。</p>
       <details class="abyss-rules">
         <summary>深潛規則（預覽）</summary>
         <pre class="abyss-rules-body">${escapeHtml(ABYSS_RULES_TEXT)}</pre>
@@ -5553,7 +5545,7 @@ function abyssPanelHtml() {
         ? "先揀突變"
         : `挑戰第 ${(run.depth | 0) + 1} 層`;
     runBlock = `<div class="abyss-run card-block">
-        <p class="lead">進行中 · 已通第 <strong>${run.depth}</strong> 層 · 待結算淵砂 <strong>${run.pendingGrit}</strong></p>
+        <p class="lead">進行中 · 已通第 <strong>${run.depth}</strong> 層 · 待結算潛砂 <strong>${run.pendingGrit}</strong></p>
         <p class="meta">下一挑戰：第 <strong>${(run.depth | 0) + 1}</strong> 層 · 本潛增益：${buffLine}</p>
         <p class="meta">突變：${mutLine}</p>
         ${roster}
@@ -5605,7 +5597,7 @@ function abyssPanelHtml() {
   return `<h2>深潛</h2>
     ${v.frozen ? `<p class="lead fantasy-frozen-banner">${escapeHtml(v.frozenMsg || ABYSS_FROZEN_MSG)}</p>` : ""}
     <p class="lead">無限層 · 突變規則 · 大後期旁路</p>
-    <p class="meta">淵砂 <strong>${v.gritHave}</strong> · 最深 ${v.bestDepth} · 本週 ${v.weekBestDepth}</p>
+    <p class="meta">潛砂 <strong>${v.gritHave}</strong> · 最深 ${v.bestDepth} · 本週 ${v.weekBestDepth}</p>
     <details class="abyss-rules">
       <summary>深潛規則（必讀）</summary>
       <pre class="abyss-rules-body">${escapeHtml(ABYSS_RULES_TEXT)}</pre>
@@ -6180,7 +6172,7 @@ function bind() {
       } else if (act === "goto-breakthrough") {
         bondSheetOpen = false;
         tab = "cultivate";
-        panelSub = { ...panelSub, cultivate: "advance" };
+        panelSub = { ...panelSub, cultivate: "train" };
         render();
       } else if (act === "close-hatch-claim") {
         hatchClaimModal = null;
@@ -7452,7 +7444,7 @@ function maybeNotifyOffline(hint) {
   if (maybeNotifyOffline._sent === hint.at) return;
   maybeNotifyOffline._sent = hint.at;
   try {
-    new Notification("暗潮 · 離線結算", {
+    new Notification("漂漂 · 離線結算", {
       body: `約 ${Math.round(hint.sec / 60)} 分鐘：共鳴 +${fmtInt(hint.qi)}，小餌 +${fmtMatQty(hint.feed)}，星砂 +${fmtMatQty(hint.dust)}${formatMatBits(hint.materials) ? `，${formatMatBits(hint.materials)}` : ""}`,
       icon: "./icons/icon.svg",
     });
@@ -7481,32 +7473,32 @@ function checkPushReminders() {
   if (bank.hasPending && bank.sec >= 3600 * 8 - 120) {
     pushNotifyOnce(
       `offline-cap-${bank.sec}`,
-      "暗潮 · 離線上限",
+      "漂漂 · 離線上限",
       "掛機收益即將達 8 小時上限，記得回來領取！"
     );
   } else if (state.offlineHint && state.offlineHint.sec >= 3600 * 8 - 120) {
     pushNotifyOnce(
       `offline-cap-${state.offlineHint.at}`,
-      "暗潮 · 離線上限",
+      "漂漂 · 離線上限",
       "掛機收益即將達 8 小時上限，記得回來領取！"
     );
   }
   for (const e of eggsView(state, now)) {
     if (e.hatching && !e.ready && e.leftSec > 0 && e.leftSec <= 30) {
-      pushNotifyOnce(`egg-soon-${e.uid}-${e.readyAt}`, "暗潮 · 蛋快好了", `${e.name} 約 ${e.leftSec} 秒後可領取`);
+      pushNotifyOnce(`egg-soon-${e.uid}-${e.readyAt}`, "漂漂 · 蛋快好了", `${e.name} 約 ${e.leftSec} 秒後可領取`);
     }
     if (e.ready) {
-      pushNotifyOnce(`egg-ready-${e.uid}`, "暗潮 · 孵化完成", `${e.name} 可以領取了！`);
+      pushNotifyOnce(`egg-ready-${e.uid}`, "漂漂 · 孵化完成", `${e.name} 可以領取了！`);
     }
   }
   const disp = dispatchView(state);
   for (const d of disp.active || []) {
     if (d.ready) {
-      pushNotifyOnce(`dispatch-ready-${d.dispatchId}`, "暗潮 · 派遣完成", `${d.missionName} 可以收集了！`);
+      pushNotifyOnce(`dispatch-ready-${d.dispatchId}`, "漂漂 · 派遣完成", `${d.missionName} 可以收集了！`);
     } else if (d.leftMs > 0 && d.leftMs <= 30000) {
       pushNotifyOnce(
         `dispatch-soon-${d.dispatchId}`,
-        "暗潮 · 派遣將完成",
+        "漂漂 · 派遣將完成",
         `${d.missionName} 約 ${Math.ceil(d.leftMs / 1000)} 秒後完成`
       );
     }

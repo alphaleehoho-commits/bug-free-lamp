@@ -48,7 +48,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "cultivate_qi",
     title: "掛機劇場",
-    hint: "留在「育成 → 練功」睇戰鬥同收穫跳動；共鳴會累積但唔再靠進階突破。",
+    hint: "留在「育成 → 練功」睇戰鬥同收穫跳動；共鳴會喺掛機累積。",
   },
   {
     id: "breakthrough",
@@ -88,7 +88,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "complete",
     title: "初階解鎖",
-    hint: "教學完成，自由探索暗潮！",
+    hint: "教學完成，自由探索深域，收集你的漂漂！",
   },
 ];
 
@@ -320,8 +320,8 @@ function locksForStep(stepId) {
       };
     case "breakthrough":
       return {
-        tabs: { party: true, dungeon: true, codex: true, log: true },
-        cultivateSub: { shop: true, advance: false },
+        tabs: { party: true, cultivate: true, codex: true, log: true },
+        cultivateSub: { shop: true, advance: true },
         partySub: { hatch: true, breed: true, dispatch: true, bond: true },
         dungeonSub: { ...allDung },
         trainSites: false,
@@ -403,8 +403,7 @@ export function isTabLocked(state, tabId) {
 }
 
 export function isCultivateSubLocked(state, subId) {
-  if (subId === "advance" && tutorialQiReady(state)) return false;
-  if (subId === "gear") return true;
+  if (subId === "gear" || subId === "advance") return true;
   return !!tutorialLocks(state).cultivateSub[subId];
 }
 
@@ -556,7 +555,7 @@ export function maybeStartLateTutorial(state) {
       const info = TUTORIAL_STEPS.find((s) => s.id === stepId);
       return {
         started: true,
-        msg: `進階教學：${info?.title || stepId}（通關心核解鎖）`,
+        msg: `後續引導：${info?.title || stepId}（通關心核解鎖）`,
         stepId,
       };
     }
@@ -584,7 +583,7 @@ export function maybeStartLateTutorial(state) {
   const info = TUTORIAL_STEPS.find((s) => s.id === pending[0]);
   return {
     started: true,
-    msg: `進階教學：${info?.title || pending[0]}`,
+    msg: `後續引導：${info?.title || pending[0]}`,
     stepId: pending[0],
   };
 }
@@ -642,10 +641,10 @@ export function advanceTutorialIfReady(state) {
     if (isLateStep(cur) || state.tutorial.latePending) {
       state.tutorial.lateCompleted = true;
       state.tutorial.latePending = false;
-      unlockMsg = "進階教學完成！";
+      unlockMsg = "後續引導完成！";
     } else if ((state.realm | 0) < LATE_TUTORIAL_MIN_REALM) {
       state.tutorial.latePending = true;
-      unlockMsg = "初階教學完成！升階後將解鎖進階功能引導。";
+      unlockMsg = "初階教學完成！達【浮游後期】後將解鎖後續功能引導。";
     } else {
       unlockMsg = "初階教學完成！所有功能已解鎖。";
     }
@@ -726,6 +725,9 @@ export function syncTutorialNavigation(state, nav) {
       next = clampTutorialTabs(nav, ["cultivate"]);
       break;
     case "cultivate_qi":
+      next = clampTutorialTabs(nav, ["cultivate"]);
+      if (next.tab === "cultivate") next.panelSub = { ...next.panelSub, cultivate: "train" };
+      break;
     case "breakthrough":
       next = clampTutorialTabs(nav, ["dungeon"]);
       break;
@@ -835,18 +837,12 @@ export function tutorialHighlights(state, nav = {}) {
       return [{ type: "tab", id: "party" }];
     }
     case "cultivate_qi":
-      if (tutorialQiReady(state)) {
-        if (tab === "cultivate" && ps.cultivate === "advance") return [];
-        return [{ type: "panel-sub", group: "cultivate", id: "advance" }];
-      }
       if (tab === "cultivate" && ps.cultivate === "train") return [];
       if (tab === "cultivate") return [{ type: "panel-sub", group: "cultivate", id: "train" }];
       return [{ type: "tab", id: "cultivate" }];
     case "breakthrough":
-      if (tab === "cultivate" && ps.cultivate === "advance") {
-        return [{ type: "act", act: "break" }];
-      }
-      return [{ type: "panel-sub", group: "cultivate", id: "advance" }];
+      if (tab === "dungeon") return [];
+      return [{ type: "tab", id: "dungeon" }];
     case "breed_intro":
       if (tab === "party" && ps.party === "breed") return [];
       if (tab === "party") return [{ type: "panel-sub", group: "party", id: "breed" }];
@@ -1026,7 +1022,7 @@ export function tutorialBannerHint(state) {
   const info = tutorialStepInfo(state);
   if (info.stepId === "cultivate_qi") {
     if (tutorialQiReady(state)) {
-      return "共鳴已足，打開「進階」成長！";
+      return "掛機夠鐘喇！打開「秘境」挑戰一層。";
     }
     const idle = Math.floor(state.daily?.idleSec || 0);
     const left = Math.max(0, TUTORIAL_QI_IDLE_SEC - idle);
@@ -1097,7 +1093,7 @@ export function tutorialBannerHtml(state, opts = {}) {
   const hint = tutorialBannerHint(state);
   const nextWhere = tutorialNextWhere(state);
   const phaseNote = info.inLate
-    ? `<p class="tutorial-phase">進階引導 · 達【浮游後期】解鎖</p>`
+    ? `<p class="tutorial-phase">後續引導 · 達【浮游後期】解鎖</p>`
     : "";
   if (collapsed) {
     return `

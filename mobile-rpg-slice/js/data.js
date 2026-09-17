@@ -1,15 +1,15 @@
 /** Data tables — 水母漂漂 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260916.10";
+export const APP_BUILD = "20260917.1";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
   stones: { name: "泡泡晶", blurb: "亮晶晶的貨幣。商肆買蛋、繁殖、契約、成長與融合會消耗。" },
   scrap: { name: "碎片", blurb: "秘境掉落。部分養成與兌換會用到。" },
   feed: { name: "小餌", blurb: "餵水母／契約用。掛機與水母池待命可產出。" },
-  dust: { name: "星砂", blurb: "技能材料。掛機與水母池可產出（進階體階已廢）。" },
-  qi: { name: "共鳴", blurb: "舊體階進度殘留。掛機仍會累積，但不再用於進階突破。" },
+  dust: { name: "星砂", blurb: "技能材料。掛機與水母池可產出。" },
+  qi: { name: "共鳴", blurb: "掛機會累積。變強改靠漂路、秘境解鎖品種同繁殖血脈。" },
   tide_dew: { name: "露珠", blurb: "早期升級副材。在「育成 → 練功」掛機取得。" },
   earth_grade_stone: {
     name: "地階石",
@@ -18,7 +18,7 @@ export const GAME_TERMS = {
   spine: { name: "漂路", blurb: "主線關卡。顯示成 1-1、1-2…每章 20 關後進入 2-1。" },
   mist_token: { name: "霧箋", blurb: "再挑戰已通關秘境的入場憑證。練功、每日與成長可獲。" },
   soul: { name: "光核", blurb: "放生或退蛋所得。可在商肆兌換物資。" },
-  realm: { name: "體階", blurb: "舊成長等階（已廢進階）。內容閘改跟漂路章與品種解鎖；此值由漂路自動對齊。" },
+  realm: { name: "體階", blurb: "舊成長等階。內容閘改跟漂路章與品種解鎖；此值由漂路自動對齊。" },
 };
 
 export const STAGES = [
@@ -308,11 +308,12 @@ export function breakthroughView(state) {
 }
 
 export const ELEMENTS = {
-  tide: { id: "tide", name: "水", atk: 1.05, hp: 1.0, spd: 1.05 },
-  stone: { id: "stone", name: "岩", atk: 1.0, hp: 1.12, spd: 0.92 },
-  flame: { id: "flame", name: "焰", atk: 1.12, hp: 0.94, spd: 1.0 },
-  gale: { id: "gale", name: "嵐", atk: 1.0, hp: 0.95, spd: 1.15 },
-  gloom: { id: "gloom", name: "雷", atk: 1.08, hp: 1.0, spd: 1.0 },
+  tide: { id: "tide", name: "水", nameEn: "Water", atk: 1.05, hp: 1.0, spd: 1.05 },
+  stone: { id: "stone", name: "岩", nameEn: "Stone", atk: 1.0, hp: 1.12, spd: 0.92 },
+  flame: { id: "flame", name: "焰", nameEn: "Flame", atk: 1.12, hp: 0.94, spd: 1.0 },
+  gale: { id: "gale", name: "嵐", nameEn: "Gale", atk: 1.0, hp: 0.95, spd: 1.15 },
+  /** gloom = Thunder display alias（存檔 code 不變） */
+  gloom: { id: "gloom", name: "雷", nameEn: "Thunder", atk: 1.08, hp: 1.0, spd: 1.0 },
 };
 
 /**
@@ -376,6 +377,7 @@ export function elementExplain(elementId) {
   return {
     id: el.id,
     name: el.name,
+    nameEn: el.nameEn || "",
     blurb: ex?.blurb || "",
     focus: ex?.focus || "",
     atk: el.atk,
@@ -716,6 +718,72 @@ export const SPECIES_NAME_LEGACY = {
   tidehowl: ["潮嗥"],
   tideprism: ["潮稜"],
 };
+
+/**
+ * 玩家面物種名 ← CSV naming-glossary-v1-species-48（RACE 1–48）。
+ * Code id（reefox 等）不變；顯示層唔再出礁狐／淵君。
+ */
+export const SPECIES_DISPLAY = {
+  reefox: { name: "圓圓水母", nameEn: "Puff Jelly" },
+  tidecarp: { name: "水滴水母", nameEn: "Drop Jelly" },
+  ashwing: { name: "花瓣水母", nameEn: "Bloom Jelly" },
+  mossback: { name: "雲朵水母", nameEn: "Cloud Jelly" },
+  nightmoth: { name: "小草水母", nameEn: "Sprout Jelly" },
+  glowfin: { name: "星粒水母", nameEn: "Star Jelly" },
+  saltpup: { name: "水晶水母", nameEn: "Gem Jelly" },
+  brineeel: { name: "氣泡水母", nameEn: "Bubble Jelly" },
+  cliffkite: { name: "蘑菇水母", nameEn: "Shroom Jelly" },
+  barnshell: { name: "貝殼水母", nameEn: "Shell Jelly" },
+  siltmite: { name: "飛碟水母", nameEn: "UFO Jelly" },
+  lanternray: { name: "幽靈水母", nameEn: "Ghost Jelly" },
+  duskox: { name: "果凍水母", nameEn: "Jello Jelly" },
+  foamdrake: { name: "小刺水母", nameEn: "Urchin Jelly" },
+  tideling: { name: "櫻花水母", nameEn: "Sakura Jelly" },
+  duskfly: { name: "仙人掌水母", nameEn: "Cactus Jelly" },
+  ironback: { name: "蘋果水母", nameEn: "Apple Jelly" },
+  mistcarp: { name: "蓮花水母", nameEn: "Lotus Jelly" },
+  stormmoth: { name: "貓耳水母", nameEn: "Cat Ear Jelly" },
+  reefwing: { name: "小魔王水母", nameEn: "Devil Jelly" },
+  fangmite: { name: "羽翼水母", nameEn: "Winged Jelly" },
+  scalequill: { name: "小龍水母", nameEn: "Dragon Jelly" },
+  shellmite: { name: "茶杯水母", nameEn: "Teacup Jelly" },
+  glintfox: { name: "手風琴折頁水母", nameEn: "Accordion Jelly" },
+  prismback: { name: "糖果水母", nameEn: "Candy Jelly" },
+  tidehowl: { name: "甜甜圈水母", nameEn: "Donut Jelly" },
+  coralmane: { name: "月芽水母", nameEn: "Crescent Jelly" },
+  mistwing: { name: "彗星水母", nameEn: "Comet Jelly" },
+  stormshell: { name: "火山水母", nameEn: "Volcano Jelly" },
+  gloomfang: { name: "雪花水母", nameEn: "Snowflake Jelly" },
+  lightscale: { name: "皇冠水母", nameEn: "Crown Jelly" },
+  ashspine: { name: "沙漏水母", nameEn: "Hourglass Jelly" },
+  deepquill: { name: "燈籠水母", nameEn: "Lantern Jelly" },
+  reefmite: { name: "羅盤水母", nameEn: "Compass Jelly" },
+  voidcarp: { name: "彩虹水母", nameEn: "Rainbow Jelly" },
+  brightback: { name: "音符水母", nameEn: "Music Jelly" },
+  galebeast: { name: "螺旋槳風車水母", nameEn: "Propeller Jelly" },
+  stonefinch: { name: "金魚水母", nameEn: "Goldfish Jelly" },
+  inkfox: { name: "洋傘水母", nameEn: "Parasol Jelly" },
+  prismoth: { name: "馬卡龍水母", nameEn: "Macaron Jelly" },
+  abyssreign: { name: "宇宙星空水母", nameEn: "Cosmic Jelly" },
+  voidglint: { name: "大天使水母", nameEn: "Seraph Jelly" },
+  duskiron: { name: "渾天星環水母", nameEn: "Armillary Jelly" },
+  coralstorm: { name: "九尾狐仙水母", nameEn: "Kitsune Jelly" },
+  deepfang: { name: "深海女皇水母", nameEn: "Empress Jelly" },
+  tideprism: { name: "夢境捕夢水母", nameEn: "Dreamcatcher Jelly" },
+  nightscale: { name: "世界樹水母", nameEn: "Bonsai Orbital Yggdrasil Jelly" },
+  galevoid: { name: "創世方塊水母", nameEn: "Genesis Jelly" },
+};
+
+for (const [id, disp] of Object.entries(SPECIES_DISPLAY)) {
+  const sp = SPECIES[id];
+  if (!sp) continue;
+  if (sp.name && sp.name !== disp.name) {
+    const prev = SPECIES_NAME_LEGACY[id] || [];
+    if (!prev.includes(sp.name)) SPECIES_NAME_LEGACY[id] = [...prev, sp.name];
+  }
+  sp.name = disp.name;
+  sp.nameEn = disp.nameEn;
+}
 
 /** 野生／秘境可遇種族（排除繁殖專屬） */
 export function wildSpeciesIds(realm = 99) {
@@ -1323,12 +1391,12 @@ export const SKILLS = {
   // —— 三代種專屬（唔 reuse 雜交二技）——
   abyss_reign_surge: {
     id: "abyss_reign_surge",
-    name: "淵君深壓",
+    name: "星空深壓",
     owner: "pet",
     type: "cleave",
     cd: 3,
     power: 0.95,
-    desc: "淵君專屬：深壓濺射",
+    desc: "宇宙星空水母專屬：深壓濺射",
   },
   void_glint_ray: {
     id: "void_glint_ray",
@@ -4662,13 +4730,13 @@ export const MATERIALS = {
   warden_echo: {
     id: "warden_echo",
     name: "域主殘響",
-    desc: "複打域主所得 · 可當進階催化碎片",
+    desc: "複打域主所得 · 可當融合催化碎片",
     tier: "key",
   },
   /** 深潛專屬：突變保險／外觀小加成／高階蛋 */
   abyss_grit: {
     id: "abyss_grit",
-    name: "淵砂",
+    name: "潛砂",
     desc: "深潛結算所得 · 換突變保險、深潛外觀、高階水母蛋",
     tier: "abyss",
   },
@@ -5725,9 +5793,9 @@ export const ABYSS_MAX_ACTIVE_MUTATIONS = 3;
 export const ABYSS_RULES_TEXT = [
   "獨立編隊 5 寵（3 出戰 + 2 替補）；層間唔回滿血。",
   `每 ${ABYSS_MUTATION_EVERY} 層進入前 2 選 1 突變；同時最多 ${ABYSS_MAX_ACTIVE_MUTATIONS} 條，新突變會頂掉最舊。`,
-  "突變保險（淵砂商店）可略過當層新突變一次。",
-  "失敗保底帶走部分待結算淵砂；撤退可提早結算。",
-  "商人事件係 2 揀 1：花待結算淵砂買潛航增益，或隨機移除 1 條現有突變。",
+  "突變保險（潛砂商店）可略過當層新突變一次。",
+  "失敗保底帶走部分待結算潛砂；撤退可提早結算。",
+  "商人事件係 2 揀 1：花待結算潛砂買潛航增益，或隨機移除 1 條現有突變。",
   "本週最深／歷史最深有里程碑獎勵（唔含融合核）。",
 ].join("\n");
 /** 深潛獨立編隊：5 寵（3 出戰 + 2 替補） */
@@ -5741,7 +5809,7 @@ export const ABYSS_CAMPFIRE_HEAL = 0.3;
 export const ABYSS_ALTAR_REVIVE_HP = 0.4;
 
 /**
- * 本週最深里程碑（每週重置；小量淵砂／材料，唔放大融合核）
+ * 本週最深里程碑（每週重置；小量潛砂／材料，唔放大融合核）
  * @type {{ depth: number, grit: number, materials?: Record<string, number>, label: string }[]}
  */
 export const ABYSS_WEEKLY_DEPTH_MILESTONES = [
@@ -5796,7 +5864,7 @@ export const ABYSS_MUTATIONS = {
 
 export const ABYSS_MUTATION_IDS = Object.keys(ABYSS_MUTATIONS);
 
-/** 行商本潛增益（花淵砂；只喺今趟深潛生效） */
+/** 行商本潛增益（花潛砂；只喺今趟深潛生效） */
 export const ABYSS_MERCHANT_BUFFS = {
   tide_blade: {
     id: "tide_blade",
@@ -5833,7 +5901,7 @@ export const ABYSS_EVENT_TYPES = {
   merchant: {
     id: "merchant",
     name: "行商",
-    desc: "花待結算淵砂買本潛增益，或隨機移除突變",
+    desc: "花待結算潛砂買本潛增益，或隨機移除突變",
   },
   altar: {
     id: "altar",
@@ -5879,11 +5947,11 @@ export const ABYSS_COSMETIC_BONUS_CAP = 0.05;
 export const ABYSS_INSURANCE_COST = 25;
 export const ABYSS_EGG_COST = 110;
 export const ABYSS_EGG_WEEKLY_LIMIT = 2;
-/** 淵核：永久小幅攻加成（有 cap；淵砂長期 sink） */
+/** 淵核：永久小幅攻加成（有 cap；潛砂長期 sink） */
 export const ABYSS_POWER_NODE_COST = 55;
 export const ABYSS_POWER_NODE_MAX = 8;
 export const ABYSS_POWER_NODE_ATK = 0.01;
-/** 淵砂兌換轉屬符（永久轉屬道具） */
+/** 潛砂兌換轉屬符（永久轉屬道具） */
 export const ABYSS_TIDE_SHIFT_COST = 35;
 /** 深潛每週兌換融合核（極罕） */
 export const ABYSS_FUSION_CORE_COST = 180;
@@ -5964,7 +6032,7 @@ export function rollAbyssFloorEvent(seed, depth) {
   const i1 = (h >>> 8) % pool.length;
   const second = pool[i1];
   const buffId = ABYSS_MERCHANT_BUFF_IDS[(h >>> 16) % ABYSS_MERCHANT_BUFF_IDS.length];
-  // 抽中行商 → 專屬 2 揀 1：買增益 或 移除現有突變（花待結算淵砂）
+  // 抽中行商 → 專屬 2 揀 1：買增益 或 移除現有突變（花待結算潛砂）
   if (first === "merchant" || second === "merchant") {
     const buff = ABYSS_MERCHANT_BUFFS[buffId];
     return {
@@ -5973,14 +6041,14 @@ export function rollAbyssFloorEvent(seed, depth) {
         {
           type: "merchant",
           name: "行商·增益",
-          desc: `【${buff.name}】${buff.desc}（待結算淵砂×${buff.cost}）`,
+          desc: `【${buff.name}】${buff.desc}（待結算潛砂×${buff.cost}）`,
           buffId: buff.id,
           cost: buff.cost,
         },
         {
           type: "merchant_purge",
           name: "行商·淨化",
-          desc: `隨機移除 1 條現有突變（待結算淵砂×${ABYSS_INSURANCE_COST}）`,
+          desc: `隨機移除 1 條現有突變（待結算潛砂×${ABYSS_INSURANCE_COST}）`,
           cost: ABYSS_INSURANCE_COST,
         },
       ],
@@ -6274,6 +6342,7 @@ export function bestiarySpeciesSummary(state) {
     return {
       speciesId: sp.id,
       speciesName: sp.name,
+      speciesNameEn: sp.nameEn || "",
       kind: sp.kind,
       breedOnly: !!sp.breedOnly,
       found,
@@ -7127,4 +7196,30 @@ export function countHybridBestiary(bestiary) {
     }
   }
   return n;
+}
+
+function rewriteLegacySpeciesCopy(text) {
+  let s = String(text || "");
+  const pairs = [];
+  for (const [id, disp] of Object.entries(SPECIES_DISPLAY)) {
+    for (const old of SPECIES_NAME_LEGACY[id] || []) {
+      if (old && old !== disp.name) pairs.push([old, disp.name]);
+    }
+  }
+  pairs.sort((a, b) => b[0].length - a[0].length);
+  for (const [old, next] of pairs) {
+    if (s.includes(old)) s = s.split(old).join(next);
+  }
+  return s;
+}
+
+for (const sk of Object.values(SKILLS)) {
+  if (sk.name) sk.name = rewriteLegacySpeciesCopy(sk.name);
+  if (sk.desc) sk.desc = rewriteLegacySpeciesCopy(sk.desc);
+}
+for (const list of [PATH_QUESTS, ACHIEVEMENTS, BREED_GOALS]) {
+  for (const q of list) {
+    if (q.name) q.name = rewriteLegacySpeciesCopy(q.name);
+    if (q.desc) q.desc = rewriteLegacySpeciesCopy(q.desc);
+  }
 }

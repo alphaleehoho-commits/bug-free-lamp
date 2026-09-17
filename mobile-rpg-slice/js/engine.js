@@ -656,7 +656,7 @@ function defaultState() {
     eggs: [starterEgg],
     pending: [],
     log: [
-      "你沿暗潮抵達荒廢育成窩，霧中擱著一枚霧傘蛋。",
+      "你潛入深域，霧中擱著一枚霧傘蛋。",
       "先孵化第一隻水母、育成掛機升級，再踏入秘境——育成窩會逐步解鎖。",
     ],
     lastTick: now,
@@ -3218,7 +3218,7 @@ export function tryBreakthrough(state) {
   void state;
   return {
     ok: false,
-    msg: "體階進階已廢止——變強改靠漂路推進、秘境解鎖品種，同繁殖血脈。",
+    msg: "體階突破已移除——變強改靠漂路推進、秘境解鎖品種，同繁殖血脈。",
   };
 }
 
@@ -6356,7 +6356,7 @@ export function claimLoginStreak(state, now = Date.now()) {
 
 function goalNavForBreakthroughItem(item) {
   if (item.kind === "qi" || item.id?.startsWith("cost_")) {
-    return { tab: "cultivate", sub: item.kind === "qi" ? "train" : "advance" };
+    return { tab: "cultivate", sub: "train" };
   }
   const label = item.label || "";
   if (label.includes("秘境") || label.includes("勝場") || label.includes("通關")) {
@@ -6374,7 +6374,7 @@ function goalNavForBreakthroughItem(item) {
   if (label.includes("契約")) {
     return { tab: "party", sub: "bond" };
   }
-  return { tab: "cultivate", sub: "advance" };
+  return { tab: "cultivate", sub: "train" };
 }
 
 function goalNavForPathQuest(q) {
@@ -7330,7 +7330,7 @@ function grantAbyssDepthMilestones(state, ad, depth) {
     if ((m.grit | 0) > 0) addMaterials(state, { [ABYSS_GRIT_ID]: m.grit | 0 });
     if (m.materials && typeof m.materials === "object") addMaterials(state, m.materials);
     const bits = [];
-    if ((m.grit | 0) > 0) bits.push(`淵砂×${m.grit}`);
+    if ((m.grit | 0) > 0) bits.push(`潛砂×${m.grit}`);
     for (const [mat, n] of Object.entries(m.materials || {})) {
       if ((n | 0) > 0) bits.push(`${MATERIALS[mat]?.name || mat}×${n}`);
     }
@@ -8033,7 +8033,7 @@ export function advanceAbyssDive(state, now = Date.now()) {
       pendingEvent,
       milestones,
       roster: abyssSquadRosterView(state, ad.run),
-      msg: `已通關第 ${nextDepth} 層 · 淵砂 +${gain}（待結算 ${ad.run.pendingGrit}）`,
+      msg: `已通關第 ${nextDepth} 層 · 潛砂 +${gain}（待結算 ${ad.run.pendingGrit}）`,
     };
   }
 
@@ -8043,7 +8043,7 @@ export function advanceAbyssDive(state, now = Date.now()) {
   const keep = Math.floor(pending * ABYSS_WIPE_KEEP_RATE);
   if (keep > 0) addMaterials(state, { [ABYSS_GRIT_ID]: keep });
   ad.run = null;
-  pushLog(state, `深潛第 ${nextDepth} 層挑戰失敗——帶回淵砂×${keep}（保底）。`);
+  pushLog(state, `深潛第 ${nextDepth} 層挑戰失敗——帶回潛砂×${keep}（保底）。`);
   return {
     ...combat,
     ok: true,
@@ -8061,8 +8061,8 @@ export function advanceAbyssDive(state, now = Date.now()) {
     diveBuffs: [],
     diveBuffList: [],
     msg: keep
-      ? `第 ${nextDepth} 層挑戰失敗 · 保底淵砂×${keep}`
-      : `第 ${nextDepth} 層挑戰失敗 · 未帶出淵砂`,
+      ? `第 ${nextDepth} 層挑戰失敗 · 保底潛砂×${keep}`
+      : `第 ${nextDepth} 層挑戰失敗 · 未帶出潛砂`,
   };
 }
 /** 層間整理：由編隊 5 寵重設 3 出戰 + 2 替補 */
@@ -8122,7 +8122,7 @@ export function resolveAbyssEvent(state, optionType, opts = {}, now = Date.now()
       return { ok: false, msg: "本潛已有此增益。" };
     }
     if (!spendAbyssPendingGrit(ad.run, buff.cost)) {
-      return { ok: false, msg: `待結算淵砂不足（需×${buff.cost}）。` };
+      return { ok: false, msg: `待結算潛砂不足（需×${buff.cost}）。` };
     }
     ad.run.diveBuffs = [...(ad.run.diveBuffs || []), buffId];
     if (buff.hpMult && buff.hpMult !== 1) {
@@ -8139,7 +8139,7 @@ export function resolveAbyssEvent(state, optionType, opts = {}, now = Date.now()
       }
     }
     ad.run.pendingEvent = null;
-    pushLog(state, `行商成交——【${buff.name}】（本潛 · 待結算淵砂 −${buff.cost}）。`);
+    pushLog(state, `行商成交——【${buff.name}】（本潛 · 待結算潛砂 −${buff.cost}）。`);
     return {
       ok: true,
       msg: `行商：獲得【${buff.name}】（本潛有效）。`,
@@ -8155,7 +8155,7 @@ export function resolveAbyssEvent(state, optionType, opts = {}, now = Date.now()
       return { ok: false, msg: "目前冇突變可移除。" };
     }
     if (!spendAbyssPendingGrit(ad.run, ABYSS_INSURANCE_COST)) {
-      return { ok: false, msg: `待結算淵砂不足（需×${ABYSS_INSURANCE_COST}）。` };
+      return { ok: false, msg: `待結算潛砂不足（需×${ABYSS_INSURANCE_COST}）。` };
     }
     const seed = `${ad.run.seed}:purge${ad.run.depth}:${mutIds.length}`;
     let h = 2166136261;
@@ -8169,7 +8169,7 @@ export function resolveAbyssEvent(state, optionType, opts = {}, now = Date.now()
     ad.run.pendingEvent = null;
     const mut = (typeof ABYSS_MUTATIONS !== "undefined" ? ABYSS_MUTATIONS[removed] : null)
       || { name: removed };
-    pushLog(state, `行商清霧——移除【${mut.name || removed}】（待結算淵砂 −${ABYSS_INSURANCE_COST}）。`);
+    pushLog(state, `行商清霧——移除【${mut.name || removed}】（待結算潛砂 −${ABYSS_INSURANCE_COST}）。`);
     return {
       ok: true,
       msg: `行商：移除突變【${mut.name || removed}】。`,
@@ -8218,15 +8218,15 @@ export function retreatAbyssDive(state, now = Date.now()) {
   const depth = ad.run.depth | 0;
   if (grit > 0) addMaterials(state, { [ABYSS_GRIT_ID]: grit });
   ad.run = null;
-  pushLog(state, `撤出深潛（已通第 ${depth} 層）· 淵砂×${grit}。`);
+  pushLog(state, `撤出深潛（已通第 ${depth} 層）· 潛砂×${grit}。`);
   return {
     ok: true,
     grit,
     depth,
     clearedDepth: depth,
     msg: depth
-      ? `撤退結算 · 已通第 ${depth} 層 · 淵砂×${grit}`
-      : `撤退結算 · 淵砂×${grit}`,
+      ? `撤退結算 · 已通第 ${depth} 層 · 潛砂×${grit}`
+      : `撤退結算 · 潛砂×${grit}`,
   };
 }
 
@@ -8274,7 +8274,7 @@ export function buyAbyssInsurance(state, now = Date.now()) {
     return { ok: false, msg: "已持有突變保險（每趟限 1）。" };
   }
   if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_INSURANCE_COST })) {
-    return { ok: false, msg: `需要淵砂×${ABYSS_INSURANCE_COST}。` };
+    return { ok: false, msg: `需要潛砂×${ABYSS_INSURANCE_COST}。` };
   }
   ad.insuranceCharges = 1;
   return { ok: true, msg: "已備突變保險——下場新突變可略過一次。" };
@@ -8289,7 +8289,7 @@ export function buyAbyssCosmetic(state, cosmeticId, now = Date.now()) {
   const ad = ensureAbyssDive(state, now);
   if (ad.cosmetics[cosmeticId]) return { ok: false, msg: "已擁有此外觀。" };
   if (!spendMaterials(state, { [ABYSS_GRIT_ID]: c.cost })) {
-    return { ok: false, msg: `需要淵砂×${c.cost}。` };
+    return { ok: false, msg: `需要潛砂×${c.cost}。` };
   }
   ad.cosmetics[cosmeticId] = true;
   pushLog(state, `解鎖深潛外觀【${c.name}】。`);
@@ -8307,7 +8307,7 @@ export function buyAbyssEgg(state, now = Date.now()) {
   if (!state.eggs) state.eggs = [];
   if (state.eggs.length >= EGG_CAP) return { ok: false, msg: "蛋庫已滿。" };
   if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_EGG_COST })) {
-    return { ok: false, msg: `需要淵砂×${ABYSS_EGG_COST}。` };
+    return { ok: false, msg: `需要潛砂×${ABYSS_EGG_COST}。` };
   }
   const egg = makeEgg("A", "abyss_dive", now);
   egg.desc = "深潛高階蛋 · 較易出稀有／血紋";
@@ -8327,12 +8327,12 @@ export function buyAbyssFusionCore(state, now = Date.now()) {
     return { ok: false, msg: `本週融合核已達上限（${ABYSS_FUSION_CORE_WEEKLY_LIMIT}）。` };
   }
   if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_FUSION_CORE_COST })) {
-    return { ok: false, msg: `需要淵砂×${ABYSS_FUSION_CORE_COST}。` };
+    return { ok: false, msg: `需要潛砂×${ABYSS_FUSION_CORE_COST}。` };
   }
   if (!state.materials) state.materials = emptyMaterials();
   state.materials.fusion_core = Math.floor(state.materials.fusion_core || 0) + 1;
   ad.fusionCoresBoughtWeek = (ad.fusionCoresBoughtWeek | 0) + 1;
-  pushLog(state, `淵砂兌換融合核×1（本週 ${ad.fusionCoresBoughtWeek}/${ABYSS_FUSION_CORE_WEEKLY_LIMIT}）。`);
+  pushLog(state, `潛砂兌換融合核×1（本週 ${ad.fusionCoresBoughtWeek}/${ABYSS_FUSION_CORE_WEEKLY_LIMIT}）。`);
   return {
     ok: true,
     msg: `獲得融合核×1（持有 ${state.materials.fusion_core}）`,
@@ -8340,7 +8340,7 @@ export function buyAbyssFusionCore(state, now = Date.now()) {
   };
 }
 
-/** 淵核：永久小幅攻擊加成（有 cap；淵砂長期 sink） */
+/** 淵核：永久小幅攻擊加成（有 cap；潛砂長期 sink） */
 export function buyAbyssPowerNode(state, now = Date.now()) {
   if (!abyssUnlocked(state)) {
     return { ok: false, msg: `深潛未解鎖（需漂路${ABYSS_UNLOCK_SPINE_STAGE}章）。` };
@@ -8351,7 +8351,7 @@ export function buyAbyssPowerNode(state, now = Date.now()) {
     return { ok: false, msg: `淵核已達上限（${ABYSS_POWER_NODE_MAX}）。` };
   }
   if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_POWER_NODE_COST })) {
-    return { ok: false, msg: `需要淵砂×${ABYSS_POWER_NODE_COST}。` };
+    return { ok: false, msg: `需要潛砂×${ABYSS_POWER_NODE_COST}。` };
   }
   ad.powerNodes = have + 1;
   const pct = Math.round(ad.powerNodes * ABYSS_POWER_NODE_ATK * 100);
@@ -8363,7 +8363,7 @@ export function buyAbyssPowerNode(state, now = Date.now()) {
   };
 }
 
-/** 淵砂兌換轉屬符（入背包道具；永久轉屬） */
+/** 潛砂兌換轉屬符（入背包道具；永久轉屬） */
 export function buyAbyssTideShiftCharm(state, now = Date.now()) {
   if (!abyssUnlocked(state)) {
     return { ok: false, msg: `深潛未解鎖（需漂路${ABYSS_UNLOCK_SPINE_STAGE}章）。` };
@@ -8371,10 +8371,10 @@ export function buyAbyssTideShiftCharm(state, now = Date.now()) {
   ensureAbyssDive(state, now);
   ensureItems(state);
   if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_TIDE_SHIFT_COST })) {
-    return { ok: false, msg: `需要淵砂×${ABYSS_TIDE_SHIFT_COST}。` };
+    return { ok: false, msg: `需要潛砂×${ABYSS_TIDE_SHIFT_COST}。` };
   }
   state.items.tide_shift_charm = Math.floor(state.items.tide_shift_charm || 0) + 1;
-  pushLog(state, `淵砂兌換轉屬符×1（持有 ${state.items.tide_shift_charm}）。`);
+  pushLog(state, `潛砂兌換轉屬符×1（持有 ${state.items.tide_shift_charm}）。`);
   return {
     ok: true,
     msg: `兌換轉屬符×1（持有 ${state.items.tide_shift_charm}）`,

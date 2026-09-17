@@ -477,9 +477,9 @@ assert(ABYSS_TIDE_SHIFT_COST >= 1, "abyss tide shift grit cost");
 {
   const pet = {
     uid: "shift1",
-    name: "水礁狐",
+    name: "水圓圓水母",
     speciesId: "reefox",
-    speciesName: "礁狐",
+    speciesName: "圓圓水母",
     elementId: "tide",
     elementName: "水",
     personalityId: "fierce",
@@ -495,7 +495,7 @@ assert(ABYSS_TIDE_SHIFT_COST >= 1, "abyss tide shift grit cost");
     uid: "shift2",
     elementId: "flame",
     elementName: "焰",
-    name: "焰礁狐",
+    name: "焰圓圓水母",
     genes: { species: "reefox", element: "flame", personality: "fierce" },
   };
   const shiftSt = {
@@ -676,7 +676,7 @@ const mistPet = {
   rarity: 1,
 };
 const tertPrev = breedPreview(tidePet, mistPet);
-assert(tertPrev?.tier === "tertiary" && tertPrev.hybridName === "淵君", "tertiary breed preview");
+assert(tertPrev?.tier === "tertiary" && tertPrev.hybridName === "宇宙星空水母", "tertiary breed preview");
 assert(tertPrev.outcomes.some((o) => o.kind === "tertiary"), "tertiary outcome row");
 
 let tertHit = false;
@@ -1877,7 +1877,7 @@ assert(gb && !gb.skillLevel, "gen2 awaken no skill bump");
 const foxA = { uid: "a", speciesId: "reefox", kind: "獸", elementId: "tide", personalityId: "sly", atk: 20, hp: 100, spd: 12, rarity: 1, generation: 1 };
 const finB = { uid: "b", speciesId: "glowfin", kind: "光", elementId: "flame", personalityId: "fierce", atk: 18, hp: 95, spd: 11, rarity: 0, generation: 1 };
 const prev = breedPreview(foxA, finB);
-assert(prev?.hybridName === "耀狐" && prev.outcomes.length >= 2, "breed preview hybrid");
+assert(prev?.hybridName === "手風琴折頁水母" && prev.outcomes.length >= 2, "breed preview hybrid");
 assert(prev.statPreview.atk[1] >= prev.statPreview.atk[0], "stat preview range");
 assert(prev.recipeOutcomes?.length >= 1, "breed preview lists recipe outcomes");
 assert(
@@ -1910,9 +1910,9 @@ assert(
 );
 
 const lineSt = {
-  pets: [{ uid: "c1", speciesId: "glintfox", name: "耀狐", bornFrom: ["a", "b"], generation: 2 }],
+  pets: [{ uid: "c1", speciesId: "glintfox", name: "手風琴折頁水母", bornFrom: ["a", "b"], generation: 2 }],
   ranch: [
-    { uid: "a", speciesId: "reefox", name: "礁狐", generation: 1, bornFrom: ["gp1", "gp2"] },
+    { uid: "a", speciesId: "reefox", name: "圓圓水母", generation: 1, bornFrom: ["gp1", "gp2"] },
     { uid: "gp1", speciesId: "tideling", name: "傘仔", generation: 0 },
   ],
 };
@@ -1973,7 +1973,7 @@ const qiSt = {
 };
 normalizeTutorial(qiSt);
 assert(tutorialQiReady(qiSt), "tutorial qi ready");
-assert(!isCultivateSubLocked(qiSt, "advance"), "advance unlocked when qi ready");
+assert(isCultivateSubLocked(qiSt, "advance"), "advance growth tab stays locked");
 
 assert((BREAKTHROUGH_GATES[1].checks || []).some((c) => c.type === "owned_pets"), "realm1 needs pet");
 const brGate1 = breakthroughView({ realm: 0, qi: 60, stones: 30, combatsWon: 0, pets: [], ranch: [makeStarterPet()] });
@@ -3318,7 +3318,29 @@ assert(!dataSrcBag.includes("潮屬") && !dataSrcBag.includes("幽屬"), "data n
 assert(ELEMENTS.tide.name === "水" && ELEMENTS.gloom.name === "雷", "element display 水/雷");
 assert(!uiSrc2.includes('tide: "潮"') && !uiSrc2.includes('gloom: "幽"'), "ui no hardcoded old element maps");
 assert(!uiSrc2.includes('{ id: "advance", label: "進階" }'), "ui advance tab removed");
-assert(uiSrc2.includes("進階（已廢）") || uiSrc2.includes("體階突破已移除"), "ui advance sunset copy");
+assert(!uiSrc2.includes("進階（已廢）"), "ui no advance growth sunset page");
+assert(!uiSrc2.includes('到「進階」成長'), "ui howto has no 進階 growth path");
+assert(uiSrc2.includes('title-kicker">Jelly Depths'), "ui title kicker Jelly Depths");
+assert(uiSrc2.includes('title-brand">水母深域'), "ui title brand 水母深域");
+assert(uiSrc2.includes("無限深海 · 收集你的漂漂"), "ui title sub");
+assert(!uiSrc2.includes('title-kicker">Void Tide'), "ui title no Void Tide");
+assert(!uiSrc2.includes('title-brand">暗潮'), "ui title no 暗潮");
+assert(uiSrc2.includes('data-brand="jelly-depths">漂漂'), "ui chrome brand 漂漂");
+assert(uiSrc2.includes('class="tag">Jelly Depths'), "ui chrome tag Jelly Depths");
+assert(uiSrc2.includes("漂漂 · 離線結算"), "ui notify prefix 漂漂");
+assert(!uiSrc2.includes("暗潮 · "), "ui no 暗潮 notify prefix");
+{
+  const tutSrc = readFileSync(join(__dir, "tutorial.js"), "utf8");
+  assert(!tutSrc.includes("打開「進階」"), "tutorial no 進階 growth CTA");
+  assert(tutSrc.includes("自由探索深域"), "tutorial complete uses 深域");
+  const htmlSrcBrand = readFileSync(join(__dir, "../index.html"), "utf8");
+  assert(htmlSrcBrand.includes("<title>水母深域</title>"), "index title 水母深域");
+  assert(!htmlSrcBrand.includes("暗潮"), "index html no 暗潮");
+  const manifestSrc = readFileSync(join(__dir, "../manifest.webmanifest"), "utf8");
+  assert(manifestSrc.includes('"name": "水母深域"'), "manifest name 水母深域");
+  assert(manifestSrc.includes('"short_name": "深域"'), "manifest short_name 深域");
+  assert(!manifestSrc.includes("暗潮"), "manifest no 暗潮");
+}
 assert(uiSrc2.includes("fantasy-frozen-banner"), "ui abyss frozen banner");
 assert(uiSrc2.includes("idleLootLayerHtml") || uiSrc2.includes("idle-loot-layer"), "ui idle loot theater");
 const cssSrc = readFileSync(join(__dir, "../css/style.css"), "utf8");
@@ -3685,6 +3707,8 @@ assert(cssSrc.includes("abyss-event-block"), "css abyss event block");
   const gloomEl = elementExplain("gloom");
   assert(gloomEl?.name === "雷" && gloomEl.beats === "水" && gloomEl.beatenBy === "岩", "gloom element explain");
   assert(gloomEl.blurb.includes("雷"), "gloom blurb");
+  assert(gloomEl.nameEn === "Thunder", "gloom player EN Thunder");
+  assert(el.nameEn === "Water", "tide player EN Water");
   assert(
     Object.values(ELEMENTS).map((e) => e.name).join("／") === "水／岩／焰／嵐／雷",
     "five element display names"
@@ -4205,7 +4229,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v139"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v140"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4214,10 +4238,17 @@ assert(
   !Object.values(SKILLS).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in skill display names"
 );
-assert(SPECIES.tidecarp.name === "泡鯉" && SPECIES.tideling.name === "傘獸", "renamed tide species");
-assert(SPECIES.tidehowl.name === "礁嗥" && SPECIES.tideprism.name === "霧稜", "renamed howl/prism");
+assert(SPECIES.tidecarp.name === "水滴水母" && SPECIES.tideling.name === "櫻花水母", "csv tide species display");
+assert(SPECIES.tidehowl.name === "甜甜圈水母" && SPECIES.tideprism.name === "夢境捕夢水母", "csv howl/prism display");
+assert(SPECIES.reefox.name === "圓圓水母" && SPECIES.reefox.nameEn === "Puff Jelly", "csv reefox Puff Jelly");
+assert(SPECIES.galevoid.name === "創世方塊水母" && SPECIES.galevoid.nameEn === "Genesis Jelly", "csv galevoid Genesis Jelly");
+assert(SPECIES.abyssreign.name === "宇宙星空水母" && SPECIES.abyssreign.nameEn === "Cosmic Jelly", "csv abyssreign Cosmic Jelly");
+assert(SPECIES_NAME_LEGACY.tidecarp.includes("潮鯉") && SPECIES_NAME_LEGACY.tidecarp.includes("泡鯉"), "legacy map keeps old carp names");
+assert(SPECIES_NAME_LEGACY.reefox?.includes("礁狐"), "legacy map keeps 礁狐");
+assert(SPECIES_NAME_LEGACY.abyssreign?.includes("淵君"), "legacy map keeps 淵君");
+assert(ELEMENTS.gloom.nameEn === "Thunder" && ELEMENTS.tide.nameEn === "Water", "element EN Thunder/Water");
+assert(MATERIALS.abyss_grit?.name === "潛砂", "player-facing 潛砂");
 assert(SKILLS.tide_spray.name === "泡濺" && SKILLS.tide_crush.name === "深壓", "renamed tide skills");
-assert(SPECIES_NAME_LEGACY.tidecarp.includes("潮鯉"), "legacy map keeps old carp name");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");
 assert(uiSrc2.includes("已滿") || uiSrc2.includes("capped"), "ui capped shop copy");
@@ -4340,6 +4371,10 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(JSON.stringify(RACE_SPECIES_IDS.slice(14, 40)) === JSON.stringify(breed), "races 15–40 breed");
   assert(JSON.stringify(RACE_SPECIES_IDS.slice(40)) === JSON.stringify(tert), "races 41–48 tertiary");
   assert(new Set(RACE_SPECIES_IDS).size === Object.keys(SPECIES).length, "race map covers SPECIES");
+  assert(RACE_SPECIES_IDS.every((id) => SPECIES[id]?.nameEn), "48 species have nameEn");
+  assert(SPECIES[RACE_SPECIES_IDS[0]].name === "圓圓水母", "race 1 圓圓水母");
+  assert(SPECIES[RACE_SPECIES_IDS[18]].nameEn === "Cat Ear Jelly", "race 19 Cat Ear Jelly");
+  assert(SPECIES[RACE_SPECIES_IDS[47]].nameEn === "Genesis Jelly", "race 48 Genesis Jelly");
   assert(raceIdForSpecies("reefox") === 1, "reefox is race 1");
   assert(raceIdForSpecies("galevoid") === 48, "galevoid is race 48");
   const url = resolvePetIdleSprite({ speciesId: "reefox", elementId: "tide", action: "Idle" });
