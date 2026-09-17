@@ -3331,6 +3331,7 @@ assert(uiSrc2.includes("深域 · 離線結算"), "ui notify prefix 深域");
 assert(!uiSrc2.includes("暗潮 · "), "ui no 暗潮 notify prefix");
 assert(!uiSrc2.includes("漂漂"), "ui no player-facing 漂漂");
 assert(!uiSrc2.includes("Jellykin"), "ui no Jellykin");
+assert(uiSrc2.includes("為水母改名"), "ui nickname field 為水母改名");
 {
   const tutSrc = readFileSync(join(__dir, "tutorial.js"), "utf8");
   assert(!tutSrc.includes("打開「進階」"), "tutorial no 進階 growth CTA");
@@ -4233,7 +4234,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v142"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v143"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"

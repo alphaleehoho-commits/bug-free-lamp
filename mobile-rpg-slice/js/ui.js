@@ -1396,7 +1396,7 @@ function fullscreenOverlayBlockReason() {
   if (offlineClaimOpen) return "離線收益";
   if (hatchClaimModal) return "孵化領取";
   if (temperOilConfirmModal) return "洗性格確認";
-  if (nickRenameModal) return "改名";
+  if (nickRenameModal) return "為水母改名";
   if (releaseModal) return "放生確認";
   if (condSheetOpen) return "敵情條件";
   if (bondSheetOpen) return "隊伍連結";
@@ -2975,12 +2975,12 @@ function nickRenameModalHtml() {
   const pet = d?.pet;
   const cur = pet?.nick || "";
   return `
-    <div class="combat-modal-overlay release-modal-overlay" data-live="nick-rename-modal" role="dialog" aria-label="改名">
+    <div class="combat-modal-overlay release-modal-overlay" data-live="nick-rename-modal" role="dialog" aria-label="為水母改名">
       <div class="combat-modal-card release-modal-card">
         <div class="combat-modal-scroll">
-          <h2>改名</h2>
+          <h2>為水母改名</h2>
           <p class="lead">${escapeHtml(pet ? displayPetName(pet) : "水母")}</p>
-          <label class="meta">暱稱
+          <label class="meta">水母暱稱
             <input type="text" maxlength="${NICK_MAX_LEN}" data-nick-modal-input value="${escapeHtml(cur)}" placeholder="${escapeHtml(pet?.name || "")}" />
           </label>
         </div>
@@ -4843,7 +4843,7 @@ function petsDetailView() {
       <div class="pet-detail-hero-text">
         <h2>
           <span class="pet-detail-name">${escapeHtml(displayPetName(pet))}</span>${petFlagTags(pet)}
-          <button type="button" class="pet-rename-pen" data-rename-pen="${escapeHtml(pet.uid)}" aria-label="改名" title="改名">✎</button>
+          <button type="button" class="pet-rename-pen" data-rename-pen="${escapeHtml(pet.uid)}" aria-label="為水母改名" title="為水母改名">✎</button>
         </h2>
         <p class="lead">${escapeHtml(loc)} · Lv.${lv}${fusBit}${
           SPECIES[pet.speciesId]?.nameEn ? ` · ${escapeHtml(SPECIES[pet.speciesId].nameEn)}` : ""
