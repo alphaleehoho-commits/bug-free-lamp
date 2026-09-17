@@ -6208,10 +6208,10 @@ export function useBreedTicket(state) {
   return { ok: true, msg: "交配已就緒，可領取蛋" };
 }
 
-/** 血統催化：縮短最早孕育中交配剩餘時間一半 */
+/** 譜催珠：縮短最早孕育中交配剩餘時間一半 */
 export function useBloodCatalyst(state) {
   if ((state.materials?.blood_catalyst || 0) < 1) {
-    return { ok: false, msg: "沒有血統催化。" };
+    return { ok: false, msg: "沒有譜催珠。" };
   }
   ensureBreedJobs(state);
   const now = Date.now();
@@ -6233,7 +6233,7 @@ export function useBloodCatalyst(state) {
       }
     }
   }
-  pushLog(state, `使用血統催化，【${job.names?.join("×") || "交配"}】孕育時間減半。`);
+  pushLog(state, `使用譜催珠，【${job.names?.join("×") || "交配"}】孕育時間減半。`);
   return { ok: true, msg: "孕育時間減半" };
 }
 
@@ -8340,7 +8340,7 @@ export function buyAbyssFusionCore(state, now = Date.now()) {
   };
 }
 
-/** 淵核：永久小幅攻擊加成（有 cap；潛砂長期 sink） */
+/** 潛核：永久小幅攻擊加成（有 cap；潛砂長期 sink） */
 export function buyAbyssPowerNode(state, now = Date.now()) {
   if (!abyssUnlocked(state)) {
     return { ok: false, msg: `深潛未解鎖（需漂路${ABYSS_UNLOCK_SPINE_STAGE}章）。` };
@@ -8348,17 +8348,17 @@ export function buyAbyssPowerNode(state, now = Date.now()) {
   const ad = ensureAbyssDive(state, now);
   const have = ad.powerNodes | 0;
   if (have >= ABYSS_POWER_NODE_MAX) {
-    return { ok: false, msg: `淵核已達上限（${ABYSS_POWER_NODE_MAX}）。` };
+    return { ok: false, msg: `潛核已達上限（${ABYSS_POWER_NODE_MAX}）。` };
   }
   if (!spendMaterials(state, { [ABYSS_GRIT_ID]: ABYSS_POWER_NODE_COST })) {
     return { ok: false, msg: `需要潛砂×${ABYSS_POWER_NODE_COST}。` };
   }
   ad.powerNodes = have + 1;
   const pct = Math.round(ad.powerNodes * ABYSS_POWER_NODE_ATK * 100);
-  pushLog(state, `點亮淵核 ${ad.powerNodes}/${ABYSS_POWER_NODE_MAX}（全隊攻擊 +${pct}%）。`);
+  pushLog(state, `點亮潛核 ${ad.powerNodes}/${ABYSS_POWER_NODE_MAX}（全隊攻擊 +${pct}%）。`);
   return {
     ok: true,
-    msg: `淵核 ${ad.powerNodes}/${ABYSS_POWER_NODE_MAX} · 攻擊 +${pct}%`,
+    msg: `潛核 ${ad.powerNodes}/${ABYSS_POWER_NODE_MAX} · 攻擊 +${pct}%`,
     powerNodes: ad.powerNodes,
   };
 }

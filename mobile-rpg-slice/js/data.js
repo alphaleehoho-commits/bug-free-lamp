@@ -1,7 +1,7 @@
 /** Data tables — 水母深域 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260917.2";
+export const APP_BUILD = "20260917.3";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
@@ -4666,7 +4666,7 @@ export const MATERIALS = {
   },
   void_grade_stone: {
     id: "void_grade_stone",
-    name: "虛階石",
+    name: "深層石",
     desc: "升級副材 · Lv50+ · 6-1 起掛機，6-19 滿產，後章不停",
     tier: "grade",
   },
@@ -4685,7 +4685,7 @@ export const MATERIALS = {
   },
   blood_catalyst: {
     id: "blood_catalyst",
-    name: "血統催化",
+    name: "譜催珠",
     desc: "將最早孕育中的交配剩餘時間減半",
     tier: "dungeon",
   },
@@ -4867,7 +4867,7 @@ export function emptyItemBonus() {
   return { ranchCap: 0, hatchSlots: 0 };
 }
 
-/** 升級副材帶（每 10 級；50+ 用虛階石撐無限） */
+/** 升級副材帶（每 10 級；50+ 用深層石撐無限） */
 export const UPGRADE_SUB_BANDS = [
   { minLv: 10, maxLv: 19, id: "earth_grade_stone" },
   { minLv: 20, maxLv: 29, id: "cloud_grade_stone" },
@@ -5924,7 +5924,7 @@ export const ABYSS_COSMETICS = {
   },
   abyss_crown: {
     id: "abyss_crown",
-    name: "淵冠影",
+    name: "潛冠紋",
     desc: "深潛外觀 · 全隊血量 +1.5%",
     cost: 40,
     atkMult: 1,
@@ -5947,7 +5947,7 @@ export const ABYSS_COSMETIC_BONUS_CAP = 0.05;
 export const ABYSS_INSURANCE_COST = 25;
 export const ABYSS_EGG_COST = 110;
 export const ABYSS_EGG_WEEKLY_LIMIT = 2;
-/** 淵核：永久小幅攻加成（有 cap；潛砂長期 sink） */
+/** 潛核：永久小幅攻加成（有 cap；潛砂長期 sink） */
 export const ABYSS_POWER_NODE_COST = 55;
 export const ABYSS_POWER_NODE_MAX = 8;
 export const ABYSS_POWER_NODE_ATK = 0.01;

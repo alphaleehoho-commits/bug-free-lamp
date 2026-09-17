@@ -4233,7 +4233,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v141"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v142"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4252,6 +4252,10 @@ assert(SPECIES_NAME_LEGACY.reefox?.includes("礁狐"), "legacy map keeps 礁狐"
 assert(SPECIES_NAME_LEGACY.abyssreign?.includes("淵君"), "legacy map keeps 淵君");
 assert(ELEMENTS.gloom.nameEn === "Thunder" && ELEMENTS.tide.nameEn === "Water", "element EN Thunder/Water");
 assert(MATERIALS.abyss_grit?.name === "潛砂", "player-facing 潛砂");
+assert(MATERIALS.void_grade_stone?.name === "深層石", "void grade 深層石");
+assert(MATERIALS.blood_catalyst?.name === "譜催珠", "blood catalyst 譜催珠");
+assert(uiSrc2.includes(">潛核<") || uiSrc2.includes("<strong>潛核</strong>"), "ui power node 潛核");
+assert(!uiSrc2.includes("淵核"), "ui no 淵核");
 assert(SKILLS.tide_spray.name === "泡濺" && SKILLS.tide_crush.name === "深壓", "renamed tide skills");
 assert(launchTide5.firstClearBonus?.seal_ember >= 1, "tide_5+ first clear seal ember");
 assert(uiSrc2.includes("data-abyss-power-node"), "ui power node buy");

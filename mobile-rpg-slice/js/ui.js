@@ -3560,7 +3560,7 @@ function cultivatePanel() {
       <p class="meta">漂路達${gritV.unlockSpineStage || ABYSS_UNLOCK_SPINE_STAGE}章（已通≥${dungeonDisplayName(
           ((gritV.unlockSpineStage || ABYSS_UNLOCK_SPINE_STAGE) - 1) * 20 + 1
         )}）後解鎖深潛與潛砂兌換。現 ${gritV.spineStage || 1}章。</p>
-      <p class="meta muted">預告貨物：淵核／突變保險／融合核（每週）／高階蛋／轉屬符／深潛外觀。</p>`;
+      <p class="meta muted">預告貨物：潛核／突變保險／融合核（每週）／高階蛋／轉屬符／深潛外觀。</p>`;
       } else {
       const cosRows = (gritV.cosmeticList || gritV.cosmeticsList || [])
         .map((c) => {
@@ -3585,7 +3585,7 @@ function cultivatePanel() {
         }</button>
       </li>
       <li class="card-row">
-        <div><strong>淵核</strong><span class="muted"> · 永久全隊攻擊 +${gritV.powerNodeAtkPct || 1}%／級 · ${gritV.powerNodes || 0}/${gritV.powerNodeMax || 0}</span></div>
+        <div><strong>潛核</strong><span class="muted"> · 永久全隊攻擊 +${gritV.powerNodeAtkPct || 1}%／級 · ${gritV.powerNodes || 0}/${gritV.powerNodeMax || 0}</span></div>
         <button type="button" class="secondary" data-abyss-power-node ${nodeMaxed ? "disabled" : ""}>${
           nodeMaxed ? "已滿" : `潛砂×${gritV.powerNodeCost}`
         }</button>
