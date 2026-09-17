@@ -420,6 +420,15 @@ import {
   LATE_TUTORIAL_STEPS,
   isPartySubLocked,
 } from "./tutorial.js";
+import {
+  ROAM_PATH,
+  ROAM_WALK_MS,
+  roamHeading,
+  roamBgShift,
+  roamAllyOffset,
+  roamFoeOffset,
+  roamLayoutFromUnits,
+} from "./train-roam.js";
 
 function assertNavKeepsTab(state, step, tab, panelSub = {}) {
   state.tutorial = { done: false, step, flags: state.tutorial?.flags || {} };
@@ -4370,6 +4379,7 @@ assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui sa
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
 assert(swSrc.includes("void-tide-pets-v146"), "sw cache bumped");
+assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4620,6 +4630,54 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(uiSrc2.includes("size: 28"), "roster card still uses JS size 28 (css 2.2×)");
   assert(uiSrc2.includes("size: 52"), "detail still uses JS size 52 (css 2.2×)");
   assert(cssSrc.includes("pet-art above name/bar"), "css stacked combat labels");
+}
+
+/* Pack: 練功 hang roam presentation (phase 1) — no combat number changes */
+{
+  assert(ROAM_PATH.length >= 4, "roam path has several headings");
+  assert(ROAM_WALK_MS >= 400 && ROAM_WALK_MS <= 1600, "roam walk is a short beat");
+  const faces = new Set(ROAM_PATH.map((_, i) => roamHeading(i).faceRight));
+  assert(faces.has(true) && faces.has(false), "path turns both left and right");
+  const h0 = roamHeading(0);
+  assert(h0.faceRight === h0.dx >= 0, "faceRight follows heading x");
+  const nFoes = 4;
+  for (let i = 0; i < nFoes; i += 1) {
+    const p = roamFoeOffset(i, nFoes, h0, i === 0 ? "boss" : "normal");
+    assert(p.x * h0.dx + p.y * h0.dy > 0, `foe ${i} spawns in facing half-plane`);
+    assert(p.y <= 36, "foe stays above HUD clearance");
+  }
+  const front = roamAllyOffset(1, "front", h0);
+  const rear = roamAllyOffset(1, "rear", h0);
+  assert(
+    front.x * h0.dx + front.y * h0.dy > rear.x * h0.dx + rear.y * h0.dy,
+    "ally front stands closer to foes"
+  );
+  const leftH = [...ROAM_PATH.keys()].map(roamHeading).find((h) => !h.faceRight);
+  assert(leftH && leftH.dx < 0, "has a leftward encounter heading");
+  const bg0 = roamBgShift(0, 1);
+  const bg1start = roamBgShift(1, 0);
+  const bg1 = roamBgShift(1, 1);
+  assert(bg0.x === bg1start.x && bg0.y === bg1start.y, "walk starts from previous camera");
+  assert(bg1.x !== bg0.x || bg1.y !== bg0.y, "camera follows after walk");
+  const laid = roamLayoutFromUnits({
+    allies: [{ slot: 0, lane: "rear" }, { slot: 1, lane: "front" }],
+    foes: [{ role: "normal" }, { role: "elite" }],
+    waveIndex: 2,
+    walkT: 1,
+  });
+  assert(laid.allies.length === 2 && laid.foes.length === 2, "layout maps units to pins");
+  assert(laid.heading.faceRight === roamHeading(2).faceRight, "layout heading matches wave");
+  assert(uiSrc2.includes("train-roam-stage"), "ui hang roam stage");
+  assert(uiSrc2.includes("playRoamWalk"), "ui walks between waves");
+  assert(uiSrc2.includes('classList.remove("pet-art--flip")'), "ui never flips enemy roam art");
+  assert(uiSrc2.includes("enterFoes"), "ui spawns next wave after walk");
+  assert(uiSrc2.includes("from \"./train-roam.js\""), "ui imports roam staging");
+  assert(cssSrc.includes("train-roam-stage"), "css roam stage");
+  assert(cssSrc.includes("aspect-ratio: 9 / 16") || cssSrc.includes("aspect-ratio:9 / 16"), "css portrait 9:16 plate");
+  assert(cssSrc.includes("object-fit: cover"), "css cover crop for scene art");
+  assert(cssSrc.includes("--roam-hud-clearance"), "css mid-lower HUD clearance");
+  assert(cssSrc.includes(".combat-roster:not(.is-roam)"), "css dungeon ally flip not forced on roam");
+  assert(!/createTrainIdleSession[\s\S]{0,200}maxRounds:\s*80/.test(readFileSync(join(__dir, "engine.js"), "utf8")), "idle maxRounds unchanged");
 }
 
 console.log("smoke-test ok");

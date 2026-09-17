@@ -1438,6 +1438,198 @@ button.flash-act {
   font-size: 0.62rem;
   opacity: 0.92;
 }
+
+/* —— 練功 hang roam：置中隊伍 + 波間走路 + 敵圍遭遇 —— */
+.train-idle-strip.is-roam {
+  position: relative;
+  padding: 0;
+  margin: 0.2rem 0 0.5rem;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--line) 55%, rgba(126, 168, 160, 0.22));
+  overflow: hidden;
+}
+.train-idle-strip.is-roam.is-stage-boss {
+  padding: 0;
+}
+.train-roam-stage {
+  position: relative;
+  width: 100%;
+  height: min(58svh, 32rem);
+  min-height: 18.5rem;
+  overflow: hidden;
+  --roam-anchor-y: 38%;
+  --roam-hud-clearance: 28%;
+  --bg-x: 0px;
+  --bg-y: 0px;
+  background: #1a2420;
+}
+.train-roam-bg,
+.train-roam-bg-art {
+  pointer-events: none;
+}
+.train-roam-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+}
+.train-roam-bg-art {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  aspect-ratio: 9 / 16;
+  height: 175%;
+  min-width: 175%;
+  object-fit: cover;
+  object-position: center;
+  background-size: cover;
+  background-position: center;
+  transform: translate(-50%, -50%) translate(var(--bg-x, 0px), var(--bg-y, 0px));
+  background-image:
+    radial-gradient(ellipse 42% 16% at 48% 44%, rgba(210, 186, 132, 0.42), transparent 70%),
+    radial-gradient(circle 18px at 22% 38%, rgba(90, 96, 72, 0.35), transparent 70%),
+    radial-gradient(circle 14px at 72% 52%, rgba(110, 100, 78, 0.32), transparent 70%),
+    radial-gradient(circle 10px at 40% 62%, rgba(70, 88, 64, 0.28), transparent 70%),
+    repeating-linear-gradient(16deg, rgba(120, 140, 90, 0.07) 0 10px, transparent 10px 26px),
+    linear-gradient(180deg, #c9d7bc 0%, #b7c6a6 34%, #c2b089 58%, #8fa07a 100%);
+}
+.train-roam-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(18, 28, 24, 0.28) 0%, transparent 16%),
+    linear-gradient(180deg, transparent 62%, rgba(12, 18, 16, 0.55) 100%);
+}
+.train-idle-roster.is-roam,
+.combat-roster.train-idle-roster.is-roam {
+  position: absolute;
+  inset: 0 0 var(--roam-hud-clearance) 0;
+  display: block;
+  margin: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.train-roam-pin {
+  position: absolute;
+  left: calc(50% + var(--roam-x, 0px));
+  top: calc(var(--roam-anchor-y) + var(--roam-y, 0px));
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+.train-roam-pin[data-side="ally"] { z-index: 3; }
+.train-roam-pin.is-roam-exit {
+  opacity: 0;
+  transition: opacity 0.32s ease;
+}
+.train-roam-pin.is-roam-enter {
+  animation: roamSpawnIn 0.48s ease-out both;
+}
+@keyframes roamSpawnIn {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+.train-roam-stage.is-walking .train-roam-pin[data-side="ally"] {
+  animation: roamWalkBob 0.34s ease-in-out infinite;
+}
+@keyframes roamWalkBob {
+  0%, 100% { margin-top: 0; }
+  50% { margin-top: -3px; }
+}
+.train-idle-roster.is-roam .combat-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.08rem;
+  min-width: 3.1rem;
+  padding: 0.08rem 0.12rem 0.14rem;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  grid-template-columns: none;
+}
+.train-idle-roster.is-roam .combat-unit .pet-art--combat {
+  grid-row: auto;
+}
+.train-idle-roster.is-roam .cu-name {
+  text-align: center;
+  max-width: 4.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  color: #f3f6ef;
+}
+.train-idle-roster.is-roam .cu-bar {
+  width: 2.4rem;
+  height: 0.22rem;
+  grid-column: auto;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 999px;
+}
+.train-roam-hud {
+  position: absolute;
+  left: 0.42rem;
+  right: 0.42rem;
+  z-index: 6;
+  pointer-events: none;
+}
+.train-roam-hud > * {
+  pointer-events: auto;
+}
+.train-roam-hud-top {
+  top: 0.4rem;
+}
+.train-roam-hud-mid {
+  bottom: 6%;
+}
+.train-idle-strip.is-roam .train-idle-head,
+.train-idle-strip.is-roam .train-qi-chip,
+.train-idle-strip.is-roam .train-floor-nav,
+.train-idle-strip.is-roam .train-boss-banner {
+  margin-bottom: 0.28rem;
+}
+.train-idle-strip.is-roam .train-qi-chip,
+.train-idle-strip.is-roam .train-idle-head,
+.train-idle-strip.is-roam .train-idle-meta,
+.train-idle-strip.is-roam .train-floor-nav {
+  background: rgba(12, 20, 18, 0.48);
+  border-radius: 8px;
+  padding: 0.28rem 0.4rem;
+  backdrop-filter: blur(6px);
+}
+.train-idle-strip.is-roam .train-floor-nav {
+  justify-content: space-between;
+  margin: 0.15rem 0 0.2rem;
+}
+.train-idle-strip.is-roam .train-idle-meta {
+  margin: 0 0 0.22rem;
+  color: #e8efe8;
+}
+.train-idle-strip.is-roam .train-idle-bar {
+  margin: 0;
+}
+.train-idle-strip.is-roam .idle-loot-layer {
+  position: absolute;
+  top: 5.6rem;
+  left: 0.5rem;
+  right: 0.5rem;
+  z-index: 7;
+  margin: 0;
+  justify-content: center;
+}
+.train-idle-strip.is-roam .train-idle-hit,
+.train-idle-strip.is-roam .train-idle-fail {
+  margin-left: 0.55rem;
+  margin-right: 0.55rem;
+}
 .train-idle-strip.is-hit-shake {
   animation: trainIdleShake 0.38s ease-out;
 }
@@ -3677,6 +3869,10 @@ button.pet-badge {
   animation: trainSheen 4.5s ease-in-out infinite;
   pointer-events: none;
 }
+.cultivate-panel .train-idle-strip.is-roam::after,
+.panel-train .train-idle-strip.is-roam::after {
+  display: none;
+}
 .train-idle-strip.is-stage-boss::after {
   animation: none;
   opacity: 0;
@@ -4442,6 +4638,11 @@ button.pet-badge {
     animation: none !important;
     opacity: 0.55;
   }
+
+  .train-roam-pin.is-roam-enter,
+  .train-roam-stage.is-walking .train-roam-pin[data-side="ally"] {
+    animation: none !important;
+  }
 }
 
 /* Combat roster: pet-art above name/bar so CJK labels aren't clipped to 1 glyph */
@@ -4468,9 +4669,10 @@ button.pet-badge {
 }
 
 /* Source Idle art faces LEFT. Player/left (ally) mirrors to face the foe.
-   Codex / pet detail / big portraits do not use pet-art--flip. */
+   Codex / pet detail / big portraits do not use pet-art--flip.
+   練功 roam 用 .pet-art--flip 跟敵群左右；唔好一律鏡射 data-side=ally。 */
 .pet-art.pet-art--flip,
-.combat-unit[data-side="ally"] .pet-art--combat {
+.combat-roster:not(.is-roam) .combat-unit[data-side="ally"] .pet-art--combat {
   transform: scaleX(-1);
 }
 
@@ -5047,6 +5249,34 @@ html.theme-light .train-idle-strip,
 html.theme-light .train-idle-title strong,
 #app.theme-light .train-idle-title strong {
   color: var(--text);
+}
+html.theme-light .train-idle-strip.is-roam,
+#app.theme-light .train-idle-strip.is-roam {
+  background: transparent;
+}
+html.theme-light .train-roam-stage,
+#app.theme-light .train-roam-stage {
+  background: #d7e0d0;
+}
+html.theme-light .train-idle-strip.is-roam .train-qi-chip,
+html.theme-light .train-idle-strip.is-roam .train-idle-head,
+html.theme-light .train-idle-strip.is-roam .train-idle-meta,
+html.theme-light .train-idle-strip.is-roam .train-floor-nav,
+#app.theme-light .train-idle-strip.is-roam .train-qi-chip,
+#app.theme-light .train-idle-strip.is-roam .train-idle-head,
+#app.theme-light .train-idle-strip.is-roam .train-idle-meta,
+#app.theme-light .train-idle-strip.is-roam .train-floor-nav {
+  background: rgba(255, 252, 246, 0.72);
+  color: var(--text);
+}
+html.theme-light .train-idle-strip.is-roam .train-idle-meta,
+#app.theme-light .train-idle-strip.is-roam .train-idle-meta {
+  color: var(--text);
+}
+html.theme-light .train-idle-roster.is-roam .cu-name,
+#app.theme-light .train-idle-roster.is-roam .cu-name {
+  color: #1c241c;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.7);
 }
 
 /* =============================================================================

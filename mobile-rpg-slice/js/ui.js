@@ -203,6 +203,12 @@ import {
 } from "./data.js";
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
+  ROAM_WALK_MS,
+  roamHeading,
+  roamBgShift,
+  roamLayoutFromUnits,
+} from "./train-roam.js";
+import {
   tutorialActive,
   tutorialBannerHtml,
   syncTutorialNavigation,
@@ -753,13 +759,20 @@ function playPetMotion(unitEl, kind) {
   window.setTimeout(() => el.classList.remove(cls), dur + 40);
 }
 
-function combatUnitArtHtml(u, dead = false, side = null) {
+function combatUnitArtHtml(u, dead = false, side = null, artOpts = null) {
   const elementId = u?.elementId || "tide";
   const speciesId = u?.speciesId || u?.species;
   const defeatCls = dead ? " pet-motion--defeated" : "";
   const unitSide =
     side === "foe" || side === "enemy" || u?.side === "foe" || u?.side === "enemy" ? "foe" : "ally";
   const flipCls = unitSide === "ally" ? " pet-art--flip" : "";
+  // 練功 roam：友軍按敵群左右翻面；敵立繪永遠向左，唔用 ally flip
+  const roamFlip =
+    artOpts && typeof artOpts.faceRight === "boolean"
+      ? unitSide === "ally" && artOpts.faceRight
+        ? " pet-art--flip"
+        : ""
+      : flipCls;
   if (speciesId && SPECIES[speciesId]) {
     return petArtFromPet(
       {
@@ -769,11 +782,11 @@ function combatUnitArtHtml(u, dead = false, side = null) {
         generation: u.generation ?? 0,
         name: u.rawName || u.name,
       },
-      { size: 22, showGen: false, className: `pet-art--combat${defeatCls}${flipCls}`, motion: !dead }
+      { size: 22, showGen: false, className: `pet-art--combat${defeatCls}${roamFlip}`, motion: !dead }
     );
   }
   const idleCls = dead ? "" : " pet-motion--idle";
-  return `<span class="pet-art${idleCls} pet-art--elem-${escapeHtml(elementId)} pet-art--combat${defeatCls}${flipCls}" data-elem="${escapeHtml(elementId)}" data-element="${escapeHtml(elementId)}" style="--art-size:22px">
+  return `<span class="pet-art${idleCls} pet-art--elem-${escapeHtml(elementId)} pet-art--combat${defeatCls}${roamFlip}" data-elem="${escapeHtml(elementId)}" data-element="${escapeHtml(elementId)}" style="--art-size:22px">
     <span class="pet-icon pet-icon-unknown" aria-hidden="true">◌</span>
   </span>`;
 }
@@ -3112,25 +3125,149 @@ function idleCombatResultLine(wrap) {
   return "";
 }
 
-function patchIdleRosterFromSession(wrap) {
+function idleRoamLayout(session, formationId, opts = {}) {
+  const allySlots = activePetMaxForState(state);
+  const allyPlace = formationAllyPlacement(
+    formationId,
+    (session?.allies || []).length,
+    allySlots
+  );
+  const allies = [];
+  for (const p of allyPlace) {
+    if (p.unitIndex == null) continue;
+    const unit = session.allies[p.unitIndex];
+    if (!unit) continue;
+    allies.push({ unit, slot: p.slot, lane: p.lane, role: unit.role });
+  }
+  const foes = (opts.hideFoes ? [] : session?.foes || []).map((unit) => ({
+    unit,
+    role: unit.role,
+  }));
+  return roamLayoutFromUnits({
+    allies,
+    foes,
+    waveIndex: session?.waveIndex || 0,
+    walkT: opts.walkT == null ? 1 : opts.walkT,
+  });
+}
+
+function idleRoamPinHtml(item, faceRight, enter = false) {
+  const u = item.unit;
+  const side = u.side === "foe" || u.side === "enemy" ? "foe" : "ally";
+  const enterCls = enter && side === "foe" ? " is-roam-enter" : "";
+  return `<div class="train-roam-pin${enterCls}" data-side="${side}" data-roam-uid="${escapeHtml(
+    u.uid || ""
+  )}" data-slot="${item.slot ?? 0}" data-lane="${item.lane || "front"}" style="--roam-x:${Number(item.x || 0).toFixed(
+    1
+  )}px;--roam-y:${Number(item.y || 0).toFixed(1)}px">${idleUnitBarHtml(
+    u,
+    item.slot ?? 0,
+    item.lane || "front",
+    { faceRight }
+  )}</div>`;
+}
+
+function syncIdleRoamStage(wrap, opts = {}) {
+  const stage = document.querySelector("[data-live=train-roam-stage]");
+  if (!stage || !wrap?.session) return;
+  const walkT = opts.walkT == null ? wrap.roamWalkT ?? 1 : opts.walkT;
+  const heading = roamHeading(wrap.session.waveIndex || 0);
+  const bg = roamBgShift(wrap.session.waveIndex || 0, walkT);
+  stage.dataset.face = heading.faceRight ? "right" : "left";
+  stage.style.setProperty("--bg-x", `${bg.x.toFixed(1)}px`);
+  stage.style.setProperty("--bg-y", `${bg.y.toFixed(1)}px`);
+  const field = stage.querySelector("[data-live=train-idle-roster]");
+  if (!field) return;
+  field.querySelectorAll('.train-roam-pin[data-side="ally"] .pet-art--combat').forEach((art) => {
+    art.classList.toggle("pet-art--flip", heading.faceRight);
+  });
+  field.querySelectorAll('.train-roam-pin[data-side="foe"] .pet-art--combat').forEach((art) => {
+    art.classList.remove("pet-art--flip");
+  });
+}
+
+function patchIdleRosterFromSession(wrap, opts = {}) {
   const roster = document.querySelector("[data-live=train-idle-roster]");
   if (!roster || !wrap?.session) return;
   const s = wrap.session;
   const formationId = wrap.formationId || currentFormationId();
-  roster.classList.add("combat-formation");
+  const walkT = opts.walkT == null ? wrap.roamWalkT ?? 1 : opts.walkT;
+  roster.classList.add("combat-roster", "train-idle-roster", "is-roam");
+  roster.classList.remove("combat-formation");
   roster.dataset.formation = formationId;
-  roster.innerHTML = `<div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
-    s.allies,
-    "ally",
-    idleUnitBarHtml,
-    formationId
-  )}</div>
-    <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
-      s.foes,
-      "foe",
-      idleUnitBarHtml,
-      formationId
-    )}</div>`;
+  const layout = idleRoamLayout(s, formationId, { walkT, hideFoes: !!opts.hideFoes });
+  const wantEnter = !!opts.enterFoes;
+  const existing = [...roster.querySelectorAll(".combat-unit[data-uid]")].map((el) => el.dataset.uid);
+  const nextIds = [
+    ...layout.allies.map((a) => a.unit.uid),
+    ...layout.foes.map((f) => f.unit.uid),
+  ];
+  const same =
+    !wantEnter &&
+    existing.length === nextIds.length &&
+    nextIds.every((id) => existing.includes(id));
+  if (same) {
+    for (const item of [...layout.allies, ...layout.foes]) {
+      const unitEl = findCombatUnitEl(roster, item.unit.uid);
+      if (!unitEl) continue;
+      unitEl.classList.toggle("is-down", item.unit.hp <= 0);
+      const bar = unitEl.querySelector(".cu-bar i");
+      if (bar) {
+        const pct =
+          item.unit.maxHp > 0 ? Math.max(0, Math.round((item.unit.hp / item.unit.maxHp) * 100)) : 0;
+        bar.style.width = `${pct}%`;
+      }
+      const pin = unitEl.closest(".train-roam-pin");
+      if (pin) {
+        pin.style.setProperty("--roam-x", `${item.x.toFixed(1)}px`);
+        pin.style.setProperty("--roam-y", `${item.y.toFixed(1)}px`);
+      }
+    }
+  } else {
+    const faceRight = layout.heading.faceRight;
+    roster.innerHTML = [...layout.allies.map((a) => idleRoamPinHtml(a, faceRight, false)), ...layout.foes.map((f) => idleRoamPinHtml(f, faceRight, wantEnter))].join("");
+    roster.dataset.roamWave = String(s.waveIndex || 0);
+  }
+  syncIdleRoamStage(wrap, { walkT, hideFoes: !!opts.hideFoes });
+}
+
+async function playRoamWalk(wrap) {
+  if (!wrap?.session) return;
+  if (typeof document !== "undefined" && document.hidden) return;
+  const stage = document.querySelector("[data-live=train-roam-stage]");
+  const roster = document.querySelector("[data-live=train-idle-roster]");
+  if (!stage || !roster) return;
+  const token = { cancelled: false, timers: [] };
+  idleAnimToken = token;
+  const reduced =
+    typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  const dur = reduced ? 0 : ROAM_WALK_MS;
+  stage.classList.add("is-walking");
+  roster.querySelectorAll('.train-roam-pin[data-side="foe"]').forEach((el) => {
+    el.classList.add("is-roam-exit");
+  });
+  wrap.roamWalkT = 0;
+  syncIdleRoamStage(wrap, { walkT: 0, hideFoes: true });
+  if (dur > 0) {
+    const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
+    await new Promise((resolve) => {
+      const tick = (now) => {
+        if (token.cancelled) {
+          resolve();
+          return;
+        }
+        const p = Math.min(1, (now - t0) / dur);
+        wrap.roamWalkT = p;
+        syncIdleRoamStage(wrap, { walkT: p, hideFoes: true });
+        if (p < 1) requestAnimationFrame(tick);
+        else resolve();
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+  wrap.roamWalkT = 1;
+  stage.classList.remove("is-walking");
+  if (idleAnimToken === token) idleAnimToken = null;
 }
 
 async function playIdleCombatEvents(events) {
@@ -3195,6 +3332,7 @@ function tickIdleCombat({ background = false } = {}) {
   let lastResult = null;
   let playEvents = null;
   let needRosterPatch = false;
+  let playWalk = false;
   let autoAdvanceMsg = null;
 
   for (let i = 0; i < steps; i++) {
@@ -3236,6 +3374,9 @@ function tickIdleCombat({ background = false } = {}) {
     if (result.status === "wave" || result.status === "round") {
       needRosterPatch = true;
     }
+    if (result.status === "wave" && !background && steps === 1) {
+      playWalk = true;
+    }
 
     if (result.status === "won") {
       const marked = markTrainIdleClearReady(state, wrap.session);
@@ -3272,10 +3413,19 @@ function tickIdleCombat({ background = false } = {}) {
   if (playEvents) {
     idleAnimBusy = true;
     playIdleCombatEvents(playEvents)
+      .then(() => (playWalk ? playRoamWalk(idleCombat) : null))
       .catch(() => {})
       .finally(() => {
         idleAnimBusy = false;
-        if (idleCombat?.session) patchIdleRosterFromSession(idleCombat);
+        if (idleCombat?.session) patchIdleRosterFromSession(idleCombat, { enterFoes: playWalk });
+      });
+  } else if (playWalk) {
+    idleAnimBusy = true;
+    playRoamWalk(idleCombat)
+      .catch(() => {})
+      .finally(() => {
+        idleAnimBusy = false;
+        if (idleCombat?.session) patchIdleRosterFromSession(idleCombat, { enterFoes: true });
       });
   } else if (!background && (needRosterPatch || lastResult)) {
     patchIdleRosterFromSession(wrap);
@@ -3293,7 +3443,7 @@ function emptyIdleFx() {
   };
 }
 
-function idleUnitBarHtml(u, slotIndex = 0, lane = "front") {
+function idleUnitBarHtml(u, slotIndex = 0, lane = "front", artOpts = null) {
   const pct = u.maxHp > 0 ? Math.max(0, Math.round((u.hp / u.maxHp) * 100)) : 0;
   const dead = u.hp <= 0;
   const doubleAct = u.role === "boss" || (u.actions || 1) > 1;
@@ -3306,7 +3456,7 @@ function idleUnitBarHtml(u, slotIndex = 0, lane = "front") {
   return `<div class="combat-unit${dead ? " is-down" : ""}${
     doubleAct && !dead ? " is-boss-act" : ""
   }" data-uid="${escapeHtml(u.uid || "")}" data-side="${side}" data-slot="${slot}" data-lane="${laneAttr}" data-element="${escapeHtml(u.elementId || "")}">
-    ${combatUnitArtHtml(u, dead, side)}
+    ${combatUnitArtHtml(u, dead, side, artOpts)}
     ${combatUnitNameHtml(u, `${actBadge}${role}`)}
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
@@ -3388,26 +3538,32 @@ function trainIdleStripHtml() {
       ? " is-fail"
       : " is-clear"
     : "";
-  return `<div class="train-idle-strip${bossCls}" data-live="train-idle">
-    ${head}
-    ${qiChip}
-    ${floorNav}
-    ${bossBanner}
-    <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
-    <div class="bar combat-bar train-idle-bar"><i data-live="train-idle-bar" style="width:${pct}%"></i></div>
-    <div class="combat-roster train-idle-roster combat-formation" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}" style="--formation-rows:${activePetMaxForState(state)}">
-      <div class="combat-side allies combat-formation-side" data-side="ally">${formationSideHtml(
-        s.allies,
-        "ally",
-        idleUnitBarHtml,
-        formationId
-      )}</div>
-      <div class="combat-side foes combat-formation-side" data-side="foe">${formationSideHtml(
-        s.foes,
-        "foe",
-        idleUnitBarHtml,
-        formationId
-      )}</div>
+  const layout = idleRoamLayout(s, formationId, { walkT: wrap.roamWalkT ?? 1 });
+  const faceRight = layout.heading.faceRight;
+  const pins = [
+    ...layout.allies.map((a) => idleRoamPinHtml(a, faceRight, false)),
+    ...layout.foes.map((f) => idleRoamPinHtml(f, faceRight, false)),
+  ].join("");
+  const bgX = layout.bg.x.toFixed(1);
+  const bgY = layout.bg.y.toFixed(1);
+  return `<div class="train-idle-strip is-roam${bossCls}" data-live="train-idle">
+    ${idleLootLayerHtml()}
+    <div class="train-roam-stage" data-live="train-roam-stage" data-face="${faceRight ? "right" : "left"}" style="--bg-x:${bgX}px;--bg-y:${bgY}px">
+      <div class="train-roam-bg" aria-hidden="true"><div class="train-roam-bg-art"></div></div>
+      <div class="train-roam-vignette" aria-hidden="true"></div>
+      <div class="combat-roster train-idle-roster is-roam" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}" data-roam-wave="${s.waveIndex || 0}">
+        ${pins}
+      </div>
+      <div class="train-roam-hud train-roam-hud-top">
+        ${head}
+        ${qiChip}
+        ${floorNav}
+        ${bossBanner}
+      </div>
+      <div class="train-roam-hud train-roam-hud-mid">
+        <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
+        <div class="bar combat-bar train-idle-bar"><i data-live="train-idle-bar" style="width:${pct}%"></i></div>
+      </div>
     </div>
     <p class="train-idle-hit${resultCls}" data-live="train-idle-hit"${resultLine ? "" : " hidden"}>${escapeHtml(resultLine)}</p>
     ${idleFailCardHtml(failAdvice)}
