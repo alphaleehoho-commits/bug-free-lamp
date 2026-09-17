@@ -2396,6 +2396,9 @@ const claimSt = {
 const allRes = claimAllDailies(claimSt);
 assert(allRes.ok && allRes.claimed === DAILY_QUESTS.length, "claim all dailies");
 
+const __dir = dirname(fileURLToPath(import.meta.url));
+const uiSrc = readFileSync(join(__dir, "ui.js"), "utf8");
+assert(uiSrc.includes("data-summon"), "ui summon bind");
 assert(uiSrc.includes("已發現配方"), "recipe board title 已發現配方");
 assert(uiSrc.includes("discoveredBreedRecipes"), "ui lists discovered recipes only");
 assert(uiSrc.includes("尚未發現配方"), "recipe empty until discoveries");
