@@ -4734,6 +4734,18 @@ button.pet-badge {
   object-position: 42% 48%;
 }
 
+/* Hang roam sample foes / fallback jelly: show full keyed silhouette, no Idle-sheet crop. */
+.train-idle-roster.is-roam .pet-art--roam-placeholder .pet-icon--sprite {
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+}
+.train-idle-roster.is-roam .pet-art--roam-placeholder img.pet-icon-sprite {
+  object-fit: contain;
+  object-position: center;
+  transform: none;
+}
+
 /* =============================================================================
    buttons-v1.css — DROP-IN chrome polish for mobile-rpg-slice/css/style.css
    Game: 「暗潮 · 水母漂漂」

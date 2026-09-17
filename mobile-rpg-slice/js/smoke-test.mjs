@@ -429,7 +429,11 @@ import {
   roamAllyOffset,
   roamFoeOffset,
   roamLayoutFromUnits,
+  roamFoePlaceholderSrc,
   ROAM_IDLE_SCENE_SRC,
+  ROAM_ALLY_PLACEHOLDER_SRC,
+  ROAM_FOE_FOAM_SRC,
+  ROAM_FOE_CRAB_SRC,
 } from "./train-roam.js";
 
 function assertNavKeepsTab(state, step, tab, panelSub = {}) {
@@ -4380,9 +4384,11 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v147"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v148"), "sw cache bumped");
 assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
 assert(swSrc.includes("bg_idle_home_reef_1080x1920.webp"), "sw caches idle reef scene");
+assert(swSrc.includes("enemy_foamblob_idle.png"), "sw caches foam foe placeholder");
+assert(swSrc.includes("enemy_reefcrab_idle.png"), "sw caches crab foe placeholder");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4686,7 +4692,18 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("panel-stage--cultivate-idle"), "css B1 idle scene class");
   assert(existsSync(join(dirname(__dir), "assets/bg/scenes/bg_idle_home_reef_1080x1920.webp")), "idle reef scene asset");
   assert(existsSync(join(dirname(__dir), "assets/bg/scenes/bg_dungeon_tide_path_1080x1920.webp")), "dungeon path scene asset");
+  assert(existsSync(join(dirname(__dir), "assets/allies/ally_jelly_idle.png")), "ally jelly placeholder");
+  assert(existsSync(join(dirname(__dir), "assets/enemies/enemy_foamblob_idle.png")), "foam foe placeholder");
+  assert(existsSync(join(dirname(__dir), "assets/enemies/enemy_reefcrab_idle.png")), "crab foe placeholder");
   assert(ROAM_IDLE_SCENE_SRC.includes("bg_idle_home_reef"), "scene src points at idle reef");
+  assert(ROAM_FOE_FOAM_SRC.includes("enemy_foamblob_idle"), "foam src is B2 idle path");
+  assert(ROAM_FOE_CRAB_SRC.includes("enemy_reefcrab_idle"), "crab src is B2 idle path");
+  assert(ROAM_ALLY_PLACEHOLDER_SRC.includes("ally_jelly_idle"), "ally fallback is jelly placeholder");
+  assert(roamFoePlaceholderSrc({ role: "normal" }, 0).includes("foamblob"), "normal even foe uses foam");
+  assert(roamFoePlaceholderSrc({ role: "elite" }, 0).includes("reefcrab"), "elite foe uses crab");
+  assert(uiSrc2.includes("placeholderSrc"), "ui hang pins pass placeholder art");
+  assert(uiSrc2.includes("roamFoePlaceholderSrc"), "ui wires roam foe sprites");
+  assert(cssSrc.includes("pet-art--roam-placeholder"), "css roam placeholder contain crop");
   assert(!/createTrainIdleSession[\s\S]{0,200}maxRounds:\s*80/.test(readFileSync(join(__dir, "engine.js"), "utf8")), "idle maxRounds unchanged");
 }
 

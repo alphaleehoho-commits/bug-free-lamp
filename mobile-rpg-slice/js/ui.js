@@ -207,6 +207,8 @@ import {
   roamBgShift,
   roamLayoutFromUnits,
   ROAM_IDLE_SCENE_SRC,
+  ROAM_ALLY_PLACEHOLDER_SRC,
+  roamFoePlaceholderSrc,
 } from "./train-roam.js";
 import {
   tutorialActive,
@@ -773,6 +775,19 @@ function combatUnitArtHtml(u, dead = false, side = null, artOpts = null) {
         ? " pet-art--flip"
         : ""
       : flipCls;
+  const placeholderSrc =
+    artOpts && typeof artOpts.placeholderSrc === "string" ? artOpts.placeholderSrc : "";
+  if (placeholderSrc) {
+    return `<span class="pet-art pet-motion--idle pet-art--elem-${escapeHtml(
+      elementId
+    )} pet-art--combat pet-art--roam-placeholder${defeatCls}${roamFlip}" data-elem="${escapeHtml(
+      elementId
+    )}" data-element="${escapeHtml(elementId)}" style="--art-size:22px">
+    <span class="pet-icon pet-icon--sprite" aria-hidden="true" style="--icon-size:22px">
+      <img class="pet-icon-sprite" src="${escapeHtml(placeholderSrc)}" alt="" width="22" height="22" draggable="false" />
+    </span>
+  </span>`;
+  }
   if (speciesId && SPECIES[speciesId]) {
     return petArtFromPet(
       {
@@ -3151,10 +3166,13 @@ function idleRoamLayout(session, formationId, opts = {}) {
   });
 }
 
-function idleRoamPinHtml(item, faceRight, enter = false) {
+function idleRoamPinHtml(item, faceRight, enter = false, pinIndex = 0) {
   const u = item.unit;
   const side = u.side === "foe" || u.side === "enemy" ? "foe" : "ally";
   const enterCls = enter && side === "foe" ? " is-roam-enter" : "";
+  const artOpts = { faceRight };
+  if (side === "foe") artOpts.placeholderSrc = roamFoePlaceholderSrc(u, pinIndex);
+  else if (!(u?.speciesId && SPECIES[u.speciesId])) artOpts.placeholderSrc = ROAM_ALLY_PLACEHOLDER_SRC;
   return `<div class="train-roam-pin${enterCls}" data-side="${side}" data-roam-uid="${escapeHtml(
     u.uid || ""
   )}" data-slot="${item.slot ?? 0}" data-lane="${item.lane || "front"}" style="--roam-x:${Number(item.x || 0).toFixed(
@@ -3163,7 +3181,7 @@ function idleRoamPinHtml(item, faceRight, enter = false) {
     u,
     item.slot ?? 0,
     item.lane || "front",
-    { faceRight }
+    artOpts
   )}</div>`;
 }
 
@@ -3224,7 +3242,10 @@ function patchIdleRosterFromSession(wrap, opts = {}) {
     }
   } else {
     const faceRight = layout.heading.faceRight;
-    roster.innerHTML = [...layout.allies.map((a) => idleRoamPinHtml(a, faceRight, false)), ...layout.foes.map((f) => idleRoamPinHtml(f, faceRight, wantEnter))].join("");
+    roster.innerHTML = [
+      ...layout.allies.map((a) => idleRoamPinHtml(a, faceRight, false)),
+      ...layout.foes.map((f, i) => idleRoamPinHtml(f, faceRight, wantEnter, i)),
+    ].join("");
     roster.dataset.roamWave = String(s.waveIndex || 0);
   }
   syncIdleRoamStage(wrap, { walkT, hideFoes: !!opts.hideFoes });
@@ -3537,7 +3558,7 @@ function trainIdleStripHtml(rateSummary = "") {
   const faceRight = true;
   const pins = [
     ...layout.allies.map((a) => idleRoamPinHtml(a, faceRight, false)),
-    ...layout.foes.map((f) => idleRoamPinHtml(f, faceRight, false)),
+    ...layout.foes.map((f, i) => idleRoamPinHtml(f, faceRight, false, i)),
   ].join("");
   const bgX = layout.bg.x.toFixed(1);
   const bgY = layout.bg.y.toFixed(1);

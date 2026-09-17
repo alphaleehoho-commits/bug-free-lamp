@@ -103,3 +103,14 @@ export function roamLayoutFromUnits(spec = {}) {
 }
 
 export const ROAM_IDLE_SCENE_SRC = "./assets/bg/scenes/bg_idle_home_reef_1080x1920.webp";
+export const ROAM_DUNGEON_SCENE_SRC = "./assets/bg/scenes/bg_dungeon_tide_path_1080x1920.webp";
+export const ROAM_ALLY_PLACEHOLDER_SRC = "./assets/allies/ally_jelly_idle.png";
+export const ROAM_FOE_FOAM_SRC = "./assets/enemies/enemy_foamblob_idle.png";
+export const ROAM_FOE_CRAB_SRC = "./assets/enemies/enemy_reefcrab_idle.png";
+
+/** Hang foes: foam = normal even, crab = odd / elite / boss. Dungeon roster 唔用。 */
+export function roamFoePlaceholderSrc(unit, index = 0) {
+  const role = unit?.role || "normal";
+  if (role === "elite" || role === "boss") return ROAM_FOE_CRAB_SRC;
+  return (index | 0) % 2 === 1 ? ROAM_FOE_CRAB_SRC : ROAM_FOE_FOAM_SRC;
+}
