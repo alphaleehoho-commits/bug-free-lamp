@@ -37,6 +37,8 @@ import {
   EGG_CAP,
   makeBreedEgg,
   genEggPrefix,
+  breedEggTitle,
+  stripKindFromEggTitle,
   BOND_FAIL_RATE_BONUS,
   BOND_FAIL_RATE_CAP,
   FORGE_SCRAP_COST,
@@ -105,6 +107,7 @@ import {
   RANCH_IDLE_BASE,
   petGeneration,
   genLabel,
+  petSpeciesDisplayName,
   childGenerationOdds,
   hybridRecipeForKinds,
   hybridRecipesForKinds,
@@ -847,12 +850,13 @@ function normalizeEggs(list) {
           const gen = Math.max(1, base.genes.generation | 0);
           const sp = SPECIES[base.genes.species];
           const kind = sp?.kind || base.kind || "獸";
-          const prefix = genEggPrefix(gen);
           base.generation = gen;
           base.kind = kind;
-          base.name = base.name || `${prefix}${kind}蛋`;
-          base.desc = base.desc || `可以孵化出${prefix}${kind}水母`;
+          base.name = base.name || breedEggTitle(gen);
+          base.desc = base.desc || `可以孵化出${genEggPrefix(gen)}水母`;
         }
+        if (base.name) base.name = stripKindFromEggTitle(base.name) || base.name;
+        if (base.desc) base.desc = stripKindFromEggTitle(base.desc);
       }
       return base;
     });
@@ -2920,7 +2924,7 @@ export function registerBestiary(state, pet) {
   const blood = pet.bloodlineName && pet.bloodlineName !== "無紋" ? `·${pet.bloodlineName}` : "";
   pushLog(
     state,
-    `圖鑑登錄：${pet.elementName || ""}${pet.speciesName || pet.name}${blood}。`
+    `圖鑑登錄：${displayPetName(pet)}${blood}。`
   );
   checkAchievements(state);
   return true;
@@ -3496,11 +3500,11 @@ export function buyShopOffer(state, offerId) {
   registerBestiary(state, pet);
   pushLog(
     state,
-    `商肆購入【${pet.name}】（${pet.kind}·${pet.elementName}）直入水母池，耗 ${payCost} 泡泡晶。`
+    `商肆購入【${displayPetName(pet)}】（${pet.elementName}）直入水母池，耗 ${payCost} 泡泡晶。`
   );
   checkAchievements(state);
   advanceTutorialCascade(state);
-  return { ok: true, msg: `購入 ${pet.name}（已入水母池，可派出戰）` };
+  return { ok: true, msg: `購入 ${displayPetName(pet)}（已入水母池，可派出戰）` };
 }
 
 export function setTactics(state, tacticId) {
@@ -4107,15 +4111,16 @@ export function eggsView(state, now = Date.now()) {
     const breedDesc =
       e.source === "breed"
         ? e.desc ||
-          (e.generation && e.kind
-            ? `可以孵化出${genEggPrefix(e.generation)}${e.kind}水母`
+          (e.generation
+            ? `可以孵化出${genEggPrefix(e.generation)}水母`
             : "")
         : "";
+    const rawName = e.name || t.name;
     return {
       ...e,
-      name: e.name || t.name,
+      name: stripKindFromEggTitle(rawName) || rawName,
       label: e.source === "breed" ? genLabel(e.generation || 1) : t.label,
-      desc: breedDesc || e.desc || t.desc,
+      desc: stripKindFromEggTitle(breedDesc || e.desc || t.desc) || breedDesc || e.desc || t.desc,
       hatchMs: eggHatchMsFor(e, t),
       hatching,
       ready: hatching && left <= 0,
@@ -4582,7 +4587,8 @@ export function renamePet(state, uid, nick) {
 
 export function displayPetName(pet) {
   if (!pet) return "";
-  return pet.nick ? `${pet.nick}（${pet.name}）` : pet.name;
+  const base = petSpeciesDisplayName(pet);
+  return pet.nick ? `${pet.nick}（${base}）` : base;
 }
 
 /**
@@ -5809,7 +5815,7 @@ export function runDungeon(state, dungeonId, opts = {}) {
     encounter = encResult.encounter;
     if (encounter) {
       say(
-        `海霧中浮現野生${encounter.name}（${encounter.kind}·${encounter.elementName}·${encounter.personalityName}），成功率約 ${Math.round(encounter.bondRate * 100)}%——可至水母頁嘗試契約。`
+        `海霧中浮現野生${displayPetName(encounter)}（${encounter.elementName}·${encounter.personalityName}），成功率約 ${Math.round(encounter.bondRate * 100)}%——可至水母頁嘗試契約。`
       );
     } else if (encResult.blocked) {
       say(`待契約欄已滿（${PENDING_BOND_MAX}），未再遇見新靈。`);
@@ -6120,7 +6126,7 @@ export function runDungeonSweep(state, dungeonId, count) {
     if (encounter) {
       pushLog(
         state,
-        `掃蕩後海霧遇見【${encounter.name}】（${encounter.kind}·${encounter.elementName}）— 可至待契嘗試締結。`
+        `掃蕩後海霧遇見【${displayPetName(encounter)}】（${encounter.elementName}）— 可至待契嘗試締結。`
       );
     }
   }
@@ -8421,6 +8427,8 @@ export {
   EGG_CAP,
   makeBreedEgg,
   genEggPrefix,
+  breedEggTitle,
+  stripKindFromEggTitle,
   FORGE_SCRAP_COST,
   BOND_FAIL_RATE_BONUS,
   BOND_FAIL_RATE_CAP,
@@ -8458,6 +8466,7 @@ export {
   rarityInfo,
   RARITY_MAX,
   genLabel,
+  petSpeciesDisplayName,
   petGeneration,
   hybridRecipeSummary,
   hybridRecipeMatrix,

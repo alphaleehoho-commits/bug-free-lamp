@@ -1,6 +1,6 @@
 /** 水母 icon — 有 Idle 圖則用 PNG；否則種類生物形剪影 + 元素配色 + 稀有框 */
 
-import { APP_BUILD, SPECIES, ELEMENTS, rarityInfo } from "./data.js";
+import { APP_BUILD, SPECIES, ELEMENTS, rarityInfo, genLabel } from "./data.js";
 import { resolvePetIdleSprite } from "./pet-sprites.js";
 
 const ELEMENT_COLORS = {
@@ -236,7 +236,7 @@ function rarityKey(rarity) {
 
 function genMarkLabel(gen) {
   const g = Math.max(0, gen | 0);
-  return g <= 0 ? "原" : String(g);
+  return ["原", "一", "二", "三"][g] || String(g);
 }
 
 /** 部位渲染順序：身／殼在下，頭與附肢在上 */
@@ -340,7 +340,7 @@ export function petIconFromPet(pet, opts = {}) {
     ...opts,
     elementId: opts.elementId || pet.elementId,
     rarity: opts.rarity ?? pet.rarity ?? 0,
-    title: opts.title || pet.name || SPECIES[pet.speciesId]?.name,
+    title: opts.title || pet.speciesName || SPECIES[pet.speciesId]?.name,
   });
 }
 
@@ -362,7 +362,7 @@ export function petArtFromPet(pet, opts = {}) {
   const kindSlug = KIND_SLUG[sp?.kind] || "beast";
   const hybrid = isHybridSpecies(sp, pet.speciesId);
   const showGen = opts.showGen !== false;
-  const title = opts.title || pet.name || sp?.name || "";
+  const title = opts.title || pet.speciesName || sp?.name || "";
   const cls = [
     "pet-art",
     `pet-art--elem-${elementId}`,
@@ -378,7 +378,7 @@ export function petArtFromPet(pet, opts = {}) {
     .join(" ");
   const genHtml = showGen
     ? `<span class="pet-art-gen pet-art-gen--${gen <= 0 ? "0" : gen}" title="${escapeAttr(
-        gen <= 0 ? "原生" : `繁殖${gen}代`
+        genLabel(gen)
       )}">${genMarkLabel(gen)}</span>`
     : "";
   const elemName = ELEMENTS[elementId]?.name || elementId;
