@@ -969,8 +969,8 @@ function buildSkipSummary(events, result) {
   }
   const lootBits = [];
   const bd = result?.rewardBreakdown;
-  if (bd?.totalStones) lootBits.push(`+${bd.totalStones} 泡泡晶`);
-  if (bd?.base?.scrap) lootBits.push(`+${bd.base.scrap} 碎片`);
+  if (bd?.totalStones) lootBits.push(`+${bd.totalStones} 潮晶`);
+  if (bd?.base?.scrap) lootBits.push(`+${bd.base.scrap} 貝屑`);
   return {
     strikes,
     heals,
@@ -1248,10 +1248,10 @@ function genTagHtml(g) {
 function rewardBitsHtml(reward) {
   if (!reward) return "";
   const bits = [];
-  if (reward.stones) bits.push(`${reward.stones}泡泡晶`);
-  if (reward.feed) bits.push(`${reward.feed}小餌`);
-  if (reward.dust) bits.push(`${reward.dust}星砂`);
-  if (reward.scrap) bits.push(`${reward.scrap}碎片`);
+  if (reward.stones) bits.push(`${reward.stones}潮晶`);
+  if (reward.feed) bits.push(`${reward.feed}浮游餌`);
+  if (reward.dust) bits.push(`${reward.dust}螢砂`);
+  if (reward.scrap) bits.push(`${reward.scrap}貝屑`);
   if (reward.materials) {
     for (const [id, n] of Object.entries(reward.materials)) {
       if (n) bits.push(`${MATERIALS[id]?.name || id}×${fmtMatQty(n)}`);
@@ -1634,7 +1634,7 @@ function upgradePayLineHtml(row) {
   return `<span class="upgrade-pay-opt ${cls}">${escapeHtml(row.name)} ×${fmtMatQty(row.need)}（持有 ${fmtMatQty(row.have)}／需 ${fmtMatQty(row.need)}）</span>`;
 }
 
-/** 單一下一級消耗面板：基本小餌＋副材一種，與 upgradePet 扣款一致 */
+/** 單一下一級消耗面板：基本浮游餌＋副材一種，與 upgradePet 扣款一致 */
 function upgradeFullCostPanelHtml(level, { compact = false } = {}) {
   const view = upgradeFullCostView(state, level);
   const rows = [];
@@ -1755,8 +1755,8 @@ function bagInnerNavHtml() {
 
 function shopInnerNavHtml() {
   return `<nav class="bag-inner-nav" aria-label="商肆分類">
-    <button type="button" class="${shopInner === "stones" ? "on" : ""}" data-shop-inner="stones">泡泡晶</button>
-    <button type="button" class="${shopInner === "soul" ? "on" : ""}" data-shop-inner="soul">光核</button>
+    <button type="button" class="${shopInner === "stones" ? "on" : ""}" data-shop-inner="stones">潮晶</button>
+    <button type="button" class="${shopInner === "soul" ? "on" : ""}" data-shop-inner="soul">心螢核</button>
     <button type="button" class="${shopInner === "grit" ? "on" : ""}" data-shop-inner="grit">潛砂</button>
   </nav>`;
 }
@@ -1957,8 +1957,8 @@ function patchLive() {
 
   if (qiText) {
     qiText.textContent = next
-      ? `共鳴 ${Math.floor(state.qi)} / ${next.need}`
-      : `共鳴 ${Math.floor(state.qi)} · 已滿`;
+      ? `潮息 ${Math.floor(state.qi)} / ${next.need}`
+      : `潮息 ${Math.floor(state.qi)} · 已滿`;
   }
   if (qiBar) qiBar.style.width = `${qiPct}%`;
   if (stones) stones.textContent = String(Math.floor(state.stones));
@@ -2352,15 +2352,15 @@ function titleScreenHtml() {
       <header class="title-hero">
         <p class="title-kicker">Jelly Depths</p>
         <h1 class="title-brand">水母深域</h1>
-        <p class="title-sub">無限深海 · 收集你的漂漂</p>
+        <p class="title-sub">無限深海 · 收集你的水母</p>
         <p class="title-build">建置 ${escapeHtml(APP_BUILD)}</p>
       </header>
       <section class="title-howto">
         <h2>如何遊玩</h2>
         <ol>
           <li>戰鬥多為自動——水母會自己出手，毋須連點。</li>
-          <li>「育成」掛機攞<strong>露珠</strong>、<strong>共鳴</strong>與<strong>小餌</strong>；「水母」升級、出戰。</li>
-          <li>「商肆」買蛋擴隊；「秘境」挑戰拿掉落與碎片。</li>
+          <li>「育成」掛機攞<strong>潮露</strong>、<strong>潮息</strong>與<strong>浮游餌</strong>；「水母」升級、出戰。</li>
+          <li>「商肆」買蛋擴隊；「秘境」挑戰拿掉落與貝屑。</li>
           <li>「秘境」通關解鎖新品種；變強靠漂路、繁殖同融合。</li>
         </ol>
       </section>
@@ -2461,7 +2461,7 @@ function render() {
   app.innerHTML = `
     <header class="top top-compact">
       <div class="brand-row">
-        <p class="brand" data-brand="jelly-depths">漂漂</p>
+        <p class="brand" data-brand="jelly-depths">深域</p>
         <p class="tag">Jelly Depths</p>
         <span class="build-chip" title="建置號">建置 ${escapeHtml(APP_BUILD)}</span>
         ${themePrefToggleHtml({ compact: true })}
@@ -2565,10 +2565,10 @@ function termGlossaryHtml() {
 function statsStripHtml(stage) {
   return `<button type="button" class="stats stats-compact stats-tappable" data-act="toggle-stats-sheet" aria-label="查看資源詳情">
       <div><span title="${escapeHtml(GAME_TERMS.realm.blurb)}">體階</span><strong data-live="stage">${stage.name}</strong></div>
-      <div><span title="${escapeHtml(GAME_TERMS.stones.blurb)}">泡泡晶</span><strong data-live="stones">${Math.floor(state.stones)}</strong></div>
-      <div><span title="${escapeHtml(GAME_TERMS.scrap.blurb)}">碎片</span><strong data-live="scrap">${state.scrap}</strong></div>
-      <div><span title="${escapeHtml(GAME_TERMS.feed.blurb)}">小餌</span><strong data-live="feed">${Math.floor(state.feed || 0)}</strong></div>
-      <div><span title="${escapeHtml(GAME_TERMS.dust.blurb)}">星砂</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
+      <div><span title="${escapeHtml(GAME_TERMS.stones.blurb)}">潮晶</span><strong data-live="stones">${Math.floor(state.stones)}</strong></div>
+      <div><span title="${escapeHtml(GAME_TERMS.scrap.blurb)}">貝屑</span><strong data-live="scrap">${state.scrap}</strong></div>
+      <div><span title="${escapeHtml(GAME_TERMS.feed.blurb)}">浮游餌</span><strong data-live="feed">${Math.floor(state.feed || 0)}</strong></div>
+      <div><span title="${escapeHtml(GAME_TERMS.dust.blurb)}">螢砂</span><strong data-live="dust">${Math.floor(state.dust || 0)}</strong></div>
     </button>`;
 }
 
@@ -2593,11 +2593,11 @@ function statsSheetHtml() {
         <h3>資源詳情</h3>
         <ul class="stat-sheet-grid">
           <li><span title="${escapeHtml(GAME_TERMS.realm.blurb)}">體階</span><strong>${escapeHtml(stage.name)}</strong></li>
-          <li><span title="${escapeHtml(GAME_TERMS.stones.blurb)}">泡泡晶</span><strong>${Math.floor(state.stones)}</strong></li>
-          <li><span title="${escapeHtml(GAME_TERMS.scrap.blurb)}">碎片</span><strong>${state.scrap}</strong></li>
-          <li><span title="${escapeHtml(GAME_TERMS.feed.blurb)}">小餌</span><strong>${Math.floor(state.feed || 0)}</strong></li>
-          <li><span title="${escapeHtml(GAME_TERMS.dust.blurb)}">星砂</span><strong>${Math.floor(state.dust || 0)}</strong></li>
-          <li><span title="${escapeHtml(GAME_TERMS.soul.blurb)}">光核</span><strong>${Math.floor(state.materials?.soul_essence || 0)}</strong></li>
+          <li><span title="${escapeHtml(GAME_TERMS.stones.blurb)}">潮晶</span><strong>${Math.floor(state.stones)}</strong></li>
+          <li><span title="${escapeHtml(GAME_TERMS.scrap.blurb)}">貝屑</span><strong>${state.scrap}</strong></li>
+          <li><span title="${escapeHtml(GAME_TERMS.feed.blurb)}">浮游餌</span><strong>${Math.floor(state.feed || 0)}</strong></li>
+          <li><span title="${escapeHtml(GAME_TERMS.dust.blurb)}">螢砂</span><strong>${Math.floor(state.dust || 0)}</strong></li>
+          <li><span title="${escapeHtml(GAME_TERMS.soul.blurb)}">心螢核</span><strong>${Math.floor(state.materials?.soul_essence || 0)}</strong></li>
           <li><span>勝場</span><strong>${state.combatsWon}</strong></li>
           <li><span>水母池</span><strong>${ranchN}／${ranchCap(state)}</strong></li>
           <li><span>出戰</span><strong>${state.pets.length}／${activePetMaxForState(state)}</strong></li>
@@ -2661,7 +2661,7 @@ function dailyHubHtml() {
     .map((d) => `<li>派遣 · ${escapeHtml(d.name)} · ${d.secLeft}s</li>`)
     .join("");
   const offlineLine = hub.offline
-    ? `<p class="hub-offline">待領離線 ${Math.round(hub.offline.sec / 60)} 分 · 共鳴 +${fmtInt(hub.offline.qi)} · 小餌 +${fmtMatQty(hub.offline.feed)}${hub.offline.materials ? ` · ${escapeHtml(formatMatBits(hub.offline.materials))}` : ""}${hub.offline.dust ? ` · 星砂 +${fmtMatQty(hub.offline.dust)}` : ""}${hub.offline.capped ? " · 已達上限" : ""}</p>`
+    ? `<p class="hub-offline">待領離線 ${Math.round(hub.offline.sec / 60)} 分 · 潮息 +${fmtInt(hub.offline.qi)} · 浮游餌 +${fmtMatQty(hub.offline.feed)}${hub.offline.materials ? ` · ${escapeHtml(formatMatBits(hub.offline.materials))}` : ""}${hub.offline.dust ? ` · 螢砂 +${fmtMatQty(hub.offline.dust)}` : ""}${hub.offline.capped ? " · 已達上限" : ""}</p>`
     : "";
   const goalLine = hub.nextGoal
     ? `<p class="hub-goal">下一目標：<strong>${escapeHtml(hub.nextGoal.label)}</strong>（${escapeHtml(hub.nextGoal.progress)}）</p>`
@@ -2709,7 +2709,7 @@ function installBanner() {
   if (pwaDismissed || !pwaInstallEvt) return "";
   return `
     <div class="chrome-toast install-toast" data-live="install-banner">
-      <p>可將漂漂加入主畫面，離線也能掛機收穫。</p>
+      <p>可將水母深域加入主畫面，離線也能掛機收穫。</p>
       <div class="row">
         <button type="button" class="primary" data-act="pwa-install">安裝</button>
         <button type="button" class="ghost" data-act="pwa-dismiss">稍後</button>
@@ -2798,13 +2798,13 @@ function offlineHomeSlotHtml() {
 function offlineGainRowsHtml(pending) {
   const rows = [];
   if ((pending.qi | 0) > 0) {
-    rows.push(`<li class="card-row offline-gain-row"><div><strong>共鳴</strong></div><span>+${fmtInt(pending.qi)}</span></li>`);
+    rows.push(`<li class="card-row offline-gain-row"><div><strong>潮息</strong></div><span>+${fmtInt(pending.qi)}</span></li>`);
   }
   if ((pending.feed | 0) > 0) {
-    rows.push(`<li class="card-row offline-gain-row"><div><strong>小餌</strong></div><span>+${fmtMatQty(pending.feed)}</span></li>`);
+    rows.push(`<li class="card-row offline-gain-row"><div><strong>浮游餌</strong></div><span>+${fmtMatQty(pending.feed)}</span></li>`);
   }
   if ((pending.dust | 0) > 0) {
-    rows.push(`<li class="card-row offline-gain-row"><div><strong>星砂</strong></div><span>+${fmtMatQty(pending.dust)}</span></li>`);
+    rows.push(`<li class="card-row offline-gain-row"><div><strong>螢砂</strong></div><span>+${fmtMatQty(pending.dust)}</span></li>`);
   }
   for (const [id, n] of Object.entries(pending.materials || {})) {
     if ((n | 0) <= 0) continue;
@@ -2871,7 +2871,7 @@ function releaseModalHtml() {
   const rows = prev.pets
     .map(
       (row) =>
-        `<li class="card-row release-pet-row"><div><strong>${escapeHtml(row.name)}</strong><span class="muted">光核 +${row.soul}</span></div></li>`
+        `<li class="card-row release-pet-row"><div><strong>${escapeHtml(row.name)}</strong><span class="muted">心螢核 +${row.soul}</span></div></li>`
     )
     .join("");
   return `
@@ -2879,8 +2879,8 @@ function releaseModalHtml() {
       <div class="combat-modal-card release-modal-card">
         <div class="combat-modal-scroll">
           <h2>${multi ? "確認批量放生" : "確認放生"}</h2>
-          <p class="lead">${multi ? `共 ${prev.pets.length} 隻` : escapeHtml(prev.pets[0]?.name || "")} · 光核 +${prev.soul}</p>
-          <p class="meta muted">放生只獲<strong>光核</strong>，唔再退泡泡晶／小餌／星砂。此操作不可復原。</p>
+          <p class="lead">${multi ? `共 ${prev.pets.length} 隻` : escapeHtml(prev.pets[0]?.name || "")} · 心螢核 +${prev.soul}</p>
+          <p class="meta muted">放生只獲<strong>心螢核</strong>，唔再退潮晶／浮游餌／螢砂。此操作不可復原。</p>
           <ul class="list">${rows}</ul>
         </div>
         <div class="combat-modal-actions row">
@@ -2935,7 +2935,7 @@ function fuseConfirmModalHtml() {
           <p class="lead">將 ${mats.length} 隻素材融入 <strong>${escapeHtml(d.pet.name)}</strong></p>
           <p class="meta warn">每隻水母只有一次融合機會；素材能力愈高，融合結果愈好；請謹慎選擇。</p>
           <p class="meta">需主體＋素材皆 ≥ Lv.${d.fuseNeedLevel || 50} · 出戰預計×${nextMult}${rarityHint}</p>
-          <p class="meta">耗 ${escapeHtml(String(d.fuseCostHint))} 泡泡晶${escapeHtml(matCost)}</p>
+          <p class="meta">耗 ${escapeHtml(String(d.fuseCostHint))} 潮晶${escapeHtml(matCost)}</p>
           <p class="meta muted">素材與融合核會被消耗，此操作不可復原。</p>
         </div>
         <div class="combat-modal-actions row">
@@ -3316,8 +3316,8 @@ function trainIdleStripHtml() {
   const next = nextRealm(state);
   const qiPct = next ? Math.min(100, (state.qi / next.need) * 100) : 100;
   const qiLabel = next
-    ? `共鳴 ${Math.floor(state.qi)} / ${next.need}`
-    : `共鳴 ${Math.floor(state.qi)} · 已滿`;
+    ? `潮息 ${Math.floor(state.qi)} / ${next.need}`
+    : `潮息 ${Math.floor(state.qi)} · 已滿`;
   const stageBoss = isSpineStageBossFloor(floor) || !!wrap?.session?.stageBoss;
   const bossCls = stageBoss ? " is-stage-boss" : "";
   const bossBanner = stageBoss
@@ -3329,7 +3329,7 @@ function trainIdleStripHtml() {
       <span class="muted train-idle-progress">${escapeHtml(trunk.progressLabel)}</span>
     </div>
   </div>`;
-  const qiChip = `<button type="button" class="train-qi-chip" data-act="toggle-stats-sheet" aria-label="共鳴進度">
+  const qiChip = `<button type="button" class="train-qi-chip" data-act="toggle-stats-sheet" aria-label="潮息進度">
     <span class="train-qi-label" data-live="qi-text">${escapeHtml(qiLabel)}</span>
     <div class="bar train-qi-bar"><i data-live="qi-bar" style="width:${qiPct}%"></i></div>
   </button>`;
@@ -3483,7 +3483,7 @@ function cultivatePanel() {
           <div>
             <strong>${escapeHtml(o.speciesName || o.name)}${isEgg ? " ·蛋" : ""}</strong>
             <span class="muted">${sub}</span>
-            <span class="shop-cost">${o.tutorialDeal ? "教學優惠 · " : ""}${o.cost} 泡泡晶</span>
+            <span class="shop-cost">${o.tutorialDeal ? "教學優惠 · " : ""}${o.cost} 潮晶</span>
           </div>
           <button type="button" class="primary${tutGlow({ type: "shop-buy" })}" data-shop-buy="${escapeHtml(o.offerId)}">購入</button>
         </li>`;
@@ -3519,7 +3519,7 @@ function cultivatePanel() {
       <p class="lead">水母池 ${ranchCap(state)} 欄 · 孵化 ${hatchSlotCap(state)} 欄</p>
       ${bagItemsHtml()}`
         : `<h2>背包 · 材料</h2>
-      <p class="lead">泡泡晶 ${Math.floor(state.stones)} · 小餌 ${Math.floor(state.feed || 0)} · 星砂 ${Math.floor(state.dust || 0)}</p>
+      <p class="lead">潮晶 ${Math.floor(state.stones)} · 浮游餌 ${Math.floor(state.feed || 0)} · 螢砂 ${Math.floor(state.dust || 0)}</p>
       ${matHintListHtml()}`;
     return wrapStage(nav, `${bagInnerNavHtml()}${inner}`);
   }
@@ -3535,7 +3535,7 @@ function cultivatePanel() {
           .map((o) => {
             const note = o.capped
               ? o.capReason || "已達上限"
-              : `獲 ${escapeHtml(o.grantLabel)} · ${o.cost} 光核`;
+              : `獲 ${escapeHtml(o.grantLabel)} · ${o.cost} 心螢核`;
             const label = o.capped ? "已滿" : "兌換";
             return `
         <li class="card-row${o.capped ? " is-capped" : ""}">
@@ -3549,9 +3549,9 @@ function cultivatePanel() {
           }>${label}</button>
         </li>`;
           })
-          .join("") || `<li class="empty">暫無光核貨物。</li>`;
-      shopBody = `<h2>商肆 · 光核</h2>
-      <p class="lead">光核 ${soulN} · 放生／退蛋所得（養成／稀有／融合越高越賺）兌換小餌／材料／道具</p>
+          .join("") || `<li class="empty">暫無心螢核貨物。</li>`;
+      shopBody = `<h2>商肆 · 心螢核</h2>
+      <p class="lead">心螢核 ${soulN} · 放生／退蛋所得（養成／稀有／融合越高越賺）兌換浮游餌／材料／道具</p>
       <ul class="list">${soulRows}</ul>`;
     } else if (shopInner === "grit") {
       if (!gritV.unlocked) {
@@ -3609,8 +3609,8 @@ function cultivatePanel() {
     </ul>`;
       }
     } else {
-      shopBody = `<h2>商肆 · 泡泡晶</h2>
-      <p class="lead">泡泡晶 ${Math.floor(state.stones)} · 水母池 ${ranchN}／${ranchCap(state)}</p>
+      shopBody = `<h2>商肆 · 潮晶</h2>
+      <p class="lead">潮晶 ${Math.floor(state.stones)} · 水母池 ${ranchN}／${ranchCap(state)}</p>
       <ul class="list">${shopRows}</ul>`;
     }
     return wrapStage(nav, `${shopInnerNavHtml()}${shopBody}`);
@@ -3915,7 +3915,7 @@ function attackPreviewModalHtml() {
       ? `<p class="meta">令已於召喚時扣除（本批×${spentTokens}）</p>`
       : previewGate.needsSummon
         ? ""
-        : `<p class="meta">首通／教學：無需霧箋</p>`;
+        : `<p class="meta">首通／教學：無需潮霧箋</p>`;
   return `
     <div class="sheet-overlay" role="presentation" data-live="attack-preview">
       <div class="sheet-card" role="dialog" aria-label="出戰預覽" data-sheet-card>
@@ -4049,11 +4049,11 @@ function petsListView() {
         <div>
           <strong>${escapeHtml(c.name)}</strong>
           <span class="muted">${escapeHtml(c.kind)}·${escapeHtml(c.elementName)}·${escapeHtml(c.personalityName)} · 攻${c.atk} 血${c.hp} 速${c.spd}</span>
-          <span class="muted">技能【${escapeHtml(c.skillName)}】· 成功率 ${Math.round(c.bondRate * 100)}%${Math.round(Math.min(0.95, c.bondRate + BOND_FEED_BONUS) * 100) !== Math.round(c.bondRate * 100) ? `（小餌→${Math.round(Math.min(0.95, c.bondRate + BOND_FEED_BONUS) * 100)}%）` : ""} · ${c.cost} 泡泡晶</span>
+          <span class="muted">技能【${escapeHtml(c.skillName)}】· 成功率 ${Math.round(c.bondRate * 100)}%${Math.round(Math.min(0.95, c.bondRate + BOND_FEED_BONUS) * 100) !== Math.round(c.bondRate * 100) ? `（浮游餌→${Math.round(Math.min(0.95, c.bondRate + BOND_FEED_BONUS) * 100)}%）` : ""} · ${c.cost} 潮晶</span>
         </div>
         <div class="row-actions">
           <button type="button" class="primary" data-try-bond="${escapeHtml(c.encounterId)}">契約</button>
-          <button type="button" data-try-bond-feed="${escapeHtml(c.encounterId)}">小餌契約（${BOND_FEED_COST}）</button>
+          <button type="button" data-try-bond-feed="${escapeHtml(c.encounterId)}">浮游餌契約（${BOND_FEED_COST}）</button>
           <button type="button" data-dismiss-pending="${escapeHtml(c.encounterId)}">放過</button>
         </div>
       </li>`
@@ -4121,14 +4121,14 @@ function petsListView() {
         (prev.pets || [])
           .map(
             (row) =>
-              `<li class="card-row"><div><strong>${escapeHtml(row.name)}</strong><span class="muted">光核 +${row.soul}</span></div></li>`
+              `<li class="card-row"><div><strong>${escapeHtml(row.name)}</strong><span class="muted">心螢核 +${row.soul}</span></div></li>`
           )
           .join("") || `<li class="empty">未揀水母。</li>`;
       return wrapStage(
         nav,
         `<h2>確認放生</h2>
-        <p class="lead">將放生 ${prev.pets?.length || 0} 隻 · 預計光核 +${prev.soul || 0}</p>
-        <p class="meta muted">放生只獲光核，唔再退泡泡晶／小餌／星砂。</p>
+        <p class="lead">將放生 ${prev.pets?.length || 0} 隻 · 預計心螢核 +${prev.soul || 0}</p>
+        <p class="meta muted">放生只獲心螢核，唔再退潮晶／浮游餌／螢砂。</p>
         <ul class="list">${rows}</ul>`,
         `<div class="row">
           <button type="button" class="secondary" data-act="ranch-release-back">返回</button>
@@ -4145,7 +4145,7 @@ function petsListView() {
         : 0;
     const manageBar = ranchRelease?.phase === "select"
       ? `<div class="ranch-manage-bar">
-          <p class="meta">已選 ${selCount} · 預計光核 +${selSoul} · 上鎖／出戰／派遣不可選 · 幼寵光核較低</p>
+          <p class="meta">已選 ${selCount} · 預計心螢核 +${selSoul} · 上鎖／出戰／派遣不可選 · 幼寵心螢核較低</p>
           <div class="row">
             <button type="button" class="secondary" data-act="ranch-release-cancel">取消</button>
             <button type="button" class="ghost" data-act="ranch-cull-suggest">加選弱水母</button>
@@ -4164,14 +4164,14 @@ function petsListView() {
       ranch.length >= cap
         ? `<p class="meta hatch-ranch-warn">水母池已滿——孵化領取／契約會卡住。建議清弱水母或出戰。</p>`
         : ranch.length >= cap - 2
-          ? `<p class="meta muted">水母池將滿（餘 ${cap - ranch.length}）。出殼即賣光核偏低，寧願退多餘蛋。</p>`
+          ? `<p class="meta muted">水母池將滿（餘 ${cap - ranch.length}）。出殼即賣心螢核偏低，寧願退多餘蛋。</p>`
           : "";
     return wrapStage(
       nav,
       `<h2>水母 · 水母池</h2>
-      <p class="lead">水母池 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 光核 ${Math.floor(
+      <p class="lead">水母池 ${ranch.length}/${cap} · 出戰 ${state.pets.length} · 心螢核 ${Math.floor(
         state.materials?.soul_essence || 0
-      )} · 待命微產小餌／星砂／霧箋</p>
+      )} · 待命微產浮游餌／螢砂／潮霧箋</p>
       ${capNote}
       ${eggBrief}
       <div class="ranch-sort" role="group" aria-label="水母池排序">${sortOpts}${starFilterChip}</div>
@@ -4267,7 +4267,7 @@ function breedPreviewHtml(preview, matAfford) {
         sp.spd
       )}</p>
       ${preview.awakenNote ? `<p class="breed-awaken">${escapeHtml(preview.awakenNote)}</p>` : ""}
-      <p class="meta">消耗：${preview.stoneCost} 泡泡晶${matAfford ? ` · ${matAfford}` : ""}</p>
+      <p class="meta">消耗：${preview.stoneCost} 潮晶${matAfford ? ` · ${matAfford}` : ""}</p>
     </div>`;
 }
 
@@ -4440,7 +4440,7 @@ function petsBreedView() {
         <input type="range" class="summon-slider" min="${BREED_BATCH_MIN}" max="${BREED_BATCH_MAX}" value="${batch}" data-breed-slider aria-label="交配次數" />
         <span class="muted">${BREED_BATCH_MIN}–${BREED_BATCH_MAX}</span>
       </div>
-      <p class="sweep-label">約 ${cycleSec * batch}s · ${stoneNeed} 泡泡晶${batch > 1 ? ` · 可中途領蛋` : ""}</p>
+      <p class="sweep-label">約 ${cycleSec * batch}s · ${stoneNeed} 潮晶${batch > 1 ? ` · 可中途領蛋` : ""}</p>
     </div>
     <h3>待命水母</h3>
     <ul class="pet-pick-grid breed-pet-list">${list}</ul>`;
@@ -4520,7 +4520,7 @@ function petsHatchView() {
             <span class="muted">${escapeHtml(e.label)} · ${escapeHtml(e.desc || "")}</span>
           </div>
           <div class="row-actions">
-            <button type="button" class="ghost" data-dissolve-egg="${uid}" title="未孵化精，光核少於放生">退蛋＋${dissolveN}</button>
+            <button type="button" class="ghost" data-dissolve-egg="${uid}" title="未孵化精，心螢核少於放生">退蛋＋${dissolveN}</button>
             <button type="button" class="primary${tutGlow({ type: "start-hatch" })}" data-start-hatch="${uid}" ${
               canStart ? "" : "disabled"
             }>放入孵化</button>
@@ -4720,7 +4720,7 @@ function petSkillCardHtml(skill, { level, maxed, dustCost, skillMatHtml, title, 
   const lvBit = level != null ? `Lv.${level}${maxed ? "（滿）" : ""}` : "";
   const costBit =
     !maxed && dustCost != null
-      ? `升需星砂${dustCost}${skillMatHtml ? `＋${skillMatHtml}` : ""}`
+      ? `升需螢砂${dustCost}${skillMatHtml ? `＋${skillMatHtml}` : ""}`
       : "";
   const upBtn =
     upgradeAttr && !maxed
@@ -4856,7 +4856,7 @@ function petsDetailView() {
     <div class="row">
       <button type="button" class="primary${tutGlow({ type: "upgrade" })}" data-upgrade-feed="${escapeHtml(pet.uid)}" ${
         upgradeFullCost?.feed?.ok ? "" : "disabled"
-      } title="升級扣小餌＋上方副材">升級（小餌×${feedCost ?? "—"}）</button>
+      } title="升級扣浮游餌＋上方副材">升級（浮游餌×${feedCost ?? "—"}）</button>
       ${
         fuseUnlocked
           ? `<button type="button" class="primary${tutGlow({ type: "start-fuse" })}" data-start-fuse="${escapeHtml(pet.uid)}" ${fuseMaxed ? "disabled" : ""}>融合</button>`
@@ -4870,8 +4870,8 @@ function petsDetailView() {
             }">出戰</button>`
       }
       <button type="button" data-release="${escapeHtml(pet.uid)}" ${lockOn || matingBusy ? "disabled" : ""} title="${
-        matingBusy ? "交配孕育中，唔可以放生" : lockOn ? "已上鎖，唔可以放生" : `放生獲光核 ${soulGain}`
-      }">${matingBusy ? "交配中" : lockOn ? "已上鎖" : `放生（光核${soulGain}）`}</button>
+        matingBusy ? "交配孕育中，唔可以放生" : lockOn ? "已上鎖，唔可以放生" : `放生獲心螢核 ${soulGain}`
+      }">${matingBusy ? "交配中" : lockOn ? "已上鎖" : `放生（心螢核${soulGain}）`}</button>
       <button type="button" data-pet-back>返回</button>
     </div>`
   );
@@ -5049,17 +5049,17 @@ function codexPanel() {
 function combatRewardBreakdownHtml(bd) {
   if (!bd) return "";
   return `<ul class="cond-list reward-breakdown">
-            <li class="cond-item is-met"><span class="cond-badge">基礎</span><div class="cond-body"><strong>通關獎勵</strong><span class="muted">+${bd.base.stones}泡泡晶／${bd.base.scrap}碎片</span></div></li>
+            <li class="cond-item is-met"><span class="cond-badge">基礎</span><div class="cond-body"><strong>通關獎勵</strong><span class="muted">+${bd.base.stones}潮晶／${bd.base.scrap}貝屑</span></div></li>
             ${
               bd.firstClear?.stones
-                ? `<li class="cond-item is-met"><span class="cond-badge">首通</span><div class="cond-body"><strong>首通加成</strong><span class="muted">+${bd.firstClear.stones}泡泡晶</span></div></li>`
+                ? `<li class="cond-item is-met"><span class="cond-badge">首通</span><div class="cond-body"><strong>首通加成</strong><span class="muted">+${bd.firstClear.stones}潮晶</span></div></li>`
                 : ""
             }
             ${
               bd.daily
                 ? `<li class="cond-item is-met"><span class="cond-badge">今日</span><div class="cond-body"><strong>${escapeHtml(
                     bd.daily.label || "今日修飾"
-                  )}</strong><span class="muted">+${bd.daily.stones || 0}泡泡晶／${bd.daily.scrap || 0}碎片</span></div></li>`
+                  )}</strong><span class="muted">+${bd.daily.stones || 0}潮晶／${bd.daily.scrap || 0}貝屑</span></div></li>`
                 : ""
             }
             ${
@@ -5068,8 +5068,8 @@ function combatRewardBreakdownHtml(bd) {
                     bd.challenge.label.replace(/^挑戰[:：]?\s*/, "挑戰："),
                     bd.challenge.ok,
                     bd.challenge.ok
-                      ? `+${bd.challenge.stones || 0}泡泡晶${
-                          bd.challenge.scrap ? `／${bd.challenge.scrap}碎片` : ""
+                      ? `+${bd.challenge.stones || 0}潮晶${
+                          bd.challenge.scrap ? `／${bd.challenge.scrap}貝屑` : ""
                         }`
                       : "",
                     "未滿足·本場無挑戰獎"
@@ -5078,12 +5078,12 @@ function combatRewardBreakdownHtml(bd) {
             }
             ${
               bd.elite
-                ? `<li class="cond-item is-met"><span class="cond-badge">精英</span><div class="cond-body"><strong>擊破精英</strong><span class="muted">+${bd.elite.stones || 0}泡泡晶</span></div></li>`
+                ? `<li class="cond-item is-met"><span class="cond-badge">精英</span><div class="cond-body"><strong>擊破精英</strong><span class="muted">+${bd.elite.stones || 0}潮晶</span></div></li>`
                 : ""
             }
             ${
               bd.boss
-                ? `<li class="cond-item is-met"><span class="cond-badge">BOSS</span><div class="cond-body"><strong>擊破 BOSS</strong><span class="muted">+${bd.boss.stones || 0}泡泡晶</span></div></li>`
+                ? `<li class="cond-item is-met"><span class="cond-badge">BOSS</span><div class="cond-body"><strong>擊破 BOSS</strong><span class="muted">+${bd.boss.stones || 0}潮晶</span></div></li>`
                 : ""
             }
             ${(bd.conditions || [])
@@ -5101,12 +5101,12 @@ function combatRewardBreakdownHtml(bd) {
                 ? condStatusRow(
                     bd.trial.label.replace(/^試煉[:：]?\s*/, "試煉："),
                     bd.trial.ok,
-                    bd.trial.ok ? `+${bd.trial.stones}泡泡晶` : "",
+                    bd.trial.ok ? `+${bd.trial.stones}潮晶` : "",
                     "未滿足·本場無此獎"
                   )
                 : ""
             }
-            <li class="cond-item is-met"><span class="cond-badge">合計</span><div class="cond-body"><strong>+${bd.totalStones} 泡泡晶</strong><span class="muted">各項分開累加</span></div></li>
+            <li class="cond-item is-met"><span class="cond-badge">合計</span><div class="cond-body"><strong>+${bd.totalStones} 潮晶</strong><span class="muted">各項分開累加</span></div></li>
           </ul>`;
 }
 
@@ -5121,7 +5121,7 @@ function sweepModalHtml() {
   const detailRows = (r.perRun || [])
     .map(
       (run, i) =>
-        `<li class="card-row"><div><strong>第 ${i + 1} 次</strong><span class="muted">${run.won ? "勝" : "敗"} · +${run.stones}泡泡晶${run.scrap ? `／+${run.scrap}碎` : ""}</span></div></li>`
+        `<li class="card-row"><div><strong>第 ${i + 1} 次</strong><span class="muted">${run.won ? "勝" : "敗"} · +${run.stones}潮晶${run.scrap ? `／+${run.scrap}碎` : ""}</span></div></li>`
     )
     .join("");
   return `
@@ -5132,8 +5132,8 @@ function sweepModalHtml() {
           <p class="lead">${escapeHtml(r.msg || "")}</p>
           <div class="settle-summary-row">
             <div>
-              <strong class="settle-total">+${r.totalStones} 泡泡晶</strong>
-              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 本批召喚已耗霧箋×${r.tokenCost || 0} · 碎片 +${r.totalScrap || 0}</span>
+              <strong class="settle-total">+${r.totalStones} 潮晶</strong>
+              <span class="muted">勝 ${r.wins}／敗 ${r.losses} · 本批召喚已耗潮霧箋×${r.tokenCost || 0} · 貝屑 +${r.totalScrap || 0}</span>
             </div>
           </div>
           ${encounterLine}
@@ -5341,8 +5341,8 @@ function combatModalHtml() {
   const settleHead = wonSettle
     ? `<div class="settle-summary-row">
         <div>
-          <strong class="settle-total">+${bd.totalStones} 泡泡晶</strong>
-          <span class="muted">${bd.base?.scrap ? `普通碎片 +${bd.base.scrap}` : "通關結算"}</span>
+          <strong class="settle-total">+${bd.totalStones} 潮晶</strong>
+          <span class="muted">${bd.base?.scrap ? `普通貝屑 +${bd.base.scrap}` : "通關結算"}</span>
         </div>
         <button type="button" class="ghost" data-act="toggle-reward-details">${rewardDetailsOpen ? "收起明細" : "獎勵明細"}</button>
       </div>
@@ -5446,7 +5446,7 @@ function dungeonCondSheetHtml() {
       : condStatusRow(
           trial.label.replace(/^試煉[:：]?\s*/, "試煉："),
           stCur.trialMet,
-          `+${trial.bonus?.stones || 0}泡泡晶`,
+          `+${trial.bonus?.stones || 0}潮晶`,
           stCur.trialReason || "未滿足"
         );
   const challengeRow =
@@ -5587,7 +5587,7 @@ function abyssPanelHtml() {
   } else {
     runBlock = `<div class="abyss-run card-block">
         <p class="lead">未開潛</p>
-        <p class="meta">今日首趟免費 · 其後耗霧箋 ×${v.entryCost || 1}（現有 ${v.tokenHave}）</p>
+        <p class="meta">今日首趟免費 · 其後耗潮霧箋 ×${v.entryCost || 1}（現有 ${v.tokenHave}）</p>
         <p class="meta">需獨立編隊 ${v.squadSize} 寵（3 出戰 + 2 替補）· 現有 ${v.ownedCount} 隻</p>
         <button type="button" class="primary" data-act="abyss-open-squad" ${v.frozen ? "disabled" : ""} ${
           v.canFormSquad ? "" : "disabled"
@@ -5638,7 +5638,7 @@ function dungeonPanel() {
   const locked = dCur ? state.realm < dCur.needRealm : true;
   const gate = stCur?.gate || (dCur ? dungeonGateView(state, dCur.id) : null);
   const summonSec = gate ? Math.ceil((gate.summonLeftMs || 0) / 1000) : 0;
-  const clearNote = stCur?.cleared ? "已通" : `首通+${dCur?.firstClearBonus?.stones || 0}泡泡晶`;
+  const clearNote = stCur?.cleared ? "已通" : `首通+${dCur?.firstClearBonus?.stones || 0}潮晶`;
   const roles = stCur?.roles;
   const waveN = roles?.waves || (dCur ? dungeonWaves(dCur).length : 0);
   const roleBits = roles ? `${waveN}波 普${roles.normal}/精${roles.elite}/王${roles.boss}` : `${waveN}波`;
@@ -5696,7 +5696,7 @@ function dungeonPanel() {
           <div>
             <strong>${escapeHtml(dCur.name)}</strong>
             ${variantLine}
-            <span class="muted">${escapeHtml(roleBits)} · ${dCur.reward.stones}泡泡晶 · ${clearNote}${gateNote}</span>
+            <span class="muted">${escapeHtml(roleBits)} · ${dCur.reward.stones}潮晶 · ${clearNote}${gateNote}</span>
             ${passiveLine ? `<span class="muted">${escapeHtml(passiveLine)}</span>` : ""}
           </div>
         </div>
@@ -5717,7 +5717,7 @@ function dungeonPanel() {
           if (!dCur) return `<div class="row dungeon-dock-row">${pager}</div>`;
           const tokenHave = Math.floor(state.materials?.mist_token || 0);
           const baseCdMs = dCur.cooldownMs || gate?.baseCdMs || 20_000;
-          const tokenName = "霧箋";
+          const tokenName = "潮霧箋";
 
           // 首通／教學：直接進攻（鎖階段仍可撳，彈原因）
           if (!gate?.needsSummon) {
@@ -5778,7 +5778,7 @@ function dungeonPanel() {
           const summonBlockReason = locked
             ? dungeonAttackBlockReason(state, dCur.id)
             : !affordOk
-              ? `霧箋不足（需 ${costInfo.total}，現 ${costInfo.have}）`
+              ? `潮霧箋不足（需 ${costInfo.total}，現 ${costInfo.have}）`
               : "";
           return `<div class="dungeon-dock-stack">
           <div class="row dungeon-dock-row">${pager}</div>
@@ -5825,7 +5825,7 @@ function dungeonPanel() {
   }
 
   const leadLine = gate?.needsSummon
-    ? "已通關：召喚凝聚 → 就緒挑戰 → 戰後散去（耗霧箋）"
+    ? "已通關：召喚凝聚 → 就緒挑戰 → 戰後散去（耗潮霧箋）"
     : "首通可直接進攻 · 通關後需召喚凝聚再挑戰";
 
   return wrapStage(
@@ -7119,7 +7119,7 @@ function bind() {
     btn.addEventListener("click", () => {
       if (!isFusionUnlocked(state)) {
         setFlash("通關【1-3】後解鎖融合。");
-        window.alert("通關【1-3】後解鎖融合。融砂練功地亦同時開放。");
+        window.alert("通關【1-3】後解鎖融合。熔潮砂練功地亦同時開放。");
         return;
       }
       petView = {
@@ -7208,7 +7208,7 @@ function bind() {
   app.querySelectorAll("[data-summon]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) {
-        setFlash(btn.dataset.summonBlock || "霧箋不足或尚未解鎖。");
+        setFlash(btn.dataset.summonBlock || "潮霧箋不足或尚未解鎖。");
         return;
       }
       const n = clampDungeonSummonCount(btn.dataset.summonCount || summonCount);
@@ -7444,8 +7444,8 @@ function maybeNotifyOffline(hint) {
   if (maybeNotifyOffline._sent === hint.at) return;
   maybeNotifyOffline._sent = hint.at;
   try {
-    new Notification("漂漂 · 離線結算", {
-      body: `約 ${Math.round(hint.sec / 60)} 分鐘：共鳴 +${fmtInt(hint.qi)}，小餌 +${fmtMatQty(hint.feed)}，星砂 +${fmtMatQty(hint.dust)}${formatMatBits(hint.materials) ? `，${formatMatBits(hint.materials)}` : ""}`,
+    new Notification("深域 · 離線結算", {
+      body: `約 ${Math.round(hint.sec / 60)} 分鐘：潮息 +${fmtInt(hint.qi)}，浮游餌 +${fmtMatQty(hint.feed)}，螢砂 +${fmtMatQty(hint.dust)}${formatMatBits(hint.materials) ? `，${formatMatBits(hint.materials)}` : ""}`,
       icon: "./icons/icon.svg",
     });
   } catch {
@@ -7473,32 +7473,32 @@ function checkPushReminders() {
   if (bank.hasPending && bank.sec >= 3600 * 8 - 120) {
     pushNotifyOnce(
       `offline-cap-${bank.sec}`,
-      "漂漂 · 離線上限",
+      "深域 · 離線上限",
       "掛機收益即將達 8 小時上限，記得回來領取！"
     );
   } else if (state.offlineHint && state.offlineHint.sec >= 3600 * 8 - 120) {
     pushNotifyOnce(
       `offline-cap-${state.offlineHint.at}`,
-      "漂漂 · 離線上限",
+      "深域 · 離線上限",
       "掛機收益即將達 8 小時上限，記得回來領取！"
     );
   }
   for (const e of eggsView(state, now)) {
     if (e.hatching && !e.ready && e.leftSec > 0 && e.leftSec <= 30) {
-      pushNotifyOnce(`egg-soon-${e.uid}-${e.readyAt}`, "漂漂 · 蛋快好了", `${e.name} 約 ${e.leftSec} 秒後可領取`);
+      pushNotifyOnce(`egg-soon-${e.uid}-${e.readyAt}`, "深域 · 蛋快好了", `${e.name} 約 ${e.leftSec} 秒後可領取`);
     }
     if (e.ready) {
-      pushNotifyOnce(`egg-ready-${e.uid}`, "漂漂 · 孵化完成", `${e.name} 可以領取了！`);
+      pushNotifyOnce(`egg-ready-${e.uid}`, "深域 · 孵化完成", `${e.name} 可以領取了！`);
     }
   }
   const disp = dispatchView(state);
   for (const d of disp.active || []) {
     if (d.ready) {
-      pushNotifyOnce(`dispatch-ready-${d.dispatchId}`, "漂漂 · 派遣完成", `${d.missionName} 可以收集了！`);
+      pushNotifyOnce(`dispatch-ready-${d.dispatchId}`, "深域 · 派遣完成", `${d.missionName} 可以收集了！`);
     } else if (d.leftMs > 0 && d.leftMs <= 30000) {
       pushNotifyOnce(
         `dispatch-soon-${d.dispatchId}`,
-        "漂漂 · 派遣將完成",
+        "深域 · 派遣將完成",
         `${d.missionName} 約 ${Math.ceil(d.leftMs / 1000)} 秒後完成`
       );
     }

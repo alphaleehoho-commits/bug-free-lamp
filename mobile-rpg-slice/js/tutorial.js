@@ -18,7 +18,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "train_pet",
     title: "練功升級",
-    hint: "育成掛機攞露珠（副材）同小餌。夠料後到「水母 → 水母池 → 詳情」點升級，升至 Lv.3。",
+    hint: "育成掛機攞潮露（副材）同浮游餌。夠料後到「水母 → 水母池 → 詳情」點升級，升至 Lv.3。",
   },
   {
     id: "deploy",
@@ -48,7 +48,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "cultivate_qi",
     title: "掛機劇場",
-    hint: "留在「育成 → 練功」睇戰鬥同收穫跳動；共鳴會喺掛機累積。",
+    hint: "留在「育成 → 練功」睇戰鬥同收穫跳動；潮息會喺掛機累積。",
   },
   {
     id: "breakthrough",
@@ -88,7 +88,7 @@ export const TUTORIAL_STEPS = [
   {
     id: "complete",
     title: "初階解鎖",
-    hint: "教學完成，自由探索深域，收集你的漂漂！",
+    hint: "教學完成，自由探索深域，收集你的水母！",
   },
 ];
 
@@ -114,7 +114,7 @@ export const LATE_TUTORIAL_MIN_REALM = 2;
 
 /** 教學：首寵升級門檻 */
 export const TUTORIAL_TRAIN_LEVEL = 3;
-/** 教學：共鳴步最少掛機秒數（節奏） */
+/** 教學：潮息步最少掛機秒數（節奏） */
 export const TUTORIAL_QI_IDLE_SEC = 45;
 
 function isLateStep(stepId) {
@@ -146,7 +146,7 @@ function tutorialTrainTargetPet(state) {
   );
 }
 
-/** 目前是否有足夠副材＋小餌升一級（與 upgradePet 一致） */
+/** 目前是否有足夠副材＋浮游餌升一級（與 upgradePet 一致） */
 export function trainPetCanUpgrade(state) {
   const pet = tutorialTrainTargetPet(state);
   if (!pet) return false;
@@ -155,7 +155,7 @@ export function trainPetCanUpgrade(state) {
   return canAffordPetUpgrade(state, lv);
 }
 
-/** 教學開局露珠：夠連升兩級至 Lv.3（+1 備用） */
+/** 教學開局潮露：夠連升兩級至 Lv.3（+1 備用） */
 export const TUTORIAL_STARTER_TIDE_DEW = 3;
 
 export function tutorialEggReady(state) {
@@ -1028,10 +1028,10 @@ export function tutorialBannerHint(state) {
     const left = Math.max(0, TUTORIAL_QI_IDLE_SEC - idle);
     const next = nextStageAt(state.realm);
     if (left > 0) {
-      return `育成掛機中… 還需約 ${left}s（共鳴 ${Math.floor(state.qi)}/${next.need}）。`;
+      return `育成掛機中… 還需約 ${left}s（潮息 ${Math.floor(state.qi)}/${next.need}）。`;
     }
     if (state.qi < next.need) {
-      return `掛機時間已足，繼續累積共鳴（${Math.floor(state.qi)}/${next.need}）。`;
+      return `掛機時間已足，繼續累積潮息（${Math.floor(state.qi)}/${next.need}）。`;
     }
   }
   if (info.stepId === "train_pet") {
@@ -1062,7 +1062,7 @@ export function tutorialBannerHint(state) {
 const TUTORIAL_NEXT_WHERE = {
   hatch_starter: "底部「水母」→「孵化」領取",
   meet_pet: "「水母 → 水母池」點開首隻詳情",
-  train_pet: "先「育成 → 練功」掛機，夠露珠同小餌再回「水母」升級",
+  train_pet: "先「育成 → 練功」掛機，夠潮露同浮游餌再回「水母」升級",
   deploy: "「水母 → 水母池」點「出戰」",
   dungeon_fight: "底部「秘境」→ 進攻 1-1",
   dungeon_win: "繼續在「秘境」戰勝 1-1",

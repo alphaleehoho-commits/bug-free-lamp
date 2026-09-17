@@ -1219,7 +1219,7 @@ const spineForMult = trainSiteById("ruins");
 const dewMult = trainDropMult(spineForMult, { mat: spineForMult.primaryMat, perSec: 0.03 }, "2026-08-30");
 assert(dewMult >= TRAIN_FOCUS_BONUS, "focus mult on primary mat");
 const rates = trainSiteRatesView(spineTrainProfile({ clearedDungeons: {} }), "2026-08-30");
-assert(rates.lines.some((l) => l.name === "露珠"), "rates include dew");
+assert(rates.lines.some((l) => l.name === "潮露"), "rates include dew");
 assert(DUNGEON_DAILY_MODS.length >= 10, "expanded daily mods");
 assert(DUNGEON_CHALLENGE_RULES.some((r) => r.minGeneration === 2), "gen2 challenge");
 const gen1Pet = makeStarterPet();
@@ -1566,8 +1566,8 @@ const trainBannerShort = tutorialBannerHint({
   ranch: [{ uid: "p1", level: 2, name: "x" }],
 });
 assert(!trainBannerShort.includes("已夠") && !trainBannerShort.includes("已齊"), "banner not ready when pay short");
-assert(trainBannerShort.includes("小餌"), "banner names missing feed");
-assert(petUpgradeShortageLines({ stones: 0, feed: 0, materials: { tide_dew: 99 } }, 2).some((l) => l.includes("小餌")), "shortage lists feed");
+assert(trainBannerShort.includes("浮游餌"), "banner names missing feed");
+assert(petUpgradeShortageLines({ stones: 0, feed: 0, materials: { tide_dew: 99 } }, 2).some((l) => l.includes("浮游餌")), "shortage lists feed");
 const trainBannerReady = tutorialBannerHint(trainNavSt);
 assert(trainBannerReady.includes("材料已齊"), "banner ready only when upgrade affordable");
 assert(tutorialNextWhere(trainNavSt).includes("升級"), "next-where points at upgrade when ready");
@@ -3118,8 +3118,8 @@ assert(
 );
 const titled = markTitleEntered({ entered: false });
 assert(titled.entered, "markTitleEntered sets flag");
-assert(GAME_TERMS.tide_dew?.name === "露珠" && GAME_TERMS.qi?.name === "共鳴", "glossary core terms");
-assert(GAME_TERMS.stones?.name === "泡泡晶" && GAME_TERMS.feed?.name === "小餌" && GAME_TERMS.dust?.name === "星砂", "glossary economy terms");
+assert(GAME_TERMS.tide_dew?.name === "潮露" && GAME_TERMS.qi?.name === "潮息", "glossary core terms");
+assert(GAME_TERMS.stones?.name === "潮晶" && GAME_TERMS.feed?.name === "浮游餌" && GAME_TERMS.dust?.name === "螢砂", "glossary economy terms");
 assert(stageAt(0).name === "幼體" && stageAt(1).name === "浮游初期" && stageAt(3).name === "成體" && stageAt(4).name === "礁主", "tide rank names");
 assert(GAME_TERMS.spine && GAME_TERMS.mist_token && GAME_TERMS.soul, "glossary spine/token/soul");
 assert(tzSt.trainMap.zones[SPINE_ZONE_ID].clearReady, "clearReady persisted");
@@ -3322,17 +3322,21 @@ assert(!uiSrc2.includes("進階（已廢）"), "ui no advance growth sunset page
 assert(!uiSrc2.includes('到「進階」成長'), "ui howto has no 進階 growth path");
 assert(uiSrc2.includes('title-kicker">Jelly Depths'), "ui title kicker Jelly Depths");
 assert(uiSrc2.includes('title-brand">水母深域'), "ui title brand 水母深域");
-assert(uiSrc2.includes("無限深海 · 收集你的漂漂"), "ui title sub");
+assert(uiSrc2.includes("無限深海 · 收集你的水母"), "ui title sub");
 assert(!uiSrc2.includes('title-kicker">Void Tide'), "ui title no Void Tide");
 assert(!uiSrc2.includes('title-brand">暗潮'), "ui title no 暗潮");
-assert(uiSrc2.includes('data-brand="jelly-depths">漂漂'), "ui chrome brand 漂漂");
+assert(uiSrc2.includes('data-brand="jelly-depths">深域'), "ui chrome brand 深域");
 assert(uiSrc2.includes('class="tag">Jelly Depths'), "ui chrome tag Jelly Depths");
-assert(uiSrc2.includes("漂漂 · 離線結算"), "ui notify prefix 漂漂");
+assert(uiSrc2.includes("深域 · 離線結算"), "ui notify prefix 深域");
 assert(!uiSrc2.includes("暗潮 · "), "ui no 暗潮 notify prefix");
+assert(!uiSrc2.includes("漂漂"), "ui no player-facing 漂漂");
+assert(!uiSrc2.includes("Jellykin"), "ui no Jellykin");
 {
   const tutSrc = readFileSync(join(__dir, "tutorial.js"), "utf8");
   assert(!tutSrc.includes("打開「進階」"), "tutorial no 進階 growth CTA");
   assert(tutSrc.includes("自由探索深域"), "tutorial complete uses 深域");
+  assert(!tutSrc.includes("漂漂") && !tutSrc.includes("Jellykin"), "tutorial no 漂漂/Jellykin");
+  assert(tutSrc.includes("收集你的水母"), "tutorial complete uses 水母");
   const htmlSrcBrand = readFileSync(join(__dir, "../index.html"), "utf8");
   assert(htmlSrcBrand.includes("<title>水母深域</title>"), "index title 水母深域");
   assert(!htmlSrcBrand.includes("暗潮"), "index html no 暗潮");
@@ -3680,7 +3684,7 @@ assert(uiSrc2.includes("fuseConfirmModalHtml"), "ui fuse confirm modal html");
 assert(!/\[data-fuse-confirm\][\s\S]{0,700}!confirm\(/.test(uiSrc2), "fuse no browser confirm");
 assert(cssSrc.includes("flex-direction: column") && /\.stage-dock\s*\{[^}]*flex-direction:\s*column/s.test(cssSrc), "stage-dock stacks rows with gap");
 
-assert(uiSrc2.includes('商肆 · 光核') || uiSrc2.includes("光核"), "soul inside shop");
+assert(uiSrc2.includes('商肆 · 心螢核') || uiSrc2.includes("心螢核"), "soul inside shop");
 assert(!uiSrc2.includes("<h3>淵砂兌換</h3>") && !uiSrc2.includes("<h3>淵砂兌換</h3>"), "abyss page no grit exchange block");
 assert(uiSrc2.includes('商肆 · 淵砂') || uiSrc2.includes('data-shop-inner="grit"'), "grit shop tab");
 assert(dataSrcBag.includes("merchant_purge"), "merchant purge option in floor event");
@@ -3752,7 +3756,7 @@ assert(uiSrc2.includes("相剋"), "ui element matchup copy");
 
 /* Pack A: star / lock / release→soul / batch release */
 {
-  assert(MATERIALS.soul_essence?.name === "光核", "soul_essence material");
+  assert(MATERIALS.soul_essence?.name === "心螢核", "soul_essence material");
   assert(emptyMaterials().soul_essence === 0, "empty mats has soul");
   const baseSoul = releaseSoulGain({ level: 1, rarity: 0, fusionLevel: 0, generation: 1 });
   assert(baseSoul === 2, `lv1 common soul=2 got ${baseSoul}`);
@@ -3934,7 +3938,7 @@ assert(uiSrc2.includes("ranch-release-confirm"), "ui batch release confirm");
 assert(uiSrc2.includes("data-toggle-star"), "ui star toggle");
 assert(uiSrc2.includes("data-toggle-lock"), "ui lock toggle");
 assert(uiSrc2.includes("data-ranch-star-filter"), "ui star filter");
-assert(uiSrc2.includes("光核"), "ui soul copy");
+assert(uiSrc2.includes("心螢核"), "ui soul copy");
 assert(uiSrc2.includes("確認放生"), "ui confirm release copy");
 assert(uiSrc2.includes("批量放生"), "ui batch release copy");
 assert(uiSrc2.includes("上鎖"), "ui lock copy");
@@ -3947,7 +3951,7 @@ assert(
 assert(uiSrc2.includes("petCornerBadges"), "ui pet corner badges helper");
 assert(uiSrc2.includes('["level", "Lv"]'), "ui Lv sort in ranch chips");
 assert(uiSrc2.includes('sortKey === "level"'), "ui sortRanchEntries level");
-assert(!uiSrc2.includes("確定放歸？將返還部分泡泡晶"), "ui no browser confirm stone refund copy");
+assert(!uiSrc2.includes("確定放歸？將返還部分潮晶"), "ui no browser confirm stone refund copy");
 assert(cssSrc.includes("release-modal"), "css release modal");
 assert(cssSrc.includes("pet-tag-star"), "css star tag");
 assert(cssSrc.includes("pet-tag-lock"), "css lock tag");
@@ -4040,7 +4044,7 @@ assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize
 /* Pack F: soul essence merchant */
 {
   assert(SOUL_SHOP_OFFERS.length >= 3, "soul shop catalog size");
-  assert(soulShopOfferById("feed_pouch")?.name === "小餌包", "feed pouch offer");
+  assert(soulShopOfferById("feed_pouch")?.name === "浮游餌包", "feed pouch offer");
   assert(soulShopOfferById("tide_dew_pack")?.grant?.materials?.tide_dew > 0, "tide dew offer");
   assert(soulShopOfferById("temper_oil_pack")?.grant?.materials?.temper_oil > 0, "temper oil offer");
   assert(soulShopOfferById("mist_token_pack")?.grant?.materials?.mist_token > 0, "mist token offer");
@@ -4064,7 +4068,7 @@ assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize
     { materials: { ...emptyMaterials(), soul_essence: 1 }, feed: 0, items: emptyItems(), log: [] },
     "feed_pouch"
   );
-  assert(!broke.ok && String(broke.msg).includes("光核不足"), "afford check blocks buy");
+  assert(!broke.ok && String(broke.msg).includes("心螢核不足"), "afford check blocks buy");
   const missing = buySoulShopOffer(soulShopSt, "no_such_offer");
   assert(!missing.ok, "unknown offer rejected");
   const feedBefore = soulShopSt.feed;
@@ -4100,7 +4104,7 @@ assert(engineSrcPackA.includes("next.locked = !!next.locked"), "engine normalize
   assert(!buySoulShopOffer(cappedSt, "ranch_fence").ok, "fence buy blocked at ranch cap");
   assert(!buySoulShopOffer(cappedSt, "hatch_nest_token").ok, "nest buy blocked at hatch cap");
 }
-assert(uiSrc2.includes("data-shop-inner") && uiSrc2.includes("光核"), "ui shop inner soul tab");
+assert(uiSrc2.includes("data-shop-inner") && uiSrc2.includes("心螢核"), "ui shop inner soul tab");
 assert(uiSrc2.includes("data-soul-shop-buy"), "ui soul buy buttons");
 assert(engineSrcPackA.includes("buySoulShopOffer"), "engine buySoulShopOffer");
 assert(engineSrcPackA.includes("soulShopView"), "engine soulShopView");
@@ -4229,7 +4233,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v140"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v141"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4324,7 +4328,7 @@ assert(preview18.expectedLevel <= 10, "1-18 expected still ≤Lv10");
 
   const gateSt = mkFloorState(18);
   const gateAdvice = idleFailAdvice(gateSt, { failKind: "wipe", floor: 18, failStreak: 2 });
-  assert(gateAdvice.tips.some((t) => t.includes("地階石") && t.includes("1-20")), "fail card explains earth after 1-20");
+  assert(gateAdvice.tips.some((t) => t.includes("礁階石") && t.includes("1-20")), "fail card explains earth after 1-20");
   assert(gateAdvice.tips.some((t) => t.includes("秘境") || t.includes("繁殖") || t.includes("技能")), "fail card honest power tips");
   assert(!gateAdvice.tips.some((t) => t.includes("而家就有石")), "fail card does not imply stone now");
 
@@ -4337,18 +4341,18 @@ assert(preview18.expectedLevel <= 10, "1-18 expected still ≤Lv10");
   assert(matView.filter((m) => m.need > 0).length === 1, "Lv10 one secondary row");
 
   const dungTips = dungeonFailCoachTips(gateSt, { dungeonId: "tide_18", failKind: "wipe" });
-  assert(dungTips.some((t) => t.includes("地階石")), "dungeon fail also explains earth gate");
+  assert(dungTips.some((t) => t.includes("礁階石")), "dungeon fail also explains earth gate");
 }
 
 assert(uiSrc2.includes("upgrade-mats") && uiSrc2.includes("下一級消耗"), "ui upgrade lists next costs");
 assert(uiSrc2.includes('cat: "基本"') || uiSrc2.includes("基本"), "ui labels basic feed");
 assert(uiSrc2.includes("副材"), "ui labels single secondary");
 assert(!uiSrc2.includes("基本（二揀一）"), "ui no XOR pay label");
-assert(!uiSrc2.includes("upgrade-pay-or"), "ui no 或 泡泡晶 pay join");
+assert(!uiSrc2.includes("upgrade-pay-or"), "ui no 或 潮晶 pay join");
 assert(!uiSrc2.includes("升級另耗"), "ui no 另耗 split");
 assert(!uiSrc2.includes("下一級材料"), "ui no duplicate 下一級材料 kicker");
-assert(!uiSrc2.includes("泡泡晶（代替小餌）"), "ui does not list stones as upgrade pay");
-assert(!uiSrc2.includes("基本改用泡泡晶"), "ui no stone upgrade button copy");
+assert(!uiSrc2.includes("潮晶（代替浮游餌）"), "ui does not list stones as upgrade pay");
+assert(!uiSrc2.includes("基本改用潮晶"), "ui no stone upgrade button copy");
 assert((uiSrc2.match(/upgradeFullCostPanelHtml\(/g) || []).length === 2, "define + one next-level cost panel");
 assert(!uiSrc2.includes("upgradeMatsListHtml"), "old mats-only list removed");
 assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui shows locked stone note");
