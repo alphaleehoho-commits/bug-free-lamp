@@ -1,7 +1,7 @@
 /** Data tables — 水母漂漂 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260917.2";
+export const APP_BUILD = "20260917.3";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
@@ -7024,6 +7024,56 @@ export const BREED_GOALS = [
   },
 ];
 
+/** 種類在玩家配方列表上的代表種（基礎野生 1:1，僅顯示用） */
+const CANONICAL_SPECIES_BY_KIND = (() => {
+  const map = {};
+  for (const sp of Object.values(SPECIES)) {
+    if (sp.breedOnly) continue;
+    if (!map[sp.kind]) map[sp.kind] = sp.id;
+  }
+  return map;
+})();
+
+export function canonicalSpeciesIdForKind(kind) {
+  return CANONICAL_SPECIES_BY_KIND[kind] || null;
+}
+
+/** 玩家可見物種名（跟 SPECIES.name；命名 PR merge 後自動跟新顯示名） */
+export function speciesDisplayName(speciesId) {
+  return SPECIES[speciesId]?.name || speciesId || "";
+}
+
+function hybridParentsLabel(recipe) {
+  const a = canonicalSpeciesIdForKind(recipe.kinds?.[0]);
+  const b = canonicalSpeciesIdForKind(recipe.kinds?.[1]);
+  return `${speciesDisplayName(a)} × ${speciesDisplayName(b)}`;
+}
+
+function tertiaryParentsLabel(recipe) {
+  return `${speciesDisplayName(recipe.parents?.[0])} × ${speciesDisplayName(recipe.parents?.[1])}`;
+}
+
+/**
+ * 配方是否已發現：已擁有／圖鑑登錄／繁殖孵出統計／未孵交配蛋。
+ * 未發現唔出列表（唔用「潮霧中」占位）。
+ */
+export function isBreedRecipeDiscovered(state, speciesId) {
+  if (!speciesId || !SPECIES[speciesId]) return false;
+  if (isSpeciesUnlocked(state, speciesId)) return true;
+  if ((state?.stats?.speciesBreeds?.[speciesId] || 0) > 0) return true;
+  for (const egg of state?.eggs || []) {
+    if (egg?.genes?.species === speciesId) return true;
+  }
+  for (const key of Object.keys(state?.bestiary || {})) {
+    if (String(key).split(":")[0] === speciesId) return true;
+  }
+  const owned = [...(state?.pets || []), ...(state?.ranch || [])];
+  for (const pet of owned) {
+    if (pet?.speciesId === speciesId) return true;
+  }
+  return false;
+}
+
 /** 配方矩陣（UI）：6 kind × 6，主配方優先 */
 export function hybridRecipeMatrix() {
   const cells = [];
@@ -7056,14 +7106,16 @@ export function hybridRecipeMatrix() {
 export function hybridRecipeSummary() {
   const mains = HYBRID_RECIPES.map((r) => ({
     ...r,
-    name: SPECIES[r.species]?.name || r.species,
+    name: speciesDisplayName(r.species),
+    parentsLabel: hybridParentsLabel(r),
     kindsLabel: `${r.kinds[0]}×${r.kinds[1]}`,
   }));
   const tert = TERTIARY_RECIPES.map((r) => ({
     ...r,
     tier: "tertiary",
-    name: SPECIES[r.species]?.name || r.species,
-    kindsLabel: `${SPECIES[r.parents[0]]?.name || r.parents[0]}×${SPECIES[r.parents[1]]?.name || r.parents[1]}`,
+    name: speciesDisplayName(r.species),
+    parentsLabel: tertiaryParentsLabel(r),
+    kindsLabel: tertiaryParentsLabel(r).replace(/\s+/g, ""),
   }));
   /* 去重三代種顯示 */
   const seen = new Set();
@@ -7074,6 +7126,48 @@ export function hybridRecipeSummary() {
     tertUnique.push(r);
   }
   return [...mains, ...tertUnique];
+}
+
+/**
+ * 圖鑑／配方頁：只列出已發現嘅雜交＋三代配方。
+ * 雜交列用種類代表種嘅顯示名（內部仍係 kind 對）；三代列用雙親物種名。
+ */
+export function discoveredBreedRecipes(state) {
+  const hybrid = [];
+  for (const r of HYBRID_RECIPES) {
+    if (!isBreedRecipeDiscovered(state, r.species)) continue;
+    hybrid.push({
+      ...r,
+      name: speciesDisplayName(r.species),
+      parentsLabel: hybridParentsLabel(r),
+      parentIds: [canonicalSpeciesIdForKind(r.kinds[0]), canonicalSpeciesIdForKind(r.kinds[1])],
+    });
+  }
+  const bySpecies = new Map();
+  for (const r of TERTIARY_RECIPES) {
+    if (!isBreedRecipeDiscovered(state, r.species)) continue;
+    const bothParentsKnown =
+      isBreedRecipeDiscovered(state, r.parents[0]) && isBreedRecipeDiscovered(state, r.parents[1]);
+    const prev = bySpecies.get(r.species);
+    if (!prev) {
+      bySpecies.set(r.species, { recipe: r, bothParentsKnown });
+      continue;
+    }
+    if (bothParentsKnown && !prev.bothParentsKnown) {
+      bySpecies.set(r.species, { recipe: r, bothParentsKnown });
+    }
+  }
+  const tertiary = [];
+  for (const { recipe: r } of bySpecies.values()) {
+    tertiary.push({
+      ...r,
+      tier: "tertiary",
+      name: speciesDisplayName(r.species),
+      parentsLabel: tertiaryParentsLabel(r),
+      parentIds: [...r.parents],
+    });
+  }
+  return { hybrid, tertiary };
 }
 
 /**
