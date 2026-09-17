@@ -1242,7 +1242,23 @@ function setFlashWithTrainAction(msg, siteId, label) {
 function genTagHtml(g) {
   const n = g ?? 0;
   const cls = n >= 3 ? "gen-3" : n >= 2 ? "gen-2" : n >= 1 ? "gen-1" : "gen-0";
-  return `<span class="gen-tag ${cls}">${escapeHtml(genLabel(n))}</span>`;
+  return `<span class="gen-tag ${cls}">[${escapeHtml(genLabel(n))}]</span>`;
+}
+
+function petNatureTextHtml(p) {
+  const main = escapeHtml(p.personalityName || "");
+  const sub =
+    p.personality2Awakened && p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : "";
+  return `${main}${personalitySoulTagHtml(p.personalityId)}${sub}`;
+}
+
+/** 列表／卡／詳情身份 meta：稀有 · 代數 · Lv · 屬性 · 性格（唔顯示 kind） */
+function petIdentityMetaHtml(p) {
+  const r = rarityInfo(p.rarity ?? 0);
+  const g = petGeneration(p);
+  const lv = p.level ?? 1;
+  const elem = escapeHtml(p.elementName || "");
+  return `<span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv} · ${elem} · ${petNatureTextHtml(p)}`;
 }
 
 function rewardBitsHtml(reward) {
@@ -2932,7 +2948,7 @@ function fuseConfirmModalHtml() {
       <div class="combat-modal-card release-modal-card">
         <div class="combat-modal-scroll">
           <h2>確認融合（終身一次）</h2>
-          <p class="lead">將 ${mats.length} 隻素材融入 <strong>${escapeHtml(d.pet.name)}</strong></p>
+          <p class="lead">將 ${mats.length} 隻素材融入 <strong>${escapeHtml(displayPetName(d.pet))}</strong></p>
           <p class="meta warn">每隻水母只有一次融合機會；素材能力愈高，融合結果愈好；請謹慎選擇。</p>
           <p class="meta">需主體＋素材皆 ≥ Lv.${d.fuseNeedLevel || 50} · 出戰預計×${nextMult}${rarityHint}</p>
           <p class="meta">耗 ${escapeHtml(String(d.fuseCostHint))} 潮晶${escapeHtml(matCost)}</p>
@@ -3477,7 +3493,7 @@ function cultivatePanel() {
         const isEgg = o.kind === "egg";
         const sub = isEgg
           ? `${escapeHtml(o.label || "蛋")} · ${escapeHtml(o.desc || "")}`
-          : `${escapeHtml(o.petKind || o.kind || "?")}·${escapeHtml(o.elementName || "")}`;
+          : `${escapeHtml(o.elementName || "")}`;
         return `
         <li class="card-row">
           <div>
@@ -3736,10 +3752,7 @@ function sortRanchEntries(entries, sortKey) {
 
 function petGridCard(p, extraBtn = "", tagHtml = "", opts = {}) {
   const uid = escapeHtml(p.uid || p.templateId);
-  const lv = p.level ?? 1;
-  const fus = p.fusionLevel ?? 0;
   const title = displayPetName(p);
-  const r = rarityInfo(p.rarity ?? 0);
   const g = petGeneration(p);
   const detailGlow = tutGlow({ type: "pet-detail", uid: p.uid || p.templateId });
   const managing = !!opts.managing;
@@ -3773,10 +3786,8 @@ function petGridCard(p, extraBtn = "", tagHtml = "", opts = {}) {
           ${tagHtml}
         </div>
       </div>
-      <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""}</span>
-      <span class="muted">${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${personalitySoulTagHtml(
-        p.personalityId
-      )} · 攻${fmtInt(p.atk)}</span>
+      <span class="muted">${petIdentityMetaHtml(p)}</span>
+      <span class="muted">攻${fmtInt(p.atk)}</span>
       <div class="row-actions pet-card-actions">
         ${
           managing
@@ -3789,10 +3800,7 @@ function petGridCard(p, extraBtn = "", tagHtml = "", opts = {}) {
 
 function petRow(p, extraBtn = "", tagHtml = "") {
   const uid = escapeHtml(p.uid || p.templateId);
-  const lv = p.level ?? 1;
-  const fus = p.fusionLevel ?? 0;
   const title = displayPetName(p);
-  const r = rarityInfo(p.rarity ?? 0);
   const g = petGeneration(p);
   const detailGlow = tutGlow({ type: "pet-detail", uid: p.uid || p.templateId });
   return `
@@ -3801,9 +3809,7 @@ function petRow(p, extraBtn = "", tagHtml = "") {
       <div>
         <button type="button" class="linkish" data-pet-detail="${uid}"><strong>${escapeHtml(title)}</strong></button>
         ${tagHtml}${petFlagTags(p)}
-        <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(g)} · Lv.${lv}${fus ? ` · 融${fus}` : ""} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)}·${escapeHtml(p.personalityName)}${personalitySoulTagHtml(
-          p.personalityId
-        )}${p.personality2Awakened && p.personality2Name ? `/${escapeHtml(p.personality2Name)}` : ""}${p.bloodlineName && p.bloodlineName !== "無紋" ? `·${escapeHtml(p.bloodlineName)}` : ""}</span>
+        <span class="muted">${petIdentityMetaHtml(p)}</span>
         <span class="muted">攻${fmtInt(p.atk)} 血${fmtInt(p.hp)} 速${fmtInt(p.spd)} · 【${escapeHtml(p.skillName || SKILLS[p.skillId]?.name || "—")}】</span>
       </div>
       <div class="row-actions">
@@ -3854,13 +3860,12 @@ function dispatchModalHtml() {
       .map((p) => {
         const selected = pick.has(p.uid);
         const match = petMatchesDispatchMission(p, mission);
-        const r = rarityInfo(p.rarity ?? 0);
         return petPickCard(p, {
           selected,
           disabled: !match,
           btnLabel: selected ? "已選" : match ? "選擇" : "不符",
           btnAttr: `data-dispatch-pick="${escapeHtml(p.uid)}"`,
-          meta: `<span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(p.elementName)} · 攻${fmtInt(p.atk)}${match ? "" : " · 唔符合"}`,
+          meta: `${petIdentityMetaHtml(p)}${match ? "" : " · 唔符合"}`,
         });
       })
       .join("") || `<li class="empty pet-pick-empty">水母池無可派遣水母（需撤回出戰或等派遣歸來）。</li>`;
@@ -4047,8 +4052,8 @@ function petsListView() {
       (c) => `
       <li class="card-row">
         <div>
-          <strong>${escapeHtml(c.name)}</strong>
-          <span class="muted">${escapeHtml(c.kind)}·${escapeHtml(c.elementName)}·${escapeHtml(c.personalityName)} · 攻${c.atk} 血${c.hp} 速${c.spd}</span>
+          <strong>${escapeHtml(displayPetName(c))}</strong>
+          <span class="muted">${petIdentityMetaHtml(c)} · 攻${c.atk} 血${c.hp} 速${c.spd}</span>
           <span class="muted">技能【${escapeHtml(c.skillName)}】· 成功率 ${Math.round(c.bondRate * 100)}%${Math.round(Math.min(0.95, c.bondRate + BOND_FEED_BONUS) * 100) !== Math.round(c.bondRate * 100) ? `（浮游餌→${Math.round(Math.min(0.95, c.bondRate + BOND_FEED_BONUS) * 100)}%）` : ""} · ${c.cost} 潮晶</span>
         </div>
         <div class="row-actions">
@@ -4378,9 +4383,7 @@ function petsBreedView() {
       ${petArtFromPet(pet, { size: 36, generation: petGeneration(pet) })}
       <div>
         <strong>${escapeHtml(displayPetName(pet))}</strong>
-        <span class="muted">${genTagHtml(petGeneration(pet))} · ${escapeHtml(pet.elementName)}·${escapeHtml(pet.personalityName)}${personalitySoulTagHtml(
-          pet.personalityId
-        )}</span>
+        <span class="muted">${petIdentityMetaHtml(pet)}</span>
       </div>
       <button type="button" class="secondary" data-breed-toggle="${escapeHtml(pet.uid)}">移除</button>
     </div>`;
@@ -4392,17 +4395,12 @@ function petsBreedView() {
       .map((p) => {
         const on = selected.has(p.uid);
         const mating = matingBusy.has(p.uid);
-        const r = rarityInfo(p.rarity ?? 0);
         return petPickCard(p, {
           selected: on,
           disabled: mating && !on,
           btnLabel: mating ? "交配中" : on ? "已選" : "加入交配",
           btnAttr: `data-breed-toggle="${escapeHtml(p.uid)}"`,
-          meta: `<span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
-            petGeneration(p)
-          )} · ${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}${personalitySoulTagHtml(p.personalityId)}${
-            mating ? " · 交配中" : ""
-          }`,
+          meta: `${petIdentityMetaHtml(p)}${mating ? " · 交配中" : ""}`,
         });
       })
       .join("") || `<li class="empty pet-pick-empty">水母池需要待命水母才能交配（派遣中不可用）。</li>`;
@@ -4564,7 +4562,6 @@ function hatchClaimPetRowsHtml(pets, reveals = []) {
   if (!pets?.length) return `<li class="empty">沒有孵出水母。</li>`;
   return pets
     .map((p, i) => {
-      const r = rarityInfo(p.rarity ?? 0);
       const reveal = reveals[i] || null;
       const tags = (reveal?.tags || [])
         .map((t) => `<span class="hatch-reveal-tag">${escapeHtml(t)}</span>`)
@@ -4577,9 +4574,7 @@ function hatchClaimPetRowsHtml(pets, reveals = []) {
         <div>
           <strong>${escapeHtml(displayPetName(p))}</strong>
           ${tags ? `<div class="hatch-reveal-tags">${tags}</div>` : ""}
-          <span class="muted"><span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${genTagHtml(
-            petGeneration(p)
-          )} · ${escapeHtml(p.kind)}·${escapeHtml(p.elementName)} · Lv.${p.level ?? 1}</span>
+          <span class="muted">${petIdentityMetaHtml(p)}</span>
           <span class="muted">攻${fmtInt(p.atk)} 血${fmtInt(p.hp)} 速${fmtInt(p.spd)}</span>
           ${parentLine}
         </div>
@@ -4658,7 +4653,9 @@ function petDetailStatsHtml(pet, detail, rarity) {
           ? `<li class="muted">種族基準 攻${base.atk} 血${base.hp} 速${base.spd}</li>`
           : ""
       }
-      <li><strong>稀有</strong> — <span class="rarity rarity-${rarity.color}">${escapeHtml(rarity.name)}</span> · ${escapeHtml(pet.kind)}·${escapeHtml(pet.elementName || "")}${
+      <li><strong>稀有</strong> — <span class="rarity rarity-${rarity.color}">${escapeHtml(rarity.name)}</span></li>
+      <li><strong>代數</strong> — ${genTagHtml(petGeneration(pet))}</li>
+      <li><strong>屬性</strong> — ${escapeHtml(pet.elementName || "")}${
         elEx?.nameEn ? ` ${escapeHtml(elEx.nameEn)}` : ""
       }</li>
       ${
@@ -4845,9 +4842,10 @@ function petsDetailView() {
           <span class="pet-detail-name">${escapeHtml(displayPetName(pet))}</span>${petFlagTags(pet)}
           <button type="button" class="pet-rename-pen" data-rename-pen="${escapeHtml(pet.uid)}" aria-label="為水母改名" title="為水母改名">✎</button>
         </h2>
-        <p class="lead">${escapeHtml(loc)} · Lv.${lv}${fusBit}${
+        <p class="muted pet-detail-meta">${petIdentityMetaHtml(pet)}${
           SPECIES[pet.speciesId]?.nameEn ? ` · ${escapeHtml(SPECIES[pet.speciesId].nameEn)}` : ""
         }</p>
+        <p class="lead">${escapeHtml(loc)}${fusBit}</p>
       </div>
     </div>
     ${petDetailTabNav(detailTab)}
@@ -4916,7 +4914,7 @@ function petsFuseView() {
   return wrapStage(
     "",
     `<h2>融合（終身一次）</h2>
-    <p class="lead">主體 ${escapeHtml(base.name)} Lv.${baseLv}${lvOk ? "" : `（需 ≥${needLv}）`} · 素材 ${selected.size}/${needMats}（皆需 Lv≥${needLv}）· 耗融合核×1</p>
+    <p class="lead">主體 ${escapeHtml(displayPetName(base))} Lv.${baseLv}${lvOk ? "" : `（需 ≥${needLv}）`} · 素材 ${selected.size}/${needMats}（皆需 Lv≥${needLv}）· 耗融合核×1</p>
     <p class="meta muted">每隻水母只有一次融合機會；素材能力愈高結果愈好。</p>
     <ul class="pet-pick-grid fuse-mat-list">${mats}</ul>`,
     `<div class="row">
@@ -4946,7 +4944,7 @@ function codexPanel() {
         <div class="codex-icon${unlocked ? "" : " species-locked-fog"}">${unlocked || s.found > 0 ? petArtHtml(s.speciesId, { size: 36 }) : `<span class="pet-art pet-art-unknown"><span class="pet-icon pet-icon-unknown">?</span></span>`}</div>
         <div>
           <strong>${unlocked || s.found > 0 ? escapeHtml(s.speciesName) : "潮霧中的品種"}</strong>
-          <span class="muted">${unlocked || s.found > 0 ? `${escapeHtml(s.speciesNameEn || "")}${s.speciesNameEn ? " · " : ""}` : ""}${escapeHtml(s.kind)}${s.breedOnly ? "·雜交" : ""}${s.unlocked ? "" : " · 潮霧中"} · ${s.found}/${s.total}</span>
+          <span class="muted">${unlocked || s.found > 0 ? `${escapeHtml(s.speciesNameEn || "")}${s.speciesNameEn ? " · " : ""}` : ""}${s.breedOnly ? "雜交 · " : ""}${s.unlocked ? "" : "潮霧中 · "}${s.found}/${s.total}</span>
           <div class="bar thin"><i style="width:${pct}%"></i></div>
         </div>
       </li>`;
@@ -5114,7 +5112,7 @@ function sweepModalHtml() {
   const r = sweepResult;
   if (!r) return "";
   const encounterLine = r.encounter
-    ? `<p class="hub-mod">海霧遇見【${escapeHtml(r.encounter.name)}】— 可至待契締結</p>`
+    ? `<p class="hub-mod">海霧遇見【${escapeHtml(displayPetName(r.encounter))}】— 可至待契締結</p>`
     : r.encounterBlocked
       ? `<p class="muted">待契欄已滿，未再遇見新水母</p>`
       : "";
@@ -5566,12 +5564,11 @@ function abyssPanelHtml() {
     const rows = cands
       .map((p) => {
         const on = pick.has(p.uid);
-        const r = rarityInfo(p.rarity ?? 0);
         return petPickCard(p, {
           selected: on,
           btnLabel: on ? "已選" : "選擇",
           btnAttr: `data-abyss-squad-toggle="${escapeHtml(p.uid)}"`,
-          meta: `<span class="rarity rarity-${r.color}">${escapeHtml(r.name)}</span> · ${escapeHtml(p.elementName || "")} · Lv.${p.level ?? 1} · 攻${p.atk} 血${p.hp}`,
+          meta: petIdentityMetaHtml(p),
         });
       })
       .join("") || `<li class="empty pet-pick-empty">冇可用水母。</li>`;
