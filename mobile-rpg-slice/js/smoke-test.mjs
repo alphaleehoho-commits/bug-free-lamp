@@ -15,6 +15,8 @@ import {
   childGenerationOdds,
   petGeneration,
   genLabel,
+  petSpeciesDisplayName,
+  petLabel,
   hybridRecipeForKinds,
   HYBRID_RECIPES,
   TERTIARY_RECIPES,
@@ -372,6 +374,7 @@ import {
   importSaveJson,
   dailyView,
   SECOND_SKILL_UNLOCK,
+  displayPetName,
 } from "./engine.js";
 import {
   normalizeTutorial,
@@ -517,6 +520,7 @@ assert(ABYSS_TIDE_SHIFT_COST >= 1, "abyss tide shift grit cost");
   assert(shiftSt.pets[0].genes.element === r1.toElement, "genes.element updated");
   assert(shiftSt.items.tide_shift_charm === 1, "charm consumed");
   assert(shiftSt.pets[0].name.startsWith(ELEMENTS[r1.toElement].name), "name prefix updated");
+  assert(displayPetName(shiftSt.pets[0]) === "礁狐", "display name ignores stored element prefix");
   const beforeRanchEl = shiftSt.ranch[0].elementId;
   const r2 = useBagItem(shiftSt, "tide_shift_charm", "shift2");
   assert(r2.ok && shiftSt.ranch[0].elementId !== beforeRanchEl, "ranch pet via useBagItem");
@@ -586,7 +590,7 @@ assert(odds02[0].gen === 1 && odds02[0].pct === 70 && odds02[1].gen === 2, "0+2 
 
 const odds12 = childGenerationOdds(1, 2);
 assert(odds12[0].gen === 1 && odds12[0].pct === 70, "1+2 odds");
-assert(genLabel(0) === "原生" && genLabel(2) === "繁殖2代", "labels");
+assert(genLabel(0) === "原生" && genLabel(1) === "一代" && genLabel(2) === "二代" && genLabel(3) === "三代", "labels");
 assert(genEggPrefix(1) === "一代" && genEggPrefix(3) === "三代", "egg gen prefix");
 
 /* Gen mix cost：分代耗唔同階段料 */
@@ -616,6 +620,16 @@ const fin = buildPetStats({
 });
 assert(fin.kind === "光" && fin.skillId === "glow_lance", "fin build");
 assert(petGeneration(fox) === 0, "native");
+assert(fox.name === "水礁狐", "stored name may keep element prefix");
+assert(displayPetName(fox) === "礁狐", "display name has no element prefix");
+assert(petSpeciesDisplayName({ name: "嵐水滴水母", elementName: "嵐" }) === "水滴水母", "strip element prefix fallback");
+assert(displayPetName({ ...fox, nick: "小泡" }) === "小泡（礁狐）", "nick wraps species");
+{
+  const lbl = petLabel(fox);
+  assert(lbl.startsWith("礁狐（"), "petLabel uses species");
+  assert(!lbl.includes("獸") && !lbl.includes("鱗") && !lbl.includes("禽"), "petLabel drops kind");
+  assert(lbl.includes("原生") && lbl.includes(fox.elementName) && lbl.includes(fox.personalityName), "petLabel meta");
+}
 
 fox.generation = 1;
 fin.generation = 1;
@@ -3725,6 +3739,12 @@ assert(cssSrc.includes("pet-explain"), "css pet explain blocks");
 assert(cssSrc.includes("pet-rename-pen"), "css rename pen");
 assert(cssSrc.includes("pet-inline-btn"), "css inline pet buttons");
 assert(uiSrc2.includes("相剋"), "ui element matchup copy");
+assert(uiSrc2.includes("petIdentityMetaHtml"), "shared pet identity meta");
+assert(!uiSrc2.includes("escapeHtml(p.kind)"), "roster/cards drop kind");
+assert(!uiSrc2.includes("escapeHtml(pet.kind)"), "detail drops kind");
+assert(!uiSrc2.includes("escapeHtml(c.kind)"), "pending drops kind");
+assert(!uiSrc2.includes("escapeHtml(s.kind)"), "codex drops kind");
+assert(!uiSrc2.includes("繁殖${"), "ui no 繁殖N代 wording");
 
 /* Pack A: star / lock / release→soul / batch release */
 {
@@ -3953,6 +3973,7 @@ assert(cssSrc.includes("pet-pick-sheet"), "css pet-pick-sheet");
   assert(iconSrc.includes("ELEMENT_COLORS"), "pet-icons element colors");
   assert(iconSrc.includes("RARITY_GLOW"), "pet-icons rarity glow");
   assert(iconSrc.includes("pet-art-gen"), "pet-icons gen corner mark");
+  assert(!iconSrc.includes("繁殖${"), "art gen tooltip uses genLabel not 繁殖N代");
   assert(iconSrc.includes("pet-icon--kind-"), "pet-icons kind class");
   assert(iconSrc.includes("pet-icon--elem-"), "pet-icons elem class");
   assert(iconSrc.includes("pet-icon--rarity-"), "pet-icons rarity class");
@@ -4205,7 +4226,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v139"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v140"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"

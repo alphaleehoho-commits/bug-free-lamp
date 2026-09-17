@@ -1,7 +1,7 @@
 /** Data tables — 水母漂漂 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260916.10";
+export const APP_BUILD = "20260917.1";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
@@ -1760,7 +1760,28 @@ export function childGenerationOdds(genA, genB) {
 
 export function genLabel(gen) {
   const g = Math.max(0, gen | 0);
-  return g <= 0 ? "原生" : `繁殖${g}代`;
+  return ["原生", "一代", "二代", "三代"][g] || `${g}代`;
+}
+
+const ELEMENT_NAME_PREFIXES = () => [
+  ...new Set([...Object.values(ELEMENTS).map((e) => e.name), "潮", "幽"].filter(Boolean)),
+];
+
+/**
+ * 玩家可見種族名：唔將元素（水／焰／嵐／岩／雷）拼入名稱。
+ * 存檔 `pet.name` 仍可帶前綴（轉屬遷移）；顯示層一律用種族本名。
+ */
+export function petSpeciesDisplayName(pet) {
+  if (!pet) return "";
+  const spName = pet.speciesName || SPECIES[pet.speciesId]?.name || "";
+  if (spName) return spName;
+  const raw = String(pet.name || "");
+  const elName = pet.elementName || ELEMENTS[pet.elementId]?.name || "";
+  const prefixes = elName ? [...new Set([elName, ...ELEMENT_NAME_PREFIXES()])] : ELEMENT_NAME_PREFIXES();
+  for (const p of prefixes) {
+    if (p && raw.startsWith(p) && raw.length > p.length) return raw.slice(p.length);
+  }
+  return raw;
 }
 
 /** 蛋名用短代數：一代／二代／三代 */
@@ -3654,8 +3675,10 @@ export function petLabel(pet) {
   const r = rarityInfo(pet.rarity ?? 0).name;
   const pe2 =
     pet.personality2Awakened && pet.personality2Name ? `/${pet.personality2Name}` : "";
-  const blood = pet.bloodlineName && pet.bloodlineName !== "無紋" ? `·${pet.bloodlineName}` : "";
-  return `${pet.name}（${r}·${pet.kind}·${pet.elementName}·${pet.personalityName}${pe2}${blood}）`;
+  const name = petSpeciesDisplayName(pet);
+  const gen = genLabel(petGeneration(pet));
+  const lv = pet.level ?? 1;
+  return `${name}（${r}·${gen}·Lv.${lv}·${pet.elementName}·${pet.personalityName}${pe2}）`;
 }
 
 /* ─── P1：水母池掛機產物 ─── */
@@ -6293,7 +6316,7 @@ export function bestiaryEntries() {
         kind: sp.kind,
         elementId: el.id,
         elementName: el.name,
-        label: `${el.name}${sp.name}`,
+        label: sp.name,
       });
     }
   }
@@ -6945,7 +6968,7 @@ export const BREED_GOALS = [
     gen: 2,
     need: 1,
     name: "二代血脈",
-    desc: "誕生 1 隻繁殖 2 代水母",
+    desc: "誕生 1 隻二代水母",
     reward: { stones: 60, feed: 10 },
   },
   {
@@ -6955,7 +6978,7 @@ export const BREED_GOALS = [
     gen: 3,
     need: 1,
     name: "三代血脈",
-    desc: "誕生 1 隻繁殖 3 代水母",
+    desc: "誕生 1 隻三代水母",
     reward: { stones: 100, scrap: 1 },
   },
   {
