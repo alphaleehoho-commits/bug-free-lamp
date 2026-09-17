@@ -1476,6 +1476,7 @@ button.flash-act {
   --roam-hud-clearance: 22%;
   --bg-x: 0px;
   --bg-y: 0px;
+  --ground-y: 0px;
   background: #0c1218;
 }
 .train-roam-bg,
@@ -1499,7 +1500,24 @@ button.flash-act {
   width: auto;
   object-fit: cover;
   object-position: center 42%;
-  transform: translate(-50%, -50%) translate(var(--bg-x, 0px), var(--bg-y, 0px));
+  transform: translate(-50%, -50%);
+}
+.train-roam-ground {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 34%;
+  height: 32%;
+  z-index: 1;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0 14px,
+    rgba(232, 244, 248, 0.07) 14px 15px
+  );
+  mask-image: linear-gradient(180deg, transparent, #000 28%, #000 72%, transparent);
+  transform: translateY(var(--ground-y, 0px));
+  will-change: transform;
 }
 .train-roam-vignette {
   position: absolute;
@@ -1535,27 +1553,37 @@ button.flash-act {
 .train-roam-pin[data-side="ally"] { z-index: 3; }
 .train-roam-pin.is-roam-exit {
   opacity: 0;
-  transition: opacity 0.32s ease;
+  transform: translate(-50%, -50%) translate(-18px, 6px);
+  transition: opacity 0.28s ease, transform 0.28s ease;
 }
 .train-roam-pin.is-roam-enter {
-  animation: roamSpawnIn 0.48s ease-out both;
+  animation: roamFoeRunIn 0.68s cubic-bezier(0.18, 0.82, 0.22, 1) both;
+  animation-delay: var(--roam-enter-delay, 0ms);
 }
-@keyframes roamSpawnIn {
+@keyframes roamFoeRunIn {
   from {
-    opacity: 0;
-    filter: blur(2px);
+    transform: translate(-50%, -50%) translate(var(--roam-enter-dx, 176px), 10px);
+    opacity: 0.15;
+    filter: blur(1.5px);
+  }
+  42% {
+    opacity: 1;
+    filter: none;
   }
   to {
+    transform: translate(-50%, -50%) translate(0, 0);
     opacity: 1;
     filter: none;
   }
 }
 .train-roam-stage.is-walking .train-roam-pin[data-side="ally"] {
-  animation: roamWalkBob 0.34s ease-in-out infinite;
+  animation: roamPartyWalk 0.4s ease-in-out infinite;
 }
-@keyframes roamWalkBob {
-  0%, 100% { margin-top: 0; }
-  50% { margin-top: -3px; }
+@keyframes roamPartyWalk {
+  0%, 100% { transform: translate(-50%, -50%) translate(0, 0); }
+  28% { transform: translate(-50%, -50%) translate(5px, -6px); }
+  52% { transform: translate(-50%, -50%) translate(1px, -1px); }
+  78% { transform: translate(-50%, -50%) translate(7px, -8px); }
 }
 .train-idle-roster.is-roam .combat-unit {
   display: flex;
@@ -1598,6 +1626,7 @@ button.flash-act {
   right: 0.42rem;
   z-index: 6;
   pointer-events: none;
+  transform: none;
 }
 .train-roam-hud > * {
   pointer-events: auto;
@@ -4694,6 +4723,9 @@ button.pet-badge {
   .train-roam-pin.is-roam-enter,
   .train-roam-stage.is-walking .train-roam-pin[data-side="ally"] {
     animation: none !important;
+  }
+  .train-roam-ground {
+    transform: none !important;
   }
 }
 

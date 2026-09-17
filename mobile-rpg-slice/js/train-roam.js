@@ -3,9 +3,16 @@
  * Layout lock（portrait 9:16）：左友右敵、中帶走廊留空；角色帶約 38–58%。
  */
 
-export const ROAM_WALK_MS = 880;
-/** 清波後沿走廊前進（背景下移），單位仍鎖左右 */
-export const ROAM_STEP_PY = 42;
+export const ROAM_WALK_MS = 720;
+/** 波間短行：地面微移（px）。場景圖固定，唔累積鏡頭。 */
+export const ROAM_GROUND_PY = 12;
+/** @deprecated 舊全圖捲；波間改用 ROAM_GROUND_PY */
+export const ROAM_STEP_PY = ROAM_GROUND_PY;
+/** 敵從右緣／霧外跑入（ms） */
+export const ROAM_ENTER_MS = 680;
+export const ROAM_ENTER_STAGGER_MS = 90;
+/** 入場起點：相對休息位再偏右，出畫面 */
+export const ROAM_FOE_ENTER_DX = 176;
 /** 角色帶相對錨點的 Y 擺幅（38–58% 中段） */
 export const ROAM_Y_MIN = -40;
 export const ROAM_Y_MAX = 40;
@@ -45,13 +52,18 @@ export function roamHeading(waveIndex = 0) {
 }
 
 /**
- * 背景沿走廊微移。walkT=0 停喺上一波鏡頭；1 為已到達。
+ * 場景圖固定。walkT 喺 (0,1) 時先微移地面再回 0；休息位永遠 {0,0}。
  */
-export function roamBgShift(waveIndex = 0, walkT = 1) {
+export function roamBgShift(_waveIndex = 0, walkT = 1) {
   const t = Math.max(0, Math.min(1, Number(walkT)));
-  const idx = Math.max(0, waveIndex | 0);
-  const steps = Math.max(0, idx - 1 + t);
-  return { x: 0, y: -steps * ROAM_STEP_PY };
+  if (t <= 0 || t >= 1) return { x: 0, y: 0 };
+  const pulse = Math.sin(t * Math.PI);
+  return { x: 0, y: -pulse * ROAM_GROUND_PY };
+}
+
+/** 敵入場由休息位再偏右（出畫面／霧），跑向隊伍正面。 */
+export function roamFoeEnterDx(_index = 0) {
+  return ROAM_FOE_ENTER_DX;
 }
 
 /**

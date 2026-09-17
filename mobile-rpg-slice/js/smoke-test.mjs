@@ -423,6 +423,9 @@ import {
 import {
   ROAM_PATH,
   ROAM_WALK_MS,
+  ROAM_GROUND_PY,
+  ROAM_ENTER_MS,
+  ROAM_FOE_ENTER_DX,
   ROAM_CENTER_CLEAR_X,
   roamHeading,
   roamBgShift,
@@ -430,6 +433,7 @@ import {
   roamFoeOffset,
   roamLayoutFromUnits,
   roamFoePlaceholderSrc,
+  roamFoeEnterDx,
   ROAM_IDLE_SCENE_SRC,
   ROAM_ALLY_PLACEHOLDER_SRC,
   ROAM_FOE_FOAM_SRC,
@@ -4384,7 +4388,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v148"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v149"), "sw cache bumped");
 assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
 assert(swSrc.includes("bg_idle_home_reef_1080x1920.webp"), "sw caches idle reef scene");
 assert(swSrc.includes("enemy_foamblob_idle.png"), "sw caches foam foe placeholder");
@@ -4662,8 +4666,16 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   const bg0 = roamBgShift(0, 1);
   const bg1start = roamBgShift(1, 0);
   const bg1 = roamBgShift(1, 1);
+  const bgMid = roamBgShift(1, 0.5);
   assert(bg0.x === bg1start.x && bg0.y === bg1start.y, "walk starts from previous camera");
-  assert(bg1.y !== bg0.y, "camera follows corridor after walk");
+  assert(bg0.y === 0 && bg1.y === 0, "scene rest pose is fixed");
+  assert(bgMid.y !== 0, "walk beat has slight ground scroll");
+  assert(Math.abs(bgMid.y) <= ROAM_GROUND_PY + 0.01, "ground scroll stays subtle");
+  assert(roamBgShift(4, 1).y === bg1.y, "waves do not accumulate camera");
+  assert(ROAM_GROUND_PY > 0 && ROAM_GROUND_PY <= 18, "ground nudge is a short step");
+  assert(ROAM_ENTER_MS >= 400 && ROAM_ENTER_MS <= 1200, "foe enter is a short run-in");
+  assert(roamFoeEnterDx(0) >= 120, "foes start from off-stage right");
+  assert(ROAM_FOE_ENTER_DX === roamFoeEnterDx(1), "enter dx is stable");
   const laid = roamLayoutFromUnits({
     allies: [{ slot: 0, lane: "rear" }, { slot: 1, lane: "front" }],
     foes: [{ role: "normal" }, { role: "elite" }],
@@ -4676,9 +4688,12 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(laid.heading.faceRight === true, "layout heading locked right");
   assert(uiSrc2.includes("train-roam-stage"), "ui hang roam stage");
   assert(uiSrc2.includes("playRoamWalk"), "ui walks between waves");
+  assert(uiSrc2.includes("playRoamFoeEnter") && uiSrc2.includes("playRoamWaveTransition"), "ui foe enter after walk");
   assert(uiSrc2.includes('classList.remove("pet-art--flip")'), "ui never flips enemy roam art");
   assert(uiSrc2.includes('classList.add("pet-art--flip")'), "ui locks ally roam flip");
   assert(uiSrc2.includes("enterFoes"), "ui spawns next wave after walk");
+  assert(uiSrc2.includes("is-roam-enter"), "ui marks foe enter pins");
+  assert(uiSrc2.includes("train-roam-ground"), "ui ground layer for walk scroll");
   assert(uiSrc2.includes("from \"./train-roam.js\""), "ui imports roam staging");
   assert(uiSrc2.includes("ROAM_IDLE_SCENE_SRC") || uiSrc2.includes("bg_idle_home_reef"), "ui wires idle scene art");
   assert(uiSrc2.includes("train-roam-hud-top"), "ui top HUD on stage");
@@ -4690,6 +4705,10 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("--roam-hud-clearance"), "css mid-lower HUD clearance");
   assert(cssSrc.includes(".combat-roster:not(.is-roam)"), "css dungeon ally flip not forced on roam");
   assert(cssSrc.includes("panel-stage--cultivate-idle"), "css B1 idle scene class");
+  assert(cssSrc.includes("roamFoeRunIn"), "css foe run-in from off-stage");
+  assert(cssSrc.includes("roamPartyWalk"), "css party short walk");
+  assert(cssSrc.includes("train-roam-ground"), "css ground scroll layer");
+  assert(cssSrc.includes("--roam-enter-dx"), "css enter from right fog");
   assert(existsSync(join(dirname(__dir), "assets/bg/scenes/bg_idle_home_reef_1080x1920.webp")), "idle reef scene asset");
   assert(existsSync(join(dirname(__dir), "assets/bg/scenes/bg_dungeon_tide_path_1080x1920.webp")), "dungeon path scene asset");
   assert(existsSync(join(dirname(__dir), "assets/allies/ally_jelly_idle.png")), "ally jelly placeholder");

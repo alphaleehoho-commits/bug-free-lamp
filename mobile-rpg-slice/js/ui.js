@@ -204,8 +204,11 @@ import {
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
   ROAM_WALK_MS,
+  ROAM_ENTER_MS,
+  ROAM_ENTER_STAGGER_MS,
   roamBgShift,
   roamLayoutFromUnits,
+  roamFoeEnterDx,
   ROAM_IDLE_SCENE_SRC,
   ROAM_ALLY_PLACEHOLDER_SRC,
   roamFoePlaceholderSrc,
@@ -3062,6 +3065,14 @@ function cancelIdleAnim() {
     idleAnimToken = null;
   }
   idleAnimBusy = false;
+  if (idleCombat) {
+    if (idleCombat.foeEnterTimer) {
+      window.clearTimeout(idleCombat.foeEnterTimer);
+      idleCombat.foeEnterTimer = null;
+    }
+    idleCombat.foeEntering = false;
+    idleCombat.foeEnterBusy = false;
+  }
 }
 
 function ensureIdleCombat() {
@@ -3120,6 +3131,7 @@ function ensureIdleCombat() {
       resultLine: null,
       lastFail: idleCombat?.lastFail || null,
       fx: emptyIdleFx(),
+      pendingFoeEnter: true,
     };
   } else {
     idleCombat.logLine = view.logLine;
@@ -3173,16 +3185,44 @@ function idleRoamPinHtml(item, faceRight, enter = false, pinIndex = 0) {
   const artOpts = { faceRight };
   if (side === "foe") artOpts.placeholderSrc = roamFoePlaceholderSrc(u, pinIndex);
   else if (!(u?.speciesId && SPECIES[u.speciesId])) artOpts.placeholderSrc = ROAM_ALLY_PLACEHOLDER_SRC;
+  const enterDx = side === "foe" ? roamFoeEnterDx(pinIndex) : 0;
+  const enterDelay = side === "foe" ? Math.max(0, pinIndex | 0) * ROAM_ENTER_STAGGER_MS : 0;
   return `<div class="train-roam-pin${enterCls}" data-side="${side}" data-roam-uid="${escapeHtml(
     u.uid || ""
   )}" data-slot="${item.slot ?? 0}" data-lane="${item.lane || "front"}" style="--roam-x:${Number(item.x || 0).toFixed(
     1
-  )}px;--roam-y:${Number(item.y || 0).toFixed(1)}px">${idleUnitBarHtml(
+  )}px;--roam-y:${Number(item.y || 0).toFixed(1)}px;--roam-enter-dx:${enterDx}px;--roam-enter-delay:${enterDelay}ms">${idleUnitBarHtml(
     u,
     item.slot ?? 0,
     item.lane || "front",
     artOpts
   )}</div>`;
+}
+
+function beginRoamFoeEnter(wrap, foeCount = 1, opts = {}) {
+  if (!wrap) return;
+  wrap.pendingFoeEnter = false;
+  wrap.foeEntering = true;
+  const extra = Math.max(0, (foeCount | 0) - 1) * ROAM_ENTER_STAGGER_MS;
+  const hold = ROAM_ENTER_MS + extra + 60;
+  if (typeof window === "undefined") {
+    wrap.foeEntering = false;
+    return;
+  }
+  if (!opts.holdBusy) wrap.foeEnterBusy = false;
+  if (wrap.foeEnterTimer) window.clearTimeout(wrap.foeEnterTimer);
+  wrap.foeEnterTimer = window.setTimeout(() => {
+    wrap.foeEntering = false;
+    wrap.foeEnterTimer = null;
+    if (wrap.foeEnterBusy) {
+      wrap.foeEnterBusy = false;
+      idleAnimBusy = false;
+    }
+  }, hold);
+  if (opts.holdBusy && !idleAnimBusy) {
+    idleAnimBusy = true;
+    wrap.foeEnterBusy = true;
+  }
 }
 
 function syncIdleRoamStage(wrap, opts = {}) {
@@ -3191,8 +3231,7 @@ function syncIdleRoamStage(wrap, opts = {}) {
   const walkT = opts.walkT == null ? wrap.roamWalkT ?? 1 : opts.walkT;
   const bg = roamBgShift(wrap.session.waveIndex || 0, walkT);
   stage.dataset.face = "right";
-  stage.style.setProperty("--bg-x", `${bg.x.toFixed(1)}px`);
-  stage.style.setProperty("--bg-y", `${bg.y.toFixed(1)}px`);
+  stage.style.setProperty("--ground-y", `${bg.y.toFixed(1)}px`);
   const field = stage.querySelector("[data-live=train-idle-roster]");
   if (!field) return;
   field.querySelectorAll('.train-roam-pin[data-side="ally"] .pet-art--combat').forEach((art) => {
@@ -3287,7 +3326,38 @@ async function playRoamWalk(wrap) {
   }
   wrap.roamWalkT = 1;
   stage.classList.remove("is-walking");
+  stage.style.setProperty("--ground-y", "0px");
   if (idleAnimToken === token) idleAnimToken = null;
+}
+
+async function playRoamFoeEnter(wrap) {
+  if (!wrap?.session) return;
+  if (typeof document !== "undefined" && document.hidden) {
+    patchIdleRosterFromSession(wrap, { enterFoes: false });
+    wrap.pendingFoeEnter = false;
+    wrap.foeEntering = false;
+    return;
+  }
+  const reduced =
+    typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  const n = (wrap.session.foes || []).length;
+  beginRoamFoeEnter(wrap, n);
+  patchIdleRosterFromSession(wrap, { enterFoes: true });
+  const wait = reduced ? 0 : ROAM_ENTER_MS + Math.max(0, n - 1) * ROAM_ENTER_STAGGER_MS;
+  if (wait > 0) {
+    const token = idleAnimToken || { cancelled: false, timers: [] };
+    if (!idleAnimToken) idleAnimToken = token;
+    await new Promise((resolve) => {
+      const t = window.setTimeout(resolve, wait);
+      token.timers.push(t);
+    });
+  }
+}
+
+async function playRoamWaveTransition(wrap) {
+  await playRoamWalk(wrap);
+  if (!wrap?.session) return;
+  await playRoamFoeEnter(wrap);
 }
 
 async function playIdleCombatEvents(events) {
@@ -3375,6 +3445,7 @@ function tickIdleCombat({ background = false } = {}) {
       wrap.resultLine = null;
       wrap.lastFail = keepFail || null;
       wrap.fx = emptyIdleFx();
+      wrap.pendingFoeEnter = true;
       needRosterPatch = true;
       continue;
     }
@@ -3433,22 +3504,31 @@ function tickIdleCombat({ background = false } = {}) {
   if (playEvents) {
     idleAnimBusy = true;
     playIdleCombatEvents(playEvents)
-      .then(() => (playWalk ? playRoamWalk(idleCombat) : null))
+      .then(() => (playWalk ? playRoamWaveTransition(idleCombat) : null))
       .catch(() => {})
       .finally(() => {
         idleAnimBusy = false;
-        if (idleCombat?.session) patchIdleRosterFromSession(idleCombat, { enterFoes: playWalk });
+        if (idleCombat?.session && !playWalk) patchIdleRosterFromSession(idleCombat);
       });
   } else if (playWalk) {
     idleAnimBusy = true;
-    playRoamWalk(idleCombat)
+    playRoamWaveTransition(idleCombat)
       .catch(() => {})
       .finally(() => {
         idleAnimBusy = false;
-        if (idleCombat?.session) patchIdleRosterFromSession(idleCombat, { enterFoes: true });
       });
   } else if (!background && (needRosterPatch || lastResult)) {
-    patchIdleRosterFromSession(wrap);
+    const enter = !!wrap.pendingFoeEnter;
+    if (enter) {
+      idleAnimBusy = true;
+      playRoamFoeEnter(wrap)
+        .catch(() => {})
+        .finally(() => {
+          idleAnimBusy = false;
+        });
+    } else {
+      patchIdleRosterFromSession(wrap);
+    }
   }
 }
 
@@ -3556,21 +3636,23 @@ function trainIdleStripHtml(rateSummary = "") {
     : "";
   const layout = idleRoamLayout(s, formationId, { walkT: wrap.roamWalkT ?? 1 });
   const faceRight = true;
+  const enterFoes = !!(wrap.pendingFoeEnter || wrap.foeEntering);
+  if (wrap.pendingFoeEnter) beginRoamFoeEnter(wrap, layout.foes.length, { holdBusy: true });
   const pins = [
     ...layout.allies.map((a) => idleRoamPinHtml(a, faceRight, false)),
-    ...layout.foes.map((f, i) => idleRoamPinHtml(f, faceRight, false, i)),
+    ...layout.foes.map((f, i) => idleRoamPinHtml(f, faceRight, enterFoes, i)),
   ].join("");
-  const bgX = layout.bg.x.toFixed(1);
-  const bgY = layout.bg.y.toFixed(1);
+  const groundY = layout.bg.y.toFixed(1);
   const waveLabel = `${floorName} · ${meta}`;
   const prod = rateSummary
     ? `<p class="train-roam-prod">${rateSummary}</p>`
     : "";
   return `<div class="train-idle-strip is-roam${bossCls}" data-live="train-idle">
     ${idleLootLayerHtml()}
-    <div class="train-roam-stage scene-bg panel-stage--cultivate-idle" data-live="train-roam-stage" data-face="right" style="--bg-x:${bgX}px;--bg-y:${bgY}px">
+    <div class="train-roam-stage scene-bg panel-stage--cultivate-idle" data-live="train-roam-stage" data-face="right" style="--ground-y:${groundY}px">
       <div class="train-roam-bg" aria-hidden="true">
         <img class="train-roam-bg-art" src="${escapeHtml(ROAM_IDLE_SCENE_SRC)}" alt="" width="1080" height="1920" />
+        <div class="train-roam-ground"></div>
       </div>
       <div class="train-roam-vignette" aria-hidden="true"></div>
       <div class="combat-roster train-idle-roster is-roam" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}" data-roam-wave="${s.waveIndex || 0}">
