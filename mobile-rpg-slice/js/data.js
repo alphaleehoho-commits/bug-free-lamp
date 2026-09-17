@@ -1,7 +1,7 @@
 /** Data tables — 水母漂漂 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260917.1";
+export const APP_BUILD = "20260917.2";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
@@ -1784,10 +1784,22 @@ export function petSpeciesDisplayName(pet) {
   return raw;
 }
 
-/** 蛋名用短代數：一代／二代／三代 */
+/** 蛋名用短代數：原生／一代／二代／三代（唔拼 kind） */
 export function genEggPrefix(gen) {
-  const g = Math.max(1, Math.min(GEN_MAX, gen | 0));
-  return ["", "一代", "二代", "三代"][g] || `${g}代`;
+  const g = Math.max(0, Math.min(GEN_MAX, gen | 0));
+  return ["原生", "一代", "二代", "三代"][g] || `${g}代`;
+}
+
+const KIND_TITLE_RE = new RegExp(`[${KINDS.join("")}]`, "g");
+
+/** 顯示層：蛋標題／描述唔拼 獸／鱗／禽／甲／蟲／光 */
+export function stripKindFromEggTitle(text) {
+  return String(text || "").replace(KIND_TITLE_RE, "");
+}
+
+/** 繁殖蛋標題：原生蛋／一代蛋／二代蛋／三代蛋 */
+export function breedEggTitle(gen) {
+  return `${genEggPrefix(gen)}蛋`;
 }
 
 /** 後代愈高：雜交機率／稀有／繼承愈強（用雙親平均代） */
@@ -3546,8 +3558,8 @@ export function makeEgg(tier = "C", source = "unknown", now = Date.now()) {
 }
 
 /**
- * 交配產出蛋（先蛋後寵）：名／描述已鎖定種＋代；genes／天生加值在領蛋時寫入，孵化時還原。
- * 例：一代蟲蛋 · 可以孵化出一代蟲寵物
+ * 交配產出蛋（先蛋後寵）：名／描述已鎖定代數；genes／天生加值在領蛋時寫入，孵化時還原。
+ * 例：一代蛋 · 血脈已封 · 破殼可見一代水母（kind 只存內部）
  */
 export function makeBreedEgg(outcome, now = Date.now()) {
   const genes = outcome?.genes;
@@ -3559,8 +3571,8 @@ export function makeBreedEgg(outcome, now = Date.now()) {
   return {
     uid,
     tier: "C",
-    name: `${prefix}${kind}蛋`,
-    desc: `血脈已封 · 破殼可見${prefix}${kind}水母`,
+    name: breedEggTitle(generation),
+    desc: `血脈已封 · 破殼可見${prefix}水母`,
     source: "breed",
     kind,
     generation,

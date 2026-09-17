@@ -167,6 +167,8 @@ import {
   EGG_CAP,
   makeBreedEgg,
   genEggPrefix,
+  breedEggTitle,
+  stripKindFromEggTitle,
   FORGE_SCRAP_COST,
   BOND_COST_MAX,
   fusionStoneCost,
@@ -591,7 +593,11 @@ assert(odds02[0].gen === 1 && odds02[0].pct === 70 && odds02[1].gen === 2, "0+2 
 const odds12 = childGenerationOdds(1, 2);
 assert(odds12[0].gen === 1 && odds12[0].pct === 70, "1+2 odds");
 assert(genLabel(0) === "原生" && genLabel(1) === "一代" && genLabel(2) === "二代" && genLabel(3) === "三代", "labels");
-assert(genEggPrefix(1) === "一代" && genEggPrefix(3) === "三代", "egg gen prefix");
+assert(genEggPrefix(0) === "原生" && genEggPrefix(1) === "一代" && genEggPrefix(3) === "三代", "egg gen prefix");
+assert(breedEggTitle(0) === "原生蛋" && breedEggTitle(1) === "一代蛋" && breedEggTitle(2) === "二代蛋", "breed egg titles");
+assert(stripKindFromEggTitle("一代蟲蛋") === "一代蛋", "strip 蟲 from egg title");
+assert(stripKindFromEggTitle("原生獸蛋") === "原生蛋", "strip 獸 from native egg title");
+assert(stripKindFromEggTitle("三代鱗蛋") === "三代蛋", "strip 鱗 from gen3 egg title");
 
 /* Gen mix cost：分代耗唔同階段料 */
 const cost02 = breedMatCost(0, 2);
@@ -2865,7 +2871,7 @@ assert(breedQSt.ranch.length === ranchBefore, "ranch unchanged until hatch");
 assert(breedQSt.breedJobs.length === 1, "claimed job removed");
 const breedEgg = breedQSt.eggs[breedQSt.eggs.length - 1];
 assert(breedEgg.source === "breed" && breedEgg.genes, "breed egg stores genes");
-assert(/代.蛋$/.test(breedEgg.name), "breed egg name like 一代獸蛋");
+assert(/代蛋$/.test(breedEgg.name), "breed egg name like 一代蛋");
 assert(String(breedEgg.desc || "").includes("血脈已封"), "breed egg desc seals bloodline");
 assert(breedEgg.generation >= 1, "egg generation locked at claim");
 assert(breedEgg.kind, "egg kind locked at claim");
@@ -2983,10 +2989,23 @@ const namedEgg = makeBreedEgg({
   bornBonus: { atk: 1, hp: 2, spd: 0 },
   parentUids: ["a", "b"],
 });
-assert(namedEgg.name === "一代蟲蛋", "egg name 一代蟲蛋");
-assert(namedEgg.desc === "血脈已封 · 破殼可見一代蟲水母", "egg desc");
+assert(namedEgg.name === "一代蛋", "egg name 一代蛋");
+assert(namedEgg.desc === "血脈已封 · 破殼可見一代水母", "egg desc");
+assert(namedEgg.kind === "蟲", "egg keeps internal kind");
 const hatchedFromNamed = hatchPetFromEgg(namedEgg);
 assert(hatchedFromNamed.kind === "蟲" && hatchedFromNamed.generation === 1, "hatch uses stored genes");
+{
+  const legacyView = eggsView({
+    eggs: [
+      { uid: "legacy-bug", source: "breed", name: "一代蟲蛋", generation: 1, kind: "蟲", tier: "C" },
+      { uid: "legacy-native", source: "breed", name: "原生獸蛋", generation: 0, kind: "獸", tier: "C" },
+      { uid: "legacy-g2", source: "breed", name: "二代禽蛋", generation: 2, kind: "禽", tier: "C" },
+    ],
+  });
+  assert(legacyView[0].name === "一代蛋", "inventory strips 一代蟲蛋");
+  assert(legacyView[1].name === "原生蛋", "inventory strips 原生獸蛋");
+  assert(legacyView[2].name === "二代蛋", "inventory strips 二代禽蛋");
+}
 
 const breedG1 = mkBreedPet("g1", "reefox", "tide", 1);
 const breedG2 = mkBreedPet("g2", "reefox", "tide", 2);
@@ -4226,7 +4245,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v140"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v141"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"

@@ -37,6 +37,8 @@ import {
   EGG_CAP,
   makeBreedEgg,
   genEggPrefix,
+  breedEggTitle,
+  stripKindFromEggTitle,
   BOND_FAIL_RATE_BONUS,
   BOND_FAIL_RATE_CAP,
   FORGE_SCRAP_COST,
@@ -848,12 +850,13 @@ function normalizeEggs(list) {
           const gen = Math.max(1, base.genes.generation | 0);
           const sp = SPECIES[base.genes.species];
           const kind = sp?.kind || base.kind || "獸";
-          const prefix = genEggPrefix(gen);
           base.generation = gen;
           base.kind = kind;
-          base.name = base.name || `${prefix}${kind}蛋`;
-          base.desc = base.desc || `可以孵化出${prefix}${kind}水母`;
+          base.name = base.name || breedEggTitle(gen);
+          base.desc = base.desc || `可以孵化出${genEggPrefix(gen)}水母`;
         }
+        if (base.name) base.name = stripKindFromEggTitle(base.name) || base.name;
+        if (base.desc) base.desc = stripKindFromEggTitle(base.desc);
       }
       return base;
     });
@@ -4108,15 +4111,16 @@ export function eggsView(state, now = Date.now()) {
     const breedDesc =
       e.source === "breed"
         ? e.desc ||
-          (e.generation && e.kind
-            ? `可以孵化出${genEggPrefix(e.generation)}${e.kind}水母`
+          (e.generation
+            ? `可以孵化出${genEggPrefix(e.generation)}水母`
             : "")
         : "";
+    const rawName = e.name || t.name;
     return {
       ...e,
-      name: e.name || t.name,
+      name: stripKindFromEggTitle(rawName) || rawName,
       label: e.source === "breed" ? genLabel(e.generation || 1) : t.label,
-      desc: breedDesc || e.desc || t.desc,
+      desc: stripKindFromEggTitle(breedDesc || e.desc || t.desc) || breedDesc || e.desc || t.desc,
       hatchMs: eggHatchMsFor(e, t),
       hatching,
       ready: hatching && left <= 0,
@@ -8423,6 +8427,8 @@ export {
   EGG_CAP,
   makeBreedEgg,
   genEggPrefix,
+  breedEggTitle,
+  stripKindFromEggTitle,
   FORGE_SCRAP_COST,
   BOND_FAIL_RATE_BONUS,
   BOND_FAIL_RATE_CAP,
