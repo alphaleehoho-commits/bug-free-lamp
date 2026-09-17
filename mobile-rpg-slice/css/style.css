@@ -1457,7 +1457,7 @@ button.flash-act {
   height: min(58svh, 32rem);
   min-height: 18.5rem;
   overflow: hidden;
-  --roam-anchor-y: 38%;
+  --roam-anchor-y: 56%;
   --roam-hud-clearance: 28%;
   --bg-x: 0px;
   --bg-y: 0px;
@@ -1505,7 +1505,7 @@ button.flash-act {
 .train-idle-roster.is-roam,
 .combat-roster.train-idle-roster.is-roam {
   position: absolute;
-  inset: 0 0 var(--roam-hud-clearance) 0;
+  inset: 0;
   display: block;
   margin: 0;
   z-index: 2;
@@ -1560,7 +1560,8 @@ button.flash-act {
 }
 .train-idle-roster.is-roam .cu-name {
   text-align: center;
-  max-width: 4.4rem;
+  max-width: 3.6rem;
+  font-size: 0.52rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1585,16 +1586,13 @@ button.flash-act {
   pointer-events: auto;
 }
 .train-roam-hud-top {
-  top: 0.4rem;
-}
-.train-roam-hud-mid {
-  bottom: 6%;
+  top: 0.32rem;
 }
 .train-idle-strip.is-roam .train-idle-head,
 .train-idle-strip.is-roam .train-qi-chip,
 .train-idle-strip.is-roam .train-floor-nav,
 .train-idle-strip.is-roam .train-boss-banner {
-  margin-bottom: 0.28rem;
+  margin-bottom: 0.16rem;
 }
 .train-idle-strip.is-roam .train-qi-chip,
 .train-idle-strip.is-roam .train-idle-head,
@@ -1602,8 +1600,11 @@ button.flash-act {
 .train-idle-strip.is-roam .train-floor-nav {
   background: rgba(12, 20, 18, 0.48);
   border-radius: 8px;
-  padding: 0.28rem 0.4rem;
+  padding: 0.2rem 0.36rem;
   backdrop-filter: blur(6px);
+}
+.train-roam-hud-mid {
+  bottom: 6%;
 }
 .train-idle-strip.is-roam .train-floor-nav {
   justify-content: space-between;

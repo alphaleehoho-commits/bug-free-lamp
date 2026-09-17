@@ -4644,7 +4644,7 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   for (let i = 0; i < nFoes; i += 1) {
     const p = roamFoeOffset(i, nFoes, h0, i === 0 ? "boss" : "normal");
     assert(p.x * h0.dx + p.y * h0.dy > 0, `foe ${i} spawns in facing half-plane`);
-    assert(p.y <= 36, "foe stays above HUD clearance");
+    assert(p.y <= 28, "foe stays above HUD clearance");
   }
   const front = roamAllyOffset(1, "front", h0);
   const rear = roamAllyOffset(1, "rear", h0);

@@ -8,8 +8,8 @@ export const ROAM_WALK_MS = 880;
 export const ROAM_STEP_PX = 86;
 export const ROAM_STEP_PY = 38;
 /** 單位相對隊伍中心的 Y 上限，留低段 HUD */
-export const ROAM_Y_MIN = -88;
-export const ROAM_Y_MAX = 36;
+export const ROAM_Y_MIN = -64;
+export const ROAM_Y_MAX = 28;
 
 /**
  * 循環路向（螢幕座標：+x 右、+y 下）。
@@ -80,13 +80,13 @@ export function roamBgShift(waveIndex = 0, walkT = 1) {
  */
 export function roamAllyOffset(slot, lane, heading) {
   const h = heading || roamHeading(0);
-  const along = lane === "front" ? 20 : -18;
-  const perp = ((slot | 0) - 1.15) * 34;
+  const along = lane === "front" ? 26 : -24;
+  const perp = ((slot | 0) - 1.15) * 48;
   const px = -h.dy;
   const py = h.dx;
   return {
     x: h.dx * along + px * perp,
-    y: clampRoamY(h.dy * along * 0.52 + py * perp * 0.4),
+    y: clampRoamY(h.dy * along * 0.4 + py * perp * 0.28),
   };
 }
 
@@ -100,12 +100,12 @@ export function roamFoeOffset(index, count, heading, role = "normal") {
   const i = Math.max(0, index | 0);
   const t = n <= 1 ? 0.5 : i / (n - 1);
   const spread = (t - 0.5) * 1.28;
-  const base = role === "boss" ? 90 : role === "elite" ? 80 : 70;
-  const dist = base + (i % 2) * 16;
+  const base = role === "boss" ? 112 : role === "elite" ? 100 : 92;
+  const dist = base + (i % 2) * 18;
   const ang = Math.atan2(h.dy, h.dx) + spread;
   return {
     x: Math.cos(ang) * dist,
-    y: clampRoamY(Math.sin(ang) * dist * 0.58),
+    y: clampRoamY(Math.sin(ang) * dist * 0.34),
   };
 }
 
