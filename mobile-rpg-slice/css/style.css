@@ -1439,7 +1439,7 @@ button.flash-act {
   opacity: 0.92;
 }
 
-/* —— 練功 hang roam：置中隊伍 + 波間走路 + 敵圍遭遇 —— */
+/* —— 練功 hang roam：layout lock 左友右敵 + 9:16 場景 cover —— */
 .train-idle-strip.is-roam {
   position: relative;
   padding: 0;
@@ -1451,17 +1451,32 @@ button.flash-act {
 .train-idle-strip.is-roam.is-stage-boss {
   padding: 0;
 }
+.scene-bg {
+  background-color: #0c1218;
+  background-repeat: no-repeat;
+  background-position: center top;
+  background-size: cover;
+  isolation: isolate;
+}
+.panel-stage--cultivate-idle {
+  background-image: url("../assets/bg/scenes/bg_idle_home_reef_1080x1920.webp");
+}
+.panel-stage--dungeon {
+  background-image: url("../assets/bg/scenes/bg_dungeon_tide_path_1080x1920.webp");
+}
 .train-roam-stage {
   position: relative;
   width: 100%;
-  height: min(58svh, 32rem);
-  min-height: 18.5rem;
+  height: min(62svh, 34rem);
+  min-height: 19rem;
   overflow: hidden;
-  --roam-anchor-y: 56%;
-  --roam-hud-clearance: 28%;
+  --roam-band-top: 38%;
+  --roam-band-bottom: 58%;
+  --roam-anchor-y: 48%;
+  --roam-hud-clearance: 22%;
   --bg-x: 0px;
   --bg-y: 0px;
-  background: #1a2420;
+  background: #0c1218;
 }
 .train-roam-bg,
 .train-roam-bg-art {
@@ -1478,29 +1493,28 @@ button.flash-act {
   left: 50%;
   top: 50%;
   aspect-ratio: 9 / 16;
-  height: 175%;
-  min-width: 175%;
+  height: 100%;
+  min-width: 100%;
+  min-height: 100%;
+  width: auto;
   object-fit: cover;
-  object-position: center;
-  background-size: cover;
-  background-position: center;
+  object-position: center 42%;
   transform: translate(-50%, -50%) translate(var(--bg-x, 0px), var(--bg-y, 0px));
-  background-image:
-    radial-gradient(ellipse 42% 16% at 48% 44%, rgba(210, 186, 132, 0.42), transparent 70%),
-    radial-gradient(circle 18px at 22% 38%, rgba(90, 96, 72, 0.35), transparent 70%),
-    radial-gradient(circle 14px at 72% 52%, rgba(110, 100, 78, 0.32), transparent 70%),
-    radial-gradient(circle 10px at 40% 62%, rgba(70, 88, 64, 0.28), transparent 70%),
-    repeating-linear-gradient(16deg, rgba(120, 140, 90, 0.07) 0 10px, transparent 10px 26px),
-    linear-gradient(180deg, #c9d7bc 0%, #b7c6a6 34%, #c2b089 58%, #8fa07a 100%);
 }
 .train-roam-vignette {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background:
-    linear-gradient(180deg, rgba(18, 28, 24, 0.28) 0%, transparent 16%),
-    linear-gradient(180deg, transparent 62%, rgba(12, 18, 16, 0.55) 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(12, 18, 24, 0.42) 0%,
+    rgba(12, 18, 24, 0.08) 16%,
+    rgba(12, 18, 24, 0) 38%,
+    rgba(12, 18, 24, 0) 58%,
+    rgba(12, 18, 24, 0.28) 78%,
+    rgba(12, 18, 24, 0.58) 100%
+  );
 }
 .train-idle-roster.is-roam,
 .combat-roster.train-idle-roster.is-roam {
@@ -1567,6 +1581,9 @@ button.flash-act {
   white-space: nowrap;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
   color: #f3f6ef;
+  background: rgba(8, 16, 22, 0.55);
+  border-radius: 999px;
+  padding: 0.04rem 0.35rem;
 }
 .train-idle-roster.is-roam .cu-bar {
   width: 2.4rem;
@@ -1586,40 +1603,74 @@ button.flash-act {
   pointer-events: auto;
 }
 .train-roam-hud-top {
-  top: 0.32rem;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 0.48rem 0.55rem 0;
 }
-.train-idle-strip.is-roam .train-idle-head,
-.train-idle-strip.is-roam .train-qi-chip,
-.train-idle-strip.is-roam .train-floor-nav,
-.train-idle-strip.is-roam .train-boss-banner {
-  margin-bottom: 0.16rem;
+.train-idle-strip.is-roam .train-qi-chip {
+  margin: 0 0 0.35rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(8, 22, 28, 0.35);
+  overflow: hidden;
+  position: relative;
 }
-.train-idle-strip.is-roam .train-qi-chip,
-.train-idle-strip.is-roam .train-idle-head,
-.train-idle-strip.is-roam .train-idle-meta,
-.train-idle-strip.is-roam .train-floor-nav {
-  background: rgba(12, 20, 18, 0.48);
-  border-radius: 8px;
-  padding: 0.2rem 0.36rem;
-  backdrop-filter: blur(6px);
+.train-idle-strip.is-roam .train-qi-label {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-size: 0.72rem;
+  color: #e7f4f0;
+  letter-spacing: 0.04em;
+}
+.train-idle-strip.is-roam .train-qi-bar {
+  height: 1.32rem;
+  background: rgba(0, 0, 0, 0.35);
+}
+.train-roam-wave-label,
+.train-idle-strip.is-roam .train-roam-wave-label {
+  margin: 0.15rem 0 0;
+  text-align: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: rgba(220, 236, 242, 0.88);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  background: transparent;
+  padding: 0;
 }
 .train-roam-hud-mid {
-  bottom: 6%;
+  bottom: 0.4rem;
+}
+.train-roam-prod {
+  margin: 0 0 0.28rem;
+  padding: 0.32rem 0.5rem;
+  text-align: center;
+  font-size: 0.68rem;
+  color: #e8f0ee;
+  background: rgba(8, 16, 22, 0.55);
+  border-radius: 10px;
+}
+.train-idle-strip.is-roam .train-boss-banner {
+  margin: 0.2rem 0 0;
 }
 .train-idle-strip.is-roam .train-floor-nav {
-  justify-content: space-between;
-  margin: 0.15rem 0 0.2rem;
-}
-.train-idle-strip.is-roam .train-idle-meta {
-  margin: 0 0 0.22rem;
-  color: #e8efe8;
-}
-.train-idle-strip.is-roam .train-idle-bar {
+  justify-content: center;
   margin: 0;
+  gap: 0.35rem;
+}
+.train-idle-strip.is-roam .train-floor-nav button {
+  min-width: 4.4rem;
+  background: rgba(8, 16, 22, 0.5);
 }
 .train-idle-strip.is-roam .idle-loot-layer {
   position: absolute;
-  top: 5.6rem;
+  top: 3.6rem;
   left: 0.5rem;
   right: 0.5rem;
   z-index: 7;
@@ -5257,27 +5308,25 @@ html.theme-light .train-idle-strip.is-roam,
 }
 html.theme-light .train-roam-stage,
 #app.theme-light .train-roam-stage {
-  background: #d7e0d0;
+  background: #0c1218;
 }
 html.theme-light .train-idle-strip.is-roam .train-qi-chip,
-html.theme-light .train-idle-strip.is-roam .train-idle-head,
-html.theme-light .train-idle-strip.is-roam .train-idle-meta,
-html.theme-light .train-idle-strip.is-roam .train-floor-nav,
+html.theme-light .train-idle-strip.is-roam .train-floor-nav button,
 #app.theme-light .train-idle-strip.is-roam .train-qi-chip,
-#app.theme-light .train-idle-strip.is-roam .train-idle-head,
-#app.theme-light .train-idle-strip.is-roam .train-idle-meta,
-#app.theme-light .train-idle-strip.is-roam .train-floor-nav {
-  background: rgba(255, 252, 246, 0.72);
-  color: var(--text);
+#app.theme-light .train-idle-strip.is-roam .train-floor-nav button {
+  background: rgba(8, 22, 28, 0.45);
+  color: #e7f4f0;
 }
-html.theme-light .train-idle-strip.is-roam .train-idle-meta,
-#app.theme-light .train-idle-strip.is-roam .train-idle-meta {
-  color: var(--text);
+html.theme-light .train-idle-strip.is-roam .train-qi-label,
+html.theme-light .train-roam-wave-label,
+#app.theme-light .train-idle-strip.is-roam .train-qi-label,
+#app.theme-light .train-roam-wave-label {
+  color: #e7f4f0;
 }
 html.theme-light .train-idle-roster.is-roam .cu-name,
 #app.theme-light .train-idle-roster.is-roam .cu-name {
-  color: #1c241c;
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.7);
+  color: #f3f6ef;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
 }
 
 /* =============================================================================

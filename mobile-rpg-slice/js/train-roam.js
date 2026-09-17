@@ -1,26 +1,27 @@
 /**
- * 練功掛機 roam 舞台：只負責呈現／遭遇站位，唔改戰鬥數值。
- * 鏡頭跟隊伍；隊伍大致置中；清波後沿路徑行去下一方向再遇下一波。
+ * 練功掛機 roam 舞台：呈現／遭遇站位，唔改戰鬥數值。
+ * Layout lock（portrait 9:16）：左友右敵、中帶走廊留空；角色帶約 38–58%。
  */
 
 export const ROAM_WALK_MS = 880;
-/** 每步鏡頭平移（背景反向） */
-export const ROAM_STEP_PX = 86;
-export const ROAM_STEP_PY = 38;
-/** 單位相對隊伍中心的 Y 上限，留低段 HUD */
-export const ROAM_Y_MIN = -64;
-export const ROAM_Y_MAX = 28;
+/** 清波後沿走廊前進（背景下移），單位仍鎖左右 */
+export const ROAM_STEP_PY = 42;
+/** 角色帶相對錨點的 Y 擺幅（38–58% 中段） */
+export const ROAM_Y_MIN = -40;
+export const ROAM_Y_MAX = 40;
+/** 距畫面中心最少 px，避免單位塞死中 */
+export const ROAM_CENTER_CLEAR_X = 72;
+/** 友軍錨（左）／敵軍錨（右），相對舞台中心 */
+export const ROAM_ALLY_ANCHOR_X = -118;
+export const ROAM_FOE_ANCHOR_X = 118;
 
-/**
- * 循環路向（螢幕座標：+x 右、+y 下）。
- * 有左有右，方便友軍按敵群方向翻面。
- */
+/** 走廊前進（螢幕 +y 下）。單位 facing 永遠向右打敵，唔跟路向左右掉轉。 */
 export const ROAM_PATH = [
-  { dx: 1, dy: 0.1 },
-  { dx: 0.32, dy: 0.92 },
-  { dx: -1, dy: 0.18 },
-  { dx: -0.42, dy: -0.86 },
-  { dx: 0.78, dy: -0.38 },
+  { dx: 0, dy: 1 },
+  { dx: 0.08, dy: 1 },
+  { dx: -0.08, dy: 1 },
+  { dx: 0.05, dy: 1 },
+  { dx: -0.05, dy: 1 },
 ];
 
 export function roamPathIndex(waveIndex = 0) {
@@ -29,83 +30,54 @@ export function roamPathIndex(waveIndex = 0) {
   return ((i % n) + n) % n;
 }
 
-function normalize(dx, dy) {
-  const len = Math.hypot(dx, dy) || 1;
-  return { dx: dx / len, dy: dy / len };
-}
-
 function clampRoamY(y) {
   return Math.max(ROAM_Y_MIN, Math.min(ROAM_Y_MAX, y));
 }
 
-/** 本波行進／遇敵方向。dx≥0 → 敵在右，友軍要 flip 面向右。 */
+/** 永遠 faceRight：友軍 scaleX(-1) 向右；敵立繪向左、唔 flip。 */
 export function roamHeading(waveIndex = 0) {
-  const step = ROAM_PATH[roamPathIndex(waveIndex)] || ROAM_PATH[0];
-  const n = normalize(step.dx, step.dy);
   return {
-    dx: n.dx,
-    dy: n.dy,
-    faceRight: n.dx >= 0,
+    dx: 1,
+    dy: 0,
+    faceRight: true,
     pathIndex: roamPathIndex(waveIndex),
   };
 }
 
 /**
- * 背景位移：已到達波次 walkT=1；清波起步 walkT=0（仍停喺上一波鏡頭）。
- * 鏡頭跟隊：背景反向移，隊伍視覺上維持置中。
+ * 背景沿走廊微移。walkT=0 停喺上一波鏡頭；1 為已到達。
  */
 export function roamBgShift(waveIndex = 0, walkT = 1) {
   const t = Math.max(0, Math.min(1, Number(walkT)));
   const idx = Math.max(0, waveIndex | 0);
   const steps = Math.max(0, idx - 1 + t);
-  let x = 0;
-  let y = 0;
-  const whole = Math.floor(steps);
-  const frac = steps - whole;
-  for (let i = 0; i < whole; i += 1) {
-    const h = roamHeading(i + 1);
-    x -= h.dx * ROAM_STEP_PX;
-    y -= h.dy * ROAM_STEP_PY;
-  }
-  if (frac > 0) {
-    const h = roamHeading(whole + 1);
-    x -= h.dx * ROAM_STEP_PX * frac;
-    y -= h.dy * ROAM_STEP_PY * frac;
-  }
-  return { x, y };
+  return { x: 0, y: -steps * ROAM_STEP_PY };
 }
 
 /**
- * 友軍簇：前排沿行進方向靠近敵群，後排在後；slot 沿垂直方向排。
+ * 友軍鎖左邊，前排稍向中（對敵），slot 沿角色帶垂直排。
  */
-export function roamAllyOffset(slot, lane, heading) {
-  const h = heading || roamHeading(0);
-  const along = lane === "front" ? 26 : -24;
-  const perp = ((slot | 0) - 1.15) * 48;
-  const px = -h.dy;
-  const py = h.dx;
+export function roamAllyOffset(slot, lane, _heading) {
+  const towardFoes = lane === "front" ? 18 : -6;
+  const stack = ((slot | 0) - 1) * 36;
   return {
-    x: h.dx * along + px * perp,
-    y: clampRoamY(h.dy * along * 0.4 + py * perp * 0.28),
+    x: ROAM_ALLY_ANCHOR_X + towardFoes,
+    y: clampRoamY(stack),
   };
 }
 
 /**
- * 敵群喺隊伍前方展開成弧（「圍住」但唔跌入低段 HUD）。
- * 敵立繪永遠向左，此函式只算座標。
+ * 敵軍鎖右邊，沿角色帶上下散開。中帶走廊保持淨空。
  */
-export function roamFoeOffset(index, count, heading, role = "normal") {
-  const h = heading || roamHeading(0);
+export function roamFoeOffset(index, count, _heading, role = "normal") {
   const n = Math.max(1, count | 0);
   const i = Math.max(0, index | 0);
-  const t = n <= 1 ? 0.5 : i / (n - 1);
-  const spread = (t - 0.5) * 1.28;
-  const base = role === "boss" ? 112 : role === "elite" ? 100 : 92;
-  const dist = base + (i % 2) * 18;
-  const ang = Math.atan2(h.dy, h.dx) + spread;
+  const t = n <= 1 ? 0.35 : i / (n - 1);
+  const stack = (t - 0.35) * 70;
+  const extra = role === "boss" ? 10 : role === "elite" ? 4 : 0;
   return {
-    x: Math.cos(ang) * dist,
-    y: clampRoamY(Math.sin(ang) * dist * 0.34),
+    x: ROAM_FOE_ANCHOR_X + extra + (i % 2) * 6,
+    y: clampRoamY(stack),
   };
 }
 
@@ -129,3 +101,5 @@ export function roamLayoutFromUnits(spec = {}) {
   });
   return { heading, bg, allies, foes };
 }
+
+export const ROAM_IDLE_SCENE_SRC = "./assets/bg/scenes/bg_idle_home_reef_1080x1920.webp";

@@ -423,11 +423,13 @@ import {
 import {
   ROAM_PATH,
   ROAM_WALK_MS,
+  ROAM_CENTER_CLEAR_X,
   roamHeading,
   roamBgShift,
   roamAllyOffset,
   roamFoeOffset,
   roamLayoutFromUnits,
+  ROAM_IDLE_SCENE_SRC,
 } from "./train-roam.js";
 
 function assertNavKeepsTab(state, step, tab, panelSub = {}) {
@@ -4378,8 +4380,9 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v146"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v147"), "sw cache bumped");
 assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
+assert(swSrc.includes("bg_idle_home_reef_1080x1920.webp"), "sw caches idle reef scene");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4632,33 +4635,29 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("pet-art above name/bar"), "css stacked combat labels");
 }
 
-/* Pack: 練功 hang roam presentation (phase 1) — no combat number changes */
+/* Pack: 練功 hang roam — layout lock 左友右敵 / 9:16 scene cover */
 {
   assert(ROAM_PATH.length >= 4, "roam path has several headings");
   assert(ROAM_WALK_MS >= 400 && ROAM_WALK_MS <= 1600, "roam walk is a short beat");
-  const faces = new Set(ROAM_PATH.map((_, i) => roamHeading(i).faceRight));
-  assert(faces.has(true) && faces.has(false), "path turns both left and right");
+  assert(ROAM_CENTER_CLEAR_X >= 56, "center corridor keep-out");
   const h0 = roamHeading(0);
-  assert(h0.faceRight === h0.dx >= 0, "faceRight follows heading x");
+  assert(h0.faceRight === true, "layout lock always faces foes on the right");
+  assert(roamHeading(2).faceRight === true, "later waves still face right");
   const nFoes = 4;
   for (let i = 0; i < nFoes; i += 1) {
     const p = roamFoeOffset(i, nFoes, h0, i === 0 ? "boss" : "normal");
-    assert(p.x * h0.dx + p.y * h0.dy > 0, `foe ${i} spawns in facing half-plane`);
-    assert(p.y <= 28, "foe stays above HUD clearance");
+    assert(p.x > ROAM_CENTER_CLEAR_X, `foe ${i} stays on the right`);
+    assert(p.y >= -40 && p.y <= 40, "foe stays in character band");
   }
   const front = roamAllyOffset(1, "front", h0);
   const rear = roamAllyOffset(1, "rear", h0);
-  assert(
-    front.x * h0.dx + front.y * h0.dy > rear.x * h0.dx + rear.y * h0.dy,
-    "ally front stands closer to foes"
-  );
-  const leftH = [...ROAM_PATH.keys()].map(roamHeading).find((h) => !h.faceRight);
-  assert(leftH && leftH.dx < 0, "has a leftward encounter heading");
+  assert(front.x < -ROAM_CENTER_CLEAR_X && rear.x < -ROAM_CENTER_CLEAR_X, "allies stay on the left");
+  assert(front.x > rear.x, "ally front stands closer to the right-side foes");
   const bg0 = roamBgShift(0, 1);
   const bg1start = roamBgShift(1, 0);
   const bg1 = roamBgShift(1, 1);
   assert(bg0.x === bg1start.x && bg0.y === bg1start.y, "walk starts from previous camera");
-  assert(bg1.x !== bg0.x || bg1.y !== bg0.y, "camera follows after walk");
+  assert(bg1.y !== bg0.y, "camera follows corridor after walk");
   const laid = roamLayoutFromUnits({
     allies: [{ slot: 0, lane: "rear" }, { slot: 1, lane: "front" }],
     foes: [{ role: "normal" }, { role: "elite" }],
@@ -4666,17 +4665,28 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
     walkT: 1,
   });
   assert(laid.allies.length === 2 && laid.foes.length === 2, "layout maps units to pins");
-  assert(laid.heading.faceRight === roamHeading(2).faceRight, "layout heading matches wave");
+  assert(laid.allies.every((a) => a.x < -ROAM_CENTER_CLEAR_X), "layout allies clear the center");
+  assert(laid.foes.every((f) => f.x > ROAM_CENTER_CLEAR_X), "layout foes clear the center");
+  assert(laid.heading.faceRight === true, "layout heading locked right");
   assert(uiSrc2.includes("train-roam-stage"), "ui hang roam stage");
   assert(uiSrc2.includes("playRoamWalk"), "ui walks between waves");
   assert(uiSrc2.includes('classList.remove("pet-art--flip")'), "ui never flips enemy roam art");
+  assert(uiSrc2.includes('classList.add("pet-art--flip")'), "ui locks ally roam flip");
   assert(uiSrc2.includes("enterFoes"), "ui spawns next wave after walk");
   assert(uiSrc2.includes("from \"./train-roam.js\""), "ui imports roam staging");
+  assert(uiSrc2.includes("ROAM_IDLE_SCENE_SRC") || uiSrc2.includes("bg_idle_home_reef"), "ui wires idle scene art");
+  assert(uiSrc2.includes("train-roam-hud-top"), "ui top HUD on stage");
+  assert(uiSrc2.includes("train-roam-prod") || uiSrc2.includes("train-roam-hud-mid"), "ui mid-lower production row");
   assert(cssSrc.includes("train-roam-stage"), "css roam stage");
   assert(cssSrc.includes("aspect-ratio: 9 / 16") || cssSrc.includes("aspect-ratio:9 / 16"), "css portrait 9:16 plate");
   assert(cssSrc.includes("object-fit: cover"), "css cover crop for scene art");
+  assert(cssSrc.includes("--roam-band-top"), "css character band 38%");
   assert(cssSrc.includes("--roam-hud-clearance"), "css mid-lower HUD clearance");
   assert(cssSrc.includes(".combat-roster:not(.is-roam)"), "css dungeon ally flip not forced on roam");
+  assert(cssSrc.includes("panel-stage--cultivate-idle"), "css B1 idle scene class");
+  assert(existsSync(join(dirname(__dir), "assets/bg/scenes/bg_idle_home_reef_1080x1920.webp")), "idle reef scene asset");
+  assert(existsSync(join(dirname(__dir), "assets/bg/scenes/bg_dungeon_tide_path_1080x1920.webp")), "dungeon path scene asset");
+  assert(ROAM_IDLE_SCENE_SRC.includes("bg_idle_home_reef"), "scene src points at idle reef");
   assert(!/createTrainIdleSession[\s\S]{0,200}maxRounds:\s*80/.test(readFileSync(join(__dir, "engine.js"), "utf8")), "idle maxRounds unchanged");
 }
 

@@ -204,9 +204,9 @@ import {
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
   ROAM_WALK_MS,
-  roamHeading,
   roamBgShift,
   roamLayoutFromUnits,
+  ROAM_IDLE_SCENE_SRC,
 } from "./train-roam.js";
 import {
   tutorialActive,
@@ -3171,15 +3171,14 @@ function syncIdleRoamStage(wrap, opts = {}) {
   const stage = document.querySelector("[data-live=train-roam-stage]");
   if (!stage || !wrap?.session) return;
   const walkT = opts.walkT == null ? wrap.roamWalkT ?? 1 : opts.walkT;
-  const heading = roamHeading(wrap.session.waveIndex || 0);
   const bg = roamBgShift(wrap.session.waveIndex || 0, walkT);
-  stage.dataset.face = heading.faceRight ? "right" : "left";
+  stage.dataset.face = "right";
   stage.style.setProperty("--bg-x", `${bg.x.toFixed(1)}px`);
   stage.style.setProperty("--bg-y", `${bg.y.toFixed(1)}px`);
   const field = stage.querySelector("[data-live=train-idle-roster]");
   if (!field) return;
   field.querySelectorAll('.train-roam-pin[data-side="ally"] .pet-art--combat').forEach((art) => {
-    art.classList.toggle("pet-art--flip", heading.faceRight);
+    art.classList.add("pet-art--flip");
   });
   field.querySelectorAll('.train-roam-pin[data-side="foe"] .pet-art--combat').forEach((art) => {
     art.classList.remove("pet-art--flip");
@@ -3474,7 +3473,7 @@ function idleLootLayerHtml() {
   return '<div class="idle-loot-layer is-hot" data-live="idle-loot">' + bits + "</div>";
 }
 
-function trainIdleStripHtml() {
+function trainIdleStripHtml(rateSummary = "") {
   const wrap = ensureIdleCombat();
   const gates = trainFloorNavGates(state);
   const floor = gates.floor || trainIdleFloor(state);
@@ -3527,10 +3526,6 @@ function trainIdleStripHtml() {
   const s = wrap.session;
   const formationId = wrap.formationId || currentFormationId();
   const meta = idleCombatMetaText(s);
-  const pct = Math.min(
-    100,
-    Math.round(((s.waveIndex + (s.ended && s.won ? 1 : 0)) / Math.max(1, s.waveCount)) * 100)
-  );
   const resultLine = idleCombatResultLine(wrap);
   const failAdvice = currentIdleFailAdvice(wrap);
   const resultCls = resultLine
@@ -3539,30 +3534,35 @@ function trainIdleStripHtml() {
       : " is-clear"
     : "";
   const layout = idleRoamLayout(s, formationId, { walkT: wrap.roamWalkT ?? 1 });
-  const faceRight = layout.heading.faceRight;
+  const faceRight = true;
   const pins = [
     ...layout.allies.map((a) => idleRoamPinHtml(a, faceRight, false)),
     ...layout.foes.map((f) => idleRoamPinHtml(f, faceRight, false)),
   ].join("");
   const bgX = layout.bg.x.toFixed(1);
   const bgY = layout.bg.y.toFixed(1);
+  const waveLabel = `${floorName} · ${meta}`;
+  const prod = rateSummary
+    ? `<p class="train-roam-prod">${rateSummary}</p>`
+    : "";
   return `<div class="train-idle-strip is-roam${bossCls}" data-live="train-idle">
     ${idleLootLayerHtml()}
-    <div class="train-roam-stage" data-live="train-roam-stage" data-face="${faceRight ? "right" : "left"}" style="--bg-x:${bgX}px;--bg-y:${bgY}px">
-      <div class="train-roam-bg" aria-hidden="true"><div class="train-roam-bg-art"></div></div>
+    <div class="train-roam-stage scene-bg panel-stage--cultivate-idle" data-live="train-roam-stage" data-face="right" style="--bg-x:${bgX}px;--bg-y:${bgY}px">
+      <div class="train-roam-bg" aria-hidden="true">
+        <img class="train-roam-bg-art" src="${escapeHtml(ROAM_IDLE_SCENE_SRC)}" alt="" width="1080" height="1920" />
+      </div>
       <div class="train-roam-vignette" aria-hidden="true"></div>
       <div class="combat-roster train-idle-roster is-roam" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}" data-roam-wave="${s.waveIndex || 0}">
         ${pins}
       </div>
       <div class="train-roam-hud train-roam-hud-top">
-        ${head}
         ${qiChip}
-        ${floorNav}
+        <p class="train-roam-wave-label" data-live="train-idle-meta">${escapeHtml(waveLabel)}</p>
         ${bossBanner}
       </div>
       <div class="train-roam-hud train-roam-hud-mid">
-        <p class="lead combat-round-meta train-idle-meta" data-live="train-idle-meta">${escapeHtml(meta)}</p>
-        <div class="bar combat-bar train-idle-bar"><i data-live="train-idle-bar" style="width:${pct}%"></i></div>
+        ${prod}
+        ${floorNav}
       </div>
     </div>
     <p class="train-idle-hit${resultCls}" data-live="train-idle-hit"${resultLine ? "" : " hidden"}>${escapeHtml(resultLine)}</p>
@@ -3793,7 +3793,7 @@ function cultivatePanel() {
     nav,
     `<div class="cultivate-panel panel-train">
     ${tutCta}
-    ${trainIdleStripHtml()}
+    ${trainIdleStripHtml(rateSummary)}
     ${trainRatesBlockHtml(rateLines, rateSummary)}
     </div>`
   );
@@ -7503,7 +7503,8 @@ setInterval(() => {
         if (log) log.textContent = wrap.logLine || "";
         const meta = strip.querySelector("[data-live=train-idle-meta]");
         if (meta) {
-          meta.textContent = idleCombatMetaText(s);
+          const floorName = dungeonDisplayName(trainIdleFloor(state));
+          meta.textContent = `${floorName} · ${idleCombatMetaText(s)}`;
         }
         const bar = strip.querySelector("[data-live=train-idle-bar]");
         if (bar) {
