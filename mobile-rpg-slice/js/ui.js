@@ -75,9 +75,7 @@ import {
   petGeneration,
   breedGoalsView,
   claimBreedGoal,
-  hybridRecipeSummary,
-  hybridRecipeMatrix,
-  KINDS,
+  discoveredBreedRecipes,
   dungeonWaves,
   SKILLS,
   PENDING_BOND_MAX,
@@ -1334,53 +1332,33 @@ function breedGoalsBoardHtml(compact = false) {
     <ul class="list">${once.map(renderGoal).join("")}</ul>`;
 }
 
+function recipeRowHtml(r) {
+  const extra = r.tier === "sub" ? " · 次" : "";
+  const approx = r.tier === "tertiary" ? "約" : "";
+  const pct = Math.round((r.chance || 0) * 100);
+  return `<li><strong>${escapeHtml(r.parentsLabel)}</strong> → ${escapeHtml(
+    r.name
+  )} <span class="muted">${approx}${pct}%${extra}</span></li>`;
+}
+
 function recipeBoardHtml() {
-  const summary = hybridRecipeSummary();
-  const mains = summary
-    .filter((r) => r.tier === "main")
-    .map(
-      (r) =>
-        `<li><strong>${escapeHtml(r.kindsLabel)}</strong> → ${escapeHtml(r.name)} <span class="muted">${Math.round(
-          r.chance * 100
-        )}%</span></li>`
-    )
-    .join("");
-  const subs = summary
-    .filter((r) => r.tier === "sub")
-    .map(
-      (r) =>
-        `<li><strong>${escapeHtml(r.kindsLabel)}</strong> → ${escapeHtml(r.name)} <span class="muted">${Math.round(
-          r.chance * 100
-        )}% · 次</span></li>`
-    )
-    .join("");
-
-  const cells = hybridRecipeMatrix();
-  const head = KINDS.map((k) => `<th>${escapeHtml(k)}</th>`).join("");
-  const rows = KINDS.map((rowKind) => {
-    const tds = KINDS.map((colKind) => {
-      const cell = cells.find((c) => c.kindA === rowKind && c.kindB === colKind);
-      if (!cell || cell.same) return `<td class="recipe-same">—</td>`;
-      if (!cell.recipe) return `<td class="recipe-none">×</td>`;
-      const pct = Math.round(cell.recipe.chance * 100);
-      const tier = cell.recipe.tier === "main" ? "main" : "sub";
-      return `<td class="recipe-${tier}" title="${escapeHtml(cell.recipe.name)} ${pct}%">${escapeHtml(
-        cell.recipe.name.slice(0, 2)
-      )}<span>${pct}</span></td>`;
-    }).join("");
-    return `<tr><th>${escapeHtml(rowKind)}</th>${tds}</tr>`;
-  }).join("");
-
+  const { hybrid, tertiary } = discoveredBreedRecipes(state);
+  const hybridRows = hybrid.map(recipeRowHtml).join("");
+  const tertRows = tertiary.map(recipeRowHtml).join("");
+  if (!hybrid.length && !tertiary.length) {
+    return `
+    <h2>已發現配方</h2>
+    <ul class="recipe-sum"><li class="empty">尚未發現配方。雜交繁殖或登錄圖鑑後會在此出現。</li></ul>`;
+  }
   return `
-    <h3>主／次配方一覽</h3>
-    <p class="meta">只讀參考；實際機率＝表列×雙親代數加成（預覽頁會顯示合計％同主／次拆分）。三代種見下方出發／繁殖預覽。</p>
-    <ul class="recipe-sum">${mains}${subs}</ul>
-    <div class="recipe-matrix-wrap">
-      <table class="recipe-matrix" aria-label="種類雜交矩陣">
-        <thead><tr><th></th>${head}</tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
+    <h2>已發現配方</h2>
+    ${hybrid.length ? `<ul class="recipe-sum">${hybridRows}</ul>` : ""}
+    ${
+      tertiary.length
+        ? `<h3>三代種</h3>
+    <ul class="recipe-sum">${tertRows}</ul>`
+        : ""
+    }`;
 }
 
 function stopPlayback() {
@@ -5020,27 +4998,7 @@ function codexPanel() {
     <ul class="list">${dailies}</ul>
     <h3>成就</h3>
     <ul class="list">${ach}</ul>`
-          : `<h2>繁殖配方</h2>
-    <h3>雜交（種類對）</h3>
-    <ul class="recipe-sum">${hybridRecipeSummary()
-      .filter((r) => r.tier === "main")
-      .map(
-        (r) =>
-          `<li><strong>${escapeHtml(r.kindsLabel)}</strong> → ${escapeHtml(r.name)} <span class="muted">${Math.round(
-            r.chance * 100
-          )}%</span></li>`
-      )
-      .join("")}</ul>
-    <h3>三代種（雜交×雜交）</h3>
-    <ul class="recipe-sum">${hybridRecipeSummary()
-      .filter((r) => r.tier === "tertiary")
-      .map(
-        (r) =>
-          `<li><strong>${escapeHtml(r.kindsLabel)}</strong> → ${escapeHtml(r.name)} <span class="muted">約${Math.round(
-            (r.chance || 0.15) * 100
-          )}%</span></li>`
-      )
-      .join("")}</ul>`
+          : recipeBoardHtml()
   );
 }
 
