@@ -70,6 +70,7 @@ import {
   achievementsView,
   bestiaryStatus,
   displayPetName,
+  combatRosterName,
   rarityInfo,
   genLabel,
   petGeneration,
@@ -735,11 +736,19 @@ function playPetMotion(unitEl, kind) {
   const el = petMotionTarget(unitEl);
   if (!el || !kind) return;
   const cls = `pet-motion--${kind}`;
-  el.classList.remove(...PET_MOTION_SHOTS);
+  el.classList.remove(...PET_MOTION_SHOTS, "pet-motion--defeated");
   if (kind !== "defeat") el.classList.remove("pet-motion--defeat");
   void el.offsetWidth;
   el.classList.add(cls);
-  if (kind === "defeat") return;
+  if (kind === "defeat") {
+    const dur = PET_MOTION_DUR_MS.defeat ?? 750;
+    window.setTimeout(() => {
+      if (!el.isConnected) return;
+      el.classList.remove("pet-motion--defeat");
+      el.classList.add("pet-motion--defeated");
+    }, dur + 40);
+    return;
+  }
   const dur = PET_MOTION_DUR_MS[kind] ?? 200;
   window.setTimeout(() => el.classList.remove(cls), dur + 40);
 }
@@ -747,7 +756,7 @@ function playPetMotion(unitEl, kind) {
 function combatUnitArtHtml(u, dead = false, side = null) {
   const elementId = u?.elementId || "tide";
   const speciesId = u?.speciesId || u?.species;
-  const defeatCls = dead ? " pet-motion--defeat" : "";
+  const defeatCls = dead ? " pet-motion--defeated" : "";
   const unitSide =
     side === "foe" || side === "enemy" || u?.side === "foe" || u?.side === "enemy" ? "foe" : "ally";
   const flipCls = unitSide === "ally" ? " pet-art--flip" : "";
@@ -760,12 +769,19 @@ function combatUnitArtHtml(u, dead = false, side = null) {
         generation: u.generation ?? 0,
         name: u.rawName || u.name,
       },
-      { size: 22, showGen: false, className: `pet-art--combat${defeatCls}${flipCls}` }
+      { size: 22, showGen: false, className: `pet-art--combat${defeatCls}${flipCls}`, motion: !dead }
     );
   }
-  return `<span class="pet-art pet-motion--idle pet-art--elem-${escapeHtml(elementId)} pet-art--combat${defeatCls}${flipCls}" data-elem="${escapeHtml(elementId)}" data-element="${escapeHtml(elementId)}" style="--art-size:22px">
+  const idleCls = dead ? "" : " pet-motion--idle";
+  return `<span class="pet-art${idleCls} pet-art--elem-${escapeHtml(elementId)} pet-art--combat${defeatCls}${flipCls}" data-elem="${escapeHtml(elementId)}" data-element="${escapeHtml(elementId)}" style="--art-size:22px">
     <span class="pet-icon pet-icon-unknown" aria-hidden="true">◌</span>
   </span>`;
+}
+
+function combatUnitNameHtml(u, extraPrefix = "") {
+  const full = String(u?.name || "");
+  const short = combatRosterName(full);
+  return `<span class="cu-name" title="${escapeHtml(full)}">${extraPrefix}${escapeHtml(short)}</span>`;
 }
 
 function findCombatUnitEl(root, uid) {
@@ -919,14 +935,13 @@ async function playAttackSequence(opts) {
   targetEl.querySelectorAll(".cu-dmg, .cu-heal").forEach((n) => n.classList.add("is-fading"));
   const dead = ko || (targetHp != null && targetHp <= 0);
   if (dead) {
-    targetEl.classList.add("is-dying", "is-down");
+    targetEl.classList.add("is-down");
     playPetMotion(targetEl, "defeat");
   }
   await waitAnimMs(ms(dead ? ATTACK_PHASE_MS.resolveKo : ATTACK_PHASE_MS.resolve), token);
   if (cancelled()) return;
   targetEl.querySelectorAll(".cu-dmg, .cu-heal").forEach((n) => n.remove());
   if (dead) {
-    targetEl.classList.remove("is-dying");
     targetEl.classList.add("is-down");
   }
 }
@@ -1117,7 +1132,7 @@ function combatUnitBar(u, pb, slotIndex = 0, lane = "front") {
     doubleAct ? " is-boss-act" : ""
   }" data-combat-uid="${escapeHtml(u.uid)}" data-side="${side}" data-slot="${slot}" data-lane="${laneAttr}" data-element="${escapeHtml(u.elementId || "")}">
     ${combatUnitArtHtml(u, dead, side)}
-    <span class="cu-name">${actBadge}${escapeHtml(u.name)}</span>
+    ${combatUnitNameHtml(u, actBadge)}
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
 }
@@ -1926,6 +1941,14 @@ function patchTutorialHintLive() {
   });
 }
 
+function qiChipLabel(qi, nextNeed) {
+  const n = Math.floor(qi || 0);
+  if (nextNeed == null || nextNeed === "") return `潮息 ${n} · 已滿`;
+  const need = Number(nextNeed);
+  if (!Number.isFinite(need) || need <= 0) return `潮息 ${n}`;
+  return `潮息 ${Math.min(n, need)} / ${need}`;
+}
+
 function consumeLootGainsForUi() {
   /* loot decay */
   if (state._lastIdleGains?.length) {
@@ -1950,9 +1973,7 @@ function patchLive() {
   const stageEl = document.querySelector("[data-live=stage]");
 
   if (qiText) {
-    qiText.textContent = next
-      ? `潮息 ${Math.floor(state.qi)} / ${next.need}`
-      : `潮息 ${Math.floor(state.qi)} · 已滿`;
+    qiText.textContent = next ? qiChipLabel(state.qi, next.need) : qiChipLabel(state.qi, null);
   }
   if (qiBar) qiBar.style.width = `${qiPct}%`;
   if (stones) stones.textContent = String(Math.floor(state.stones));
@@ -2596,7 +2617,9 @@ function statsSheetHtml() {
           <li><span>水母池</span><strong>${ranchN}／${ranchCap(state)}</strong></li>
           <li><span>出戰</span><strong>${state.pets.length}／${activePetMaxForState(state)}</strong></li>
         </ul>
-        <p class="meta">${termLabelHtml("qi")} ${Math.floor(state.qi)} / ${next?.need || "—"} · ${qiPct}% →【${escapeHtml(br.next?.name || "")}】</p>
+        <p class="meta">${termLabelHtml("qi")} ${
+          next ? `${Math.min(Math.floor(state.qi || 0), next.need | 0)} / ${next.need}` : `${Math.floor(state.qi || 0)} · 已滿`
+        } · ${qiPct}% →【${escapeHtml(br.next?.name || "")}】</p>
         ${matRows ? `<h4>持有材料</h4><ul class="stat-sheet-mats">${matRows}</ul>` : ""}
         <h4>常用詞</h4>
         <dl class="term-glossary">${termGlossaryHtml()}</dl>
@@ -3284,7 +3307,7 @@ function idleUnitBarHtml(u, slotIndex = 0, lane = "front") {
     doubleAct && !dead ? " is-boss-act" : ""
   }" data-uid="${escapeHtml(u.uid || "")}" data-side="${side}" data-slot="${slot}" data-lane="${laneAttr}" data-element="${escapeHtml(u.elementId || "")}">
     ${combatUnitArtHtml(u, dead, side)}
-    <span class="cu-name">${actBadge}${role}${escapeHtml(u.name)}</span>
+    ${combatUnitNameHtml(u, `${actBadge}${role}`)}
     <div class="cu-bar"><i style="width:${pct}%"></i></div>
   </div>`;
 }
@@ -3309,9 +3332,7 @@ function trainIdleStripHtml() {
   const trunk = spineTrunkView(state);
   const next = nextRealm(state);
   const qiPct = next ? Math.min(100, (state.qi / next.need) * 100) : 100;
-  const qiLabel = next
-    ? `潮息 ${Math.floor(state.qi)} / ${next.need}`
-    : `潮息 ${Math.floor(state.qi)} · 已滿`;
+  const qiLabel = next ? qiChipLabel(state.qi, next.need) : qiChipLabel(state.qi, null);
   const stageBoss = isSpineStageBossFloor(floor) || !!wrap?.session?.stageBoss;
   const bossCls = stageBoss ? " is-stage-boss" : "";
   const bossBanner = stageBoss

@@ -1,7 +1,7 @@
 /** Data tables — 水母深域 */
 
 /** 建置號：熱修必升；UI／SW 用來提示硬刷新 */
-export const APP_BUILD = "20260917.6";
+export const APP_BUILD = "20260917.7";
 
 /** 新手／資源列用語（短解，配合 title／tooltip） */
 export const GAME_TERMS = {
@@ -1849,6 +1849,31 @@ export function petSpeciesDisplayName(pet) {
   for (const p of prefixes) {
     if (p && raw.startsWith(p) && raw.length > p.length) return raw.slice(p.length);
   }
+  return raw;
+}
+
+/**
+ * 戰鬥／掛機格短名：無元素前綴；暱稱優先；「水母」後綴省略，避免格窄時只剩一字+省略號。
+ */
+export function combatRosterName(nameOrPet) {
+  let raw = "";
+  if (nameOrPet && typeof nameOrPet === "object") {
+    if (nameOrPet.nick) return String(nameOrPet.nick);
+    raw = petSpeciesDisplayName(nameOrPet) || String(nameOrPet.name || "");
+  } else {
+    raw = String(nameOrPet || "");
+    for (const p of ELEMENT_NAME_PREFIXES()) {
+      if (p && raw.startsWith(p) && raw.length > p.length) {
+        raw = raw.slice(p.length);
+        break;
+      }
+    }
+  }
+  raw = raw.trim();
+  if (!raw) return "";
+  const nickWrap = raw.match(/^(.+?)（.+）$/);
+  if (nickWrap) return nickWrap[1];
+  if (raw.endsWith("水母") && raw.length > 2) return raw.slice(0, -2);
   return raw;
 }
 
