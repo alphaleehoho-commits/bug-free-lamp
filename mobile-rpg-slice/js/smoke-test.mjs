@@ -4422,7 +4422,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v157"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v158"), "sw cache bumped");
 assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
 assert(swSrc.includes("bg_idle_home_reef_1080x1920.webp"), "sw caches idle reef scene");
 assert(swSrc.includes("bg_roam_base_floor_9x16.png"), "sw caches roam portrait base");
@@ -4719,6 +4719,7 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   const walkAlly = roamAllyWalkOffset(1, "front", h0, 0.5);
   const walkEnd = roamAllyWalkOffset(1, "front", h0, 1);
   assert(Math.abs(walkAlly.x) < 50 && Math.abs(walkEnd.x) < 50, "walk keeps party near center, not a left wall");
+  assert(walkAlly.x === walkEnd.x, "walk offset has no sideways travel");
   assert(ROAM_ALLY_TRAVEL_Y >= 8, "walk has a visible locomotion bob");
 
   const camWalk0 = roamCamera({ waveIndex: 0, phase: "walk", walkT: 0 });
@@ -4753,6 +4754,7 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   const bgFight2 = roamBgShift(2, 1, { phase: "fight" });
   const bgWipeHold = roamBgShift(0, 1, { phase: "approach", approachT: 0, worldShift: holdShift });
   assert(Math.abs(bgWipeHold.nearX - bgFight2.nearX) < 0.5, "wipe hold keeps near layer");
+  assert(bgWalk0.farY === 0 && bgWalk1.nearY === 0 && bgFight0.midY === 0, "parallax Y stays frozen across walk/fight");
   assert(ROAM_FAR_FACTOR < ROAM_MID_FACTOR && ROAM_MID_FACTOR < ROAM_NEAR_FACTOR, "parallax factors stack far < mid < near");
   assert(ROAM_GROUND_ASSIST < ROAM_NEAR_FACTOR, "grid assist factor is below near follow");
   assert(ROAM_BASE_FACTOR < ROAM_NEAR_FACTOR && ROAM_BASE_FACTOR > ROAM_MID_FACTOR, "base floor tracks near, slower than 1:1");
@@ -4885,9 +4887,12 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(/\.train-roam-pin\.is-roam-enter\s*\{\s*animation:\s*none/.test(cssSrc), "enter class does not animate a rush");
   assert(cssSrc.includes("roamPartyWalk"), "css party walk locomotion");
   assert(!cssSrc.includes("translate(4px, -12px)"), "walk is a step bob, not the old shake");
-  assert(/translate\(0,\s*-6px\)/.test(cssSrc), "walk bob is vertical step, not sideways wobble");
+  assert(cssSrc.includes("translateY(-3px)"), "walk bob is a light vertical step");
+  assert(!/roamPartyWalk[\s\S]{0,220}translate\(-?\d+px,\s*-?\d+px\)/.test(cssSrc), "walk keyframes have no left-right translate");
   assert(cssSrc.includes("train-idle-roster.is-roam .pet-art"), "css hang roam strips ally art plate");
-  assert(cssSrc.includes("no selection orb") || cssSrc.includes("no selection orb / ground ring"), "css documents hang roam orb removal");
+  assert(cssSrc.includes("#app.theme-light .train-idle-roster.is-roam .pet-art"), "css theme-light hang roam drops foot halo");
+  assert(cssSrc.includes("no selection orb") || cssSrc.includes("foot halo"), "css documents hang roam orb/halo removal");
+  assert(uiSrc2.includes("lockRoamCameraTo") && uiSrc2.includes("ROAM_BG_SNAP_PX"), "ui locks camera and rejects parallax snaps");
   assert(uiSrc2.includes("roamShiftToHoldCamera"), "ui carries camera across wipe restart");
   assert(uiSrc2.includes("roamWorldShift"), "ui persists hang roam camera carry");
   assert(cssSrc.includes("is-approaching"), "css approach locomotion");

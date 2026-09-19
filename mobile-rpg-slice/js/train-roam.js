@@ -204,8 +204,6 @@ export function roamBgShift(waveIndex = 0, walkT = 1, spec = {}) {
   const nearX = -cam.x * ROAM_NEAR_FACTOR;
   const baseX = -cam.x * ROAM_BASE_FACTOR;
   const groundSlide = cam.x * ROAM_GROUND_ASSIST;
-  const t = phase === "walk" ? clamp01(walkT) : 0;
-  const step = walkStep(t);
   return {
     x: midX,
     y: 0,
@@ -213,9 +211,9 @@ export function roamBgShift(waveIndex = 0, walkT = 1, spec = {}) {
     midX,
     nearX,
     baseX,
-    farY: -step * ROAM_FAR_PY * 0.35,
-    midY: -step * ROAM_MID_PY * 0.35,
-    nearY: -step * ROAM_NEAR_PY * 0.35,
+    farY: 0,
+    midY: 0,
+    nearY: 0,
     groundSlide,
     camX: cam.x,
     camY: cam.y,
@@ -243,13 +241,12 @@ export function roamAllyOffset(slot, lane, _heading) {
 /**
  * 步行：隊伍留喺畫面偏中。步態係上下起落（真正行程喺鏡頭／視差），唔左右搖。
  */
-export function roamAllyWalkOffset(slot, lane, heading, walkT = 1) {
+export function roamAllyWalkOffset(slot, lane, heading, _walkT = 1) {
   const form = allyFormation(slot, lane);
-  const step = walkStep(walkT);
   const pathY = (heading?.dy || 0) * 10;
   return {
     x: ROAM_PARTY_BIAS_X + form.x,
-    y: clampRoamY(form.y + pathY + step * ROAM_ALLY_TRAVEL_Y * 0.45),
+    y: clampRoamY(form.y + pathY),
   };
 }
 
@@ -357,9 +354,8 @@ export function roamLayoutFromUnits(spec = {}) {
   const bg = roamBgShift(waveIndex, walkT, { approachT, phase, worldShift });
   const allies = (spec.allies || []).map((a) => {
     const form = allyFormation(a.slot, a.lane);
-    const step = phase === "walk" ? walkStep(walkT) : 0;
     const worldX = allyWorldX(waveIndex, phase, walkT, approachT, form.x);
-    const worldY = form.y + heading.dy * 10 + step * ROAM_ALLY_TRAVEL_Y * 0.45;
+    const worldY = form.y + heading.dy * 10;
     const pos = roamWorldToScreen(worldX, worldY, cam);
     return { ...a, x: pos.x, y: clampRoamY(pos.y), faceRight: true, phase };
   });

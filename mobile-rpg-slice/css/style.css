@@ -1635,21 +1635,20 @@ button.flash-act {
   animation: none;
 }
 .train-roam-stage.is-walking .train-roam-pin[data-side="ally"],
-.train-roam-stage.is-approaching .train-roam-pin {
-  animation: roamPartyWalk 0.32s ease-in-out infinite;
+.train-roam-stage.is-approaching .train-roam-pin[data-side="ally"] {
+  animation: roamPartyWalk 0.4s ease-in-out infinite;
 }
 .train-roam-stage.is-walking .train-roam-pin[data-side="ally"][data-slot="2"],
 .train-roam-stage.is-approaching .train-roam-pin[data-side="ally"][data-slot="2"] {
-  animation-delay: 0.08s;
+  animation-delay: 0.06s;
 }
 .train-roam-stage.is-walking .train-roam-pin[data-side="ally"][data-slot="3"],
 .train-roam-stage.is-approaching .train-roam-pin[data-side="ally"][data-slot="3"] {
-  animation-delay: 0.14s;
+  animation-delay: 0.12s;
 }
 @keyframes roamPartyWalk {
-  0%, 50%, 100% { transform: translate(-50%, -50%) translate(0, 0); }
-  25% { transform: translate(-50%, -50%) translate(0, -6px); }
-  75% { transform: translate(-50%, -50%) translate(0, -6px); }
+  0%, 50%, 100% { transform: translate(-50%, -50%) translateY(0); }
+  25%, 75% { transform: translate(-50%, -50%) translateY(-3px); }
 }
 .train-idle-roster.is-roam .combat-unit {
   display: flex;
@@ -4788,7 +4787,7 @@ button.pet-badge {
 
   .train-roam-pin.is-roam-enter,
   .train-roam-stage.is-walking .train-roam-pin[data-side="ally"],
-  .train-roam-stage.is-approaching .train-roam-pin {
+  .train-roam-stage.is-approaching .train-roam-pin[data-side="ally"] {
     animation: none !important;
   }
   .train-roam-bg-art,
@@ -5836,4 +5835,44 @@ html.theme-light .pet-art-unknown,
   .pet-art--rarity-legendary {
     animation: none;
   }
+}
+
+/* Hang roam lock (after theme-light #app .pet-art): no foot halo / orb / ring. */
+html.theme-light .train-idle-roster.is-roam .pet-art,
+#app.theme-light .train-idle-roster.is-roam .pet-art,
+html.theme-light .train-idle-roster.is-roam .combat-unit .pet-art,
+#app.theme-light .train-idle-roster.is-roam .combat-unit .pet-art,
+html.theme-light .train-idle-roster.is-roam .pet-art.pet-art--combat,
+#app.theme-light .train-idle-roster.is-roam .pet-art.pet-art--combat,
+html.theme-light .train-idle-roster.is-roam .pet-art--rarity-rare,
+#app.theme-light .train-idle-roster.is-roam .pet-art--rarity-rare,
+html.theme-light .train-idle-roster.is-roam .pet-art--rarity-epic,
+#app.theme-light .train-idle-roster.is-roam .pet-art--rarity-epic,
+html.theme-light .train-idle-roster.is-roam .pet-art--rarity-legendary,
+#app.theme-light .train-idle-roster.is-roam .pet-art--rarity-legendary,
+html.theme-light .train-idle-roster.is-roam .pet-art-unknown,
+#app.theme-light .train-idle-roster.is-roam .pet-art-unknown,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-art,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-icon {
+  background: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  filter: none !important;
+  animation: none;
+}
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-art::before,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-art::after,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .combat-unit::before,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .combat-unit::after,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-icon::before,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-icon::after {
+  content: none !important;
+  display: none !important;
+  box-shadow: none !important;
+  background: none !important;
+}
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-icon-sprite,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] img {
+  filter: none !important;
 }

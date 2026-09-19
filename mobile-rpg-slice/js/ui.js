@@ -3198,19 +3198,43 @@ function idleRoamPhaseOf(wrap, opts = {}) {
   return "fight";
 }
 
+function readStagePx(stage, name) {
+  const raw = stage.style.getPropertyValue(name);
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** 單幀視差 X 跳超過呢個就當 reset，沿用上一鏡。步行約 2px/frame。 */
+const ROAM_BG_SNAP_PX = 28;
+
 function applyRoamStageVars(stage, bg, phase = "fight") {
   if (!stage || !bg) return;
+  const next = {
+    farX: Number(bg.farX || 0),
+    midX: Number(bg.midX || bg.x || 0),
+    nearX: Number(bg.nearX || 0),
+    baseX: Number(bg.baseX || bg.nearX || 0),
+    groundSlide: Number(bg.groundSlide || 0),
+  };
+  const lastNear = readStagePx(stage, "--near-x");
+  if (lastNear != null && Math.abs(next.nearX - lastNear) > ROAM_BG_SNAP_PX) {
+    next.farX = readStagePx(stage, "--far-x") ?? next.farX;
+    next.midX = readStagePx(stage, "--mid-x") ?? next.midX;
+    next.nearX = lastNear;
+    next.baseX = readStagePx(stage, "--base-x") ?? next.baseX;
+    next.groundSlide = readStagePx(stage, "--ground-slide") ?? next.groundSlide;
+  }
   stage.dataset.roamPhase = phase;
   stage.dataset.face = "right";
-  stage.style.setProperty("--far-x", `${Number(bg.farX || 0).toFixed(1)}px`);
-  stage.style.setProperty("--mid-x", `${Number(bg.midX || bg.x || 0).toFixed(1)}px`);
-  stage.style.setProperty("--near-x", `${Number(bg.nearX || 0).toFixed(1)}px`);
-  stage.style.setProperty("--base-x", `${Number(bg.baseX || bg.nearX || 0).toFixed(1)}px`);
-  stage.style.setProperty("--far-y", `${Number(bg.farY ?? bg.y).toFixed(1)}px`);
-  stage.style.setProperty("--mid-y", `${Number(bg.midY || 0).toFixed(1)}px`);
-  stage.style.setProperty("--near-y", `${Number(bg.nearY || 0).toFixed(1)}px`);
-  stage.style.setProperty("--ground-y", `${Number(bg.nearY || 0).toFixed(1)}px`);
-  stage.style.setProperty("--ground-slide", `${Number(bg.groundSlide || 0).toFixed(1)}px`);
+  stage.style.setProperty("--far-x", `${next.farX.toFixed(1)}px`);
+  stage.style.setProperty("--mid-x", `${next.midX.toFixed(1)}px`);
+  stage.style.setProperty("--near-x", `${next.nearX.toFixed(1)}px`);
+  stage.style.setProperty("--base-x", `${next.baseX.toFixed(1)}px`);
+  stage.style.setProperty("--far-y", "0.0px");
+  stage.style.setProperty("--mid-y", "0.0px");
+  stage.style.setProperty("--near-y", "0.0px");
+  stage.style.setProperty("--ground-y", "0.0px");
+  stage.style.setProperty("--ground-slide", `${next.groundSlide.toFixed(1)}px`);
 }
 
 function applyRoamPinFacing(art, faceRight) {
@@ -3283,6 +3307,26 @@ function beginRoamFoeEnter(wrap, foeCount = 1, opts = {}) {
 function roamWorldShiftOf(wrap) {
   const n = Number(wrap?.roamWorldShift);
   return Number.isFinite(n) ? n : 0;
+}
+
+function roamHoldCameraOf(wrap, waveIndex = wrap?.session?.waveIndex || 0) {
+  return roamCamera({
+    waveIndex: waveIndex | 0,
+    phase: wrap?.roamPhase || "fight",
+    walkT: wrap?.roamWalkT ?? 1,
+    approachT: wrap?.roamApproachT ?? 1,
+    worldShift: roamWorldShiftOf(wrap),
+  });
+}
+
+/** 把下一鏡對齊上一鏡 X，唔好歸零／跳波原點。 */
+function lockRoamCameraTo(wrap, holdX, toSpec) {
+  wrap.roamWorldShift = roamShiftToHoldCamera(holdX, {
+    waveIndex: toSpec.waveIndex | 0,
+    phase: toSpec.phase,
+    walkT: toSpec.walkT ?? 1,
+    approachT: toSpec.approachT ?? 1,
+  });
 }
 
 function roamLayoutOpts(wrap, opts = {}) {
@@ -3553,13 +3597,7 @@ function tickIdleCombat({ background = false } = {}) {
     if (result.status === "restart") {
       const keepReady = wrap.clearReady;
       const keepFail = wrap.lastFail;
-      const holdCam = roamCamera({
-        waveIndex: wrap.session?.waveIndex || 0,
-        phase: wrap.roamPhase || "fight",
-        walkT: wrap.roamWalkT ?? 1,
-        approachT: wrap.roamApproachT ?? 1,
-        worldShift: roamWorldShiftOf(wrap),
-      });
+      const holdCam = roamHoldCameraOf(wrap);
       const session = createTrainIdleSession(state);
       if (!session) {
         idleCombat = null;
@@ -3576,14 +3614,26 @@ function tickIdleCombat({ background = false } = {}) {
       wrap.roamPhase = "approach";
       wrap.roamWalkT = 1;
       wrap.roamApproachT = 0;
-      wrap.roamWorldShift = roamShiftToHoldCamera(holdCam.x, {
-        waveIndex: 0,
-        phase: "approach",
-        walkT: 1,
-        approachT: 0,
-      });
+      lockRoamCameraTo(wrap, holdCam.x, { waveIndex: 0, phase: "approach", walkT: 1, approachT: 0 });
       needRosterPatch = true;
       continue;
+    }
+
+    if (result.status === "wave") {
+      const nextWave = wrap.session?.waveIndex || 0;
+      const holdCam = roamHoldCameraOf(wrap, Math.max(0, nextWave - 1));
+      if (!background && steps === 1) {
+        wrap.roamPhase = "walk";
+        wrap.roamWalkT = 0;
+        wrap.roamApproachT = 0;
+        lockRoamCameraTo(wrap, holdCam.x, { waveIndex: nextWave, phase: "walk", walkT: 0, approachT: 0 });
+        playWalk = true;
+      } else {
+        wrap.roamPhase = "fight";
+        wrap.roamWalkT = 1;
+        wrap.roamApproachT = 1;
+        lockRoamCameraTo(wrap, holdCam.x, { waveIndex: nextWave, phase: "fight", walkT: 1, approachT: 1 });
+      }
     }
 
     if (result.status === "won" || result.status === "lost") {
