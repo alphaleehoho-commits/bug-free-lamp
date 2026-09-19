@@ -344,7 +344,7 @@ body {
 }
 .flash-toast-host {
   position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 0.55rem);
+  top: calc(env(safe-area-inset-top, 0px) + 3.6rem);
   left: 0;
   right: 0;
   margin: 0 auto;
@@ -577,6 +577,15 @@ body {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding-right: 0.05rem;
+}
+.stage-scroll:has(.train-idle-strip.is-roam) {
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.stage-scroll:has(.train-idle-strip.is-roam)::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .stage-dock {
@@ -1135,7 +1144,7 @@ button.flash-act {
 }
 
 .install-toast {
-  top: calc(env(safe-area-inset-top, 0px) + 0.45rem);
+  top: calc(env(safe-area-inset-top, 0px) + 3.6rem);
   border: 1px solid rgba(109, 179, 217, 0.45);
   background: rgba(18, 32, 44, 0.94);
 }
@@ -1546,10 +1555,11 @@ button.flash-act {
 .train-roam-bg-mid {
   top: 22%;
   height: 56%;
-  z-index: 2;
+  z-index: 1;
   opacity: 0.8;
   transform: translate(var(--mid-x, 0px), var(--mid-y, 0px));
   background-position: var(--mid-x, 0px) center;
+  mask-image: linear-gradient(180deg, #000 0%, #000 34%, transparent 40%, transparent 60%, #000 68%, #000 100%);
 }
 .train-roam-bg-mid .train-roam-bg-deco-art {
   object-position: center center;
@@ -1557,10 +1567,11 @@ button.flash-act {
 .train-roam-bg-near {
   top: 48%;
   height: 46%;
-  z-index: 3;
-  opacity: 0.5;
+  z-index: 1;
+  opacity: 0.35;
   transform: translate(var(--near-x, 0px), var(--near-y, 0px));
   background-position: var(--near-x, 0px) center;
+  mask-image: linear-gradient(180deg, transparent 0%, #000 18%, transparent 32%, transparent 58%, #000 72%, #000 100%);
 }
 .train-roam-bg-near .train-roam-bg-deco-art {
   object-position: center bottom;
@@ -1635,22 +1646,20 @@ button.flash-act {
   animation: none;
 }
 .train-roam-stage.is-walking .train-roam-pin[data-side="ally"],
-.train-roam-stage.is-approaching .train-roam-pin {
-  animation: roamPartyWalk 0.32s ease-in-out infinite;
+.train-roam-stage.is-approaching .train-roam-pin[data-side="ally"] {
+  animation: roamPartyWalk 0.4s ease-in-out infinite;
 }
 .train-roam-stage.is-walking .train-roam-pin[data-side="ally"][data-slot="2"],
 .train-roam-stage.is-approaching .train-roam-pin[data-side="ally"][data-slot="2"] {
-  animation-delay: 0.08s;
+  animation-delay: 0.06s;
 }
 .train-roam-stage.is-walking .train-roam-pin[data-side="ally"][data-slot="3"],
 .train-roam-stage.is-approaching .train-roam-pin[data-side="ally"][data-slot="3"] {
-  animation-delay: 0.14s;
+  animation-delay: 0.12s;
 }
 @keyframes roamPartyWalk {
-  0%, 100% { transform: translate(-50%, -50%) translate(0, 0); }
-  22% { transform: translate(-50%, -50%) translate(4px, -12px); }
-  48% { transform: translate(-50%, -50%) translate(-1px, -3px); }
-  74% { transform: translate(-50%, -50%) translate(6px, -13px); }
+  0%, 50%, 100% { transform: translate(-50%, -50%) translateY(0); }
+  25%, 75% { transform: translate(-50%, -50%) translateY(-3px); }
 }
 .train-idle-roster.is-roam .combat-unit {
   display: flex;
@@ -4789,7 +4798,7 @@ button.pet-badge {
 
   .train-roam-pin.is-roam-enter,
   .train-roam-stage.is-walking .train-roam-pin[data-side="ally"],
-  .train-roam-stage.is-approaching .train-roam-pin {
+  .train-roam-stage.is-approaching .train-roam-pin[data-side="ally"] {
     animation: none !important;
   }
   .train-roam-bg-art,
@@ -4853,6 +4862,20 @@ button.pet-badge {
   object-fit: contain;
   object-position: center;
   transform: none;
+}
+
+/* Hang roam: allies match foes — no selection orb / ground ring / rarity plate. */
+.train-idle-roster.is-roam .pet-art,
+.train-idle-roster.is-roam .combat-unit .pet-art,
+.train-idle-roster.is-roam .pet-art.pet-art--combat,
+.train-idle-roster.is-roam .pet-art--rarity-rare,
+.train-idle-roster.is-roam .pet-art--rarity-epic,
+.train-idle-roster.is-roam .pet-art--rarity-legendary,
+.train-idle-roster.is-roam .pet-art-unknown {
+  background: none !important;
+  box-shadow: none !important;
+  border-radius: 0;
+  animation: none;
 }
 
 /* =============================================================================
@@ -5823,4 +5846,44 @@ html.theme-light .pet-art-unknown,
   .pet-art--rarity-legendary {
     animation: none;
   }
+}
+
+/* Hang roam lock (after theme-light #app .pet-art): no foot halo / orb / ring. */
+html.theme-light .train-idle-roster.is-roam .pet-art,
+#app.theme-light .train-idle-roster.is-roam .pet-art,
+html.theme-light .train-idle-roster.is-roam .combat-unit .pet-art,
+#app.theme-light .train-idle-roster.is-roam .combat-unit .pet-art,
+html.theme-light .train-idle-roster.is-roam .pet-art.pet-art--combat,
+#app.theme-light .train-idle-roster.is-roam .pet-art.pet-art--combat,
+html.theme-light .train-idle-roster.is-roam .pet-art--rarity-rare,
+#app.theme-light .train-idle-roster.is-roam .pet-art--rarity-rare,
+html.theme-light .train-idle-roster.is-roam .pet-art--rarity-epic,
+#app.theme-light .train-idle-roster.is-roam .pet-art--rarity-epic,
+html.theme-light .train-idle-roster.is-roam .pet-art--rarity-legendary,
+#app.theme-light .train-idle-roster.is-roam .pet-art--rarity-legendary,
+html.theme-light .train-idle-roster.is-roam .pet-art-unknown,
+#app.theme-light .train-idle-roster.is-roam .pet-art-unknown,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-art,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-icon {
+  background: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  filter: none !important;
+  animation: none;
+}
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-art::before,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-art::after,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .combat-unit::before,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .combat-unit::after,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-icon::before,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-icon::after {
+  content: none !important;
+  display: none !important;
+  box-shadow: none !important;
+  background: none !important;
+}
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] .pet-icon-sprite,
+.train-idle-roster.is-roam .train-roam-pin[data-side="ally"] img {
+  filter: none !important;
 }

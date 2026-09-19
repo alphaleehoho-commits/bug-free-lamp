@@ -462,6 +462,7 @@ import {
   roamFoeEnterDy,
   roamFoeSpawn,
   roamCamera,
+  roamShiftToHoldCamera,
   roamPhaseOf,
   roamApproachDurationMs,
   ROAM_IDLE_SCENE_SRC,
@@ -1930,6 +1931,9 @@ persistTrainIdleCombatState(persistSt, persistWrap);
 const restored = restoreTrainIdleCombatState(persistSt);
 assert(restored?.session?.startedAt === 1_700_000_000_000, "restore idle startedAt wall clock");
 assert(restored.session.waveIndex === 2, "restore idle wave progress");
+assert(restored.roamWorldShift === 0, "restore roam camera carry defaults to 0");
+persistTrainIdleCombatState(persistSt, { ...persistWrap, roamWorldShift: 84 });
+assert(restoreTrainIdleCombatState(persistSt)?.roamWorldShift === 84, "restore roam camera carry");
 const persistFailWrap = {
   ...persistWrap,
   lastFail: { kind: "wipe", title: "挑戰失敗 · 出戰隊全滅", tips: ["升級"] },
@@ -4418,7 +4422,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v156"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v159"), "sw cache bumped");
 assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
 assert(swSrc.includes("bg_idle_home_reef_1080x1920.webp"), "sw caches idle reef scene");
 assert(swSrc.includes("bg_roam_base_floor_9x16.png"), "sw caches roam portrait base");
@@ -4715,16 +4719,24 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   const walkAlly = roamAllyWalkOffset(1, "front", h0, 0.5);
   const walkEnd = roamAllyWalkOffset(1, "front", h0, 1);
   assert(Math.abs(walkAlly.x) < 50 && Math.abs(walkEnd.x) < 50, "walk keeps party near center, not a left wall");
+  assert(walkAlly.x === walkEnd.x, "walk offset has no sideways travel");
   assert(ROAM_ALLY_TRAVEL_Y >= 8, "walk has a visible locomotion bob");
 
   const camWalk0 = roamCamera({ waveIndex: 0, phase: "walk", walkT: 0 });
   const camWalk1 = roamCamera({ waveIndex: 0, phase: "walk", walkT: 1 });
   const camFight0 = roamCamera({ waveIndex: 0, phase: "fight" });
   const camFight2 = roamCamera({ waveIndex: 2, phase: "fight" });
+  const camWalkNext = roamCamera({ waveIndex: 1, phase: "walk", walkT: 0 });
   assert(camWalk1.x > camWalk0.x, "camera follows party along the walk");
   assert(camFight2.x > camFight0.x, "later waves travel further along the map");
   assert(Math.abs(camFight2.x - camFight0.x - 2 * ROAM_WAVE_SPAN) < 0.01, "camera accumulates wave travel");
   assert(Math.abs(camWalk1.x - camWalk0.x - ROAM_WALK_SPAN) < 0.01, "walk camera covers the walk span");
+  assert(Math.abs(camFight0.x - camWalkNext.x) < 0.01, "win→walk camera is continuous (no origin snap)");
+  assert(Math.abs(camWalk0.y - camFight0.y) < 0.01, "walk start Y matches previous fight Y");
+
+  const holdShift = roamShiftToHoldCamera(camFight2.x, { waveIndex: 0, phase: "approach", walkT: 1, approachT: 0 });
+  const camHeld = roamCamera({ waveIndex: 0, phase: "approach", walkT: 1, approachT: 0, worldShift: holdShift });
+  assert(Math.abs(camHeld.x - camFight2.x) < 0.01, "wipe carry holds camera X");
 
   const bgWalk0 = roamBgShift(0, 0, { phase: "walk" });
   const bgWalk1 = roamBgShift(0, 1, { phase: "walk" });
@@ -4734,6 +4746,35 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   const gridDelta = Math.abs(bgWalk1.groundSlide - bgWalk0.groundSlide);
   assert(farDelta > 0 && midDelta > farDelta && nearDelta > midDelta, "far/mid/near move together, far slowest");
   assert(gridDelta > 0 && gridDelta < nearDelta, "ground grid is an assist, not the only travel cue");
+  const bgFight0 = roamBgShift(0, 1, { phase: "fight" });
+  const bgNextWalk = roamBgShift(1, 0, { phase: "walk" });
+  assert(Math.abs(bgFight0.nearX - bgNextWalk.nearX) < 0.5, "near parallax continuous across wave win");
+  assert(Math.abs(bgFight0.midX - bgNextWalk.midX) < 0.5, "mid parallax continuous across wave win");
+  assert(Math.abs(bgFight0.farX - bgNextWalk.farX) < 0.5, "far parallax continuous across wave win");
+  const bgFight2 = roamBgShift(2, 1, { phase: "fight" });
+  const bgWipeHold = roamBgShift(0, 1, { phase: "approach", approachT: 0, worldShift: holdShift });
+  assert(Math.abs(bgWipeHold.nearX - bgFight2.nearX) < 0.5, "wipe hold keeps near layer");
+  const laidFight2 = roamLayoutFromUnits({
+    allies: [{ slot: 1, lane: "front", unit: { uid: "a", side: "ally" } }],
+    foes: [{ unit: { uid: "f", side: "foe" }, role: "normal" }],
+    waveIndex: 2,
+    phase: "fight",
+  });
+  const restartShift = roamShiftToHoldCamera(laidFight2.cam.x, { waveIndex: 0, phase: "walk", walkT: 0 });
+  const laidRestart = roamLayoutFromUnits({
+    allies: [{ slot: 1, lane: "front", unit: { uid: "a", side: "ally" } }],
+    foes: [{ unit: { uid: "f", side: "foe" }, role: "normal" }],
+    waveIndex: 0,
+    walkT: 0,
+    phase: "walk",
+    hideFoes: true,
+    worldShift: restartShift,
+  });
+  assert(laidRestart.allies.length === 1, "wipe/clear restart still has the party");
+  assert(Math.abs(laidRestart.allies[0].x) < 55, "wipe/clear restart keeps party on-stage (not -120 left wall)");
+  assert(Math.abs(laidRestart.bg.nearX - laidFight2.bg.nearX) < 0.5, "wipe/clear restart holds near parallax with party");
+  assert(laidRestart.allies[0].x - laidFight2.allies[0].x < 40, "party does not teleport across the field on restart");
+  assert(bgWalk0.farY === 0 && bgWalk1.nearY === 0 && bgFight0.midY === 0, "parallax Y stays frozen across walk/fight");
   assert(ROAM_FAR_FACTOR < ROAM_MID_FACTOR && ROAM_MID_FACTOR < ROAM_NEAR_FACTOR, "parallax factors stack far < mid < near");
   assert(ROAM_GROUND_ASSIST < ROAM_NEAR_FACTOR, "grid assist factor is below near follow");
   assert(ROAM_BASE_FACTOR < ROAM_NEAR_FACTOR && ROAM_BASE_FACTOR > ROAM_MID_FACTOR, "base floor tracks near, slower than 1:1");
@@ -4865,13 +4906,25 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(!cssSrc.includes("roamFoeRunIn") && !cssSrc.includes("roamFoeFadeIn"), "css has no foe pop/rush animation");
   assert(/\.train-roam-pin\.is-roam-enter\s*\{\s*animation:\s*none/.test(cssSrc), "enter class does not animate a rush");
   assert(cssSrc.includes("roamPartyWalk"), "css party walk locomotion");
+  assert(!cssSrc.includes("translate(4px, -12px)"), "walk is a step bob, not the old shake");
+  assert(cssSrc.includes("translateY(-3px)"), "walk bob is a light vertical step");
+  assert(!/roamPartyWalk[\s\S]{0,220}translate\(-?\d+px,\s*-?\d+px\)/.test(cssSrc), "walk keyframes have no left-right translate");
+  assert(cssSrc.includes("train-idle-roster.is-roam .pet-art"), "css hang roam strips ally art plate");
+  assert(cssSrc.includes("#app.theme-light .train-idle-roster.is-roam .pet-art"), "css theme-light hang roam drops foot halo");
+  assert(cssSrc.includes("no selection orb") || cssSrc.includes("foot halo"), "css documents hang roam orb/halo removal");
+  assert(uiSrc2.includes("lockRoamCameraTo") && uiSrc2.includes("ROAM_BG_SNAP_PX"), "ui locks camera and rejects parallax snaps");
+  assert(uiSrc2.includes("playWalk = true"), "ui resumes walk after wipe/clear restart");
+  assert(uiSrc2.includes("roamShiftToHoldCamera"), "ui carries camera across wipe restart");
+  assert(uiSrc2.includes("roamWorldShift"), "ui persists hang roam camera carry");
   assert(cssSrc.includes("is-approaching"), "css approach locomotion");
   assert(cssSrc.includes("train-roam-ground"), "css near/ground layer");
   assert(cssSrc.includes("train-roam-bg-base") && cssSrc.includes("repeat-x"), "css base floor tiles on x");
   assert(cssSrc.includes("train-roam-bg-mid"), "css mid parallax layer");
   assert(cssSrc.includes("train-roam-bg-deco"), "css deco slot plate");
   assert(cssSrc.includes("opacity: 0.8") || cssSrc.includes("opacity:0.8"), "css mid deco opacity in 0.75–0.85");
-  assert(cssSrc.includes("opacity: 0.5") || cssSrc.includes("opacity:0.5"), "css near deco opacity at or below 0.55");
+  assert(cssSrc.includes("opacity: 0.35") || cssSrc.includes("opacity:0.35"), "css near deco opacity stays below the character band");
+  assert(cssSrc.includes("stage-scroll:has(.train-idle-strip.is-roam)"), "css hides hang stage scrollbar");
+  assert(cssSrc.includes("3.6rem"), "css drops toasts below the title bar");
   assert(cssSrc.includes("--far-x") && cssSrc.includes("--mid-x") && cssSrc.includes("--near-x"), "css three parallax tokens");
   assert(cssSrc.includes("--base-x"), "css base floor token");
   assert(cssSrc.includes("--ground-slide"), "css grid assist token");
