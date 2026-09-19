@@ -1439,7 +1439,7 @@ button.flash-act {
   opacity: 0.92;
 }
 
-/* —— 練功 hang roam：layout lock 左友右敵 + 9:16 場景 cover —— */
+/* —— 練功 hang roam v2：行圖 + 會合對峙 + 9:16 三層視差 —— */
 .train-idle-strip.is-roam {
   position: relative;
   padding: 0;
@@ -1473,11 +1473,15 @@ button.flash-act {
   --roam-band-top: 38%;
   --roam-band-bottom: 58%;
   --roam-anchor-y: 48%;
-  --roam-hud-clearance: 22%;
+  --roam-hud-clearance: 24%;
   --bg-x: 0px;
   --bg-y: 0px;
   --ground-y: 0px;
+  --far-x: 0px;
+  --mid-x: 0px;
+  --near-x: 0px;
   --far-y: 0px;
+  --mid-y: 0px;
   --near-y: 0px;
   --ground-slide: 0px;
   background: #0c1218;
@@ -1503,38 +1507,55 @@ button.flash-act {
   width: auto;
   object-fit: cover;
   object-position: center 42%;
-  transform: translate(-50%, -50%) translateY(var(--far-y, 0px)) scale(1.045);
+  transform: translate(-50%, -50%) translate(var(--far-x, 0px), var(--far-y, 0px)) scale(1.14);
+}
+.train-roam-bg-mid {
+  top: 46%;
+  height: 72%;
+  min-width: 128%;
+  object-position: center 62%;
+  opacity: 0.82;
+  z-index: 1;
+  transform: translate(-50%, -42%) translate(var(--mid-x, 0px), var(--mid-y, 0px)) scale(1.22);
+  mask-image: linear-gradient(180deg, transparent, #000 18%, #000 78%, transparent);
+  filter: saturate(1.05) contrast(1.04);
 }
 .train-roam-ground,
 .train-roam-bg-near {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 34%;
-  height: 32%;
-  z-index: 1;
+  left: -18%;
+  right: -18%;
+  top: 36%;
+  height: 34%;
+  z-index: 2;
   pointer-events: none;
   background-image:
+    linear-gradient(
+      180deg,
+      transparent 0%,
+      rgba(16, 32, 38, 0.18) 28%,
+      rgba(10, 24, 30, 0.38) 68%,
+      transparent 100%
+    ),
     repeating-linear-gradient(
       90deg,
-      transparent 0 18px,
-      rgba(210, 228, 232, 0.1) 18px 19px
+      transparent 0 22px,
+      rgba(210, 228, 232, 0.07) 22px 23px
     ),
     repeating-linear-gradient(
       180deg,
-      transparent 0 10px,
-      rgba(232, 244, 248, 0.09) 10px 11px
+      transparent 0 12px,
+      rgba(232, 244, 248, 0.05) 12px 13px
     ),
-    radial-gradient(circle at 18% 42%, rgba(255, 255, 255, 0.08) 0 1.2px, transparent 2px),
-    radial-gradient(circle at 68% 72%, rgba(220, 236, 240, 0.06) 0 1px, transparent 2px);
-  background-size: 36px 22px, 100% 22px, 48px 28px, 56px 32px;
+    radial-gradient(circle at 18% 42%, rgba(255, 255, 255, 0.06) 0 1.2px, transparent 2px);
+  background-size: 100% 100%, 40px 24px, 100% 24px, 52px 30px;
   background-position:
-    calc(var(--ground-slide, 0px) * -0.55) calc(var(--near-y, 0px) * -0.35),
-    0 var(--ground-slide, 0px),
-    calc(var(--ground-slide, 0px) * -0.8) calc(var(--ground-slide, 0px) * 0.55),
-    calc(var(--ground-slide, 0px) * -0.35) calc(var(--ground-slide, 0px) * 0.85);
+    0 0,
+    calc(var(--ground-slide, 0px) * -0.4) calc(var(--near-y, 0px) * -0.2),
+    0 calc(var(--ground-slide, 0px) * 0.35),
+    calc(var(--ground-slide, 0px) * -0.25) calc(var(--ground-slide, 0px) * 0.4);
   mask-image: linear-gradient(180deg, transparent, #000 28%, #000 72%, transparent);
-  transform: translateY(var(--near-y, var(--ground-y, 0px)));
+  transform: translate(var(--near-x, 0px), var(--near-y, var(--ground-y, 0px)));
   will-change: transform, background-position;
 }
 .train-roam-vignette {
@@ -1567,6 +1588,8 @@ button.flash-act {
   top: calc(var(--roam-anchor-y) + var(--roam-y, 0px));
   transform: translate(-50%, -50%);
   z-index: 2;
+  --roam-enter-dx: 0px;
+  --roam-enter-dy: 0px;
 }
 .train-roam-pin[data-side="ally"] { z-index: 3; }
 .train-roam-pin.is-roam-exit {
@@ -1575,32 +1598,39 @@ button.flash-act {
   transition: opacity 0.28s ease, transform 0.28s ease;
 }
 .train-roam-pin.is-roam-enter {
-  animation: roamFoeRunIn 0.82s cubic-bezier(0.18, 0.82, 0.22, 1) both;
+  animation: roamFoeFadeIn 0.42s ease both;
   animation-delay: var(--roam-enter-delay, 0ms);
+}
+@keyframes roamFoeFadeIn {
+  from {
+    opacity: 0.18;
+    filter: blur(1.4px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
 }
 @keyframes roamFoeRunIn {
   from {
-    transform: translate(-50%, -50%) translate(var(--roam-enter-dx, 240px), var(--roam-enter-dy, 8px));
-    opacity: 0.15;
-    filter: blur(1.5px);
-  }
-  42% {
-    opacity: 1;
-    filter: none;
+    opacity: 0.18;
+    filter: blur(1.4px);
   }
   to {
-    transform: translate(-50%, -50%) translate(0, 0);
     opacity: 1;
     filter: none;
   }
 }
-.train-roam-stage.is-walking .train-roam-pin[data-side="ally"] {
+.train-roam-stage.is-walking .train-roam-pin[data-side="ally"],
+.train-roam-stage.is-approaching .train-roam-pin {
   animation: roamPartyWalk 0.32s ease-in-out infinite;
 }
-.train-roam-stage.is-walking .train-roam-pin[data-side="ally"][data-slot="2"] {
+.train-roam-stage.is-walking .train-roam-pin[data-side="ally"][data-slot="2"],
+.train-roam-stage.is-approaching .train-roam-pin[data-side="ally"][data-slot="2"] {
   animation-delay: 0.08s;
 }
-.train-roam-stage.is-walking .train-roam-pin[data-side="ally"][data-slot="3"] {
+.train-roam-stage.is-walking .train-roam-pin[data-side="ally"][data-slot="3"],
+.train-roam-stage.is-approaching .train-roam-pin[data-side="ally"][data-slot="3"] {
   animation-delay: 0.14s;
 }
 @keyframes roamPartyWalk {
@@ -4745,11 +4775,15 @@ button.pet-badge {
   }
 
   .train-roam-pin.is-roam-enter,
-  .train-roam-stage.is-walking .train-roam-pin[data-side="ally"] {
+  .train-roam-stage.is-walking .train-roam-pin[data-side="ally"],
+  .train-roam-stage.is-approaching .train-roam-pin {
     animation: none !important;
   }
   .train-roam-bg-art {
     transform: translate(-50%, -50%) !important;
+  }
+  .train-roam-bg-mid {
+    transform: translate(-50%, -42%) !important;
   }
   .train-roam-ground,
   .train-roam-bg-near {
