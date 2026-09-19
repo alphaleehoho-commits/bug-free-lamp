@@ -204,8 +204,8 @@ import {
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
   ROAM_WALK_MS,
-  ROAM_APPROACH_MS,
   ROAM_ENTER_STAGGER_MS,
+  roamApproachDurationMs,
   roamBgShift,
   roamLayoutFromUnits,
   roamFoeEnterDx,
@@ -3234,12 +3234,18 @@ function idleRoamPinHtml(item, faceRight, enter = false, pinIndex = 0, waveIndex
   )}</div>`;
 }
 
+function roamApproachHoldMs(wrap, foeCount = 1) {
+  const n = Math.max(1, foeCount | 0);
+  const waveIndex = wrap?.session?.waveIndex || 0;
+  const roles = (wrap?.session?.foes || []).map((u) => u?.role || "normal");
+  return roamApproachDurationMs(n, waveIndex, roles) + 60;
+}
+
 function beginRoamFoeEnter(wrap, foeCount = 1, opts = {}) {
   if (!wrap) return;
   wrap.pendingFoeEnter = false;
   wrap.foeEntering = true;
-  const extra = Math.max(0, (foeCount | 0) - 1) * ROAM_ENTER_STAGGER_MS;
-  const hold = ROAM_APPROACH_MS + extra + 60;
+  const hold = roamApproachHoldMs(wrap, foeCount);
   if (typeof window === "undefined") {
     wrap.foeEntering = false;
     return;
@@ -3422,7 +3428,7 @@ async function playRoamFoeEnter(wrap) {
     stage.classList.remove("is-walking");
   }
   patchIdleRosterFromSession(wrap, { enterFoes: true, phase: "approach", approachT: 0 });
-  const wait = reduced ? 0 : ROAM_APPROACH_MS + Math.max(0, n - 1) * ROAM_ENTER_STAGGER_MS;
+  const wait = reduced ? 0 : roamApproachDurationMs(n, wrap.session.waveIndex || 0, (wrap.session.foes || []).map((u) => u?.role || "normal"));
   const token = idleAnimToken || { cancelled: false, timers: [] };
   if (!idleAnimToken) idleAnimToken = token;
   if (wait > 0) {

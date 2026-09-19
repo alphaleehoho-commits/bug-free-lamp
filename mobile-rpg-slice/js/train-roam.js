@@ -5,10 +5,6 @@
  */
 
 export const ROAM_WALK_MS = 1120;
-export const ROAM_APPROACH_MS = 780;
-/** @deprecated 用 ROAM_APPROACH_MS — 雙方走向會合點 */
-export const ROAM_ENTER_MS = ROAM_APPROACH_MS;
-export const ROAM_ENTER_STAGGER_MS = 70;
 
 /** 每波世界行程（鏡頭沿路前進） */
 export const ROAM_WAVE_SPAN = 168;
@@ -30,6 +26,13 @@ export const ROAM_FOE_ANCHOR_X = ROAM_FOE_MEET_X;
 export const ROAM_SPAWN_AHEAD = 214;
 export const ROAM_SPAWN_JITTER = 48;
 export const ROAM_SPAWN_SIDE = 40;
+/** 世界單位／ms：同行圖步行速。敵入場用呢個速走近，唔好 dash。 */
+export const ROAM_WALK_SPEED = ROAM_WALK_SPAN / ROAM_WALK_MS;
+/** 雙方走向會合點：距離 ÷ 步行速（典型 spawn）。實際播放用 roamApproachDurationMs。 */
+export const ROAM_APPROACH_MS = Math.round((ROAM_SPAWN_AHEAD - ROAM_FOE_MEET_X) / ROAM_WALK_SPEED);
+/** @deprecated 用 ROAM_APPROACH_MS — 雙方走向會合點 */
+export const ROAM_ENTER_MS = ROAM_APPROACH_MS;
+export const ROAM_ENTER_STAGGER_MS = 90;
 
 /** 鏡頭行程視差比例：遠最慢，近跟隊伍 */
 export const ROAM_FAR_FACTOR = 0.22;
@@ -83,9 +86,9 @@ function clampRoamY(y) {
   return Math.max(ROAM_Y_MIN, Math.min(ROAM_Y_MAX, y));
 }
 
-function easeInOut(t) {
-  const x = clamp01(t);
-  return x < 0.5 ? 2 * x * x : 1 - (2 - 2 * x) * (2 - 2 * x) / 2;
+/** 步行插值：直線，同隊伍行圖。唔用 easeInOut，避免中段衝滑。 */
+function walkLerp(t) {
+  return clamp01(t);
 }
 
 function walkPulse(walkT = 1) {
@@ -151,7 +154,7 @@ export function roamCamera(spec = {}) {
   if (phase === "approach") {
     const start = origin + ROAM_WALK_SPAN - ROAM_PARTY_BIAS_X;
     const end = roamMeetWorldX(waveIndex);
-    return { x: start + (end - start) * easeInOut(approachT), y: pathY * (1 - approachT * 0.35), phase };
+    return { x: start + (end - start) * walkLerp(approachT), y: pathY * (1 - approachT * 0.35), phase };
   }
   return { x: roamMeetWorldX(waveIndex), y: pathY * 0.35, phase };
 }
@@ -267,6 +270,26 @@ export function roamFoeSpawn(index = 0, count = 1, waveIndex = 0, role = "normal
   };
 }
 
+/** 敵走近會合點嘅世界距離（spawn ahead → meet slot）。 */
+export function roamFoeApproachDist(index = 0, count = 1, waveIndex = 0, role = "normal") {
+  const spawn = roamFoeSpawn(index, count, waveIndex, role);
+  const fight = roamFoeOffset(index, count, null, role);
+  return Math.max(0, spawn.ahead - fight.x);
+}
+
+/**
+ * 入場時長：最遠嗰隻敵用隊伍步行速行完。直線走進，唔好短過一行圖。
+ */
+export function roamApproachDurationMs(foeCount = 1, waveIndex = 0, roles = []) {
+  const n = Math.max(1, foeCount | 0);
+  let dist = ROAM_SPAWN_AHEAD - ROAM_FOE_MEET_X;
+  for (let i = 0; i < n; i += 1) {
+    const role = roles[i] || "normal";
+    dist = Math.max(dist, roamFoeApproachDist(i, n, waveIndex, role));
+  }
+  return Math.round(Math.max(ROAM_WALK_MS, dist / ROAM_WALK_SPEED));
+}
+
 /** 刷新點相對會合點再偏前（出畫面／霧外）。 */
 export function roamFoeEnterDx(index = 0, waveIndex = 0) {
   return roamFoeSpawn(index, 1, waveIndex).ahead;
@@ -281,7 +304,7 @@ function allyWorldX(waveIndex, phase, walkT, approachT, formX) {
   const walkWorld = origin + clamp01(walkT) * ROAM_WALK_SPAN + formX;
   const fightWorld = roamMeetWorldX(waveIndex) + ROAM_ALLY_MEET_X + formX;
   if (phase === "walk") return walkWorld;
-  if (phase === "approach") return walkWorld + (fightWorld - walkWorld) * easeInOut(approachT);
+  if (phase === "approach") return walkWorld + (fightWorld - walkWorld) * walkLerp(approachT);
   return fightWorld;
 }
 
@@ -290,13 +313,13 @@ function foeWorldX(waveIndex, phase, approachT, spawn, formX) {
   const spawnWorld = meet + spawn.ahead;
   const fightWorld = meet + formX;
   if (phase === "walk") return spawnWorld;
-  if (phase === "approach") return spawnWorld + (fightWorld - spawnWorld) * easeInOut(approachT);
+  if (phase === "approach") return spawnWorld + (fightWorld - spawnWorld) * walkLerp(approachT);
   return fightWorld;
 }
 
 function foeWorldY(phase, approachT, spawn, fightY) {
   if (phase === "walk") return spawn.y;
-  if (phase === "approach") return spawn.y + (fightY - spawn.y) * easeInOut(approachT);
+  if (phase === "approach") return spawn.y + (fightY - spawn.y) * walkLerp(approachT);
   return fightY;
 }
 

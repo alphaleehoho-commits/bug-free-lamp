@@ -438,6 +438,7 @@ import {
   ROAM_PARTY_BIAS_X,
   ROAM_WAVE_SPAN,
   ROAM_WALK_SPAN,
+  ROAM_WALK_SPEED,
   ROAM_SPAWN_AHEAD,
   ROAM_FAR_FACTOR,
   ROAM_MID_FACTOR,
@@ -457,6 +458,7 @@ import {
   roamFoeSpawn,
   roamCamera,
   roamPhaseOf,
+  roamApproachDurationMs,
   ROAM_IDLE_SCENE_SRC,
   ROAM_ALLY_PLACEHOLDER_SRC,
   ROAM_FOE_FOAM_SRC,
@@ -4411,7 +4413,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v153"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v154"), "sw cache bumped");
 assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
 assert(swSrc.includes("bg_idle_home_reef_1080x1920.webp"), "sw caches idle reef scene");
 assert(swSrc.includes("enemy_foamblob_idle.png"), "sw caches foam foe placeholder");
@@ -4672,8 +4674,15 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
 {
   assert(ROAM_PATH.length >= 4, "roam path has several headings");
   assert(ROAM_WALK_MS >= 800 && ROAM_WALK_MS <= 1600, "roam walk is a visible travel beat");
-  assert(ROAM_APPROACH_MS >= 500 && ROAM_APPROACH_MS <= 1100, "approach is a short close-in");
+  assert(ROAM_WALK_SPEED > 0, "party walk speed is world units per ms");
+  assert(ROAM_APPROACH_MS >= ROAM_WALK_MS, "foe walk-in is at least as long as a party walk");
+  assert(ROAM_APPROACH_MS <= 2400, "foe walk-in stays a hang beat, not a stall");
+  assert(
+    Math.abs(ROAM_APPROACH_MS - (ROAM_SPAWN_AHEAD - ROAM_FOE_MEET_X) / ROAM_WALK_SPEED) < 1.5,
+    "typical approach duration matches party walk speed"
+  );
   assert(ROAM_ENTER_MS === ROAM_APPROACH_MS, "legacy enter ms aliases approach");
+  assert(roamApproachDurationMs(1, 0) >= ROAM_APPROACH_MS, "actual approach uses farthest spawn");
   assert(ROAM_CENTER_CLEAR_X >= 16 && ROAM_CENTER_CLEAR_X <= 28, "meet gap is a face-off, not a corridor wall");
   assert(Math.abs(ROAM_PARTY_BIAS_X) <= 28, "party bias stays near screen center");
   assert(ROAM_ALLY_MEET_X > -70 && ROAM_ALLY_MEET_X < 0, "fight allies are center-left, not a left wall");
@@ -4773,6 +4782,37 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   const gapMid = approachMid.foes[0].x - approachMid.allies[0].x;
   assert(gapMid < gap0, "both sides close toward the same meet point");
   assert(approachMid.foes[0].x < approach0.foes[0].x, "foes walk in toward the meet point");
+  const approach1 = roamLayoutFromUnits({
+    allies: [{ slot: 1, lane: "front" }],
+    foes: [{ role: "normal" }, { role: "normal" }],
+    waveIndex: 0,
+    walkT: 1,
+    approachT: 1,
+    phase: "approach",
+  });
+  const approach25 = roamLayoutFromUnits({
+    allies: [{ slot: 1, lane: "front" }],
+    foes: [{ role: "normal" }, { role: "normal" }],
+    waveIndex: 0,
+    walkT: 1,
+    approachT: 0.25,
+    phase: "approach",
+  });
+  const approach75 = roamLayoutFromUnits({
+    allies: [{ slot: 1, lane: "front" }],
+    foes: [{ role: "normal" }, { role: "normal" }],
+    waveIndex: 0,
+    walkT: 1,
+    approachT: 0.75,
+    phase: "approach",
+  });
+  const foeSpan = approach0.foes[0].x - approach1.foes[0].x;
+  const early = approach0.foes[0].x - approach25.foes[0].x;
+  const late = approach75.foes[0].x - approach1.foes[0].x;
+  assert(foeSpan > 80, "foes cover a real walk-in, not a pop");
+  assert(Math.abs(early / foeSpan - 0.25) < 0.04, "early walk-in is linear, not a dash");
+  assert(Math.abs(late / foeSpan - 0.25) < 0.04, "late walk-in stays even with party pace");
+  assert(uiSrc2.includes("roamApproachDurationMs"), "ui times foe enter at walk speed");
   assert(fightLaid.allies.length === 2 && fightLaid.foes.length === 2, "layout maps units to pins");
   assert(fightLaid.allies.every((a) => a.x < 0 && a.x > -70), "fight allies are a center-left face-off");
   assert(fightLaid.foes.every((f) => f.x > 0 && f.x < 80), "fight foes are a center-right face-off");
