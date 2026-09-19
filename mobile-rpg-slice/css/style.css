@@ -1580,13 +1580,19 @@ button.flash-act {
   }
 }
 .train-roam-stage.is-walking .train-roam-pin[data-side="ally"] {
-  animation: roamPartyWalk 0.4s ease-in-out infinite;
+  animation: roamPartyWalk 0.32s ease-in-out infinite;
+}
+.train-roam-stage.is-walking .train-roam-pin[data-side="ally"][data-slot="2"] {
+  animation-delay: 0.08s;
+}
+.train-roam-stage.is-walking .train-roam-pin[data-side="ally"][data-slot="3"] {
+  animation-delay: 0.14s;
 }
 @keyframes roamPartyWalk {
   0%, 100% { transform: translate(-50%, -50%) translate(0, 0); }
-  28% { transform: translate(-50%, -50%) translate(5px, -6px); }
-  52% { transform: translate(-50%, -50%) translate(1px, -1px); }
-  78% { transform: translate(-50%, -50%) translate(7px, -8px); }
+  22% { transform: translate(-50%, -50%) translate(4px, -12px); }
+  48% { transform: translate(-50%, -50%) translate(-1px, -3px); }
+  74% { transform: translate(-50%, -50%) translate(6px, -13px); }
 }
 .train-idle-roster.is-roam .combat-unit {
   display: flex;

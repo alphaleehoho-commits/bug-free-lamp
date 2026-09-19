@@ -3238,6 +3238,22 @@ function syncIdleRoamStage(wrap, opts = {}) {
   stage.style.setProperty("--ground-y", `${Number(bg.nearY || 0).toFixed(1)}px`);
   const field = stage.querySelector("[data-live=train-idle-roster]");
   if (!field) return;
+  const formationId = wrap.formationId || currentFormationId();
+  const layout = idleRoamLayout(wrap.session, formationId, { walkT, hideFoes: !!opts.hideFoes });
+  for (const item of layout.allies) {
+    const uid = item.unit?.uid;
+    if (!uid) continue;
+    const unitEl = findCombatUnitEl(field, uid);
+    const pin = unitEl?.closest(".train-roam-pin");
+    if (!pin) continue;
+    pin.style.setProperty("--roam-x", `${item.x.toFixed(1)}px`);
+    pin.style.setProperty("--roam-y", `${item.y.toFixed(1)}px`);
+  }
+  if (opts.hideFoes) {
+    field.querySelectorAll('.train-roam-pin[data-side="foe"]').forEach((el) => {
+      el.classList.add("is-roam-exit");
+    });
+  }
   field.querySelectorAll('.train-roam-pin[data-side="ally"] .pet-art--combat').forEach((art) => {
     art.classList.add("pet-art--flip");
   });
@@ -3311,6 +3327,16 @@ async function playRoamWalk(wrap) {
   });
   wrap.roamWalkT = 0;
   syncIdleRoamStage(wrap, { walkT: 0, hideFoes: true });
+  if (dur > 0 && !reduced) {
+    await new Promise((resolve) => {
+      const t = window.setTimeout(resolve, 180);
+      token.timers.push(t);
+    });
+    if (token.cancelled) {
+      stage.classList.remove("is-walking");
+      return;
+    }
+  }
   if (dur > 0) {
     const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
     await new Promise((resolve) => {

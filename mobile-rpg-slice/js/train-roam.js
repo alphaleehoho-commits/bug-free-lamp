@@ -3,15 +3,18 @@
  * Layout lock（portrait 9:16）：左友右敵、中帶走廊留空；角色帶約 38–58%。
  */
 
-export const ROAM_WALK_MS = 720;
+export const ROAM_WALK_MS = 960;
 /** 遠景層：波間極慢微移（px）。唔累積、唔全圖狂捲。 */
 export const ROAM_FAR_PY = 6;
-/** 近景／地面：幾乎固定 */
-export const ROAM_NEAR_PY = 2;
-/** @deprecated 舊地面捲；而家遠景用 ROAM_FAR_PY */
-export const ROAM_GROUND_PY = ROAM_FAR_PY;
+/** 近景／地面：跟隊伍短行一齊漂（比遠景明顯） */
+export const ROAM_NEAR_PY = 16;
+/** 友軍短行：沿走廊前進，仍鎖左邊 */
+export const ROAM_ALLY_TRAVEL_X = 14;
+export const ROAM_ALLY_TRAVEL_Y = 30;
+/** @deprecated 地面跟近景 */
+export const ROAM_GROUND_PY = ROAM_NEAR_PY;
 /** @deprecated 舊全圖捲 */
-export const ROAM_STEP_PY = ROAM_FAR_PY;
+export const ROAM_STEP_PY = ROAM_NEAR_PY;
 /** 敵從右緣／霧外跑入（ms） */
 export const ROAM_ENTER_MS = 680;
 export const ROAM_ENTER_STAGGER_MS = 90;
@@ -58,7 +61,7 @@ export function roamHeading(waveIndex = 0) {
 }
 
 /**
- * 雙層視差：遠景極慢、近景幾乎固定。walk 中段微移，休息位永遠 0（唔累積）。
+ * 雙層視差：遠景極慢，近景／地面跟短行漂。休息位永遠 0（唔累積）。
  */
 export function roamBgShift(_waveIndex = 0, walkT = 1) {
   const t = Math.max(0, Math.min(1, Number(walkT)));
@@ -94,6 +97,24 @@ export function roamAllyOffset(slot, lane, _heading) {
   };
 }
 
+function walkPulse(walkT = 1) {
+  const t = Math.max(0, Math.min(1, Number(walkT)));
+  if (t <= 0 || t >= 1) return 0;
+  return Math.sin(t * Math.PI);
+}
+
+/**
+ * 波間短行：沿走廊走出一步再回休息位。x 永遠清中帶。
+ */
+export function roamAllyWalkOffset(slot, lane, heading, walkT = 1) {
+  const rest = roamAllyOffset(slot, lane, heading);
+  const pulse = walkPulse(walkT);
+  if (!pulse) return rest;
+  const x = Math.min(-ROAM_CENTER_CLEAR_X - 8, rest.x + pulse * ROAM_ALLY_TRAVEL_X);
+  const y = clampRoamY(rest.y + pulse * ROAM_ALLY_TRAVEL_Y);
+  return { x, y };
+}
+
 /**
  * 敵軍鎖右邊，沿角色帶上下散開。中帶走廊保持淨空。
  */
@@ -118,7 +139,7 @@ export function roamLayoutFromUnits(spec = {}) {
   const heading = roamHeading(waveIndex);
   const bg = roamBgShift(waveIndex, walkT);
   const allies = (spec.allies || []).map((a) => {
-    const pos = roamAllyOffset(a.slot, a.lane, heading);
+    const pos = roamAllyWalkOffset(a.slot, a.lane, heading, walkT);
     return { ...a, x: pos.x, y: pos.y };
   });
   const foeList = spec.foes || [];
