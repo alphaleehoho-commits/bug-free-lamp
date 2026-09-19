@@ -207,6 +207,8 @@ import {
   ROAM_ENTER_STAGGER_MS,
   roamApproachDurationMs,
   roamBgShift,
+  roamCamera,
+  roamShiftToHoldCamera,
   roamLayoutFromUnits,
   roamFoeEnterDx,
   roamFoeEnterDy,
@@ -3182,6 +3184,7 @@ function idleRoamLayout(session, formationId, opts = {}) {
     approachT: opts.approachT == null ? 1 : opts.approachT,
     phase: opts.phase,
     hideFoes: !!opts.hideFoes,
+    worldShift: opts.worldShift == null ? 0 : opts.worldShift,
   });
 }
 
@@ -3277,12 +3280,18 @@ function beginRoamFoeEnter(wrap, foeCount = 1, opts = {}) {
   }
 }
 
+function roamWorldShiftOf(wrap) {
+  const n = Number(wrap?.roamWorldShift);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function roamLayoutOpts(wrap, opts = {}) {
   const phase = idleRoamPhaseOf(wrap, opts);
   const walkT = opts.walkT == null ? wrap?.roamWalkT ?? (phase === "walk" ? 0 : 1) : opts.walkT;
   const approachT =
     opts.approachT == null ? wrap?.roamApproachT ?? (phase === "approach" ? 0 : 1) : opts.approachT;
-  return { walkT, approachT, phase, hideFoes: !!opts.hideFoes };
+  const worldShift = opts.worldShift == null ? roamWorldShiftOf(wrap) : opts.worldShift;
+  return { walkT, approachT, phase, hideFoes: !!opts.hideFoes, worldShift };
 }
 
 function syncIdleRoamStage(wrap, opts = {}) {
@@ -3544,6 +3553,13 @@ function tickIdleCombat({ background = false } = {}) {
     if (result.status === "restart") {
       const keepReady = wrap.clearReady;
       const keepFail = wrap.lastFail;
+      const holdCam = roamCamera({
+        waveIndex: wrap.session?.waveIndex || 0,
+        phase: wrap.roamPhase || "fight",
+        walkT: wrap.roamWalkT ?? 1,
+        approachT: wrap.roamApproachT ?? 1,
+        worldShift: roamWorldShiftOf(wrap),
+      });
       const session = createTrainIdleSession(state);
       if (!session) {
         idleCombat = null;
@@ -3557,6 +3573,15 @@ function tickIdleCombat({ background = false } = {}) {
       wrap.lastFail = keepFail || null;
       wrap.fx = emptyIdleFx();
       wrap.pendingFoeEnter = true;
+      wrap.roamPhase = "approach";
+      wrap.roamWalkT = 1;
+      wrap.roamApproachT = 0;
+      wrap.roamWorldShift = roamShiftToHoldCamera(holdCam.x, {
+        waveIndex: 0,
+        phase: "approach",
+        walkT: 1,
+        approachT: 0,
+      });
       needRosterPatch = true;
       continue;
     }

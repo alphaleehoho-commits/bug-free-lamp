@@ -6,8 +6,6 @@
 
 export const ROAM_WALK_MS = 1120;
 
-/** 每波世界行程（鏡頭沿路前進） */
-export const ROAM_WAVE_SPAN = 168;
 /** 遭遇前步行距離 */
 export const ROAM_WALK_SPAN = 120;
 /** 會合點相對本波原點 */
@@ -15,6 +13,8 @@ export const ROAM_MEET_SPAN = 148;
 
 /** 步行時隊伍略偏中（唔鎖左牆） */
 export const ROAM_PARTY_BIAS_X = -22;
+/** 每波世界行程：第 N 波會合鏡頭 = 第 N+1 波步行起點，避免勝波背景跳 */
+export const ROAM_WAVE_SPAN = ROAM_MEET_SPAN + ROAM_PARTY_BIAS_X;
 /** 會合對峙：近中場左右，唔係永久柱牆 */
 export const ROAM_ALLY_MEET_X = -38;
 export const ROAM_FOE_MEET_X = 46;
@@ -99,6 +99,28 @@ function walkPulse(walkT = 1) {
   return Math.sin(t * Math.PI);
 }
 
+/** 步態：端點為 0（轉場唔跳）；步行中兩下清楚起落，唔係左右亂擺。 */
+function walkStep(walkT = 1) {
+  const t = clamp01(walkT);
+  if (t <= 0 || t >= 1) return 0;
+  return Math.abs(Math.sin(t * Math.PI * 4));
+}
+
+function roamWorldShiftOf(spec = {}) {
+  const n = Number(spec.worldShift);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * 全滅／重開時把新波鏡頭對齊上一鏡，避免視差 wrap／原點歸零跳一下。
+ */
+export function roamShiftToHoldCamera(fromCamX, toSpec = {}) {
+  const hold = Number(fromCamX);
+  if (!Number.isFinite(hold)) return roamWorldShiftOf(toSpec);
+  const next = roamCamera({ ...toSpec, worldShift: 0 });
+  return hold - next.x;
+}
+
 function roamHash(waveIndex, index) {
   let n = (((waveIndex | 0) * 374761 + (index | 0) * 16807 + 11) >>> 0);
   n = (n ^ (n << 13)) >>> 0;
@@ -149,16 +171,18 @@ export function roamCamera(spec = {}) {
   const approachT = clamp01(spec.approachT == null ? (phase === "approach" ? 0 : 1) : spec.approachT);
   const heading = roamHeading(waveIndex, spec);
   const pathY = heading.dy * 14;
+  const shift = roamWorldShiftOf(spec);
   if (phase === "walk") {
     const partyWorld = origin + walkT * ROAM_WALK_SPAN;
-    return { x: partyWorld - ROAM_PARTY_BIAS_X, y: pathY, phase };
+    const y0 = pathY * 0.35;
+    return { x: partyWorld - ROAM_PARTY_BIAS_X + shift, y: y0 + (pathY - y0) * walkT, phase };
   }
   if (phase === "approach") {
     const start = origin + ROAM_WALK_SPAN - ROAM_PARTY_BIAS_X;
     const end = roamMeetWorldX(waveIndex);
-    return { x: start + (end - start) * walkLerp(approachT), y: pathY * (1 - approachT * 0.35), phase };
+    return { x: start + (end - start) * walkLerp(approachT) + shift, y: pathY * (1 - approachT * 0.35), phase };
   }
-  return { x: roamMeetWorldX(waveIndex), y: pathY * 0.35, phase };
+  return { x: roamMeetWorldX(waveIndex) + shift, y: pathY * 0.35, phase };
 }
 
 export function roamWorldToScreen(worldX, worldY, cam) {
@@ -168,28 +192,20 @@ export function roamWorldToScreen(worldX, worldY, cam) {
   };
 }
 
-function wrapParallax(v) {
-  const loop = ROAM_PARALLAX_LOOP;
-  let x = v % loop;
-  if (x > loop / 2) x -= loop;
-  if (x < -loop / 2) x += loop;
-  return x;
-}
-
 /**
- * 三層視差跟鏡頭行圖。休息／對峙唔歸零——鏡頭停喺會合點。
- * groundSlide 只係格線輔助，幅度細過 near。
+ * 三層視差跟鏡頭行圖。X 用連續值（repeat-x 自己砌縫）——唔 wrap，避免 deco 圖跳 480。
+ * 休息／對峙唔歸零；groundSlide 只係格線輔助。
  */
 export function roamBgShift(waveIndex = 0, walkT = 1, spec = {}) {
   const phase = roamPhaseOf({ waveIndex, walkT, ...spec });
   const cam = roamCamera({ waveIndex, walkT, phase, ...spec });
-  const farX = wrapParallax(-cam.x * ROAM_FAR_FACTOR);
-  const midX = wrapParallax(-cam.x * ROAM_MID_FACTOR);
-  const nearX = wrapParallax(-cam.x * ROAM_NEAR_FACTOR);
-  const baseX = wrapParallax(-cam.x * ROAM_BASE_FACTOR);
-  const groundSlide = wrapParallax(cam.x * ROAM_GROUND_ASSIST);
+  const farX = -cam.x * ROAM_FAR_FACTOR;
+  const midX = -cam.x * ROAM_MID_FACTOR;
+  const nearX = -cam.x * ROAM_NEAR_FACTOR;
+  const baseX = -cam.x * ROAM_BASE_FACTOR;
+  const groundSlide = cam.x * ROAM_GROUND_ASSIST;
   const t = phase === "walk" ? clamp01(walkT) : 0;
-  const pulse = walkPulse(t);
+  const step = walkStep(t);
   return {
     x: midX,
     y: 0,
@@ -197,9 +213,9 @@ export function roamBgShift(waveIndex = 0, walkT = 1, spec = {}) {
     midX,
     nearX,
     baseX,
-    farY: -pulse * ROAM_FAR_PY,
-    midY: -pulse * ROAM_MID_PY,
-    nearY: -pulse * ROAM_NEAR_PY,
+    farY: -step * ROAM_FAR_PY * 0.35,
+    midY: -step * ROAM_MID_PY * 0.35,
+    nearY: -step * ROAM_NEAR_PY * 0.35,
     groundSlide,
     camX: cam.x,
     camY: cam.y,
@@ -225,15 +241,15 @@ export function roamAllyOffset(slot, lane, _heading) {
 }
 
 /**
- * 步行：隊伍留喺畫面偏中，步態輕微擺（真正行程喺鏡頭／視差）。
+ * 步行：隊伍留喺畫面偏中。步態係上下起落（真正行程喺鏡頭／視差），唔左右搖。
  */
 export function roamAllyWalkOffset(slot, lane, heading, walkT = 1) {
   const form = allyFormation(slot, lane);
-  const pulse = walkPulse(walkT);
+  const step = walkStep(walkT);
   const pathY = (heading?.dy || 0) * 10;
   return {
-    x: ROAM_PARTY_BIAS_X + form.x + pulse * ROAM_ALLY_TRAVEL_X,
-    y: clampRoamY(form.y + pathY + pulse * ROAM_ALLY_TRAVEL_Y),
+    x: ROAM_PARTY_BIAS_X + form.x,
+    y: clampRoamY(form.y + pathY + step * ROAM_ALLY_TRAVEL_Y * 0.45),
   };
 }
 
@@ -335,14 +351,15 @@ export function roamLayoutFromUnits(spec = {}) {
   const walkT = spec.walkT == null ? 1 : spec.walkT;
   const approachT = spec.approachT == null ? 1 : spec.approachT;
   const phase = roamPhaseOf(spec);
+  const worldShift = roamWorldShiftOf(spec);
   const heading = roamHeading(waveIndex, { ...spec, phase, walkT, approachT });
-  const cam = roamCamera({ waveIndex, walkT, approachT, phase });
-  const bg = roamBgShift(waveIndex, walkT, { approachT, phase });
+  const cam = roamCamera({ waveIndex, walkT, approachT, phase, worldShift });
+  const bg = roamBgShift(waveIndex, walkT, { approachT, phase, worldShift });
   const allies = (spec.allies || []).map((a) => {
     const form = allyFormation(a.slot, a.lane);
-    const pulse = phase === "walk" ? walkPulse(walkT) : 0;
+    const step = phase === "walk" ? walkStep(walkT) : 0;
     const worldX = allyWorldX(waveIndex, phase, walkT, approachT, form.x);
-    const worldY = form.y + heading.dy * 10 + pulse * ROAM_ALLY_TRAVEL_Y;
+    const worldY = form.y + heading.dy * 10 + step * ROAM_ALLY_TRAVEL_Y * 0.45;
     const pos = roamWorldToScreen(worldX, worldY, cam);
     return { ...a, x: pos.x, y: clampRoamY(pos.y), faceRight: true, phase };
   });

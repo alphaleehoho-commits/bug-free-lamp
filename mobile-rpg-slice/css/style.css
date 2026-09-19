@@ -1647,10 +1647,9 @@ button.flash-act {
   animation-delay: 0.14s;
 }
 @keyframes roamPartyWalk {
-  0%, 100% { transform: translate(-50%, -50%) translate(0, 0); }
-  22% { transform: translate(-50%, -50%) translate(4px, -12px); }
-  48% { transform: translate(-50%, -50%) translate(-1px, -3px); }
-  74% { transform: translate(-50%, -50%) translate(6px, -13px); }
+  0%, 50%, 100% { transform: translate(-50%, -50%) translate(0, 0); }
+  25% { transform: translate(-50%, -50%) translate(0, -6px); }
+  75% { transform: translate(-50%, -50%) translate(0, -6px); }
 }
 .train-idle-roster.is-roam .combat-unit {
   display: flex;
@@ -4853,6 +4852,20 @@ button.pet-badge {
   object-fit: contain;
   object-position: center;
   transform: none;
+}
+
+/* Hang roam: allies match foes — no selection orb / ground ring / rarity plate. */
+.train-idle-roster.is-roam .pet-art,
+.train-idle-roster.is-roam .combat-unit .pet-art,
+.train-idle-roster.is-roam .pet-art.pet-art--combat,
+.train-idle-roster.is-roam .pet-art--rarity-rare,
+.train-idle-roster.is-roam .pet-art--rarity-epic,
+.train-idle-roster.is-roam .pet-art--rarity-legendary,
+.train-idle-roster.is-roam .pet-art-unknown {
+  background: none !important;
+  box-shadow: none !important;
+  border-radius: 0;
+  animation: none;
 }
 
 /* =============================================================================

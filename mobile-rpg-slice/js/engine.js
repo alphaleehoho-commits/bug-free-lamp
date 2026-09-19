@@ -2735,6 +2735,7 @@ export function persistTrainIdleCombatState(state, wrap) {
     resultLine: wrap.resultLine || null,
     logLine: wrap.logLine || null,
     lastFail: wrap.lastFail || null,
+    roamWorldShift: Number(wrap.roamWorldShift) || 0,
     session: wrap.session,
   };
   return state.trainIdleCombat;
@@ -2758,6 +2759,7 @@ export function restoreTrainIdleCombatState(state) {
     resultLine: saved.resultLine || null,
     logLine: saved.logLine || null,
     lastFail: saved.lastFail || null,
+    roamWorldShift: Number(saved.roamWorldShift) || 0,
     session: saved.session,
   };
 }
