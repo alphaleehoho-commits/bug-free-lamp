@@ -1485,7 +1485,7 @@ button.flash-act {
   --mid-y: 0px;
   --near-y: 0px;
   --ground-slide: 0px;
-  background: #0c1218;
+  background: #bfe8e6;
 }
 .train-roam-bg,
 .train-roam-bg-art {
@@ -1502,24 +1502,11 @@ button.flash-act {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background-color: #0c1218;
-  background-image:
-    linear-gradient(
-      180deg,
-      rgba(8, 16, 22, 0.42) 0%,
-      rgba(8, 16, 22, 0.12) 28%,
-      transparent 42%,
-      transparent 58%,
-      rgba(8, 16, 22, 0.28) 78%,
-      rgba(8, 16, 22, 0.5) 100%
-    ),
-    var(--roam-base-src, url("../assets/bg/scenes/bg_idle_home_reef_1080x1920.webp"));
-  background-repeat: no-repeat, repeat-x;
-  background-size: auto 100%, auto 100%;
-  background-position:
-    0 0,
-    var(--base-x, var(--near-x, 0px)) 42%;
-  filter: saturate(0.72) brightness(0.92);
+  background-color: #bfe8e6;
+  background-image: var(--roam-base-src, url("../assets/bg/roam/bg_roam_base_floor_9x16.png"));
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+  background-position: var(--base-x, var(--near-x, 0px)) 50%;
 }
 .train-roam-bg-art {
   position: absolute;
@@ -1546,8 +1533,8 @@ button.flash-act {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: center 48%;
+  object-fit: contain;
+  object-position: center;
   pointer-events: none;
 }
 .train-roam-bg-far {
@@ -1557,16 +1544,26 @@ button.flash-act {
   background-position: var(--far-x, 0px) center;
 }
 .train-roam-bg-mid {
+  top: 22%;
+  height: 56%;
   z-index: 2;
   opacity: 0.8;
   transform: translate(var(--mid-x, 0px), var(--mid-y, 0px));
   background-position: var(--mid-x, 0px) center;
 }
+.train-roam-bg-mid .train-roam-bg-deco-art {
+  object-position: center center;
+}
 .train-roam-bg-near {
+  top: 48%;
+  height: 46%;
   z-index: 3;
   opacity: 0.5;
   transform: translate(var(--near-x, 0px), var(--near-y, 0px));
   background-position: var(--near-x, 0px) center;
+}
+.train-roam-bg-near .train-roam-bg-deco-art {
+  object-position: center bottom;
 }
 .train-roam-ground {
   position: absolute;
@@ -5432,7 +5429,7 @@ html.theme-light .train-idle-strip.is-roam,
 }
 html.theme-light .train-roam-stage,
 #app.theme-light .train-roam-stage {
-  background: #0c1218;
+  background: #bfe8e6;
 }
 html.theme-light .train-idle-strip.is-roam .train-qi-chip,
 html.theme-light .train-idle-strip.is-roam .train-floor-nav button,

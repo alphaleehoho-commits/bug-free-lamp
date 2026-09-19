@@ -1,4 +1,4 @@
-const CACHE = "void-tide-pets-v155";
+const CACHE = "void-tide-pets-v156";
 const ASSETS = [
   "./",
   "./index.html",
@@ -14,6 +14,10 @@ const ASSETS = [
   "./icons/icon.svg",
   "./assets/pets/water-idle-map.json",
   "./assets/bg/scenes/bg_idle_home_reef_1080x1920.webp",
+  "./assets/bg/roam/bg_roam_base_floor_9x16.png",
+  "./assets/bg/roam/bg_roam_base_floor_tile_16x9.png",
+  "./assets/bg/roam/deco_roam_mid_weed_rock.png",
+  "./assets/bg/roam/deco_roam_near_weed_rock.png",
   "./assets/allies/ally_jelly_idle.png",
   "./assets/enemies/enemy_foamblob_idle.png",
   "./assets/enemies/enemy_reefcrab_idle.png",

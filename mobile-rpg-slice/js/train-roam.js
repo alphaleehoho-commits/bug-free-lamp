@@ -371,16 +371,18 @@ export function roamLayoutFromUnits(spec = {}) {
 
 export const ROAM_IDLE_SCENE_SRC = "./assets/bg/scenes/bg_idle_home_reef_1080x1920.webp";
 export const ROAM_DUNGEON_SCENE_SRC = "./assets/bg/scenes/bg_dungeon_tide_path_1080x1920.webp";
-/** Placeholder base：裁切／染色現場景，repeat-x。正式磚到就換 ROAM_BASE_FLOOR_ART。 */
-export const ROAM_BASE_FLOOR_SRC = ROAM_IDLE_SCENE_SRC;
-export const ROAM_BASE_FLOOR_ART = "./assets/bg/roam/bg_roam_base_floor_tile_16x9.png";
-/** Deco slots：圖未到保持空字串，唔好叠實心底。 */
+/** 直版 cover 用沙丘底（檔名 9x16；像素 16:9，repeat-x 跟鏡頭）。 */
+export const ROAM_BASE_FLOOR_SRC = "./assets/bg/roam/bg_roam_base_floor_9x16.png";
+/** 橫向 seamless 淨地磚，備用。 */
+export const ROAM_BASE_FLOOR_TILE_SRC = "./assets/bg/roam/bg_roam_base_floor_tile_16x9.png";
+export const ROAM_BASE_FLOOR_ART = ROAM_BASE_FLOOR_TILE_SRC;
+/** Deco：far 空；mid／near 接 trial v0。 */
 export const ROAM_DECO_FAR_SRC = "";
-export const ROAM_DECO_MID_SRC = "";
-export const ROAM_DECO_NEAR_SRC = "";
+export const ROAM_DECO_MID_SRC = "./assets/bg/roam/deco_roam_mid_weed_rock.png";
+export const ROAM_DECO_NEAR_SRC = "./assets/bg/roam/deco_roam_near_weed_rock.png";
 export const ROAM_DECO_FAR_ART = "./assets/bg/roam/deco_roam_far_weed_rock_2160x1920.webp";
-export const ROAM_DECO_MID_ART = "./assets/bg/roam/deco_roam_mid_weed_rock.png";
-export const ROAM_DECO_NEAR_ART = "./assets/bg/roam/deco_roam_near_weed_rock.png";
+export const ROAM_DECO_MID_ART = ROAM_DECO_MID_SRC;
+export const ROAM_DECO_NEAR_ART = ROAM_DECO_NEAR_SRC;
 export const ROAM_ALLY_PLACEHOLDER_SRC = "./assets/allies/ally_jelly_idle.png";
 export const ROAM_FOE_FOAM_SRC = "./assets/enemies/enemy_foamblob_idle.png";
 export const ROAM_FOE_CRAB_SRC = "./assets/enemies/enemy_reefcrab_idle.png";
