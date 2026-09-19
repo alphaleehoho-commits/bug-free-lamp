@@ -204,7 +204,7 @@ import {
 import { petArtFromPet, petArtHtml } from "./pet-icons.js";
 import {
   ROAM_WALK_MS,
-  ROAM_ENTER_MS,
+  ROAM_APPROACH_MS,
   ROAM_ENTER_STAGGER_MS,
   roamBgShift,
   roamLayoutFromUnits,
@@ -772,7 +772,7 @@ function combatUnitArtHtml(u, dead = false, side = null, artOpts = null) {
   const unitSide =
     side === "foe" || side === "enemy" || u?.side === "foe" || u?.side === "enemy" ? "foe" : "ally";
   const flipCls = unitSide === "ally" ? " pet-art--flip" : "";
-  // 練功 roam：友軍按敵群左右翻面；敵立繪永遠向左，唔用 ally flip
+  // 練功 roam v2：友軍喺會合點面向敵群；敵面向隊伍（按位置計，唔永久鎖左）
   const roamFlip =
     artOpts && typeof artOpts.faceRight === "boolean"
       ? unitSide === "ally" && artOpts.faceRight
@@ -3176,18 +3176,51 @@ function idleRoamLayout(session, formationId, opts = {}) {
     foes,
     waveIndex: session?.waveIndex || 0,
     walkT: opts.walkT == null ? 1 : opts.walkT,
+    approachT: opts.approachT == null ? 1 : opts.approachT,
+    phase: opts.phase,
+    hideFoes: !!opts.hideFoes,
   });
 }
 
-function idleRoamPinHtml(item, faceRight, enter = false, pinIndex = 0) {
+function idleRoamPhaseOf(wrap, opts = {}) {
+  if (opts.phase) return opts.phase;
+  if (opts.hideFoes) return "walk";
+  if (wrap?.roamPhase === "walk" || wrap?.roamPhase === "approach" || wrap?.roamPhase === "fight") {
+    return wrap.roamPhase;
+  }
+  if (wrap?.pendingFoeEnter || wrap?.foeEntering) return "approach";
+  return "fight";
+}
+
+function applyRoamStageVars(stage, bg, phase = "fight") {
+  if (!stage || !bg) return;
+  stage.dataset.roamPhase = phase;
+  stage.dataset.face = "right";
+  stage.style.setProperty("--far-x", `${Number(bg.farX || 0).toFixed(1)}px`);
+  stage.style.setProperty("--mid-x", `${Number(bg.midX || bg.x || 0).toFixed(1)}px`);
+  stage.style.setProperty("--near-x", `${Number(bg.nearX || 0).toFixed(1)}px`);
+  stage.style.setProperty("--far-y", `${Number(bg.farY ?? bg.y).toFixed(1)}px`);
+  stage.style.setProperty("--mid-y", `${Number(bg.midY || 0).toFixed(1)}px`);
+  stage.style.setProperty("--near-y", `${Number(bg.nearY || 0).toFixed(1)}px`);
+  stage.style.setProperty("--ground-y", `${Number(bg.nearY || 0).toFixed(1)}px`);
+  stage.style.setProperty("--ground-slide", `${Number(bg.groundSlide || 0).toFixed(1)}px`);
+}
+
+function applyRoamPinFacing(art, faceRight) {
+  if (!art) return;
+  art.classList.toggle("pet-art--flip", !!faceRight);
+}
+
+function idleRoamPinHtml(item, faceRight, enter = false, pinIndex = 0, waveIndex = 0) {
   const u = item.unit;
   const side = u.side === "foe" || u.side === "enemy" ? "foe" : "ally";
   const enterCls = enter && side === "foe" ? " is-roam-enter" : "";
-  const artOpts = { faceRight };
+  const unitFace = item.faceRight != null ? item.faceRight : faceRight;
+  const artOpts = { faceRight: unitFace };
   if (side === "foe") artOpts.placeholderSrc = roamFoePlaceholderSrc(u, pinIndex);
   else if (!(u?.speciesId && SPECIES[u.speciesId])) artOpts.placeholderSrc = ROAM_ALLY_PLACEHOLDER_SRC;
-  const enterDx = side === "foe" ? roamFoeEnterDx(pinIndex) : 0;
-  const enterDy = side === "foe" ? roamFoeEnterDy(pinIndex) : 0;
+  const enterDx = side === "foe" ? roamFoeEnterDx(pinIndex, waveIndex) : 0;
+  const enterDy = side === "foe" ? roamFoeEnterDy(pinIndex, waveIndex) : 0;
   const enterDelay = side === "foe" ? Math.max(0, pinIndex | 0) * ROAM_ENTER_STAGGER_MS : 0;
   return `<div class="train-roam-pin${enterCls}" data-side="${side}" data-roam-uid="${escapeHtml(
     u.uid || ""
@@ -3206,7 +3239,7 @@ function beginRoamFoeEnter(wrap, foeCount = 1, opts = {}) {
   wrap.pendingFoeEnter = false;
   wrap.foeEntering = true;
   const extra = Math.max(0, (foeCount | 0) - 1) * ROAM_ENTER_STAGGER_MS;
-  const hold = ROAM_ENTER_MS + extra + 60;
+  const hold = ROAM_APPROACH_MS + extra + 60;
   if (typeof window === "undefined") {
     wrap.foeEntering = false;
     return;
@@ -3227,21 +3260,25 @@ function beginRoamFoeEnter(wrap, foeCount = 1, opts = {}) {
   }
 }
 
+function roamLayoutOpts(wrap, opts = {}) {
+  const phase = idleRoamPhaseOf(wrap, opts);
+  const walkT = opts.walkT == null ? wrap?.roamWalkT ?? (phase === "walk" ? 0 : 1) : opts.walkT;
+  const approachT =
+    opts.approachT == null ? wrap?.roamApproachT ?? (phase === "approach" ? 0 : 1) : opts.approachT;
+  return { walkT, approachT, phase, hideFoes: !!opts.hideFoes };
+}
+
 function syncIdleRoamStage(wrap, opts = {}) {
   const stage = document.querySelector("[data-live=train-roam-stage]");
   if (!stage || !wrap?.session) return;
-  const walkT = opts.walkT == null ? wrap.roamWalkT ?? 1 : opts.walkT;
-  const bg = roamBgShift(wrap.session.waveIndex || 0, walkT);
-  stage.dataset.face = "right";
-  stage.style.setProperty("--far-y", `${Number(bg.farY ?? bg.y).toFixed(1)}px`);
-  stage.style.setProperty("--near-y", `${Number(bg.nearY || 0).toFixed(1)}px`);
-  stage.style.setProperty("--ground-y", `${Number(bg.nearY || 0).toFixed(1)}px`);
-  stage.style.setProperty("--ground-slide", `${Number(bg.groundSlide || 0).toFixed(1)}px`);
+  const layoutOpts = roamLayoutOpts(wrap, opts);
+  const bg = roamBgShift(wrap.session.waveIndex || 0, layoutOpts.walkT, layoutOpts);
+  applyRoamStageVars(stage, bg, layoutOpts.phase);
   const field = stage.querySelector("[data-live=train-idle-roster]");
   if (!field) return;
   const formationId = wrap.formationId || currentFormationId();
-  const layout = idleRoamLayout(wrap.session, formationId, { walkT, hideFoes: !!opts.hideFoes });
-  for (const item of layout.allies) {
+  const layout = idleRoamLayout(wrap.session, formationId, layoutOpts);
+  for (const item of [...layout.allies, ...layout.foes]) {
     const uid = item.unit?.uid;
     if (!uid) continue;
     const unitEl = findCombatUnitEl(field, uid);
@@ -3249,18 +3286,13 @@ function syncIdleRoamStage(wrap, opts = {}) {
     if (!pin) continue;
     pin.style.setProperty("--roam-x", `${item.x.toFixed(1)}px`);
     pin.style.setProperty("--roam-y", `${item.y.toFixed(1)}px`);
+    pin.querySelectorAll(".pet-art--combat").forEach((art) => applyRoamPinFacing(art, item.faceRight));
   }
   if (opts.hideFoes) {
     field.querySelectorAll('.train-roam-pin[data-side="foe"]').forEach((el) => {
       el.classList.add("is-roam-exit");
     });
   }
-  field.querySelectorAll('.train-roam-pin[data-side="ally"] .pet-art--combat').forEach((art) => {
-    art.classList.add("pet-art--flip");
-  });
-  field.querySelectorAll('.train-roam-pin[data-side="foe"] .pet-art--combat').forEach((art) => {
-    art.classList.remove("pet-art--flip");
-  });
 }
 
 function patchIdleRosterFromSession(wrap, opts = {}) {
@@ -3268,11 +3300,12 @@ function patchIdleRosterFromSession(wrap, opts = {}) {
   if (!roster || !wrap?.session) return;
   const s = wrap.session;
   const formationId = wrap.formationId || currentFormationId();
-  const walkT = opts.walkT == null ? wrap.roamWalkT ?? 1 : opts.walkT;
+  const layoutOpts = roamLayoutOpts(wrap, opts);
   roster.classList.add("combat-roster", "train-idle-roster", "is-roam");
   roster.classList.remove("combat-formation");
   roster.dataset.formation = formationId;
-  const layout = idleRoamLayout(s, formationId, { walkT, hideFoes: !!opts.hideFoes });
+  roster.dataset.roamPhase = layoutOpts.phase;
+  const layout = idleRoamLayout(s, formationId, layoutOpts);
   const wantEnter = !!opts.enterFoes;
   const existing = [...roster.querySelectorAll(".combat-unit[data-uid]")].map((el) => el.dataset.uid);
   const nextIds = [
@@ -3298,17 +3331,18 @@ function patchIdleRosterFromSession(wrap, opts = {}) {
       if (pin) {
         pin.style.setProperty("--roam-x", `${item.x.toFixed(1)}px`);
         pin.style.setProperty("--roam-y", `${item.y.toFixed(1)}px`);
+        pin.querySelectorAll(".pet-art--combat").forEach((art) => applyRoamPinFacing(art, item.faceRight));
       }
     }
   } else {
-    const faceRight = layout.heading.faceRight;
+    const waveIndex = s.waveIndex || 0;
     roster.innerHTML = [
-      ...layout.allies.map((a) => idleRoamPinHtml(a, faceRight, false)),
-      ...layout.foes.map((f, i) => idleRoamPinHtml(f, faceRight, wantEnter, i)),
+      ...layout.allies.map((a) => idleRoamPinHtml(a, a.faceRight, false, 0, waveIndex)),
+      ...layout.foes.map((f, i) => idleRoamPinHtml(f, f.faceRight, wantEnter, i, waveIndex)),
     ].join("");
-    roster.dataset.roamWave = String(s.waveIndex || 0);
+    roster.dataset.roamWave = String(waveIndex);
   }
-  syncIdleRoamStage(wrap, { walkT, hideFoes: !!opts.hideFoes });
+  syncIdleRoamStage(wrap, opts);
 }
 
 async function playRoamWalk(wrap) {
@@ -3322,12 +3356,15 @@ async function playRoamWalk(wrap) {
   const reduced =
     typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
   const dur = reduced ? 0 : ROAM_WALK_MS;
+  wrap.roamPhase = "walk";
+  wrap.roamApproachT = 0;
   stage.classList.add("is-walking");
+  stage.classList.remove("is-approaching");
   roster.querySelectorAll('.train-roam-pin[data-side="foe"]').forEach((el) => {
     el.classList.add("is-roam-exit");
   });
   wrap.roamWalkT = 0;
-  syncIdleRoamStage(wrap, { walkT: 0, hideFoes: true });
+  syncIdleRoamStage(wrap, { walkT: 0, hideFoes: true, phase: "walk" });
   if (dur > 0 && !reduced) {
     await new Promise((resolve) => {
       const t = window.setTimeout(resolve, 180);
@@ -3348,7 +3385,7 @@ async function playRoamWalk(wrap) {
         }
         const p = Math.min(1, (now - t0) / dur);
         wrap.roamWalkT = p;
-        syncIdleRoamStage(wrap, { walkT: p, hideFoes: true });
+        syncIdleRoamStage(wrap, { walkT: p, hideFoes: true, phase: "walk" });
         if (p < 1) requestAnimationFrame(tick);
         else resolve();
       };
@@ -3356,18 +3393,18 @@ async function playRoamWalk(wrap) {
     });
   }
   wrap.roamWalkT = 1;
+  wrap.roamPhase = "walk";
   stage.classList.remove("is-walking");
-  stage.style.setProperty("--far-y", "0px");
-  stage.style.setProperty("--near-y", "0px");
-  stage.style.setProperty("--ground-y", "0px");
-  stage.style.setProperty("--ground-slide", "0px");
+  syncIdleRoamStage(wrap, { walkT: 1, hideFoes: true, phase: "walk" });
   if (idleAnimToken === token) idleAnimToken = null;
 }
 
 async function playRoamFoeEnter(wrap) {
   if (!wrap?.session) return;
   if (typeof document !== "undefined" && document.hidden) {
-    patchIdleRosterFromSession(wrap, { enterFoes: false });
+    wrap.roamPhase = "fight";
+    wrap.roamApproachT = 1;
+    patchIdleRosterFromSession(wrap, { enterFoes: false, phase: "fight", approachT: 1 });
     wrap.pendingFoeEnter = false;
     wrap.foeEntering = false;
     return;
@@ -3375,17 +3412,40 @@ async function playRoamFoeEnter(wrap) {
   const reduced =
     typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
   const n = (wrap.session.foes || []).length;
+  const stage = document.querySelector("[data-live=train-roam-stage]");
+  wrap.roamPhase = "approach";
+  wrap.roamApproachT = 0;
+  wrap.roamWalkT = 1;
   beginRoamFoeEnter(wrap, n);
-  patchIdleRosterFromSession(wrap, { enterFoes: true });
-  const wait = reduced ? 0 : ROAM_ENTER_MS + Math.max(0, n - 1) * ROAM_ENTER_STAGGER_MS;
+  if (stage) {
+    stage.classList.add("is-approaching");
+    stage.classList.remove("is-walking");
+  }
+  patchIdleRosterFromSession(wrap, { enterFoes: true, phase: "approach", approachT: 0 });
+  const wait = reduced ? 0 : ROAM_APPROACH_MS + Math.max(0, n - 1) * ROAM_ENTER_STAGGER_MS;
+  const token = idleAnimToken || { cancelled: false, timers: [] };
+  if (!idleAnimToken) idleAnimToken = token;
   if (wait > 0) {
-    const token = idleAnimToken || { cancelled: false, timers: [] };
-    if (!idleAnimToken) idleAnimToken = token;
+    const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
     await new Promise((resolve) => {
-      const t = window.setTimeout(resolve, wait);
-      token.timers.push(t);
+      const tick = (now) => {
+        if (token.cancelled) {
+          resolve();
+          return;
+        }
+        const p = Math.min(1, (now - t0) / wait);
+        wrap.roamApproachT = p;
+        syncIdleRoamStage(wrap, { phase: "approach", approachT: p, walkT: 1 });
+        if (p < 1) requestAnimationFrame(tick);
+        else resolve();
+      };
+      requestAnimationFrame(tick);
     });
   }
+  wrap.roamApproachT = 1;
+  wrap.roamPhase = "fight";
+  if (stage) stage.classList.remove("is-approaching");
+  syncIdleRoamStage(wrap, { phase: "fight", approachT: 1, walkT: 1 });
 }
 
 async function playRoamWaveTransition(wrap) {
@@ -3668,30 +3728,39 @@ function trainIdleStripHtml(rateSummary = "") {
       ? " is-fail"
       : " is-clear"
     : "";
-  const layout = idleRoamLayout(s, formationId, { walkT: wrap.roamWalkT ?? 1 });
-  const faceRight = true;
+  const layoutOpts = roamLayoutOpts(wrap, {});
+  const layout = idleRoamLayout(s, formationId, layoutOpts);
   const enterFoes = !!(wrap.pendingFoeEnter || wrap.foeEntering);
   if (wrap.pendingFoeEnter) beginRoamFoeEnter(wrap, layout.foes.length, { holdBusy: true });
+  const waveIndex = s.waveIndex || 0;
   const pins = [
-    ...layout.allies.map((a) => idleRoamPinHtml(a, faceRight, false)),
-    ...layout.foes.map((f, i) => idleRoamPinHtml(f, faceRight, enterFoes, i)),
+    ...layout.allies.map((a) => idleRoamPinHtml(a, a.faceRight, false, 0, waveIndex)),
+    ...layout.foes.map((f, i) => idleRoamPinHtml(f, f.faceRight, enterFoes, i, waveIndex)),
   ].join("");
+  const farX = Number(layout.bg.farX || 0).toFixed(1);
+  const midX = Number(layout.bg.midX || layout.bg.x || 0).toFixed(1);
+  const nearX = Number(layout.bg.nearX || 0).toFixed(1);
   const farY = Number(layout.bg.farY ?? layout.bg.y).toFixed(1);
+  const midY = Number(layout.bg.midY || 0).toFixed(1);
   const nearY = Number(layout.bg.nearY || 0).toFixed(1);
   const groundSlide = Number(layout.bg.groundSlide || 0).toFixed(1);
+  const roamPhase = layout.phase || layoutOpts.phase || "fight";
   const waveLabel = `${floorName} · ${meta}`;
   const prod = rateSummary
     ? `<p class="train-roam-prod">${rateSummary}</p>`
     : "";
   return `<div class="train-idle-strip is-roam${bossCls}" data-live="train-idle">
     ${idleLootLayerHtml()}
-    <div class="train-roam-stage scene-bg panel-stage--cultivate-idle" data-live="train-roam-stage" data-face="right" style="--far-y:${farY}px;--near-y:${nearY}px;--ground-y:${nearY}px;--ground-slide:${groundSlide}px">
+    <div class="train-roam-stage scene-bg panel-stage--cultivate-idle" data-live="train-roam-stage" data-face="right" data-roam-phase="${escapeHtml(
+      roamPhase
+    )}" style="--far-x:${farX}px;--mid-x:${midX}px;--near-x:${nearX}px;--far-y:${farY}px;--mid-y:${midY}px;--near-y:${nearY}px;--ground-y:${nearY}px;--ground-slide:${groundSlide}px">
       <div class="train-roam-bg" aria-hidden="true">
         <img class="train-roam-bg-art train-roam-bg-far" src="${escapeHtml(ROAM_IDLE_SCENE_SRC)}" alt="" width="1080" height="1920" />
+        <img class="train-roam-bg-art train-roam-bg-mid" src="${escapeHtml(ROAM_IDLE_SCENE_SRC)}" alt="" width="1080" height="1920" />
         <div class="train-roam-ground train-roam-bg-near"></div>
       </div>
       <div class="train-roam-vignette" aria-hidden="true"></div>
-      <div class="combat-roster train-idle-roster is-roam" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}" data-roam-wave="${s.waveIndex || 0}">
+      <div class="combat-roster train-idle-roster is-roam" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}" data-roam-wave="${s.waveIndex || 0}" data-roam-phase="${escapeHtml(roamPhase)}">
         ${pins}
       </div>
       <div class="train-roam-hud train-roam-hud-top">

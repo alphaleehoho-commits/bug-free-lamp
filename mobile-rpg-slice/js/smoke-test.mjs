@@ -427,11 +427,22 @@ import {
   ROAM_NEAR_PY,
   ROAM_GROUND_PY,
   ROAM_ENTER_MS,
+  ROAM_APPROACH_MS,
   ROAM_FOE_ENTER_DX,
   ROAM_FOE_ENTER_DY,
   ROAM_CENTER_CLEAR_X,
   ROAM_ALLY_ANCHOR_X,
   ROAM_FOE_ANCHOR_X,
+  ROAM_ALLY_MEET_X,
+  ROAM_FOE_MEET_X,
+  ROAM_PARTY_BIAS_X,
+  ROAM_WAVE_SPAN,
+  ROAM_WALK_SPAN,
+  ROAM_SPAWN_AHEAD,
+  ROAM_FAR_FACTOR,
+  ROAM_MID_FACTOR,
+  ROAM_NEAR_FACTOR,
+  ROAM_GROUND_ASSIST,
   ROAM_GROUND_SLIDE_PY,
   roamHeading,
   roamBgShift,
@@ -443,6 +454,9 @@ import {
   roamFoePlaceholderSrc,
   roamFoeEnterDx,
   roamFoeEnterDy,
+  roamFoeSpawn,
+  roamCamera,
+  roamPhaseOf,
   ROAM_IDLE_SCENE_SRC,
   ROAM_ALLY_PLACEHOLDER_SRC,
   ROAM_FOE_FOAM_SRC,
@@ -4397,7 +4411,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v152"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v153"), "sw cache bumped");
 assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
 assert(swSrc.includes("bg_idle_home_reef_1080x1920.webp"), "sw caches idle reef scene");
 assert(swSrc.includes("enemy_foamblob_idle.png"), "sw caches foam foe placeholder");
@@ -4654,78 +4668,134 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("pet-art above name/bar"), "css stacked combat labels");
 }
 
-/* Pack: 練功 hang roam — layout lock 左友右敵 / 9:16 scene cover */
+/* Pack: 練功 hang roam v2 — walk the map / meet-point fight / 3-layer parallax */
 {
   assert(ROAM_PATH.length >= 4, "roam path has several headings");
-  assert(ROAM_WALK_MS >= 400 && ROAM_WALK_MS <= 1600, "roam walk is a short beat");
-  assert(ROAM_CENTER_CLEAR_X >= 40 && ROAM_CENTER_CLEAR_X <= 56, "center corridor keep-out, party closer to mid");
+  assert(ROAM_WALK_MS >= 800 && ROAM_WALK_MS <= 1600, "roam walk is a visible travel beat");
+  assert(ROAM_APPROACH_MS >= 500 && ROAM_APPROACH_MS <= 1100, "approach is a short close-in");
+  assert(ROAM_ENTER_MS === ROAM_APPROACH_MS, "legacy enter ms aliases approach");
+  assert(ROAM_CENTER_CLEAR_X >= 16 && ROAM_CENTER_CLEAR_X <= 28, "meet gap is a face-off, not a corridor wall");
+  assert(Math.abs(ROAM_PARTY_BIAS_X) <= 28, "party bias stays near screen center");
+  assert(ROAM_ALLY_MEET_X > -70 && ROAM_ALLY_MEET_X < 0, "fight allies are center-left, not a left wall");
+  assert(ROAM_FOE_MEET_X > 0 && ROAM_FOE_MEET_X < 80, "fight foes are center-right, not a right wall");
+  assert(ROAM_ALLY_ANCHOR_X === ROAM_ALLY_MEET_X && ROAM_FOE_ANCHOR_X === ROAM_FOE_MEET_X, "legacy anchors alias meet slots");
+  assert(roamPhaseOf({ hideFoes: true }) === "walk", "hideFoes is the walk phase");
+  assert(roamPhaseOf({ approachT: 0.4 }) === "approach", "partial approachT is approach");
+  assert(roamPhaseOf({ walkT: 1 }) === "fight", "settled walkT is fight-at-meet");
   const h0 = roamHeading(0);
-  assert(h0.faceRight === true, "layout lock always faces foes on the right");
-  assert(roamHeading(2).faceRight === true, "later waves still face right");
+  assert(h0.dx > 0, "path travels forward along the map");
   const nFoes = 4;
   for (let i = 0; i < nFoes; i += 1) {
     const p = roamFoeOffset(i, nFoes, h0, i === 0 ? "boss" : "normal");
-    assert(p.x > ROAM_CENTER_CLEAR_X, `foe ${i} stays on the right`);
+    assert(p.x > 0 && p.x < 80, `foe ${i} meet slot is a short face-off`);
     assert(p.y >= -40 && p.y <= 40, "foe stays in character band");
   }
   const front = roamAllyOffset(1, "front", h0);
   const rear = roamAllyOffset(1, "rear", h0);
-  assert(front.x < -ROAM_CENTER_CLEAR_X && rear.x < -ROAM_CENTER_CLEAR_X, "allies stay on the left");
-  assert(front.x > rear.x, "ally front stands closer to the right-side foes");
-  assert(Math.abs(front.x) < 90 && Math.abs(ROAM_ALLY_ANCHOR_X) < 90, "party stands closer to screen center");
-  const bg0 = roamBgShift(0, 1);
-  const bg1start = roamBgShift(1, 0);
-  const bg1 = roamBgShift(1, 1);
-  const bgMid = roamBgShift(1, 0.5);
-  assert(bg0.x === bg1start.x && bg0.y === bg1start.y, "walk starts from previous camera");
-  assert(bg0.y === 0 && bg1.y === 0 && bg0.farY === 0 && bg1.nearY === 0, "parallax rest pose is fixed");
-  assert(bgMid.farY !== 0, "walk beat has far-layer parallax");
-  assert(Math.abs(bgMid.farY) <= ROAM_FAR_PY + 0.01, "far layer stays very slow");
-  assert(Math.abs(bgMid.nearY) <= ROAM_NEAR_PY + 0.01, "near ground drift stays bounded");
-  assert(Math.abs(bgMid.nearY) > Math.abs(bgMid.farY), "near/camera drifts more than far");
-  assert(bgMid.groundSlide > 0, "walk beat slides foot-ground texture");
-  assert(bg0.groundSlide === 0 && bg1.groundSlide === 0, "ground texture rest pose is fixed");
-  assert(roamBgShift(4, 1).y === bg1.y, "waves do not accumulate camera");
-  assert(ROAM_FAR_PY > 0 && ROAM_FAR_PY <= 10, "far parallax is a short drift");
-  assert(ROAM_NEAR_PY > ROAM_FAR_PY && ROAM_NEAR_PY <= 22, "near ground travels with the party");
-  assert(ROAM_GROUND_SLIDE_PY > ROAM_NEAR_PY, "foot-ground texture slides more than the near plate");
-  assert(ROAM_GROUND_PY === ROAM_NEAR_PY, "legacy ground token aliases near layer");
-  const restAlly = roamAllyOffset(1, "front", h0);
-  const midAlly = roamAllyWalkOffset(1, "front", h0, 0.5);
-  const endAlly = roamAllyWalkOffset(1, "front", h0, 1);
-  assert(midAlly.y !== restAlly.y, "allies travel the corridor mid-walk");
-  assert(Math.abs(midAlly.y - restAlly.y) >= 12, "walk travel is visible");
-  assert(midAlly.x < -ROAM_CENTER_CLEAR_X && endAlly.x === restAlly.x, "walk stays left and returns");
-  assert(ROAM_ALLY_TRAVEL_Y >= 20, "ally travel beat has forward distance");
-  assert(ROAM_ENTER_MS >= 400 && ROAM_ENTER_MS <= 1200, "foe enter is a short run-in");
-  assert(roamFoeEnterDx(0) >= 200, "foes start farther off-stage, not face-hugging");
-  assert(ROAM_FOE_ENTER_DX === roamFoeEnterDx(1), "enter dx is stable");
-  assert(roamFoeEnterDy(1) < 0 && roamFoeEnterDy(2) > 0, "foes also enter from top/bottom fog");
-  assert(ROAM_FOE_ANCHOR_X + roamFoeEnterDx(0) > 300, "enter start is past the right fog, not center");
-  assert(Math.abs(roamFoeEnterDy(0)) < 80, "fog-edge dy stays in the stage");
-  const laid = roamLayoutFromUnits({
+  assert(front.x < 0 && rear.x < 0, "meet allies stay on the party side");
+  assert(front.x > rear.x, "ally front stands closer to the meet");
+  assert(Math.abs(front.x) < 55, "party meet slot is biased toward center");
+  const walkAlly = roamAllyWalkOffset(1, "front", h0, 0.5);
+  const walkEnd = roamAllyWalkOffset(1, "front", h0, 1);
+  assert(Math.abs(walkAlly.x) < 50 && Math.abs(walkEnd.x) < 50, "walk keeps party near center, not a left wall");
+  assert(ROAM_ALLY_TRAVEL_Y >= 8, "walk has a visible locomotion bob");
+
+  const camWalk0 = roamCamera({ waveIndex: 0, phase: "walk", walkT: 0 });
+  const camWalk1 = roamCamera({ waveIndex: 0, phase: "walk", walkT: 1 });
+  const camFight0 = roamCamera({ waveIndex: 0, phase: "fight" });
+  const camFight2 = roamCamera({ waveIndex: 2, phase: "fight" });
+  assert(camWalk1.x > camWalk0.x, "camera follows party along the walk");
+  assert(camFight2.x > camFight0.x, "later waves travel further along the map");
+  assert(Math.abs(camFight2.x - camFight0.x - 2 * ROAM_WAVE_SPAN) < 0.01, "camera accumulates wave travel");
+  assert(Math.abs(camWalk1.x - camWalk0.x - ROAM_WALK_SPAN) < 0.01, "walk camera covers the walk span");
+
+  const bgWalk0 = roamBgShift(0, 0, { phase: "walk" });
+  const bgWalk1 = roamBgShift(0, 1, { phase: "walk" });
+  const farDelta = Math.abs(bgWalk1.farX - bgWalk0.farX);
+  const midDelta = Math.abs(bgWalk1.midX - bgWalk0.midX);
+  const nearDelta = Math.abs(bgWalk1.nearX - bgWalk0.nearX);
+  const gridDelta = Math.abs(bgWalk1.groundSlide - bgWalk0.groundSlide);
+  assert(farDelta > 0 && midDelta > farDelta && nearDelta > midDelta, "far/mid/near move together, far slowest");
+  assert(gridDelta > 0 && gridDelta < nearDelta, "ground grid is an assist, not the only travel cue");
+  assert(ROAM_FAR_FACTOR < ROAM_MID_FACTOR && ROAM_MID_FACTOR < ROAM_NEAR_FACTOR, "parallax factors stack far < mid < near");
+  assert(ROAM_GROUND_ASSIST < ROAM_NEAR_FACTOR, "grid assist factor is below near follow");
+  assert(ROAM_FAR_PY > 0 && ROAM_NEAR_PY >= 0, "walk still has a light vertical bob");
+  assert(ROAM_GROUND_PY === ROAM_NEAR_PY, "legacy ground token aliases near bob");
+  assert(ROAM_GROUND_SLIDE_PY > 0, "legacy ground slide token remains");
+
+  const spawn0 = roamFoeSpawn(0, 3, 1, "normal");
+  const spawn1 = roamFoeSpawn(1, 3, 1, "normal");
+  const spawn2 = roamFoeSpawn(2, 3, 1, "elite");
+  assert(spawn0.ahead >= ROAM_SPAWN_AHEAD, "foes spawn farther ahead on the path");
+  assert(roamFoeEnterDx(0, 1) >= 200, "foes start farther out, not face-hugging");
+  assert(spawn1.y !== spawn0.y || spawn2.y !== spawn0.y, "some foes spawn to the side");
+  assert(ROAM_FOE_ENTER_DX === ROAM_SPAWN_AHEAD, "legacy enter dx aliases spawn ahead");
+  assert(Math.abs(ROAM_FOE_ENTER_DY) <= 48, "side spawn stays in the stage band");
+
+  const walkLaid = roamLayoutFromUnits({
+    allies: [{ slot: 0, lane: "rear" }, { slot: 1, lane: "front" }],
+    foes: [{ role: "normal" }, { role: "elite" }],
+    waveIndex: 1,
+    walkT: 0.5,
+    phase: "walk",
+    hideFoes: true,
+  });
+  assert(walkLaid.phase === "walk", "walk layout phase");
+  assert(walkLaid.foes.length === 0, "walk hides the previous pack");
+  assert(walkLaid.allies.every((a) => Math.abs(a.x) < 55), "walking party stays near center");
+  assert(walkLaid.allies.every((a) => a.faceRight), "party faces travel while walking");
+
+  const approach0 = roamLayoutFromUnits({
+    allies: [{ slot: 1, lane: "front" }],
+    foes: [{ role: "normal" }, { role: "normal" }],
+    waveIndex: 0,
+    walkT: 1,
+    approachT: 0,
+    phase: "approach",
+  });
+  const approachMid = roamLayoutFromUnits({
+    allies: [{ slot: 1, lane: "front" }],
+    foes: [{ role: "normal" }, { role: "normal" }],
+    waveIndex: 0,
+    walkT: 1,
+    approachT: 0.5,
+    phase: "approach",
+  });
+  const fightLaid = roamLayoutFromUnits({
     allies: [{ slot: 0, lane: "rear" }, { slot: 1, lane: "front" }],
     foes: [{ role: "normal" }, { role: "elite" }],
     waveIndex: 2,
     walkT: 1,
+    phase: "fight",
   });
-  assert(laid.allies.length === 2 && laid.foes.length === 2, "layout maps units to pins");
-  assert(laid.allies.every((a) => a.x < -ROAM_CENTER_CLEAR_X), "layout allies clear the center");
-  assert(laid.foes.every((f) => f.x > ROAM_CENTER_CLEAR_X), "layout foes clear the center");
-  assert(laid.heading.faceRight === true, "layout heading locked right");
+  assert(approach0.foes.every((f) => f.x > 80), "foes start ahead/off-stage before the close-in");
+  const gap0 = approach0.foes[0].x - approach0.allies[0].x;
+  const gapMid = approachMid.foes[0].x - approachMid.allies[0].x;
+  assert(gapMid < gap0, "both sides close toward the same meet point");
+  assert(approachMid.foes[0].x < approach0.foes[0].x, "foes walk in toward the meet point");
+  assert(fightLaid.allies.length === 2 && fightLaid.foes.length === 2, "layout maps units to pins");
+  assert(fightLaid.allies.every((a) => a.x < 0 && a.x > -70), "fight allies are a center-left face-off");
+  assert(fightLaid.foes.every((f) => f.x > 0 && f.x < 80), "fight foes are a center-right face-off");
+  assert(fightLaid.allies.every((a) => a.faceRight), "allies flip to face foes at the meet point");
+  assert(fightLaid.foes.every((f) => f.faceRight === false), "enemies face the party, no ally-style left lock");
+  assert(fightLaid.heading.faceRight === true, "meet heading faces the pack");
+
   assert(uiSrc2.includes("train-roam-stage"), "ui hang roam stage");
   assert(uiSrc2.includes("playRoamWalk"), "ui walks between waves");
-  assert(uiSrc2.includes("playRoamFoeEnter") && uiSrc2.includes("playRoamWaveTransition"), "ui foe enter after walk");
-  assert(uiSrc2.indexOf("playRoamWalk") < uiSrc2.indexOf("playRoamFoeEnter"), "walk beat runs before foe enter");
-  assert(uiSrc2.includes('pin.style.setProperty("--roam-y"'), "ui moves ally pins during walk");
-  assert(uiSrc2.includes('classList.remove("pet-art--flip")'), "ui never flips enemy roam art");
-  assert(uiSrc2.includes('classList.add("pet-art--flip")'), "ui locks ally roam flip");
+  assert(uiSrc2.includes("playRoamFoeEnter") && uiSrc2.includes("playRoamWaveTransition"), "ui approach after walk");
+  assert(uiSrc2.indexOf("playRoamWalk") < uiSrc2.indexOf("playRoamFoeEnter"), "walk beat runs before approach");
+  assert(uiSrc2.includes('pin.style.setProperty("--roam-y"'), "ui moves pins during walk");
+  assert(uiSrc2.includes('classList.toggle("pet-art--flip"'), "ui toggles facing at meet, no permanent lock");
+  assert(uiSrc2.includes("applyRoamPinFacing"), "ui computes per-side roam facing");
   assert(uiSrc2.includes("enterFoes"), "ui spawns next wave after walk");
-  assert(uiSrc2.includes("is-roam-enter"), "ui marks foe enter pins");
-  assert(uiSrc2.includes("train-roam-ground"), "ui ground layer for walk scroll");
-  assert(uiSrc2.includes("--ground-slide"), "ui wires foot-ground texture slide");
-  assert(uiSrc2.includes("train-roam-bg-far") && uiSrc2.includes("--far-y"), "ui wires far parallax layer");
-  assert(uiSrc2.includes("roamFoeEnterDy") && uiSrc2.includes("--roam-enter-dy"), "ui foes enter from fog edges");
+  assert(uiSrc2.includes("is-roam-enter"), "ui marks foe spawn pins");
+  assert(uiSrc2.includes("is-approaching"), "ui plays the mutual approach");
+  assert(uiSrc2.includes("train-roam-ground"), "ui near/ground layer");
+  assert(uiSrc2.includes("train-roam-bg-mid") && uiSrc2.includes("--mid-x"), "ui wires mid parallax layer");
+  assert(uiSrc2.includes("--ground-slide"), "ui still wires grid assist");
+  assert(uiSrc2.includes("train-roam-bg-far") && uiSrc2.includes("--far-x"), "ui wires far parallax layer");
+  assert(uiSrc2.includes("--near-x"), "ui wires near follow layer");
+  assert(uiSrc2.includes("roamFoeEnterDy") && uiSrc2.includes("--roam-enter-dy"), "ui keeps spawn-side tokens");
   assert(uiSrc2.includes("from \"./train-roam.js\""), "ui imports roam staging");
   assert(uiSrc2.includes("ROAM_IDLE_SCENE_SRC") || uiSrc2.includes("bg_idle_home_reef"), "ui wires idle scene art");
   assert(uiSrc2.includes("train-roam-hud-top"), "ui top HUD on stage");
@@ -4737,15 +4807,17 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("--roam-hud-clearance"), "css mid-lower HUD clearance");
   assert(cssSrc.includes(".combat-roster:not(.is-roam)"), "css dungeon ally flip not forced on roam");
   assert(cssSrc.includes("panel-stage--cultivate-idle"), "css B1 idle scene class");
-  assert(cssSrc.includes("roamFoeRunIn"), "css foe run-in from off-stage");
-  assert(cssSrc.includes("roamPartyWalk"), "css party short walk");
-  assert(cssSrc.includes("train-roam-ground"), "css ground scroll layer");
-  assert(cssSrc.includes("--ground-slide"), "css foot-ground texture slide");
+  assert(cssSrc.includes("roamFoeRunIn") || cssSrc.includes("roamFoeFadeIn"), "css foe spawn fade");
+  assert(cssSrc.includes("roamPartyWalk"), "css party walk locomotion");
+  assert(cssSrc.includes("is-approaching"), "css approach locomotion");
+  assert(cssSrc.includes("train-roam-ground"), "css near/ground layer");
+  assert(cssSrc.includes("train-roam-bg-mid"), "css mid parallax layer");
+  assert(cssSrc.includes("--far-x") && cssSrc.includes("--mid-x") && cssSrc.includes("--near-x"), "css three parallax tokens");
+  assert(cssSrc.includes("--ground-slide"), "css grid assist token");
   assert(cssSrc.includes("--pet-art-roam"), "css hang roam units stay smaller than combat");
   assert(cssSrc.includes(".train-idle-roster.is-roam .pet-art.pet-art--combat"), "css roam art override beats combat size");
-  assert(cssSrc.includes("--roam-enter-dx"), "css enter from right fog");
-  assert(cssSrc.includes("--roam-enter-dy"), "css enter from top/bottom fog");
-  assert(cssSrc.includes("--far-y"), "css far parallax token");
+  assert(cssSrc.includes("--roam-enter-dx"), "css spawn-ahead token");
+  assert(cssSrc.includes("--roam-enter-dy"), "css spawn-side token");
   assert(existsSync(join(dirname(__dir), "assets/bg/scenes/bg_idle_home_reef_1080x1920.webp")), "idle reef scene asset");
   assert(existsSync(join(dirname(__dir), "assets/bg/scenes/bg_dungeon_tide_path_1080x1920.webp")), "dungeon path scene asset");
   assert(existsSync(join(dirname(__dir), "assets/allies/ally_jelly_idle.png")), "ally jelly placeholder");
