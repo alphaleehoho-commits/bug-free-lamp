@@ -344,7 +344,7 @@ body {
 }
 .flash-toast-host {
   position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 0.55rem);
+  top: calc(env(safe-area-inset-top, 0px) + 3.6rem);
   left: 0;
   right: 0;
   margin: 0 auto;
@@ -577,6 +577,15 @@ body {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding-right: 0.05rem;
+}
+.stage-scroll:has(.train-idle-strip.is-roam) {
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.stage-scroll:has(.train-idle-strip.is-roam)::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .stage-dock {
@@ -1135,7 +1144,7 @@ button.flash-act {
 }
 
 .install-toast {
-  top: calc(env(safe-area-inset-top, 0px) + 0.45rem);
+  top: calc(env(safe-area-inset-top, 0px) + 3.6rem);
   border: 1px solid rgba(109, 179, 217, 0.45);
   background: rgba(18, 32, 44, 0.94);
 }
@@ -1546,10 +1555,11 @@ button.flash-act {
 .train-roam-bg-mid {
   top: 22%;
   height: 56%;
-  z-index: 2;
+  z-index: 1;
   opacity: 0.8;
   transform: translate(var(--mid-x, 0px), var(--mid-y, 0px));
   background-position: var(--mid-x, 0px) center;
+  mask-image: linear-gradient(180deg, #000 0%, #000 34%, transparent 40%, transparent 60%, #000 68%, #000 100%);
 }
 .train-roam-bg-mid .train-roam-bg-deco-art {
   object-position: center center;
@@ -1557,10 +1567,11 @@ button.flash-act {
 .train-roam-bg-near {
   top: 48%;
   height: 46%;
-  z-index: 3;
-  opacity: 0.5;
+  z-index: 1;
+  opacity: 0.35;
   transform: translate(var(--near-x, 0px), var(--near-y, 0px));
   background-position: var(--near-x, 0px) center;
+  mask-image: linear-gradient(180deg, transparent 0%, #000 18%, transparent 32%, transparent 58%, #000 72%, #000 100%);
 }
 .train-roam-bg-near .train-roam-bg-deco-art {
   object-position: center bottom;

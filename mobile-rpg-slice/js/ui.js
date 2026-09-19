@@ -3611,10 +3611,18 @@ function tickIdleCombat({ background = false } = {}) {
       wrap.lastFail = keepFail || null;
       wrap.fx = emptyIdleFx();
       wrap.pendingFoeEnter = true;
-      wrap.roamPhase = "approach";
-      wrap.roamWalkT = 1;
-      wrap.roamApproachT = 0;
-      lockRoamCameraTo(wrap, holdCam.x, { waveIndex: 0, phase: "approach", walkT: 1, approachT: 0 });
+      if (!background && steps === 1) {
+        wrap.roamPhase = "walk";
+        wrap.roamWalkT = 0;
+        wrap.roamApproachT = 0;
+        lockRoamCameraTo(wrap, holdCam.x, { waveIndex: 0, phase: "walk", walkT: 0, approachT: 0 });
+        playWalk = true;
+      } else {
+        wrap.roamPhase = "fight";
+        wrap.roamWalkT = 1;
+        wrap.roamApproachT = 1;
+        lockRoamCameraTo(wrap, holdCam.x, { waveIndex: 0, phase: "fight", walkT: 1, approachT: 1 });
+      }
       needRosterPatch = true;
       continue;
     }

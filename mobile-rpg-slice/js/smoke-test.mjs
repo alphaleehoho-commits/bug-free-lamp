@@ -4422,7 +4422,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v158"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v159"), "sw cache bumped");
 assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
 assert(swSrc.includes("bg_idle_home_reef_1080x1920.webp"), "sw caches idle reef scene");
 assert(swSrc.includes("bg_roam_base_floor_9x16.png"), "sw caches roam portrait base");
@@ -4754,6 +4754,26 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   const bgFight2 = roamBgShift(2, 1, { phase: "fight" });
   const bgWipeHold = roamBgShift(0, 1, { phase: "approach", approachT: 0, worldShift: holdShift });
   assert(Math.abs(bgWipeHold.nearX - bgFight2.nearX) < 0.5, "wipe hold keeps near layer");
+  const laidFight2 = roamLayoutFromUnits({
+    allies: [{ slot: 1, lane: "front", unit: { uid: "a", side: "ally" } }],
+    foes: [{ unit: { uid: "f", side: "foe" }, role: "normal" }],
+    waveIndex: 2,
+    phase: "fight",
+  });
+  const restartShift = roamShiftToHoldCamera(laidFight2.cam.x, { waveIndex: 0, phase: "walk", walkT: 0 });
+  const laidRestart = roamLayoutFromUnits({
+    allies: [{ slot: 1, lane: "front", unit: { uid: "a", side: "ally" } }],
+    foes: [{ unit: { uid: "f", side: "foe" }, role: "normal" }],
+    waveIndex: 0,
+    walkT: 0,
+    phase: "walk",
+    hideFoes: true,
+    worldShift: restartShift,
+  });
+  assert(laidRestart.allies.length === 1, "wipe/clear restart still has the party");
+  assert(Math.abs(laidRestart.allies[0].x) < 55, "wipe/clear restart keeps party on-stage (not -120 left wall)");
+  assert(Math.abs(laidRestart.bg.nearX - laidFight2.bg.nearX) < 0.5, "wipe/clear restart holds near parallax with party");
+  assert(laidRestart.allies[0].x - laidFight2.allies[0].x < 40, "party does not teleport across the field on restart");
   assert(bgWalk0.farY === 0 && bgWalk1.nearY === 0 && bgFight0.midY === 0, "parallax Y stays frozen across walk/fight");
   assert(ROAM_FAR_FACTOR < ROAM_MID_FACTOR && ROAM_MID_FACTOR < ROAM_NEAR_FACTOR, "parallax factors stack far < mid < near");
   assert(ROAM_GROUND_ASSIST < ROAM_NEAR_FACTOR, "grid assist factor is below near follow");
@@ -4893,6 +4913,7 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("#app.theme-light .train-idle-roster.is-roam .pet-art"), "css theme-light hang roam drops foot halo");
   assert(cssSrc.includes("no selection orb") || cssSrc.includes("foot halo"), "css documents hang roam orb/halo removal");
   assert(uiSrc2.includes("lockRoamCameraTo") && uiSrc2.includes("ROAM_BG_SNAP_PX"), "ui locks camera and rejects parallax snaps");
+  assert(uiSrc2.includes("playWalk = true"), "ui resumes walk after wipe/clear restart");
   assert(uiSrc2.includes("roamShiftToHoldCamera"), "ui carries camera across wipe restart");
   assert(uiSrc2.includes("roamWorldShift"), "ui persists hang roam camera carry");
   assert(cssSrc.includes("is-approaching"), "css approach locomotion");
@@ -4901,7 +4922,9 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("train-roam-bg-mid"), "css mid parallax layer");
   assert(cssSrc.includes("train-roam-bg-deco"), "css deco slot plate");
   assert(cssSrc.includes("opacity: 0.8") || cssSrc.includes("opacity:0.8"), "css mid deco opacity in 0.75–0.85");
-  assert(cssSrc.includes("opacity: 0.5") || cssSrc.includes("opacity:0.5"), "css near deco opacity at or below 0.55");
+  assert(cssSrc.includes("opacity: 0.35") || cssSrc.includes("opacity:0.35"), "css near deco opacity stays below the character band");
+  assert(cssSrc.includes("stage-scroll:has(.train-idle-strip.is-roam)"), "css hides hang stage scrollbar");
+  assert(cssSrc.includes("3.6rem"), "css drops toasts below the title bar");
   assert(cssSrc.includes("--far-x") && cssSrc.includes("--mid-x") && cssSrc.includes("--near-x"), "css three parallax tokens");
   assert(cssSrc.includes("--base-x"), "css base floor token");
   assert(cssSrc.includes("--ground-slide"), "css grid assist token");

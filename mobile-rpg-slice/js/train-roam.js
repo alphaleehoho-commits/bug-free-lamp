@@ -316,22 +316,24 @@ export function roamFoeEnterDy(index = 0, waveIndex = 0) {
   return roamFoeSpawn(index, 1, waveIndex).y;
 }
 
-function allyWorldX(waveIndex, phase, walkT, approachT, formX) {
+function allyWorldX(waveIndex, phase, walkT, approachT, formX, worldShift = 0) {
   const origin = roamWaveOrigin(waveIndex);
   const walkWorld = origin + clamp01(walkT) * ROAM_WALK_SPAN + formX;
   const fightWorld = roamMeetWorldX(waveIndex) + ROAM_ALLY_MEET_X + formX;
-  if (phase === "walk") return walkWorld;
-  if (phase === "approach") return walkWorld + (fightWorld - walkWorld) * walkLerp(approachT);
-  return fightWorld;
+  const shift = Number(worldShift) || 0;
+  if (phase === "walk") return walkWorld + shift;
+  if (phase === "approach") return walkWorld + (fightWorld - walkWorld) * walkLerp(approachT) + shift;
+  return fightWorld + shift;
 }
 
-function foeWorldX(waveIndex, phase, approachT, spawn, formX) {
+function foeWorldX(waveIndex, phase, approachT, spawn, formX, worldShift = 0) {
   const meet = roamMeetWorldX(waveIndex);
   const spawnWorld = meet + spawn.ahead;
   const fightWorld = meet + formX;
-  if (phase === "walk") return spawnWorld;
-  if (phase === "approach") return spawnWorld + (fightWorld - spawnWorld) * walkLerp(approachT);
-  return fightWorld;
+  const shift = Number(worldShift) || 0;
+  if (phase === "walk") return spawnWorld + shift;
+  if (phase === "approach") return spawnWorld + (fightWorld - spawnWorld) * walkLerp(approachT) + shift;
+  return fightWorld + shift;
 }
 
 function foeWorldY(phase, approachT, spawn, fightY) {
@@ -354,7 +356,7 @@ export function roamLayoutFromUnits(spec = {}) {
   const bg = roamBgShift(waveIndex, walkT, { approachT, phase, worldShift });
   const allies = (spec.allies || []).map((a) => {
     const form = allyFormation(a.slot, a.lane);
-    const worldX = allyWorldX(waveIndex, phase, walkT, approachT, form.x);
+    const worldX = allyWorldX(waveIndex, phase, walkT, approachT, form.x, worldShift);
     const worldY = form.y + heading.dy * 10;
     const pos = roamWorldToScreen(worldX, worldY, cam);
     return { ...a, x: pos.x, y: clampRoamY(pos.y), faceRight: true, phase };
@@ -364,7 +366,7 @@ export function roamLayoutFromUnits(spec = {}) {
     const role = f.role || f.unit?.role || "normal";
     const spawn = roamFoeSpawn(i, foeList.length, waveIndex, role);
     const fight = roamFoeOffset(i, foeList.length, heading, role);
-    const worldX = foeWorldX(waveIndex, phase, approachT, spawn, fight.x);
+    const worldX = foeWorldX(waveIndex, phase, approachT, spawn, fight.x, worldShift);
     const worldY = foeWorldY(phase, approachT, spawn, fight.y);
     const pos = roamWorldToScreen(worldX, worldY, cam);
     return { ...f, x: pos.x, y: clampRoamY(pos.y), faceRight: false, phase, spawnLane: spawn.lane };
