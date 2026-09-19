@@ -218,6 +218,12 @@ import {
   ROAM_DECO_NEAR_SRC,
   ROAM_ALLY_PLACEHOLDER_SRC,
   roamFoePlaceholderSrc,
+  roamDecoFollowX,
+  ROAM_DECO_MID_FOLLOW,
+  ROAM_DECO_MID_MAX,
+  ROAM_DECO_MID_BIAS,
+  ROAM_DECO_NEAR_FOLLOW,
+  ROAM_DECO_NEAR_MAX,
 } from "./train-roam.js";
 import {
   tutorialActive,
@@ -3226,6 +3232,8 @@ function applyRoamStageVars(stage, bg, phase = "fight") {
   }
   stage.dataset.roamPhase = phase;
   stage.dataset.face = "right";
+  const decoMidX = roamDecoFollowX(next.midX, ROAM_DECO_MID_FOLLOW, ROAM_DECO_MID_MAX, ROAM_DECO_MID_BIAS);
+  const decoNearX = roamDecoFollowX(next.nearX, ROAM_DECO_NEAR_FOLLOW, ROAM_DECO_NEAR_MAX);
   stage.style.setProperty("--far-x", `${next.farX.toFixed(1)}px`);
   stage.style.setProperty("--mid-x", `${next.midX.toFixed(1)}px`);
   stage.style.setProperty("--near-x", `${next.nearX.toFixed(1)}px`);
@@ -3235,6 +3243,8 @@ function applyRoamStageVars(stage, bg, phase = "fight") {
   stage.style.setProperty("--near-y", "0.0px");
   stage.style.setProperty("--ground-y", "0.0px");
   stage.style.setProperty("--ground-slide", `${next.groundSlide.toFixed(1)}px`);
+  stage.style.setProperty("--deco-mid-x", `${decoMidX.toFixed(1)}px`);
+  stage.style.setProperty("--deco-near-x", `${decoNearX.toFixed(1)}px`);
 }
 
 function applyRoamPinFacing(art, faceRight) {
@@ -3845,16 +3855,21 @@ function trainIdleStripHtml(rateSummary = "") {
   const midY = Number(layout.bg.midY || 0).toFixed(1);
   const nearY = Number(layout.bg.nearY || 0).toFixed(1);
   const groundSlide = Number(layout.bg.groundSlide || 0).toFixed(1);
+  const decoMidX = Number(
+    layout.bg.decoMidX ?? roamDecoFollowX(Number(midX), ROAM_DECO_MID_FOLLOW, ROAM_DECO_MID_MAX, ROAM_DECO_MID_BIAS)
+  ).toFixed(1);
+  const decoNearX = Number(
+    layout.bg.decoNearX ?? roamDecoFollowX(Number(nearX), ROAM_DECO_NEAR_FOLLOW, ROAM_DECO_NEAR_MAX)
+  ).toFixed(1);
   const roamPhase = layout.phase || layoutOpts.phase || "fight";
   const waveLabel = `${floorName} · ${meta}`;
   const prod = rateSummary
     ? `<p class="train-roam-prod">${rateSummary}</p>`
     : "";
   return `<div class="train-idle-strip is-roam${bossCls}" data-live="train-idle">
-    ${idleLootLayerHtml()}
     <div class="train-roam-stage scene-bg panel-stage--cultivate-idle" data-live="train-roam-stage" data-face="right" data-roam-phase="${escapeHtml(
       roamPhase
-    )}" style="--far-x:${farX}px;--mid-x:${midX}px;--near-x:${nearX}px;--base-x:${baseX}px;--far-y:${farY}px;--mid-y:${midY}px;--near-y:${nearY}px;--ground-y:${nearY}px;--ground-slide:${groundSlide}px">
+    )}" style="--far-x:${farX}px;--mid-x:${midX}px;--near-x:${nearX}px;--base-x:${baseX}px;--far-y:${farY}px;--mid-y:${midY}px;--near-y:${nearY}px;--ground-y:${nearY}px;--ground-slide:${groundSlide}px;--deco-mid-x:${decoMidX}px;--deco-near-x:${decoNearX}px">
       <div class="train-roam-bg" aria-hidden="true">
         <div class="train-roam-bg-base" data-roam-slot="roam_base_floor" style="--roam-base-src:url('${escapeHtml(ROAM_BASE_FLOOR_SRC)}')"></div>
         ${roamDecoSlotHtml("roam_deco_far", ROAM_DECO_FAR_SRC, "train-roam-bg-far")}
@@ -3866,6 +3881,7 @@ function trainIdleStripHtml(rateSummary = "") {
       <div class="combat-roster train-idle-roster is-roam" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}" data-roam-wave="${s.waveIndex || 0}" data-roam-phase="${escapeHtml(roamPhase)}">
         ${pins}
       </div>
+      ${idleLootLayerHtml()}
       <div class="train-roam-hud train-roam-hud-top">
         ${qiChip}
         <p class="train-roam-wave-label" data-live="train-idle-meta">${escapeHtml(waveLabel)}</p>
