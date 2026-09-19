@@ -1438,6 +1438,303 @@ button.flash-act {
   font-size: 0.62rem;
   opacity: 0.92;
 }
+
+/* —— 練功 hang roam：layout lock 左友右敵 + 9:16 場景 cover —— */
+.train-idle-strip.is-roam {
+  position: relative;
+  padding: 0;
+  margin: 0.2rem 0 0.5rem;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--line) 55%, rgba(126, 168, 160, 0.22));
+  overflow: hidden;
+}
+.train-idle-strip.is-roam.is-stage-boss {
+  padding: 0;
+}
+.scene-bg {
+  background-color: #0c1218;
+  background-repeat: no-repeat;
+  background-position: center top;
+  background-size: cover;
+  isolation: isolate;
+}
+.panel-stage--cultivate-idle {
+  background-image: url("../assets/bg/scenes/bg_idle_home_reef_1080x1920.webp");
+}
+.panel-stage--dungeon {
+  background-image: url("../assets/bg/scenes/bg_dungeon_tide_path_1080x1920.webp");
+}
+.train-roam-stage {
+  position: relative;
+  width: 100%;
+  height: min(62svh, 34rem);
+  min-height: 19rem;
+  overflow: hidden;
+  --roam-band-top: 38%;
+  --roam-band-bottom: 58%;
+  --roam-anchor-y: 48%;
+  --roam-hud-clearance: 22%;
+  --bg-x: 0px;
+  --bg-y: 0px;
+  --ground-y: 0px;
+  --far-y: 0px;
+  --near-y: 0px;
+  --ground-slide: 0px;
+  background: #0c1218;
+}
+.train-roam-bg,
+.train-roam-bg-art {
+  pointer-events: none;
+}
+.train-roam-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+}
+.train-roam-bg-art {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  aspect-ratio: 9 / 16;
+  height: 100%;
+  min-width: 100%;
+  min-height: 100%;
+  width: auto;
+  object-fit: cover;
+  object-position: center 42%;
+  transform: translate(-50%, -50%) translateY(var(--far-y, 0px)) scale(1.045);
+}
+.train-roam-ground,
+.train-roam-bg-near {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 34%;
+  height: 32%;
+  z-index: 1;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 18px,
+      rgba(210, 228, 232, 0.1) 18px 19px
+    ),
+    repeating-linear-gradient(
+      180deg,
+      transparent 0 10px,
+      rgba(232, 244, 248, 0.09) 10px 11px
+    ),
+    radial-gradient(circle at 18% 42%, rgba(255, 255, 255, 0.08) 0 1.2px, transparent 2px),
+    radial-gradient(circle at 68% 72%, rgba(220, 236, 240, 0.06) 0 1px, transparent 2px);
+  background-size: 36px 22px, 100% 22px, 48px 28px, 56px 32px;
+  background-position:
+    calc(var(--ground-slide, 0px) * -0.55) calc(var(--near-y, 0px) * -0.35),
+    0 var(--ground-slide, 0px),
+    calc(var(--ground-slide, 0px) * -0.8) calc(var(--ground-slide, 0px) * 0.55),
+    calc(var(--ground-slide, 0px) * -0.35) calc(var(--ground-slide, 0px) * 0.85);
+  mask-image: linear-gradient(180deg, transparent, #000 28%, #000 72%, transparent);
+  transform: translateY(var(--near-y, var(--ground-y, 0px)));
+  will-change: transform, background-position;
+}
+.train-roam-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(12, 18, 24, 0.42) 0%,
+    rgba(12, 18, 24, 0.08) 16%,
+    rgba(12, 18, 24, 0) 38%,
+    rgba(12, 18, 24, 0) 58%,
+    rgba(12, 18, 24, 0.28) 78%,
+    rgba(12, 18, 24, 0.58) 100%
+  );
+}
+.train-idle-roster.is-roam,
+.combat-roster.train-idle-roster.is-roam {
+  position: absolute;
+  inset: 0;
+  display: block;
+  margin: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.train-roam-pin {
+  position: absolute;
+  left: calc(50% + var(--roam-x, 0px));
+  top: calc(var(--roam-anchor-y) + var(--roam-y, 0px));
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+.train-roam-pin[data-side="ally"] { z-index: 3; }
+.train-roam-pin.is-roam-exit {
+  opacity: 0;
+  transform: translate(-50%, -50%) translate(-18px, 6px);
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+.train-roam-pin.is-roam-enter {
+  animation: roamFoeRunIn 0.82s cubic-bezier(0.18, 0.82, 0.22, 1) both;
+  animation-delay: var(--roam-enter-delay, 0ms);
+}
+@keyframes roamFoeRunIn {
+  from {
+    transform: translate(-50%, -50%) translate(var(--roam-enter-dx, 240px), var(--roam-enter-dy, 8px));
+    opacity: 0.15;
+    filter: blur(1.5px);
+  }
+  42% {
+    opacity: 1;
+    filter: none;
+  }
+  to {
+    transform: translate(-50%, -50%) translate(0, 0);
+    opacity: 1;
+    filter: none;
+  }
+}
+.train-roam-stage.is-walking .train-roam-pin[data-side="ally"] {
+  animation: roamPartyWalk 0.32s ease-in-out infinite;
+}
+.train-roam-stage.is-walking .train-roam-pin[data-side="ally"][data-slot="2"] {
+  animation-delay: 0.08s;
+}
+.train-roam-stage.is-walking .train-roam-pin[data-side="ally"][data-slot="3"] {
+  animation-delay: 0.14s;
+}
+@keyframes roamPartyWalk {
+  0%, 100% { transform: translate(-50%, -50%) translate(0, 0); }
+  22% { transform: translate(-50%, -50%) translate(4px, -12px); }
+  48% { transform: translate(-50%, -50%) translate(-1px, -3px); }
+  74% { transform: translate(-50%, -50%) translate(6px, -13px); }
+}
+.train-idle-roster.is-roam .combat-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.06rem;
+  min-width: 2.35rem;
+  padding: 0.04rem 0.08rem 0.1rem;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  grid-template-columns: none;
+}
+.train-idle-roster.is-roam .combat-unit .pet-art--combat {
+  grid-row: auto;
+}
+.train-idle-roster.is-roam .cu-name {
+  text-align: center;
+  max-width: 2.7rem;
+  font-size: 0.46rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  color: #f3f6ef;
+  background: rgba(8, 16, 22, 0.55);
+  border-radius: 999px;
+  padding: 0.03rem 0.28rem;
+}
+.train-idle-roster.is-roam .cu-bar {
+  width: 1.85rem;
+  height: 0.16rem;
+  grid-column: auto;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 999px;
+}
+.train-roam-hud {
+  position: absolute;
+  left: 0.42rem;
+  right: 0.42rem;
+  z-index: 6;
+  pointer-events: none;
+  transform: none;
+}
+.train-roam-hud > * {
+  pointer-events: auto;
+}
+.train-roam-hud-top {
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 0.48rem 0.55rem 0;
+}
+.train-idle-strip.is-roam .train-qi-chip {
+  margin: 0 0 0.35rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(8, 22, 28, 0.35);
+  overflow: hidden;
+  position: relative;
+}
+.train-idle-strip.is-roam .train-qi-label {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-size: 0.72rem;
+  color: #e7f4f0;
+  letter-spacing: 0.04em;
+}
+.train-idle-strip.is-roam .train-qi-bar {
+  height: 1.32rem;
+  background: rgba(0, 0, 0, 0.35);
+}
+.train-roam-wave-label,
+.train-idle-strip.is-roam .train-roam-wave-label {
+  margin: 0.15rem 0 0;
+  text-align: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: rgba(220, 236, 242, 0.88);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  background: transparent;
+  padding: 0;
+}
+.train-roam-hud-mid {
+  bottom: 0.4rem;
+}
+.train-roam-prod {
+  margin: 0 0 0.28rem;
+  padding: 0.32rem 0.5rem;
+  text-align: center;
+  font-size: 0.68rem;
+  color: #e8f0ee;
+  background: rgba(8, 16, 22, 0.55);
+  border-radius: 10px;
+}
+.train-idle-strip.is-roam .train-boss-banner {
+  margin: 0.2rem 0 0;
+}
+.train-idle-strip.is-roam .train-floor-nav {
+  justify-content: center;
+  margin: 0;
+  gap: 0.35rem;
+}
+.train-idle-strip.is-roam .train-floor-nav button {
+  min-width: 4.4rem;
+  background: rgba(8, 16, 22, 0.5);
+}
+.train-idle-strip.is-roam .idle-loot-layer {
+  position: absolute;
+  top: 3.6rem;
+  left: 0.5rem;
+  right: 0.5rem;
+  z-index: 7;
+  margin: 0;
+  justify-content: center;
+}
+.train-idle-strip.is-roam .train-idle-hit,
+.train-idle-strip.is-roam .train-idle-fail {
+  margin-left: 0.55rem;
+  margin-right: 0.55rem;
+}
 .train-idle-strip.is-hit-shake {
   animation: trainIdleShake 0.38s ease-out;
 }
@@ -3677,6 +3974,10 @@ button.pet-badge {
   animation: trainSheen 4.5s ease-in-out infinite;
   pointer-events: none;
 }
+.cultivate-panel .train-idle-strip.is-roam::after,
+.panel-train .train-idle-strip.is-roam::after {
+  display: none;
+}
 .train-idle-strip.is-stage-boss::after {
   animation: none;
   opacity: 0;
@@ -4442,6 +4743,19 @@ button.pet-badge {
     animation: none !important;
     opacity: 0.55;
   }
+
+  .train-roam-pin.is-roam-enter,
+  .train-roam-stage.is-walking .train-roam-pin[data-side="ally"] {
+    animation: none !important;
+  }
+  .train-roam-bg-art {
+    transform: translate(-50%, -50%) !important;
+  }
+  .train-roam-ground,
+  .train-roam-bg-near {
+    transform: none !important;
+    background-position: 0 0 !important;
+  }
 }
 
 /* Combat roster: pet-art above name/bar so CJK labels aren't clipped to 1 glyph */
@@ -4468,9 +4782,10 @@ button.pet-badge {
 }
 
 /* Source Idle art faces LEFT. Player/left (ally) mirrors to face the foe.
-   Codex / pet detail / big portraits do not use pet-art--flip. */
+   Codex / pet detail / big portraits do not use pet-art--flip.
+   練功 roam 用 .pet-art--flip 跟敵群左右；唔好一律鏡射 data-side=ally。 */
 .pet-art.pet-art--flip,
-.combat-unit[data-side="ally"] .pet-art--combat {
+.combat-roster:not(.is-roam) .combat-unit[data-side="ally"] .pet-art--combat {
   transform: scaleX(-1);
 }
 
@@ -4478,6 +4793,18 @@ button.pet-badge {
 .pet-art img.pet-icon-sprite {
   object-fit: cover;
   object-position: 42% 48%;
+}
+
+/* Hang roam sample foes / fallback jelly: show full keyed silhouette, no Idle-sheet crop. */
+.train-idle-roster.is-roam .pet-art--roam-placeholder .pet-icon--sprite {
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+}
+.train-idle-roster.is-roam .pet-art--roam-placeholder img.pet-icon-sprite {
+  object-fit: contain;
+  object-position: center;
+  transform: none;
 }
 
 /* =============================================================================
@@ -5048,6 +5375,32 @@ html.theme-light .train-idle-title strong,
 #app.theme-light .train-idle-title strong {
   color: var(--text);
 }
+html.theme-light .train-idle-strip.is-roam,
+#app.theme-light .train-idle-strip.is-roam {
+  background: transparent;
+}
+html.theme-light .train-roam-stage,
+#app.theme-light .train-roam-stage {
+  background: #0c1218;
+}
+html.theme-light .train-idle-strip.is-roam .train-qi-chip,
+html.theme-light .train-idle-strip.is-roam .train-floor-nav button,
+#app.theme-light .train-idle-strip.is-roam .train-qi-chip,
+#app.theme-light .train-idle-strip.is-roam .train-floor-nav button {
+  background: rgba(8, 22, 28, 0.45);
+  color: #e7f4f0;
+}
+html.theme-light .train-idle-strip.is-roam .train-qi-label,
+html.theme-light .train-roam-wave-label,
+#app.theme-light .train-idle-strip.is-roam .train-qi-label,
+#app.theme-light .train-roam-wave-label {
+  color: #e7f4f0;
+}
+html.theme-light .train-idle-roster.is-roam .cu-name,
+#app.theme-light .train-idle-roster.is-roam .cu-name {
+  color: #f3f6ef;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
 
 /* =============================================================================
    pet-display-v2.css — Pet art display tweaks for 「暗潮 · 水母漂漂」
@@ -5075,6 +5428,7 @@ html.theme-light .train-idle-title strong,
   --pet-display-scale: 2.2;
   /* Current JS baselines → ~2.2× targets */
   --pet-art-combat: 48px;   /* was ~22 → ~48 */
+  --pet-art-roam: 34px;     /* hang map units stay smaller than dungeon combat */
   --pet-art-pick: 53px;     /* was 24 → ~53 */
   --pet-art-card: 62px;     /* was 28 → ~62 */
   --pet-art-row: 75px;      /* was 34 → ~75 */
@@ -5209,6 +5563,26 @@ html.theme-light .train-idle-title strong,
 .train-idle-roster .pet-art .pet-icon {
   width: var(--pet-art-combat) !important;
   height: var(--pet-art-combat) !important;
+}
+
+/* Hang roam only: smaller units so more map shows around the party.
+   Higher specificity after the combat !important block; dungeon roster stays 48. */
+.train-idle-roster.is-roam .pet-art.pet-art--combat,
+.train-idle-roster.is-roam .combat-unit .pet-art,
+.combat-roster.train-idle-roster.is-roam .pet-art {
+  --art-size: var(--pet-art-roam) !important;
+  --icon-size: var(--pet-art-roam) !important;
+  width: var(--pet-art-roam) !important;
+  height: var(--pet-art-roam) !important;
+}
+.train-idle-roster.is-roam .pet-art.pet-art--combat img,
+.train-idle-roster.is-roam .pet-art.pet-art--combat .pet-icon,
+.train-idle-roster.is-roam .combat-unit .pet-art img,
+.train-idle-roster.is-roam .combat-unit .pet-art .pet-icon,
+.combat-roster.train-idle-roster.is-roam .pet-art img,
+.combat-roster.train-idle-roster.is-roam .pet-art .pet-icon {
+  width: var(--pet-art-roam) !important;
+  height: var(--pet-art-roam) !important;
 }
 
 /* Roster cards — petCard size 28 → ~62 */

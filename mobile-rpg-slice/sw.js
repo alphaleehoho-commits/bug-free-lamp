@@ -1,4 +1,4 @@
-const CACHE = "void-tide-pets-v146";
+const CACHE = "void-tide-pets-v152";
 const ASSETS = [
   "./",
   "./index.html",
@@ -8,10 +8,15 @@ const ASSETS = [
   "./js/engine.js",
   "./js/pet-sprites.js",
   "./js/pet-icons.js",
+  "./js/train-roam.js",
   "./js/ui.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./assets/pets/water-idle-map.json",
+  "./assets/bg/scenes/bg_idle_home_reef_1080x1920.webp",
+  "./assets/allies/ally_jelly_idle.png",
+  "./assets/enemies/enemy_foamblob_idle.png",
+  "./assets/enemies/enemy_reefcrab_idle.png",
 ];
 
 self.addEventListener("notificationclick", (e) => {
