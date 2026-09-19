@@ -16,6 +16,7 @@ import {
   petGeneration,
   genLabel,
   petSpeciesDisplayName,
+  combatRosterName,
   petLabel,
   hybridRecipeForKinds,
   HYBRID_RECIPES,
@@ -634,6 +635,11 @@ assert(fox.name === "水圓圓水母", "stored name may keep element prefix");
 assert(displayPetName(fox) === "圓圓水母", "display name has no element prefix");
 assert(petSpeciesDisplayName({ name: "嵐水滴水母", elementName: "嵐" }) === "水滴水母", "strip element prefix fallback");
 assert(displayPetName({ ...fox, nick: "小泡" }) === "小泡（圓圓水母）", "nick wraps species");
+assert(combatRosterName(fox) === "圓圓", "combat short name drops 水母");
+assert(combatRosterName({ ...fox, nick: "小泡" }) === "小泡", "combat short name prefers nick");
+assert(combatRosterName("圓圓水母") === "圓圓", "combat short name from species string");
+assert(combatRosterName("漂路獸") === "漂路獸", "combat foe name stays readable");
+assert(combatRosterName("水圓圓水母") === "圓圓", "combat short name strips element prefix");
 {
   const lbl = petLabel(fox);
   assert(lbl.startsWith("圓圓水母（"), "petLabel uses species");
@@ -4363,7 +4369,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v145"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v146"), "sw cache bumped");
 assert(
   !Object.values(SPECIES).some((s) => String(s.name || "").includes("潮")),
   "no 潮 in species display names"
@@ -4540,6 +4546,7 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("pet-motion--attack"), "css pet-motion--attack");
   assert(cssSrc.includes("pet-motion--hit"), "css pet-motion--hit");
   assert(cssSrc.includes("pet-motion--defeat"), "css pet-motion--defeat");
+  assert(cssSrc.includes("pet-motion--defeated"), "css pet-motion--defeated settled");
   assert(cssSrc.includes("pet-motion--cast"), "css pet-motion--cast");
   assert(cssSrc.includes("prefers-reduced-motion"), "css reduced motion");
   assert(iconSrcMotion.includes("pet-motion--idle"), "pet-art defaults idle motion");
@@ -4548,6 +4555,10 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(uiSrcMotion.includes('playPetMotion(targetEl, "hit")'), "ui hit motion hook");
   assert(uiSrcMotion.includes('playPetMotion(targetEl, "defeat")'), "ui defeat motion hook");
   assert(uiSrcMotion.includes('playPetMotion(actorEl, "cast")'), "ui cast motion hook");
+  assert(uiSrcMotion.includes("pet-motion--defeated"), "ui static KO uses settled class");
+  assert(uiSrcMotion.includes("combatUnitNameHtml"), "ui combat short labels");
+  assert(uiSrcMotion.includes("qiChipLabel"), "ui caps 潮息 chip over max");
+  assert(uiSrcMotion.includes("Math.min(n, need)"), "ui qi chip numerator capped");
 }
 
 /* Chrome polish v1 — buttons + theme-light (after type-scale / pet-motion) */
@@ -4608,6 +4619,7 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(uiSrc2.includes("{ size: 22, showGen: false, className: `pet-art--combat"), "combat still uses JS size 22 (css 2.2×)");
   assert(uiSrc2.includes("size: 28"), "roster card still uses JS size 28 (css 2.2×)");
   assert(uiSrc2.includes("size: 52"), "detail still uses JS size 52 (css 2.2×)");
+  assert(cssSrc.includes("pet-art above name/bar"), "css stacked combat labels");
 }
 
 console.log("smoke-test ok");

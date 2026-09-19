@@ -2338,7 +2338,7 @@ button.linkish strong { color: var(--jade); }
 .combat-formation-side {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: repeat(var(--formation-rows, 3), minmax(1.4rem, auto));
+  grid-template-rows: repeat(var(--formation-rows, 3), minmax(0, auto));
   gap: 0.2rem 0.12rem;
   min-height: calc(var(--formation-rows, 3) * 1.55rem);
   align-content: start;
@@ -2386,8 +2386,6 @@ button.linkish strong { color: var(--jade); }
 }
 .combat-unit.is-down { opacity: 0.38; }
 .combat-unit.is-dying {
-  opacity: 0 !important;
-  transform: scale(0.9);
   pointer-events: none;
 }
 /* 1. 攻方高亮 */
@@ -2442,6 +2440,9 @@ button.linkish strong { color: var(--jade); }
   color: var(--fog);
   margin-bottom: 0.08rem;
   position: relative;
+  min-width: 0;
+  max-width: 100%;
+  text-align: center;
 }
 .cu-bar {
   height: 0.28rem;
@@ -4276,6 +4277,22 @@ button.pet-badge {
   animation: pet-motion-defeat-frame var(--pet-motion-defeat-dur) var(--pet-motion-ease-sink) 1 forwards;
 }
 
+/* Settled KO: static end-pose so roster rebuilds do not replay the sink */
+.pet-art.pet-motion--defeated .pet-icon,
+.pet-art.pet-motion--defeated img,
+.pet-icon.pet-motion--defeated {
+  animation: none;
+  transform: translateY(var(--pet-motion-sink-y)) scale(0.92);
+  opacity: 0.15;
+  filter: grayscale(0.55);
+}
+
+.pet-art.pet-motion--defeated {
+  animation: none;
+  opacity: 0.45;
+  filter: brightness(0.75);
+}
+
 
 /* -----------------------------------------------------------------------------
    §H — Optional: Cast (soft lift + glow bloom) — one-shot skill telegraph
@@ -4291,18 +4308,18 @@ button.pet-badge {
 }
 
 
-/* Combat state classes pause Idle loop while active (avoid fighting transforms) */
-.pet-art.pet-motion--idle.pet-motion--attack .pet-icon,
-.pet-art.pet-motion--idle.pet-motion--attack img,
-.pet-art.pet-motion--idle.pet-motion--hit .pet-icon,
-.pet-art.pet-motion--idle.pet-motion--hit img,
+/* Combat modifiers beat idle breath (higher specificity than §D). */
 .pet-art.pet-motion--idle.pet-motion--defeat .pet-icon,
-.pet-art.pet-motion--idle.pet-motion--defeat img,
-.pet-art.pet-motion--idle.pet-motion--cast .pet-icon,
-.pet-art.pet-motion--idle.pet-motion--cast img {
-  /* Specificity: combat keyframes below still apply via their own rules;
-     cancel breath by not stacking — remove --idle OR rely on later animation
-     property override from §E–H (same specificity, source order wins). */
+.pet-art.pet-motion--idle.pet-motion--defeat img {
+  animation: pet-motion-defeat var(--pet-motion-defeat-dur) var(--pet-motion-ease-sink) 1 forwards;
+}
+
+.pet-art.pet-motion--idle.pet-motion--defeated .pet-icon,
+.pet-art.pet-motion--idle.pet-motion--defeated img {
+  animation: none;
+  transform: translateY(var(--pet-motion-sink-y)) scale(0.92);
+  opacity: 0.15;
+  filter: grayscale(0.55);
 }
 
 
@@ -4411,30 +4428,39 @@ button.pet-badge {
   /* Defeat: still communicate KO with a static fade (no sink travel) */
   .pet-art.pet-motion--defeat .pet-icon,
   .pet-art.pet-motion--defeat img,
-  .pet-icon.pet-motion--defeat {
+  .pet-icon.pet-motion--defeat,
+  .pet-art.pet-motion--defeated .pet-icon,
+  .pet-art.pet-motion--defeated img,
+  .pet-icon.pet-motion--defeated {
     animation: none !important;
     opacity: 0.25;
     filter: grayscale(0.55);
     transform: none;
   }
-  .pet-art.pet-motion--defeat {
+  .pet-art.pet-motion--defeat,
+  .pet-art.pet-motion--defeated {
     animation: none !important;
     opacity: 0.55;
   }
 }
 
-/* Combat roster: pet-art motion target without changing unit stats */
+/* Combat roster: pet-art above name/bar so CJK labels aren't clipped to 1 glyph */
 .combat-unit:not(.is-empty-slot) {
   display: grid;
-  grid-template-columns: auto 1fr;
-  column-gap: 0.22rem;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  justify-items: stretch;
   align-items: center;
+  row-gap: 0.06rem;
+  min-width: 0;
 }
 .combat-unit .pet-art--combat {
-  grid-row: 1 / span 2;
+  grid-row: auto;
+  justify-self: center;
 }
 .combat-unit .cu-bar {
-  grid-column: 2;
+  grid-column: auto;
+  width: 100%;
 }
 .combat-unit .pet-art--combat .pet-art-elem-dot,
 .combat-unit .pet-art--combat .pet-art-gen {
