@@ -44,6 +44,20 @@ export const ROAM_BASE_FACTOR = 0.92;
 export const ROAM_GROUND_ASSIST = 0.22;
 export const ROAM_PARALLAX_LOOP = 480;
 
+/** Mid/near deco 跟鏡頭但 clamp，唔好把邊角草移出場。主視差 --mid-x 仍連續（#86）。 */
+export const ROAM_DECO_MID_FOLLOW = 0.12;
+export const ROAM_DECO_MID_MAX = 18;
+export const ROAM_DECO_MID_BIAS = 0;
+export const ROAM_DECO_NEAR_FOLLOW = 0.05;
+export const ROAM_DECO_NEAR_MAX = 8;
+
+export function roamDecoFollowX(layerX, follow = ROAM_DECO_MID_FOLLOW, maxAbs = ROAM_DECO_MID_MAX, bias = ROAM_DECO_MID_BIAS) {
+  const x = (Number(layerX) || 0) * (Number(follow) || 0) + (Number(bias) || 0);
+  const cap = Math.max(0, Number(maxAbs) || 0);
+  if (!Number.isFinite(x)) return 0;
+  return Math.max(-cap, Math.min(cap, x));
+}
+
 /** 步行時各層輕微上下擺（輔助，主位移係 X） */
 export const ROAM_FAR_PY = 7;
 export const ROAM_MID_PY = 12;
@@ -204,6 +218,8 @@ export function roamBgShift(waveIndex = 0, walkT = 1, spec = {}) {
   const nearX = -cam.x * ROAM_NEAR_FACTOR;
   const baseX = -cam.x * ROAM_BASE_FACTOR;
   const groundSlide = cam.x * ROAM_GROUND_ASSIST;
+  const decoMidX = roamDecoFollowX(midX, ROAM_DECO_MID_FOLLOW, ROAM_DECO_MID_MAX, ROAM_DECO_MID_BIAS);
+  const decoNearX = roamDecoFollowX(nearX, ROAM_DECO_NEAR_FOLLOW, ROAM_DECO_NEAR_MAX);
   return {
     x: midX,
     y: 0,
@@ -215,6 +231,8 @@ export function roamBgShift(waveIndex = 0, walkT = 1, spec = {}) {
     midY: 0,
     nearY: 0,
     groundSlide,
+    decoMidX,
+    decoNearX,
     camX: cam.x,
     camY: cam.y,
     phase,

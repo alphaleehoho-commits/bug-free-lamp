@@ -1483,6 +1483,11 @@ button.flash-act {
   --roam-band-bottom: 58%;
   --roam-anchor-y: 48%;
   --roam-hud-clearance: 24%;
+  --roam-hud-top-clear: 14%;
+  --roam-deco-mid-inset: 12%;
+  --roam-deco-near-pad: 40px;
+  --deco-mid-x: 0px;
+  --deco-near-x: 0px;
   --bg-x: 0px;
   --bg-y: 0px;
   --ground-y: 0px;
@@ -1557,24 +1562,35 @@ button.flash-act {
   height: 56%;
   z-index: 1;
   opacity: 0.8;
-  transform: translate(var(--mid-x, 0px), var(--mid-y, 0px));
+  /* Layer stays put — full --mid-x walks corner grass off-stage. Art follows --deco-mid-x. */
+  transform: none;
   background-position: var(--mid-x, 0px) center;
   mask-image: linear-gradient(180deg, #000 0%, #000 34%, transparent 40%, transparent 60%, #000 68%, #000 100%);
 }
 .train-roam-bg-mid .train-roam-bg-deco-art {
+  left: var(--roam-deco-mid-inset, 12%);
+  width: calc(100% - (var(--roam-deco-mid-inset, 12%) * 2));
+  right: auto;
+  object-fit: contain;
   object-position: center center;
+  transform: translateX(var(--deco-mid-x, 0px));
 }
 .train-roam-bg-near {
   top: 48%;
   height: 46%;
   z-index: 1;
   opacity: 0.35;
-  transform: translate(var(--near-x, 0px), var(--near-y, 0px));
+  transform: none;
   background-position: var(--near-x, 0px) center;
   mask-image: linear-gradient(180deg, transparent 0%, #000 18%, transparent 32%, transparent 58%, #000 72%, #000 100%);
 }
 .train-roam-bg-near .train-roam-bg-deco-art {
+  left: var(--roam-deco-near-pad, 40px);
+  width: calc(100% - (var(--roam-deco-near-pad, 40px) * 2));
+  right: auto;
+  object-fit: contain;
   object-position: center bottom;
+  transform: translateX(var(--deco-near-x, 0px));
 }
 .train-roam-ground {
   position: absolute;
@@ -1700,7 +1716,7 @@ button.flash-act {
   position: absolute;
   left: 0.42rem;
   right: 0.42rem;
-  z-index: 6;
+  z-index: 8;
   pointer-events: none;
   transform: none;
 }
@@ -1711,6 +1727,7 @@ button.flash-act {
   top: 0;
   left: 0;
   right: 0;
+  z-index: 9;
   padding: 0.48rem 0.55rem 0;
 }
 .train-idle-strip.is-roam .train-qi-chip {
@@ -1773,14 +1790,35 @@ button.flash-act {
   min-width: 4.4rem;
   background: rgba(8, 16, 22, 0.5);
 }
-.train-idle-strip.is-roam .idle-loot-layer {
+.train-idle-strip.is-roam .idle-loot-layer,
+.train-roam-stage .idle-loot-layer {
   position: absolute;
-  top: 3.6rem;
-  left: 0.5rem;
-  right: 0.5rem;
-  z-index: 7;
+  /* Character-band mid-lower; never enter title / top HUD clear. */
+  top: clamp(calc(var(--roam-hud-top-clear, 14%) + 8px), 50%, 62%);
+  left: 8%;
+  right: 8%;
+  z-index: 6;
   margin: 0;
-  justify-content: center;
+  max-height: 20%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.16rem;
+  pointer-events: none;
+}
+.train-idle-strip.is-roam .idle-loot-chip,
+.train-roam-stage .idle-loot-chip {
+  position: relative;
+  top: calc(var(--i, 0) * 0.72rem);
+  animation-name: idle-loot-float-roam;
+}
+@keyframes idle-loot-float-roam {
+  0% { opacity: 0; transform: translateY(8px) scale(0.92); }
+  18% { opacity: 1; transform: translateY(0) scale(1); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px); }
 }
 .train-idle-strip.is-roam .train-idle-hit,
 .train-idle-strip.is-roam .train-idle-fail {
@@ -4803,6 +4841,7 @@ button.pet-badge {
   }
   .train-roam-bg-art,
   .train-roam-bg-deco,
+  .train-roam-bg-deco-art,
   .train-roam-bg-far,
   .train-roam-bg-mid,
   .train-roam-bg-near {

@@ -465,6 +465,12 @@ import {
   roamShiftToHoldCamera,
   roamPhaseOf,
   roamApproachDurationMs,
+  roamDecoFollowX,
+  ROAM_DECO_MID_FOLLOW,
+  ROAM_DECO_MID_MAX,
+  ROAM_DECO_MID_BIAS,
+  ROAM_DECO_NEAR_FOLLOW,
+  ROAM_DECO_NEAR_MAX,
   ROAM_IDLE_SCENE_SRC,
   ROAM_ALLY_PLACEHOLDER_SRC,
   ROAM_FOE_FOAM_SRC,
@@ -4422,7 +4428,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v159"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v160"), "sw cache bumped");
 assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
 assert(swSrc.includes("bg_idle_home_reef_1080x1920.webp"), "sw caches idle reef scene");
 assert(swSrc.includes("bg_roam_base_floor_9x16.png"), "sw caches roam portrait base");
@@ -4901,6 +4907,23 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("object-fit: cover"), "css cover crop for scene art");
   assert(cssSrc.includes("--roam-band-top"), "css character band 38%");
   assert(cssSrc.includes("--roam-hud-clearance"), "css mid-lower HUD clearance");
+  assert(cssSrc.includes("--roam-hud-top-clear: 14%") || cssSrc.includes("--roam-hud-top-clear:14%"), "css top HUD clear ~14%");
+  assert(/\.train-roam-stage \.idle-loot-layer[\s\S]{0,360}--roam-hud-top-clear/.test(cssSrc), "roam loot clamped below HUD clear");
+  assert(/\.train-roam-stage \.idle-loot-layer[\s\S]{0,280}50%/.test(cssSrc), "roam loot anchors in character-band mid-lower");
+  assert(/\.train-roam-hud-top[\s\S]{0,160}z-index:\s*9/.test(cssSrc), "title HUD stacks above drop text");
+  assert(/\.train-roam-stage \.idle-loot-layer[\s\S]{0,220}z-index:\s*6/.test(cssSrc), "drop text stacks above characters");
+  assert(/train-idle-roster[\s\S]{0,280}idleLootLayerHtml\(\)[\s\S]{0,80}train-roam-hud-top/.test(uiSrc2), "ui mounts loot on stage under the title HUD");
+  assert(cssSrc.includes("--roam-deco-mid-inset: 12%") || cssSrc.includes("--roam-deco-mid-inset:12%"), "css mid deco inset in the 8–22% band");
+  assert(cssSrc.includes("--roam-deco-near-pad: 40px") || cssSrc.includes("--roam-deco-near-pad:40px"), "css near deco stays ≥40px on-stage");
+  assert(cssSrc.includes("--deco-mid-x"), "css mid deco uses static/clamped follow, not full --mid-x");
+  assert(uiSrc2.includes("--deco-mid-x") && uiSrc2.includes("roamDecoFollowX"), "ui wires deco-mid bias");
+  assert(Math.abs(roamDecoFollowX(-800, ROAM_DECO_MID_FOLLOW, ROAM_DECO_MID_MAX, ROAM_DECO_MID_BIAS)) <= ROAM_DECO_MID_MAX, "mid deco follow cannot walk grass off-stage");
+  assert(Math.abs(roamDecoFollowX(900, ROAM_DECO_NEAR_FOLLOW, ROAM_DECO_NEAR_MAX)) <= ROAM_DECO_NEAR_MAX, "near deco follow stays on-stage");
+  assert(roamDecoFollowX(0) === 0, "deco follow is 0 at origin");
+  const decoWalk0 = roamBgShift(0, 0, { phase: "walk" });
+  const decoWalk1 = roamBgShift(0, 1, { phase: "walk" });
+  assert(Math.abs(decoWalk1.decoMidX) <= ROAM_DECO_MID_MAX && Math.abs(decoWalk0.decoMidX) <= ROAM_DECO_MID_MAX, "bg shift exposes clamped deco mid");
+  assert(decoWalk1.decoMidX !== decoWalk0.decoMidX || decoWalk1.midX === decoWalk0.midX, "deco mid still follows walk a little");
   assert(cssSrc.includes(".combat-roster:not(.is-roam)"), "css dungeon ally flip not forced on roam");
   assert(cssSrc.includes("panel-stage--cultivate-idle"), "css B1 idle scene class");
   assert(!cssSrc.includes("roamFoeRunIn") && !cssSrc.includes("roamFoeFadeIn"), "css has no foe pop/rush animation");
