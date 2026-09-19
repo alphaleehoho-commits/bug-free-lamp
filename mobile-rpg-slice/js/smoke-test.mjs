@@ -4428,12 +4428,12 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v162"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v163"), "sw cache bumped");
 assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
 assert(swSrc.includes("bg_idle_home_reef_1080x1920.webp"), "sw caches idle reef scene");
 assert(swSrc.includes("bg_roam_base_floor_9x16.png"), "sw caches roam portrait base");
-assert(swSrc.includes("deco_roam_mid_weed_rock_dense_v3.png"), "sw caches mid deco");
-assert(swSrc.includes("deco_roam_near_weed_rock_dense_v3.png"), "sw caches near deco");
+assert(swSrc.includes("deco_roam_mid_weed_rock_portrait_v4.png"), "sw caches mid deco");
+assert(swSrc.includes("deco_roam_near_weed_rock_portrait_v4.png"), "sw caches near deco");
 assert(swSrc.includes("enemy_foamblob_idle.png"), "sw caches foam foe placeholder");
 assert(swSrc.includes("enemy_reefcrab_idle.png"), "sw caches crab foe placeholder");
 assert(
@@ -4785,8 +4785,8 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(ROAM_GROUND_ASSIST < ROAM_NEAR_FACTOR, "grid assist factor is below near follow");
   assert(ROAM_BASE_FACTOR < ROAM_NEAR_FACTOR && ROAM_BASE_FACTOR > ROAM_MID_FACTOR, "base floor tracks near, slower than 1:1");
   assert(ROAM_DECO_FAR_SRC === "", "far deco stays empty until art lands");
-  assert(ROAM_DECO_MID_SRC.includes("deco_roam_mid_weed_rock_dense_v3"), "mid deco wires dense v3 weed/rock");
-  assert(ROAM_DECO_NEAR_SRC.includes("deco_roam_near_weed_rock_dense_v3"), "near deco wires dense v3 weed/rock");
+  assert(ROAM_DECO_MID_SRC.includes("deco_roam_mid_weed_rock_portrait_v4"), "mid deco wires portrait 9:16 v4");
+  assert(ROAM_DECO_NEAR_SRC.includes("deco_roam_near_weed_rock_portrait_v4"), "near deco wires portrait 9:16 v4");
   assert(ROAM_BASE_FLOOR_SRC.includes("bg_roam_base_floor"), "base floor uses trial roam tile");
   assert(ROAM_FAR_PY > 0 && ROAM_NEAR_PY >= 0, "walk still has a light vertical bob");
   assert(ROAM_GROUND_PY === ROAM_NEAR_PY, "legacy ground token aliases near bob");
@@ -4913,11 +4913,11 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(/\.train-roam-hud-top[\s\S]{0,160}z-index:\s*9/.test(cssSrc), "title HUD stacks above drop text");
   assert(/\.train-roam-stage \.idle-loot-layer[\s\S]{0,220}z-index:\s*6/.test(cssSrc), "drop text stacks above characters");
   assert(/train-idle-roster[\s\S]{0,280}idleLootLayerHtml\(\)[\s\S]{0,80}train-roam-hud-top/.test(uiSrc2), "ui mounts loot on stage under the title HUD");
-  assert(cssSrc.includes("--roam-deco-mid-inset: 7%") || cssSrc.includes("--roam-deco-mid-inset:7%"), "css mid deco inset in the 6–8% band");
-  assert(cssSrc.includes("--roam-deco-mid-follow-room"), "css mid deco keeps follow room so grass stays on-stage");
-  assert(/\.train-roam-bg-mid[\s\S]{0,360}linear-gradient\(90deg/.test(cssSrc), "css mid mask keeps side columns");
-  assert(cssSrc.includes("--roam-deco-near-pad: 40px") || cssSrc.includes("--roam-deco-near-pad:40px"), "css near deco stays ≥40px on-stage");
-  assert(cssSrc.includes("--roam-deco-near-follow-room"), "css near deco keeps follow room so corners stay ≥40px");
+  assert(/\.train-roam-bg-deco-art[\s\S]{0,80}object-fit:\s*cover/.test(cssSrc), "css deco art defaults to cover");
+  assert(/\.train-roam-bg-mid \.train-roam-bg-deco-art[\s\S]{0,200}object-fit:\s*cover/.test(cssSrc), "css mid deco uses cover, not landscape contain");
+  assert(/\.train-roam-bg-near \.train-roam-bg-deco-art[\s\S]{0,200}object-fit:\s*cover/.test(cssSrc), "css near deco uses cover, not landscape contain");
+  assert(!/\.train-roam-bg-mid \.train-roam-bg-deco-art[\s\S]{0,200}object-fit:\s*contain/.test(cssSrc), "css mid deco does not contain-letterbox");
+  assert(!/\.train-roam-bg-near \.train-roam-bg-deco-art[\s\S]{0,200}object-fit:\s*contain/.test(cssSrc), "css near deco does not contain-letterbox");
   assert(cssSrc.includes("--deco-mid-x"), "css mid deco uses static/clamped follow, not full --mid-x");
   assert(uiSrc2.includes("--deco-mid-x") && uiSrc2.includes("roamDecoFollowX"), "ui wires deco-mid bias");
   assert(Math.abs(roamDecoFollowX(-800, ROAM_DECO_MID_FOLLOW, ROAM_DECO_MID_MAX, ROAM_DECO_MID_BIAS)) <= ROAM_DECO_MID_MAX, "mid deco follow cannot walk grass off-stage");
@@ -4947,7 +4947,7 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("train-roam-bg-base") && cssSrc.includes("repeat-x"), "css base floor tiles on x");
   assert(cssSrc.includes("train-roam-bg-mid"), "css mid parallax layer");
   assert(cssSrc.includes("train-roam-bg-deco"), "css deco slot plate");
-  assert(/\.train-roam-bg-mid[\s\S]{0,160}opacity:\s*0\.95/.test(cssSrc), "css mid deco opacity ~0.95");
+  assert(/\.train-roam-bg-mid[\s\S]{0,160}opacity:\s*0\.85/.test(cssSrc), "css mid deco opacity ~0.85");
   assert(cssSrc.includes("opacity: 0.35") || cssSrc.includes("opacity:0.35"), "css near deco opacity stays below the character band");
   assert(cssSrc.includes("stage-scroll:has(.train-idle-strip.is-roam)"), "css hides hang stage scrollbar");
   assert(cssSrc.includes("3.6rem"), "css drops toasts below the title bar");
@@ -4960,8 +4960,8 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("--roam-enter-dy"), "css spawn-side token");
   assert(existsSync(join(dirname(__dir), "assets/bg/roam/bg_roam_base_floor_9x16.png")), "roam portrait base tile");
   assert(existsSync(join(dirname(__dir), "assets/bg/roam/bg_roam_base_floor_tile_16x9.png")), "roam 16x9 floor tile");
-  assert(existsSync(join(dirname(__dir), "assets/bg/roam/deco_roam_mid_weed_rock_dense_v3.png")), "roam mid deco art");
-  assert(existsSync(join(dirname(__dir), "assets/bg/roam/deco_roam_near_weed_rock_dense_v3.png")), "roam near deco art");
+  assert(existsSync(join(dirname(__dir), "assets/bg/roam/deco_roam_mid_weed_rock_portrait_v4.png")), "roam mid deco art");
+  assert(existsSync(join(dirname(__dir), "assets/bg/roam/deco_roam_near_weed_rock_portrait_v4.png")), "roam near deco art");
   assert(existsSync(join(dirname(__dir), "assets/bg/scenes/bg_idle_home_reef_1080x1920.webp")), "idle reef scene asset");
   assert(existsSync(join(dirname(__dir), "assets/bg/scenes/bg_dungeon_tide_path_1080x1920.webp")), "dungeon path scene asset");
   assert(existsSync(join(dirname(__dir), "assets/allies/ally_jelly_idle.png")), "ally jelly placeholder");

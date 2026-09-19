@@ -409,10 +409,10 @@ export const ROAM_BASE_FLOOR_SRC = "./assets/bg/roam/bg_roam_base_floor_9x16.png
 /** 橫向 seamless 淨地磚，備用。 */
 export const ROAM_BASE_FLOOR_TILE_SRC = "./assets/bg/roam/bg_roam_base_floor_tile_16x9.png";
 export const ROAM_BASE_FLOOR_ART = ROAM_BASE_FLOOR_TILE_SRC;
-/** Deco：far 空；mid／near 接 dense v3。 */
+/** Deco：far 空；mid／near 接 portrait 9:16 v4。 */
 export const ROAM_DECO_FAR_SRC = "";
-export const ROAM_DECO_MID_SRC = "./assets/bg/roam/deco_roam_mid_weed_rock_dense_v3.png";
-export const ROAM_DECO_NEAR_SRC = "./assets/bg/roam/deco_roam_near_weed_rock_dense_v3.png";
+export const ROAM_DECO_MID_SRC = "./assets/bg/roam/deco_roam_mid_weed_rock_portrait_v4.png";
+export const ROAM_DECO_NEAR_SRC = "./assets/bg/roam/deco_roam_near_weed_rock_portrait_v4.png";
 export const ROAM_DECO_FAR_ART = "./assets/bg/roam/deco_roam_far_weed_rock_2160x1920.webp";
 export const ROAM_DECO_MID_ART = ROAM_DECO_MID_SRC;
 export const ROAM_DECO_NEAR_ART = ROAM_DECO_NEAR_SRC;
