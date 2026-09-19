@@ -3236,6 +3236,7 @@ function syncIdleRoamStage(wrap, opts = {}) {
   stage.style.setProperty("--far-y", `${Number(bg.farY ?? bg.y).toFixed(1)}px`);
   stage.style.setProperty("--near-y", `${Number(bg.nearY || 0).toFixed(1)}px`);
   stage.style.setProperty("--ground-y", `${Number(bg.nearY || 0).toFixed(1)}px`);
+  stage.style.setProperty("--ground-slide", `${Number(bg.groundSlide || 0).toFixed(1)}px`);
   const field = stage.querySelector("[data-live=train-idle-roster]");
   if (!field) return;
   const formationId = wrap.formationId || currentFormationId();
@@ -3359,6 +3360,7 @@ async function playRoamWalk(wrap) {
   stage.style.setProperty("--far-y", "0px");
   stage.style.setProperty("--near-y", "0px");
   stage.style.setProperty("--ground-y", "0px");
+  stage.style.setProperty("--ground-slide", "0px");
   if (idleAnimToken === token) idleAnimToken = null;
 }
 
@@ -3676,13 +3678,14 @@ function trainIdleStripHtml(rateSummary = "") {
   ].join("");
   const farY = Number(layout.bg.farY ?? layout.bg.y).toFixed(1);
   const nearY = Number(layout.bg.nearY || 0).toFixed(1);
+  const groundSlide = Number(layout.bg.groundSlide || 0).toFixed(1);
   const waveLabel = `${floorName} · ${meta}`;
   const prod = rateSummary
     ? `<p class="train-roam-prod">${rateSummary}</p>`
     : "";
   return `<div class="train-idle-strip is-roam${bossCls}" data-live="train-idle">
     ${idleLootLayerHtml()}
-    <div class="train-roam-stage scene-bg panel-stage--cultivate-idle" data-live="train-roam-stage" data-face="right" style="--far-y:${farY}px;--near-y:${nearY}px;--ground-y:${nearY}px">
+    <div class="train-roam-stage scene-bg panel-stage--cultivate-idle" data-live="train-roam-stage" data-face="right" style="--far-y:${farY}px;--near-y:${nearY}px;--ground-y:${nearY}px;--ground-slide:${groundSlide}px">
       <div class="train-roam-bg" aria-hidden="true">
         <img class="train-roam-bg-art train-roam-bg-far" src="${escapeHtml(ROAM_IDLE_SCENE_SRC)}" alt="" width="1080" height="1920" />
         <div class="train-roam-ground train-roam-bg-near"></div>

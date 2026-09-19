@@ -7,7 +7,9 @@ export const ROAM_WALK_MS = 960;
 /** 遠景層：波間極慢微移（px）。唔累積、唔全圖狂捲。 */
 export const ROAM_FAR_PY = 6;
 /** 近景／地面：跟隊伍短行一齊漂（比遠景明顯） */
-export const ROAM_NEAR_PY = 16;
+export const ROAM_NEAR_PY = 20;
+/** 腳下地面紋理跟步行拍滑移（px） */
+export const ROAM_GROUND_SLIDE_PY = 28;
 /** 友軍短行：沿走廊前進，仍鎖左邊 */
 export const ROAM_ALLY_TRAVEL_X = 14;
 export const ROAM_ALLY_TRAVEL_Y = 30;
@@ -16,20 +18,20 @@ export const ROAM_GROUND_PY = ROAM_NEAR_PY;
 /** @deprecated 舊全圖捲 */
 export const ROAM_STEP_PY = ROAM_NEAR_PY;
 /** 敵從右緣／霧外跑入（ms） */
-export const ROAM_ENTER_MS = 680;
+export const ROAM_ENTER_MS = 820;
 export const ROAM_ENTER_STAGGER_MS = 90;
 /** 入場起點：相對休息位再偏右，出畫面（唔喺中央 pop） */
-export const ROAM_FOE_ENTER_DX = 176;
+export const ROAM_FOE_ENTER_DX = 240;
 /** 上／下霧入場擺幅 */
-export const ROAM_FOE_ENTER_DY = 38;
+export const ROAM_FOE_ENTER_DY = 48;
 /** 角色帶相對錨點的 Y 擺幅（38–58% 中段） */
 export const ROAM_Y_MIN = -40;
 export const ROAM_Y_MAX = 40;
-/** 距畫面中心最少 px，避免單位塞死中 */
-export const ROAM_CENTER_CLEAR_X = 72;
+/** 距畫面中心最少 px，避免單位塞死中（隊伍貼近中場，仍留走廊） */
+export const ROAM_CENTER_CLEAR_X = 48;
 /** 友軍錨（左）／敵軍錨（右），相對舞台中心 */
-export const ROAM_ALLY_ANCHOR_X = -118;
-export const ROAM_FOE_ANCHOR_X = 118;
+export const ROAM_ALLY_ANCHOR_X = -78;
+export const ROAM_FOE_ANCHOR_X = 128;
 
 /** 走廊前進（螢幕 +y 下）。單位 facing 永遠向右打敵，唔跟路向左右掉轉。 */
 export const ROAM_PATH = [
@@ -65,11 +67,12 @@ export function roamHeading(waveIndex = 0) {
  */
 export function roamBgShift(_waveIndex = 0, walkT = 1) {
   const t = Math.max(0, Math.min(1, Number(walkT)));
-  if (t <= 0 || t >= 1) return { x: 0, y: 0, farY: 0, nearY: 0 };
+  if (t <= 0 || t >= 1) return { x: 0, y: 0, farY: 0, nearY: 0, groundSlide: 0 };
   const pulse = Math.sin(t * Math.PI);
   const farY = -pulse * ROAM_FAR_PY;
   const nearY = -pulse * ROAM_NEAR_PY;
-  return { x: 0, y: farY, farY, nearY };
+  const groundSlide = pulse * ROAM_GROUND_SLIDE_PY;
+  return { x: 0, y: farY, farY, nearY, groundSlide };
 }
 
 /** 敵入場由休息位再偏右（出畫面／側霧），跑向隊伍正面。永不由中央出現。 */
@@ -89,8 +92,8 @@ export function roamFoeEnterDy(index = 0) {
  * 友軍鎖左邊，前排稍向中（對敵），slot 沿角色帶垂直排。
  */
 export function roamAllyOffset(slot, lane, _heading) {
-  const towardFoes = lane === "front" ? 18 : -6;
-  const stack = ((slot | 0) - 1) * 36;
+  const towardFoes = lane === "front" ? 12 : -4;
+  const stack = ((slot | 0) - 1) * 26;
   return {
     x: ROAM_ALLY_ANCHOR_X + towardFoes,
     y: clampRoamY(stack),

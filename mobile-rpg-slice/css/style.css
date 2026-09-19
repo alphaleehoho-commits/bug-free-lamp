@@ -1479,6 +1479,7 @@ button.flash-act {
   --ground-y: 0px;
   --far-y: 0px;
   --near-y: 0px;
+  --ground-slide: 0px;
   background: #0c1218;
 }
 .train-roam-bg,
@@ -1513,14 +1514,28 @@ button.flash-act {
   height: 32%;
   z-index: 1;
   pointer-events: none;
-  background: repeating-linear-gradient(
-    180deg,
-    transparent 0 14px,
-    rgba(232, 244, 248, 0.07) 14px 15px
-  );
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 18px,
+      rgba(210, 228, 232, 0.1) 18px 19px
+    ),
+    repeating-linear-gradient(
+      180deg,
+      transparent 0 10px,
+      rgba(232, 244, 248, 0.09) 10px 11px
+    ),
+    radial-gradient(circle at 18% 42%, rgba(255, 255, 255, 0.08) 0 1.2px, transparent 2px),
+    radial-gradient(circle at 68% 72%, rgba(220, 236, 240, 0.06) 0 1px, transparent 2px);
+  background-size: 36px 22px, 100% 22px, 48px 28px, 56px 32px;
+  background-position:
+    calc(var(--ground-slide, 0px) * -0.55) calc(var(--near-y, 0px) * -0.35),
+    0 var(--ground-slide, 0px),
+    calc(var(--ground-slide, 0px) * -0.8) calc(var(--ground-slide, 0px) * 0.55),
+    calc(var(--ground-slide, 0px) * -0.35) calc(var(--ground-slide, 0px) * 0.85);
   mask-image: linear-gradient(180deg, transparent, #000 28%, #000 72%, transparent);
   transform: translateY(var(--near-y, var(--ground-y, 0px)));
-  will-change: transform;
+  will-change: transform, background-position;
 }
 .train-roam-vignette {
   position: absolute;
@@ -1560,12 +1575,12 @@ button.flash-act {
   transition: opacity 0.28s ease, transform 0.28s ease;
 }
 .train-roam-pin.is-roam-enter {
-  animation: roamFoeRunIn 0.68s cubic-bezier(0.18, 0.82, 0.22, 1) both;
+  animation: roamFoeRunIn 0.82s cubic-bezier(0.18, 0.82, 0.22, 1) both;
   animation-delay: var(--roam-enter-delay, 0ms);
 }
 @keyframes roamFoeRunIn {
   from {
-    transform: translate(-50%, -50%) translate(var(--roam-enter-dx, 176px), var(--roam-enter-dy, 8px));
+    transform: translate(-50%, -50%) translate(var(--roam-enter-dx, 240px), var(--roam-enter-dy, 8px));
     opacity: 0.15;
     filter: blur(1.5px);
   }
@@ -1598,9 +1613,9 @@ button.flash-act {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.08rem;
-  min-width: 3.1rem;
-  padding: 0.08rem 0.12rem 0.14rem;
+  gap: 0.06rem;
+  min-width: 2.35rem;
+  padding: 0.04rem 0.08rem 0.1rem;
   background: transparent;
   border: none;
   box-shadow: none;
@@ -1611,8 +1626,8 @@ button.flash-act {
 }
 .train-idle-roster.is-roam .cu-name {
   text-align: center;
-  max-width: 3.6rem;
-  font-size: 0.52rem;
+  max-width: 2.7rem;
+  font-size: 0.46rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1620,11 +1635,11 @@ button.flash-act {
   color: #f3f6ef;
   background: rgba(8, 16, 22, 0.55);
   border-radius: 999px;
-  padding: 0.04rem 0.35rem;
+  padding: 0.03rem 0.28rem;
 }
 .train-idle-roster.is-roam .cu-bar {
-  width: 2.4rem;
-  height: 0.22rem;
+  width: 1.85rem;
+  height: 0.16rem;
   grid-column: auto;
   background: rgba(0, 0, 0, 0.4);
   border-radius: 999px;
@@ -4739,6 +4754,7 @@ button.pet-badge {
   .train-roam-ground,
   .train-roam-bg-near {
     transform: none !important;
+    background-position: 0 0 !important;
   }
 }
 
@@ -5412,6 +5428,7 @@ html.theme-light .train-idle-roster.is-roam .cu-name,
   --pet-display-scale: 2.2;
   /* Current JS baselines → ~2.2× targets */
   --pet-art-combat: 48px;   /* was ~22 → ~48 */
+  --pet-art-roam: 34px;     /* hang map units stay smaller than dungeon combat */
   --pet-art-pick: 53px;     /* was 24 → ~53 */
   --pet-art-card: 62px;     /* was 28 → ~62 */
   --pet-art-row: 75px;      /* was 34 → ~75 */
@@ -5546,6 +5563,26 @@ html.theme-light .train-idle-roster.is-roam .cu-name,
 .train-idle-roster .pet-art .pet-icon {
   width: var(--pet-art-combat) !important;
   height: var(--pet-art-combat) !important;
+}
+
+/* Hang roam only: smaller units so more map shows around the party.
+   Higher specificity after the combat !important block; dungeon roster stays 48. */
+.train-idle-roster.is-roam .pet-art.pet-art--combat,
+.train-idle-roster.is-roam .combat-unit .pet-art,
+.combat-roster.train-idle-roster.is-roam .pet-art {
+  --art-size: var(--pet-art-roam) !important;
+  --icon-size: var(--pet-art-roam) !important;
+  width: var(--pet-art-roam) !important;
+  height: var(--pet-art-roam) !important;
+}
+.train-idle-roster.is-roam .pet-art.pet-art--combat img,
+.train-idle-roster.is-roam .pet-art.pet-art--combat .pet-icon,
+.train-idle-roster.is-roam .combat-unit .pet-art img,
+.train-idle-roster.is-roam .combat-unit .pet-art .pet-icon,
+.combat-roster.train-idle-roster.is-roam .pet-art img,
+.combat-roster.train-idle-roster.is-roam .pet-art .pet-icon {
+  width: var(--pet-art-roam) !important;
+  height: var(--pet-art-roam) !important;
 }
 
 /* Roster cards — petCard size 28 → ~62 */
