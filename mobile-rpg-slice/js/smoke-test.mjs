@@ -4913,8 +4913,10 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(/\.train-roam-hud-top[\s\S]{0,160}z-index:\s*9/.test(cssSrc), "title HUD stacks above drop text");
   assert(/\.train-roam-stage \.idle-loot-layer[\s\S]{0,220}z-index:\s*6/.test(cssSrc), "drop text stacks above characters");
   assert(/train-idle-roster[\s\S]{0,280}idleLootLayerHtml\(\)[\s\S]{0,80}train-roam-hud-top/.test(uiSrc2), "ui mounts loot on stage under the title HUD");
-  assert(cssSrc.includes("--roam-deco-mid-inset: 12%") || cssSrc.includes("--roam-deco-mid-inset:12%"), "css mid deco inset in the 8–22% band");
+  assert(cssSrc.includes("--roam-deco-mid-inset: 10%") || cssSrc.includes("--roam-deco-mid-inset:10%"), "css mid deco inset in the 8–22% band");
+  assert(cssSrc.includes("--roam-deco-mid-follow-room"), "css mid deco keeps follow room so grass stays ≥8%");
   assert(cssSrc.includes("--roam-deco-near-pad: 40px") || cssSrc.includes("--roam-deco-near-pad:40px"), "css near deco stays ≥40px on-stage");
+  assert(cssSrc.includes("--roam-deco-near-follow-room"), "css near deco keeps follow room so corners stay ≥40px");
   assert(cssSrc.includes("--deco-mid-x"), "css mid deco uses static/clamped follow, not full --mid-x");
   assert(uiSrc2.includes("--deco-mid-x") && uiSrc2.includes("roamDecoFollowX"), "ui wires deco-mid bias");
   assert(Math.abs(roamDecoFollowX(-800, ROAM_DECO_MID_FOLLOW, ROAM_DECO_MID_MAX, ROAM_DECO_MID_BIAS)) <= ROAM_DECO_MID_MAX, "mid deco follow cannot walk grass off-stage");
