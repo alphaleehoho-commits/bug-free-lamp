@@ -210,7 +210,10 @@ import {
   roamLayoutFromUnits,
   roamFoeEnterDx,
   roamFoeEnterDy,
-  ROAM_IDLE_SCENE_SRC,
+  ROAM_BASE_FLOOR_SRC,
+  ROAM_DECO_FAR_SRC,
+  ROAM_DECO_MID_SRC,
+  ROAM_DECO_NEAR_SRC,
   ROAM_ALLY_PLACEHOLDER_SRC,
   roamFoePlaceholderSrc,
 } from "./train-roam.js";
@@ -3199,6 +3202,7 @@ function applyRoamStageVars(stage, bg, phase = "fight") {
   stage.style.setProperty("--far-x", `${Number(bg.farX || 0).toFixed(1)}px`);
   stage.style.setProperty("--mid-x", `${Number(bg.midX || bg.x || 0).toFixed(1)}px`);
   stage.style.setProperty("--near-x", `${Number(bg.nearX || 0).toFixed(1)}px`);
+  stage.style.setProperty("--base-x", `${Number(bg.baseX || bg.nearX || 0).toFixed(1)}px`);
   stage.style.setProperty("--far-y", `${Number(bg.farY ?? bg.y).toFixed(1)}px`);
   stage.style.setProperty("--mid-y", `${Number(bg.midY || 0).toFixed(1)}px`);
   stage.style.setProperty("--near-y", `${Number(bg.nearY || 0).toFixed(1)}px`);
@@ -3209,6 +3213,13 @@ function applyRoamStageVars(stage, bg, phase = "fight") {
 function applyRoamPinFacing(art, faceRight) {
   if (!art) return;
   art.classList.toggle("pet-art--flip", !!faceRight);
+}
+
+function roamDecoSlotHtml(slotId, src, extraClass) {
+  const art = src
+    ? `<img class="train-roam-bg-deco-art" src="${escapeHtml(src)}" alt="" draggable="false" />`
+    : "";
+  return `<div class="train-roam-bg-deco ${extraClass}" data-roam-slot="${escapeHtml(slotId)}">${art}</div>`;
 }
 
 function idleRoamPinHtml(item, faceRight, enter = false, pinIndex = 0, waveIndex = 0) {
@@ -3746,6 +3757,7 @@ function trainIdleStripHtml(rateSummary = "") {
   const farX = Number(layout.bg.farX || 0).toFixed(1);
   const midX = Number(layout.bg.midX || layout.bg.x || 0).toFixed(1);
   const nearX = Number(layout.bg.nearX || 0).toFixed(1);
+  const baseX = Number(layout.bg.baseX || layout.bg.nearX || 0).toFixed(1);
   const farY = Number(layout.bg.farY ?? layout.bg.y).toFixed(1);
   const midY = Number(layout.bg.midY || 0).toFixed(1);
   const nearY = Number(layout.bg.nearY || 0).toFixed(1);
@@ -3759,11 +3771,13 @@ function trainIdleStripHtml(rateSummary = "") {
     ${idleLootLayerHtml()}
     <div class="train-roam-stage scene-bg panel-stage--cultivate-idle" data-live="train-roam-stage" data-face="right" data-roam-phase="${escapeHtml(
       roamPhase
-    )}" style="--far-x:${farX}px;--mid-x:${midX}px;--near-x:${nearX}px;--far-y:${farY}px;--mid-y:${midY}px;--near-y:${nearY}px;--ground-y:${nearY}px;--ground-slide:${groundSlide}px">
+    )}" style="--far-x:${farX}px;--mid-x:${midX}px;--near-x:${nearX}px;--base-x:${baseX}px;--far-y:${farY}px;--mid-y:${midY}px;--near-y:${nearY}px;--ground-y:${nearY}px;--ground-slide:${groundSlide}px">
       <div class="train-roam-bg" aria-hidden="true">
-        <img class="train-roam-bg-art train-roam-bg-far" src="${escapeHtml(ROAM_IDLE_SCENE_SRC)}" alt="" width="1080" height="1920" />
-        <img class="train-roam-bg-art train-roam-bg-mid" src="${escapeHtml(ROAM_IDLE_SCENE_SRC)}" alt="" width="1080" height="1920" />
-        <div class="train-roam-ground train-roam-bg-near"></div>
+        <div class="train-roam-bg-base" data-roam-slot="roam_base_floor" style="--roam-base-src:url('${escapeHtml(ROAM_BASE_FLOOR_SRC)}')"></div>
+        ${roamDecoSlotHtml("roam_deco_far", ROAM_DECO_FAR_SRC, "train-roam-bg-far")}
+        ${roamDecoSlotHtml("roam_deco_mid", ROAM_DECO_MID_SRC, "train-roam-bg-mid")}
+        ${roamDecoSlotHtml("roam_deco_near", ROAM_DECO_NEAR_SRC, "train-roam-bg-near")}
+        <div class="train-roam-ground" aria-hidden="true"></div>
       </div>
       <div class="train-roam-vignette" aria-hidden="true"></div>
       <div class="combat-roster train-idle-roster is-roam" data-live="train-idle-roster" data-formation="${escapeHtml(formationId)}" data-roam-wave="${s.waveIndex || 0}" data-roam-phase="${escapeHtml(roamPhase)}">

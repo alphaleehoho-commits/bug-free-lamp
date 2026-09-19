@@ -38,8 +38,10 @@ export const ROAM_ENTER_STAGGER_MS = 90;
 export const ROAM_FAR_FACTOR = 0.22;
 export const ROAM_MID_FACTOR = 0.55;
 export const ROAM_NEAR_FACTOR = 1;
-/** 地面格輔助，必須細過近景位移 */
-export const ROAM_GROUND_ASSIST = 0.28;
+/** Base floor 跟鏡頭，略慢過 near */
+export const ROAM_BASE_FACTOR = 0.92;
+/** 地面格輔助，必須細過 near */
+export const ROAM_GROUND_ASSIST = 0.22;
 export const ROAM_PARALLAX_LOOP = 480;
 
 /** 步行時各層輕微上下擺（輔助，主位移係 X） */
@@ -184,6 +186,7 @@ export function roamBgShift(waveIndex = 0, walkT = 1, spec = {}) {
   const farX = wrapParallax(-cam.x * ROAM_FAR_FACTOR);
   const midX = wrapParallax(-cam.x * ROAM_MID_FACTOR);
   const nearX = wrapParallax(-cam.x * ROAM_NEAR_FACTOR);
+  const baseX = wrapParallax(-cam.x * ROAM_BASE_FACTOR);
   const groundSlide = wrapParallax(cam.x * ROAM_GROUND_ASSIST);
   const t = phase === "walk" ? clamp01(walkT) : 0;
   const pulse = walkPulse(t);
@@ -193,6 +196,7 @@ export function roamBgShift(waveIndex = 0, walkT = 1, spec = {}) {
     farX,
     midX,
     nearX,
+    baseX,
     farY: -pulse * ROAM_FAR_PY,
     midY: -pulse * ROAM_MID_PY,
     nearY: -pulse * ROAM_NEAR_PY,
@@ -367,6 +371,16 @@ export function roamLayoutFromUnits(spec = {}) {
 
 export const ROAM_IDLE_SCENE_SRC = "./assets/bg/scenes/bg_idle_home_reef_1080x1920.webp";
 export const ROAM_DUNGEON_SCENE_SRC = "./assets/bg/scenes/bg_dungeon_tide_path_1080x1920.webp";
+/** Placeholder base：裁切／染色現場景，repeat-x。正式磚到就換 ROAM_BASE_FLOOR_ART。 */
+export const ROAM_BASE_FLOOR_SRC = ROAM_IDLE_SCENE_SRC;
+export const ROAM_BASE_FLOOR_ART = "./assets/bg/roam/bg_roam_base_floor_tile_16x9.png";
+/** Deco slots：圖未到保持空字串，唔好叠實心底。 */
+export const ROAM_DECO_FAR_SRC = "";
+export const ROAM_DECO_MID_SRC = "";
+export const ROAM_DECO_NEAR_SRC = "";
+export const ROAM_DECO_FAR_ART = "./assets/bg/roam/deco_roam_far_weed_rock_2160x1920.webp";
+export const ROAM_DECO_MID_ART = "./assets/bg/roam/deco_roam_mid_weed_rock.png";
+export const ROAM_DECO_NEAR_ART = "./assets/bg/roam/deco_roam_near_weed_rock.png";
 export const ROAM_ALLY_PLACEHOLDER_SRC = "./assets/allies/ally_jelly_idle.png";
 export const ROAM_FOE_FOAM_SRC = "./assets/enemies/enemy_foamblob_idle.png";
 export const ROAM_FOE_CRAB_SRC = "./assets/enemies/enemy_reefcrab_idle.png";

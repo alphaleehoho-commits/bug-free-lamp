@@ -1480,6 +1480,7 @@ button.flash-act {
   --far-x: 0px;
   --mid-x: 0px;
   --near-x: 0px;
+  --base-x: 0px;
   --far-y: 0px;
   --mid-y: 0px;
   --near-y: 0px;
@@ -1496,6 +1497,30 @@ button.flash-act {
   overflow: hidden;
   z-index: 0;
 }
+.train-roam-bg-base {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: #0c1218;
+  background-image:
+    linear-gradient(
+      180deg,
+      rgba(8, 16, 22, 0.42) 0%,
+      rgba(8, 16, 22, 0.12) 28%,
+      transparent 42%,
+      transparent 58%,
+      rgba(8, 16, 22, 0.28) 78%,
+      rgba(8, 16, 22, 0.5) 100%
+    ),
+    var(--roam-base-src, url("../assets/bg/scenes/bg_idle_home_reef_1080x1920.webp"));
+  background-repeat: no-repeat, repeat-x;
+  background-size: auto 100%, auto 100%;
+  background-position:
+    0 0,
+    var(--base-x, var(--near-x, 0px)) 42%;
+  filter: saturate(0.72) brightness(0.92);
+}
 .train-roam-bg-art {
   position: absolute;
   left: 50%;
@@ -1509,59 +1534,71 @@ button.flash-act {
   object-position: center 42%;
   transform: translate(-50%, -50%) translate(var(--far-x, 0px), var(--far-y, 0px)) scale(1.14);
 }
-.train-roam-bg-mid {
-  top: 46%;
-  height: 72%;
-  min-width: 128%;
-  object-position: center 62%;
-  opacity: 0.82;
-  z-index: 1;
-  transform: translate(-50%, -42%) translate(var(--mid-x, 0px), var(--mid-y, 0px)) scale(1.22);
-  mask-image: linear-gradient(180deg, transparent, #000 18%, #000 78%, transparent);
-  filter: saturate(1.05) contrast(1.04);
+.train-roam-bg-deco {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-repeat: repeat-x;
+  background-size: auto 100%;
 }
-.train-roam-ground,
+.train-roam-bg-deco-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 48%;
+  pointer-events: none;
+}
+.train-roam-bg-far {
+  z-index: 1;
+  opacity: 1;
+  transform: translate(var(--far-x, 0px), var(--far-y, 0px));
+  background-position: var(--far-x, 0px) center;
+}
+.train-roam-bg-mid {
+  z-index: 2;
+  opacity: 0.8;
+  transform: translate(var(--mid-x, 0px), var(--mid-y, 0px));
+  background-position: var(--mid-x, 0px) center;
+}
 .train-roam-bg-near {
+  z-index: 3;
+  opacity: 0.5;
+  transform: translate(var(--near-x, 0px), var(--near-y, 0px));
+  background-position: var(--near-x, 0px) center;
+}
+.train-roam-ground {
   position: absolute;
   left: -18%;
   right: -18%;
   top: 36%;
   height: 34%;
-  z-index: 2;
+  z-index: 3;
   pointer-events: none;
+  opacity: 0.55;
   background-image:
-    linear-gradient(
-      180deg,
-      transparent 0%,
-      rgba(16, 32, 38, 0.18) 28%,
-      rgba(10, 24, 30, 0.38) 68%,
-      transparent 100%
-    ),
     repeating-linear-gradient(
       90deg,
       transparent 0 22px,
-      rgba(210, 228, 232, 0.07) 22px 23px
+      rgba(210, 228, 232, 0.06) 22px 23px
     ),
     repeating-linear-gradient(
       180deg,
       transparent 0 12px,
-      rgba(232, 244, 248, 0.05) 12px 13px
-    ),
-    radial-gradient(circle at 18% 42%, rgba(255, 255, 255, 0.06) 0 1.2px, transparent 2px);
-  background-size: 100% 100%, 40px 24px, 100% 24px, 52px 30px;
+      rgba(232, 244, 248, 0.04) 12px 13px
+    );
+  background-size: 40px 24px, 100% 24px;
   background-position:
-    0 0,
     calc(var(--ground-slide, 0px) * -0.4) calc(var(--near-y, 0px) * -0.2),
-    0 calc(var(--ground-slide, 0px) * 0.35),
-    calc(var(--ground-slide, 0px) * -0.25) calc(var(--ground-slide, 0px) * 0.4);
+    0 calc(var(--ground-slide, 0px) * 0.35);
   mask-image: linear-gradient(180deg, transparent, #000 28%, #000 72%, transparent);
-  transform: translate(var(--near-x, 0px), var(--near-y, var(--ground-y, 0px)));
-  will-change: transform, background-position;
+  will-change: background-position;
 }
 .train-roam-vignette {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 4;
   pointer-events: none;
   background: linear-gradient(
     180deg,
@@ -1579,7 +1616,7 @@ button.flash-act {
   inset: 0;
   display: block;
   margin: 0;
-  z-index: 2;
+  z-index: 5;
   pointer-events: none;
 }
 .train-roam-pin {
@@ -1598,28 +1635,7 @@ button.flash-act {
   transition: opacity 0.28s ease, transform 0.28s ease;
 }
 .train-roam-pin.is-roam-enter {
-  animation: roamFoeFadeIn 0.42s ease both;
-  animation-delay: var(--roam-enter-delay, 0ms);
-}
-@keyframes roamFoeFadeIn {
-  from {
-    opacity: 0.18;
-    filter: blur(1.4px);
-  }
-  to {
-    opacity: 1;
-    filter: none;
-  }
-}
-@keyframes roamFoeRunIn {
-  from {
-    opacity: 0.18;
-    filter: blur(1.4px);
-  }
-  to {
-    opacity: 1;
-    filter: none;
-  }
+  animation: none;
 }
 .train-roam-stage.is-walking .train-roam-pin[data-side="ally"],
 .train-roam-stage.is-approaching .train-roam-pin {
@@ -4779,15 +4795,16 @@ button.pet-badge {
   .train-roam-stage.is-approaching .train-roam-pin {
     animation: none !important;
   }
-  .train-roam-bg-art {
-    transform: translate(-50%, -50%) !important;
-  }
-  .train-roam-bg-mid {
-    transform: translate(-50%, -42%) !important;
-  }
-  .train-roam-ground,
+  .train-roam-bg-art,
+  .train-roam-bg-deco,
+  .train-roam-bg-far,
+  .train-roam-bg-mid,
   .train-roam-bg-near {
     transform: none !important;
+  }
+  .train-roam-bg-base,
+  .train-roam-ground,
+  .train-roam-bg-near {
     background-position: 0 0 !important;
   }
 }

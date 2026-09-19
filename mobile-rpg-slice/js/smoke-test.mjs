@@ -444,7 +444,12 @@ import {
   ROAM_MID_FACTOR,
   ROAM_NEAR_FACTOR,
   ROAM_GROUND_ASSIST,
+  ROAM_BASE_FACTOR,
   ROAM_GROUND_SLIDE_PY,
+  ROAM_BASE_FLOOR_SRC,
+  ROAM_DECO_FAR_SRC,
+  ROAM_DECO_MID_SRC,
+  ROAM_DECO_NEAR_SRC,
   roamHeading,
   roamBgShift,
   roamAllyOffset,
@@ -4413,7 +4418,7 @@ assert(launchParsed.state && Array.isArray(launchParsed.state.pets), "export pay
 assert(uiSrc2.includes("export-save") && uiSrc2.includes("hard-refresh"), "ui save/refresh acts");
 assert(uiSrc2.includes("ABYSS_RULES_TEXT") || uiSrc2.includes("abyss-rules"), "ui abyss rules");
 const swSrc = readFileSync(join(__dir, "../sw.js"), "utf8");
-assert(swSrc.includes("void-tide-pets-v154"), "sw cache bumped");
+assert(swSrc.includes("void-tide-pets-v155"), "sw cache bumped");
 assert(swSrc.includes("./js/train-roam.js"), "sw caches roam staging");
 assert(swSrc.includes("bg_idle_home_reef_1080x1920.webp"), "sw caches idle reef scene");
 assert(swSrc.includes("enemy_foamblob_idle.png"), "sw caches foam foe placeholder");
@@ -4728,6 +4733,9 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(gridDelta > 0 && gridDelta < nearDelta, "ground grid is an assist, not the only travel cue");
   assert(ROAM_FAR_FACTOR < ROAM_MID_FACTOR && ROAM_MID_FACTOR < ROAM_NEAR_FACTOR, "parallax factors stack far < mid < near");
   assert(ROAM_GROUND_ASSIST < ROAM_NEAR_FACTOR, "grid assist factor is below near follow");
+  assert(ROAM_BASE_FACTOR < ROAM_NEAR_FACTOR && ROAM_BASE_FACTOR > ROAM_MID_FACTOR, "base floor tracks near, slower than 1:1");
+  assert(ROAM_DECO_FAR_SRC === "" && ROAM_DECO_MID_SRC === "" && ROAM_DECO_NEAR_SRC === "", "deco slots stay empty until art lands");
+  assert(ROAM_BASE_FLOOR_SRC.includes("bg_idle") || ROAM_BASE_FLOOR_SRC.includes("roam_base"), "base floor has a placeholder tile");
   assert(ROAM_FAR_PY > 0 && ROAM_NEAR_PY >= 0, "walk still has a light vertical bob");
   assert(ROAM_GROUND_PY === ROAM_NEAR_PY, "legacy ground token aliases near bob");
   assert(ROAM_GROUND_SLIDE_PY > 0, "legacy ground slide token remains");
@@ -4831,13 +4839,15 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(uiSrc2.includes("is-roam-enter"), "ui marks foe spawn pins");
   assert(uiSrc2.includes("is-approaching"), "ui plays the mutual approach");
   assert(uiSrc2.includes("train-roam-ground"), "ui near/ground layer");
+  assert(uiSrc2.includes("train-roam-bg-base") && uiSrc2.includes("roam_base_floor"), "ui wires repeat-x base floor");
   assert(uiSrc2.includes("train-roam-bg-mid") && uiSrc2.includes("--mid-x"), "ui wires mid parallax layer");
+  assert(uiSrc2.includes("roam_deco_far") && uiSrc2.includes("roam_deco_mid") && uiSrc2.includes("roam_deco_near"), "ui reserves three deco slots");
   assert(uiSrc2.includes("--ground-slide"), "ui still wires grid assist");
   assert(uiSrc2.includes("train-roam-bg-far") && uiSrc2.includes("--far-x"), "ui wires far parallax layer");
-  assert(uiSrc2.includes("--near-x"), "ui wires near follow layer");
+  assert(uiSrc2.includes("--near-x") && uiSrc2.includes("--base-x"), "ui wires near + base tokens");
   assert(uiSrc2.includes("roamFoeEnterDy") && uiSrc2.includes("--roam-enter-dy"), "ui keeps spawn-side tokens");
   assert(uiSrc2.includes("from \"./train-roam.js\""), "ui imports roam staging");
-  assert(uiSrc2.includes("ROAM_IDLE_SCENE_SRC") || uiSrc2.includes("bg_idle_home_reef"), "ui wires idle scene art");
+  assert(uiSrc2.includes("ROAM_BASE_FLOOR_SRC") || uiSrc2.includes("bg_idle_home_reef"), "ui wires roam base floor");
   assert(uiSrc2.includes("train-roam-hud-top"), "ui top HUD on stage");
   assert(uiSrc2.includes("train-roam-prod") || uiSrc2.includes("train-roam-hud-mid"), "ui mid-lower production row");
   assert(cssSrc.includes("train-roam-stage"), "css roam stage");
@@ -4847,12 +4857,18 @@ assert(uiSrc2.includes("unlockNote") || uiSrc2.includes("upgrade-mat-note"), "ui
   assert(cssSrc.includes("--roam-hud-clearance"), "css mid-lower HUD clearance");
   assert(cssSrc.includes(".combat-roster:not(.is-roam)"), "css dungeon ally flip not forced on roam");
   assert(cssSrc.includes("panel-stage--cultivate-idle"), "css B1 idle scene class");
-  assert(cssSrc.includes("roamFoeRunIn") || cssSrc.includes("roamFoeFadeIn"), "css foe spawn fade");
+  assert(!cssSrc.includes("roamFoeRunIn") && !cssSrc.includes("roamFoeFadeIn"), "css has no foe pop/rush animation");
+  assert(/\.train-roam-pin\.is-roam-enter\s*\{\s*animation:\s*none/.test(cssSrc), "enter class does not animate a rush");
   assert(cssSrc.includes("roamPartyWalk"), "css party walk locomotion");
   assert(cssSrc.includes("is-approaching"), "css approach locomotion");
   assert(cssSrc.includes("train-roam-ground"), "css near/ground layer");
+  assert(cssSrc.includes("train-roam-bg-base") && cssSrc.includes("repeat-x"), "css base floor tiles on x");
   assert(cssSrc.includes("train-roam-bg-mid"), "css mid parallax layer");
+  assert(cssSrc.includes("train-roam-bg-deco"), "css deco slot plate");
+  assert(cssSrc.includes("opacity: 0.8") || cssSrc.includes("opacity:0.8"), "css mid deco opacity in 0.75–0.85");
+  assert(cssSrc.includes("opacity: 0.5") || cssSrc.includes("opacity:0.5"), "css near deco opacity at or below 0.55");
   assert(cssSrc.includes("--far-x") && cssSrc.includes("--mid-x") && cssSrc.includes("--near-x"), "css three parallax tokens");
+  assert(cssSrc.includes("--base-x"), "css base floor token");
   assert(cssSrc.includes("--ground-slide"), "css grid assist token");
   assert(cssSrc.includes("--pet-art-roam"), "css hang roam units stay smaller than combat");
   assert(cssSrc.includes(".train-idle-roster.is-roam .pet-art.pet-art--combat"), "css roam art override beats combat size");
